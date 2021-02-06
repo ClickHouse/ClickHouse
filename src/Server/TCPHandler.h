@@ -67,6 +67,9 @@ struct QueryState
     /// Temporary tables read
     bool temporary_tables_read = false;
 
+    /// A state got uuids to exclude from a query
+    bool part_uuids = false;
+
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
     /// temporary place for incoming data block for input()
@@ -173,6 +176,7 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
+    void receiveIgnoredPartUUIDs();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
@@ -201,6 +205,7 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
+    void sendPartUUIDs();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
