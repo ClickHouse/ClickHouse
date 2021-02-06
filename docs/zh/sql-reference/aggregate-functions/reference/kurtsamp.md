@@ -4,23 +4,24 @@ toc_priority: 154
 
 # kurtSamp {#kurtsamp}
 
-Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+计算给定序列的 [峰度样本](https://en.wikipedia.org/wiki/Kurtosis)。
+它表示随机变量峰度的无偏估计，如果传递的值形成其样本。
 
-It represents an unbiased estimate of the kurtosis of a random variable if passed values form its sample.
+**语法**
 
 ``` sql
 kurtSamp(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — 结果为数字的 [表达式](../../../sql-reference/syntax.md#syntax-expressions)。
 
-**Returned value**
+**返回值**
 
-The kurtosis of the given distribution. Type — [Float64](../../../sql-reference/data-types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+给定序列的峰度。类型 — [Float64](../../../sql-reference/data-types/float.md)。 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`。
 
-**Example**
+**示例**
 
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
