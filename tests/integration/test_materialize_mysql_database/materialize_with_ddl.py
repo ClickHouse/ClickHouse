@@ -743,3 +743,17 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("CREATE DATABASE utf8mb4_test ENGINE = MaterializeMySQL('{}:3306', 'utf8mb4_test', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "SELECT id, name FROM utf8mb4_test.test ORDER BY id", "1\t\U0001F984\n2\t\u2601\n")
 
+def multi_table_update_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS multi_table_update")
+    clickhouse_node.query("DROP DATABASE IF EXISTS multi_table_update")
+    mysql_node.query("CREATE DATABASE multi_table_update")
+    mysql_node.query("CREATE TABLE multi_table_update.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+    mysql_node.query("CREATE TABLE multi_table_update.b (id INT(11) NOT NULL PRIMARY KEY, othervalue VARCHAR(255))")
+    mysql_node.query("INSERT INTO multi_table_update.a VALUES(1, 'foo')")
+    mysql_node.query("INSERT INTO multi_table_update.b VALUES(1, 'bar')")
+    clickhouse_node.query("CREATE DATABASE multi_table_update ENGINE = MaterializeMySQL('{}:3306', 'multi_table_update', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM multi_table_update", "a\nb\n")
+    mysql_node.query("UPDATE multi_table_update.a, multi_table_update.b SET value='baz', othervalue='quux' where a.id=b.id")
+
+    check_query(clickhouse_node, "SELECT * FROM multi_table_update.a", "1\tbaz\n")
+    check_query(clickhouse_node, "SELECT * FROM multi_table_update.b", "1\tquux\n")
