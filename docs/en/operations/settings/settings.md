@@ -2592,4 +2592,15 @@ Possible values:
 
 Default value: `16`.
 
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Enables a trace for executed queries.
+
+Possible values:
+
+-   0 — The trace for a executed query is disabled.
+-   1 — The trace for a executed query is enabled.
+
+Default value: `0`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -2473,4 +2473,15 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 Значение по умолчанию: `16`.
 
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Включает трассировку для выполненных запросов.
+
+Возможные значения:
+
+-   0 — трассировка для выполненного запроса отключена.
+-   1 — трассировка для выполненного запроса включена.
+
+Значение по умолчанию: `0`.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
