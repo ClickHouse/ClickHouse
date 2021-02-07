@@ -65,7 +65,7 @@ def bind_dn_conflict_with_auth_dn(self, timeout=60):
         }
     }
 
-    invalid_server_config(servers, message=message, tail=18, timeout=timeout)
+    invalid_server_config(servers, message=message, tail=30, timeout=timeout)
 
 
 @TestFeature

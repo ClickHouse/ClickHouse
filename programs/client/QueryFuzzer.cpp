@@ -325,6 +325,51 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // the generic recursion into IAST.children.
 }
 
+void QueryFuzzer::fuzzWindowFrame(WindowFrame & frame)
+{
+    switch (fuzz_rand() % 40)
+    {
+        case 0:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.type = r == 0 ? WindowFrame::FrameType::Rows
+                : r == 1 ? WindowFrame::FrameType::Range
+                    : WindowFrame::FrameType::Groups;
+            break;
+        }
+        case 1:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.begin_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+                : r == 1 ? WindowFrame::BoundaryType::Current
+                    : WindowFrame::BoundaryType::Offset;
+            break;
+        }
+        case 2:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.end_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+                : r == 1 ? WindowFrame::BoundaryType::Current
+                    : WindowFrame::BoundaryType::Offset;
+            break;
+        }
+        case 3:
+        {
+            frame.begin_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        case 4:
+        {
+            frame.end_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        default:
+            break;
+    }
+
+    frame.is_default = (frame == WindowFrame{});
+}
+
 void QueryFuzzer::fuzz(ASTs & asts)
 {
     for (auto & ast : asts)
@@ -409,6 +454,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
             fuzzColumnLikeExpressionList(def.partition_by.get());
             fuzzOrderByList(def.order_by.get());
+            fuzzWindowFrame(def.frame);
         }
 
         fuzz(fn->children);
@@ -421,6 +467,23 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(select->children);
     }
+    /*
+     * The time to fuzz the settings has not yet come.
+     * Apparently we don't have any infractructure to validate the values of
+     * the settings, and the first query with max_block_size = -1 breaks
+     * because of overflows here and there.
+     *//*
+     * else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
+     * {
+     *      for (auto & c : set->changes)
+     *      {
+     *          if (fuzz_rand() % 50 == 0)
+     *          {
+     *              c.value = fuzzField(c.value);
+     *          }
+     *      }
+     * }
+     */
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
         // There is a caveat with fuzzing the children: many ASTs also keep the
