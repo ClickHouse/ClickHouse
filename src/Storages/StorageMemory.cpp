@@ -115,22 +115,34 @@ public:
 
     void write(const Block & block) override
     {
-        const auto size_bytes_diff = block.allocatedBytes();
-        const auto size_rows_diff = block.rows();
-
         metadata_snapshot->check(block, true);
-        {
-            std::lock_guard lock(storage.mutex);
-            auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
-            new_data->push_back(block);
-            storage.data.set(std::move(new_data));
+        new_blocks.emplace_back(block);
+    }
 
-            storage.total_size_bytes.fetch_add(size_bytes_diff, std::memory_order_relaxed);
-            storage.total_size_rows.fetch_add(size_rows_diff, std::memory_order_relaxed);
+    void writeSuffix() override
+    {
+        size_t inserted_bytes = 0;
+        size_t inserted_rows = 0;
+
+        for (const auto & block : new_blocks)
+        {
+            inserted_bytes += block.allocatedBytes();
+            inserted_rows += block.rows();
         }
 
+        std::lock_guard lock(storage.mutex);
+
+        auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
+        new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
+
+        storage.data.set(std::move(new_data));
+        storage.total_size_bytes.fetch_add(inserted_bytes, std::memory_order_relaxed);
+        storage.total_size_rows.fetch_add(inserted_rows, std::memory_order_relaxed);
     }
+
 private:
+    Blocks new_blocks;
+
     StorageMemory & storage;
     StorageMetadataPtr metadata_snapshot;
 };
