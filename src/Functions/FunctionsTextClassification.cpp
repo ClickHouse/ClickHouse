@@ -100,11 +100,6 @@ struct TextClassificationImpl
         std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
         std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
         res = calculateStats(data.data(), data.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
-        if (size_t i = 0; i < len; ++i) {
-            // (ngram_storage.get()[0], common_stats.get()[ngram_storage.get()[0]]) - pair (N-gram, frequency)
-            
-        }
-
     }
 
     static void vector(
@@ -139,12 +134,12 @@ struct NameTriGramcount
 */
 
 using FunctionBiGramcount = FunctionsTextClassification<TextClassificationImpl<2>, NameBiGramcount>;
-//using FunctionTriGramcount = FunctionsTextClassification<TextClassificationImpl<3>, NameTriGramcount>;
+using FunctionTriGramcount = FunctionsTextClassification<TextClassificationImpl<3>, NameTriGramcount>;
 
 void registerFunctionsTextClassification(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBiGramcount>();
-//    factory.registerFunction<FunctionTriGramcount>();
+    factory.registerFunction<FunctionTriGramcount>();
 }
 
 }
