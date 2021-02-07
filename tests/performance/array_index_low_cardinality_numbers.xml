@@ -3,14 +3,18 @@
     <create_query>CREATE TABLE perf_lc_num(
         num UInt8,
         arr Array(LowCardinality(Int64)) default [num]
-        ) ENGINE = MergeTree() ORDER BY tuple()
+        ) ENGINE = StripeLog
     </create_query>
 
     <fill_query>
         INSERT INTO perf_lc_num (num)
         SELECT toUInt8(number)
-        FROM numbers(1500000000)
+        FROM numbers(100000000)
     </fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
 
     <query>SELECT count() FROM perf_lc_num WHERE num = 42</query>
     <query>SELECT count() FROM perf_lc_num WHERE arr[1] = 42</query>

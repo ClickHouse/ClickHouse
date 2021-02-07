@@ -22,7 +22,7 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
         if (!current_inputs[source_num].chunk)
             continue;
 
-        cursors[source_num] = SortCursorImpl(current_inputs[source_num].chunk.getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(current_inputs[source_num].chunk.getColumns(), description, source_num, current_inputs[source_num].permutation);
     }
 
     queue = SortingHeap<SortCursor>(cursors);
@@ -37,7 +37,7 @@ void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t sourc
     last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
     current_input.swap(input);
-    cursors[source_num].reset(current_input.chunk.getColumns(), {});
+    cursors[source_num].reset(current_input.chunk.getColumns(), {}, current_input.permutation);
 
     queue.push(cursors[source_num]);
 }

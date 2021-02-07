@@ -73,10 +73,10 @@ private:
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
 
-    void initWritingJobs(const Block & first_block);
+    void initWritingJobs(const Block & first_block, size_t start, size_t end);
 
     struct JobReplica;
-    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block);
+    ThreadPool::Job runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards);
 
     void waitForJobs();
 

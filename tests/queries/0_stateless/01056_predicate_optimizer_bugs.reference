@@ -1,11 +1,11 @@
-SELECT 
+SELECT
     k,
     v,
     d,
     i
 FROM 
 (
-    SELECT 
+    SELECT
         t.1 AS k,
         t.2 AS v,
         runningDifference(v) AS d,
@@ -21,26 +21,26 @@ a	2	1	0
 a	3	1	0
 b	13	2	0
 b	15	2	0
-SELECT 
+SELECT
     co,
     co2,
     co3,
     num
 FROM 
 (
-    SELECT 
+    SELECT
         co,
         co2,
         co3,
         count() AS num
     FROM 
     (
-        SELECT 
+        SELECT
             1 AS co,
             2 AS co2,
             3 AS co3
     )
-    GROUP BY 
+    GROUP BY
         co,
         co2,
         co3
@@ -84,7 +84,7 @@ FROM
 )
 WHERE ccc > 1
 2
-SELECT 
+SELECT
     ts,
     id,
     id_b,
@@ -93,7 +93,7 @@ SELECT
     id_c
 FROM 
 (
-    SELECT 
+    SELECT
         ts,
         id,
         id_b
@@ -102,7 +102,7 @@ FROM
 ) AS a
 ALL LEFT JOIN B AS b ON b.id = id_b
 WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
-SELECT 
+SELECT
     ts AS `--a.ts`,
     id AS `--a.id`,
     id_b AS `--a.id_b`,
@@ -111,7 +111,7 @@ SELECT
     id_c AS `--b.id_c`
 FROM 
 (
-    SELECT 
+    SELECT
         ts,
         id,
         id_b
@@ -137,19 +137,19 @@ FROM
 )
 WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
 0
-SELECT 
+SELECT
     id,
     value,
     value_1
 FROM 
 (
-    SELECT 
+    SELECT
         1 AS id,
         2 AS value
 )
 ALL INNER JOIN 
 (
-    SELECT 
+    SELECT
         1 AS id,
         3 AS value_1
 ) USING (id)

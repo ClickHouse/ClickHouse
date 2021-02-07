@@ -2,7 +2,7 @@
 #include <string.h>
 
 #include <common/unaligned.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 #include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>

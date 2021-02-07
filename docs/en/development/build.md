@@ -7,7 +7,7 @@ toc_title: Build on Linux
 
 Supported platforms:
 
--   x86\_64
+-   x86_64
 -   AArch64
 -   Power9 (experimental)
 
@@ -23,16 +23,35 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install GCC 9 {#install-gcc-9}
+### Install clang-11 (recommended) {#install-clang-11}
 
-There are several ways to do this.
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
+
+```bash 
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
+
+For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
+
+#### Use clang-11 for Builds {#use-gcc-10-for-builds}
+
+``` bash
+$ export CC=clang-11
+$ export CXX=clang++-11
+```
+
+### Install GCC 10 {#install-gcc-10}
+
+We recommend building ClickHouse with clang-11, GCC-10 also supported, but it is not used for production builds.
+
+If you want to use GCC-10 there are several ways to install it.
 
 #### Install from Repository {#install-from-repository}
 
 On Ubuntu 19.10 or newer:
 
     $ sudo apt-get update
-    $ sudo apt-get install gcc-9 g++-9
+    $ sudo apt-get install gcc-10 g++-10
 
 #### Install from a PPA Package {#install-from-a-ppa-package}
 
@@ -42,18 +61,18 @@ On older Ubuntu:
 $ sudo apt-get install software-properties-common
 $ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 $ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
+$ sudo apt-get install gcc-10 g++-10
 ```
 
 #### Install from Sources {#install-from-sources}
 
 See [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-### Use GCC 9 for Builds {#use-gcc-9-for-builds}
+#### Use GCC 10 for Builds {#use-gcc-10-for-builds}
 
 ``` bash
-$ export CC=gcc-9
-$ export CXX=g++-9
+$ export CC=gcc-10
+$ export CXX=g++-10
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -88,7 +107,7 @@ The build requires the following components:
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
 -   Ninja (recommended) or Make
--   C++ compiler: gcc 9 or clang 8 or newer
+-   C++ compiler: gcc 10 or clang 8 or newer
 -   Linker: lld or gold (the classic GNU ld won’t work)
 -   Python (is only used inside LLVM build and it is optional)
 
@@ -116,7 +135,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make gcc-c++ python2
+yum --nogpg install git cmake make gcc-c++ python3
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse

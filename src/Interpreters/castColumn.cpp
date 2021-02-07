@@ -1,42 +1,54 @@
-#include <Core/Field.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsConversion.h>
 
+#include <Functions/FunctionsConversion.h>
 
 namespace DB
 {
 
-ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+template <CastType cast_type = CastType::nonAccurate>
+static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
 {
     if (arg.type->equals(*type))
         return arg.column;
 
-    Block temporary_block
+    ColumnsWithTypeAndName arguments
     {
         arg,
         {
             DataTypeString().createColumnConst(arg.column->size(), type->getName()),
             std::make_shared<DataTypeString>(),
             ""
-        },
-        {
-            nullptr,
-            type,
-            ""
         }
     };
 
     FunctionOverloadResolverPtr func_builder_cast =
-        std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
+        std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver<cast_type>::createImpl(false));
 
-    ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
     auto func_cast = func_builder_cast->build(arguments);
 
-    func_cast->execute(temporary_block, {0, 1}, 2, arg.column->size());
-    return temporary_block.getByPosition(2).column;
+    if constexpr (cast_type == CastType::accurateOrNull)
+    {
+        return func_cast->execute(arguments, makeNullable(type), arg.column->size());
+    }
+    else
+    {
+        return func_cast->execute(arguments, type, arg.column->size());
+    }
+}
+
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+{
+    return castColumn<CastType::nonAccurate>(arg, type);
+}
+
+ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+{
+    return castColumn<CastType::accurate>(arg, type);
+}
+
+ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+{
+    return castColumn<CastType::accurateOrNull>(arg, type);
 }
 
 }

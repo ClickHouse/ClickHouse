@@ -119,6 +119,9 @@ public:
      /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
+    /** List of column names and positions from index */
+    std::string dumpIndex() const;
+
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
@@ -126,6 +129,7 @@ public:
     void setColumns(const Columns & columns);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
+    Block cloneWithCutColumns(size_t start, size_t length) const;
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
@@ -152,8 +156,15 @@ public:
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
+
+    /// This is needed to allow function execution over data.
+    /// It is safe because functions does not change column names, so index is unaffected.
+    /// It is temporary.
+    friend class ExpressionActions;
+    friend class ActionsDAG;
 };
 
+using BlockPtr = std::shared_ptr<Block>;
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;

@@ -74,12 +74,12 @@ target_link_libraries(capnpc PUBLIC capnp)
 
 # The library has substandard code
 if (COMPILER_GCC)
-    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-maybe-uninitialized
-        -Wno-deprecated-declarations -Wno-class-memaccess)
+    set (SUPPRESS_WARNINGS -w)
 elseif (COMPILER_CLANG)
-    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-deprecated-declarations)
+    set (SUPPRESS_WARNINGS -w)
+    set (CAPNP_PRIVATE_CXX_FLAGS -fno-char8_t)
 endif ()
 
-target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS})
-target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS})
-target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS})
+target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})

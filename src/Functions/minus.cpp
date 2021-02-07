@@ -9,7 +9,6 @@ template <typename A, typename B>
 struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
-    static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
@@ -20,7 +19,7 @@ struct MinusImpl
             using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
             using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
 
-            return bigint_cast<Result>(bigint_cast<CastA>(a)) - bigint_cast<Result>(bigint_cast<CastB>(b));
+            return static_cast<Result>(static_cast<CastA>(a)) - static_cast<Result>(static_cast<CastB>(b));
         }
         else
             return static_cast<Result>(a) - b;
@@ -44,7 +43,7 @@ struct MinusImpl
 };
 
 struct NameMinus { static constexpr auto name = "minus"; };
-using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
+using FunctionMinus = BinaryArithmeticOverloadResolver<MinusImpl, NameMinus>;
 
 void registerFunctionMinus(FunctionFactory & factory)
 {

@@ -17,4 +17,8 @@
 
 -    `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Профиль настроек применяется ко всем ролям и/или пользователям, за исключением перечисленных.
 
+## Смотрите также {#see-also}
+
+-   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/settings_profiles) <!--hide-->

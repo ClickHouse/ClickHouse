@@ -54,9 +54,12 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     if (ast_create_query.as_table_function)
     {
-        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        auto table_function = factory.get(ast_create_query.as_table_function, context);
+        ColumnsDescription columns;
+        if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
+        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.table, std::move(columns));
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
@@ -91,24 +94,27 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     if (!create)
     {
-        std::ostringstream query_stream;
-        formatAST(*query, query_stream, true);
-        throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
+        WriteBufferFromOwnString query_buf;
+        formatAST(*query, query_buf, true);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
     }
 
     if (!create->is_dictionary)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
+    assert(!create->temporary);
     create->database.clear();
     create->as_database.clear();
     create->as_table.clear();
     create->if_not_exists = false;
     create->is_populate = false;
     create->replace_view = false;
+    create->replace_table = false;
+    create->create_or_replace = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create->is_view && !create->is_materialized_view && !create->is_live_view)
+    if (!create->isView())
         create->select = nullptr;
 
     create->format = nullptr;
@@ -117,10 +123,10 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (create->uuid != UUIDHelpers::Nil)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
-    std::ostringstream statement_stream;
-    formatAST(*create, statement_stream, false);
-    statement_stream << '\n';
-    return statement_stream.str();
+    WriteBufferFromOwnString statement_buf;
+    formatAST(*create, statement_buf, false);
+    writeChar('\n', statement_buf);
+    return statement_buf.str();
 }
 
 DatabaseOnDisk::DatabaseOnDisk(
@@ -161,20 +167,38 @@ void DatabaseOnDisk::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     if (isDictionaryExist(table_name))
-        throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
-            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
     if (isTableExist(table_name, global_context))
-        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
+
+    String table_metadata_path = getObjectMetadataPath(table_name);
 
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
         attachTable(table_name, table, getTableDataPath(create));
+        removeDetachedPermanentlyFlag(table_name, table_metadata_path);
         return;
     }
 
-    String table_metadata_path = getObjectMetadataPath(table_name);
+    if (!create.attach)
+        checkMetadataFilenameAvailability(table_name);
+
+    if (create.attach && Poco::File(table_metadata_path).exists())
+    {
+        ASTPtr ast_detached = parseQueryFromMetadata(log, context, table_metadata_path);
+        auto & create_detached = ast_detached->as<ASTCreateQuery &>();
+
+        // either both should be Nil, either values should be equal
+        if (create.uuid != create_detached.uuid)
+            throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exist (detached permanently). To attach it back "
+                    "you need to use short ATTACH syntax or a full statement with the same UUID",
+                    backQuote(getDatabaseName()), backQuote(table_name));
+    }
+
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
     String statement;
 
@@ -191,6 +215,26 @@ void DatabaseOnDisk::createTable(
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path);
+
+    removeDetachedPermanentlyFlag(table_name, table_metadata_path);
+}
+
+/// If the table was detached permanently we will have a flag file with
+/// .sql.detached extension, is not needed anymore since we attached the table back
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const
+{
+    try
+    {
+        auto detached_permanently_flag = Poco::File(table_metadata_path + detached_suffix);
+
+        if (detached_permanently_flag.exists())
+            detached_permanently_flag.remove();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        throw;
+    }
 }
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -212,6 +256,22 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
 }
 
+void DatabaseOnDisk::detachTablePermanently(const String & table_name)
+{
+    auto table = detachTable(table_name);
+
+    Poco::File detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
+    try
+    {
+        detached_permanently_flag.createFile();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        throw;
+    }
+}
+
 void DatabaseOnDisk::dropTable(const Context & context, const String & table_name, bool /*no_delay*/)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
@@ -221,6 +281,11 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
     StoragePtr table = detachTable(table_name);
+
+    /// This is possible for Lazy database.
+    if (!table)
+        return;
+
     bool renamed = false;
     try
     {
@@ -243,6 +308,27 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
     }
 
     Poco::File(table_metadata_path_drop).remove();
+}
+
+void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
+{
+    std::unique_lock lock(mutex);
+    checkMetadataFilenameAvailabilityUnlocked(to_table_name, lock);
+}
+
+void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const
+{
+    String table_metadata_path = getObjectMetadataPath(to_table_name);
+
+    if (Poco::File(table_metadata_path).exists())
+    {
+        auto detached_permanently_flag = Poco::File(table_metadata_path + detached_suffix);
+
+        if (detached_permanently_flag.exists())
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)", backQuote(database_name), backQuote(to_table_name));
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
+    }
 }
 
 void DatabaseOnDisk::renameTable(
@@ -291,6 +377,9 @@ void DatabaseOnDisk::renameTable(
         if (from_atomic_to_ordinary)
             create.uuid = UUIDHelpers::Nil;
 
+        if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+            target_db->checkMetadataFilenameAvailability(to_table_name);
+
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), StorageID(create));
     }
@@ -313,13 +402,15 @@ void DatabaseOnDisk::renameTable(
 
     /// Special case: usually no actions with symlinks are required when detaching/attaching table,
     /// but not when moving from Atomic database to Ordinary
-    if (from_atomic_to_ordinary)
+    if (from_atomic_to_ordinary && table->storesDataOnDisk())
     {
         auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
         atomic_db.tryRemoveSymlink(table_name);
     }
 }
 
+
+/// It returns create table statement (even if table is detached)
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     ASTPtr ast;
@@ -392,7 +483,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        assert(getEngineName() != "Atomic");
+        assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
@@ -422,8 +513,11 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         if (endsWith(dir_it.name(), ".sql.bak"))
             continue;
 
-        static const char * tmp_drop_ext = ".sql.tmp_drop";
-        if (endsWith(dir_it.name(), tmp_drop_ext))
+        /// Permanently detached table flag
+        if (endsWith(dir_it.name(), ".sql.detached"))
+            continue;
+
+        if (endsWith(dir_it.name(), ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
             metadata_files.emplace(dir_it.name(), false);

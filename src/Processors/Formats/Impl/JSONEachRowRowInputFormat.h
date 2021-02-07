@@ -20,7 +20,12 @@ class ReadBuffer;
 class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
-    JSONEachRowRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    JSONEachRowRowInputFormat(
+        ReadBuffer & in_,
+        const Block & header_,
+        Params params_,
+        const FormatSettings & format_settings_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
 
@@ -75,6 +80,8 @@ private:
     bool data_in_square_brackets = false;
 
     bool allow_new_rows = true;
+
+    bool yield_strings;
 };
 
 }

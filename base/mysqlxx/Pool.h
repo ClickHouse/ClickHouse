@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <atomic>
 
 #include <Poco/Exception.h>
 #include <mysqlxx/Connection.h>
@@ -35,7 +36,9 @@ protected:
     struct Connection
     {
         mysqlxx::Connection conn;
-        int ref_count = 0;
+        /// Ref count modified in constructor/descructor of Entry
+        /// but also read in pool code.
+        std::atomic<int> ref_count = 0;
     };
 
 public:
@@ -124,10 +127,7 @@ public:
         void forceConnected() const;
 
         /// Connects to database. If connection is failed then returns false.
-        bool tryForceConnected() const
-        {
-            return data->conn.ping();
-        }
+        bool tryForceConnected() const;
 
         void incrementRefCount();
         void decrementRefCount();

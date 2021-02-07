@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <sstream>
 #include <unordered_set>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -21,12 +19,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct ComparePairFirst final
+struct ComparePair final
 {
     template <typename T1, typename T2>
     bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
     {
-        return lhs.first < rhs.first;
+        return lhs.first == rhs.first ? lhs.second < rhs.second : lhs.first < rhs.first;
     }
 };
 
@@ -35,8 +33,8 @@ template <typename T>
 struct AggregateFunctionWindowFunnelData
 {
     using TimestampEvent = std::pair<T, UInt8>;
-    using TimestampEvents = PODArray<TimestampEvent, 64>;
-    using Comparator = ComparePairFirst;
+    using TimestampEvents = PODArrayWithStackMemory<TimestampEvent, 64>;
+    using Comparator = ComparePair;
 
     bool sorted = true;
     TimestampEvents events_list;
@@ -49,8 +47,13 @@ struct AggregateFunctionWindowFunnelData
     void add(T timestamp, UInt8 event)
     {
         // Since most events should have already been sorted by timestamp.
-        if (sorted && events_list.size() > 0 && events_list.back().first > timestamp)
-            sorted = false;
+        if (sorted && events_list.size() > 0)
+        {
+            if (events_list.back().first == timestamp)
+                sorted = events_list.back().second <= event;
+            else
+                sorted = events_list.back().first <= timestamp;
+        }
         events_list.emplace_back(timestamp, event);
     }
 
@@ -145,7 +148,6 @@ private:
     UInt8 strict;   // When the 'strict' is set, it applies conditions only for the not repeating values.
     UInt8 strict_order; // When the 'strict_order' is set, it doesn't allow interventions of other events.
                         // In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
-
 
     // Loop through the entire events_list, update the event timestamp value
     // The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
@@ -247,7 +249,7 @@ public:
         return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         bool has_event = false;
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
@@ -266,22 +268,22 @@ public:
             this->data(place).add(timestamp, 0);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }

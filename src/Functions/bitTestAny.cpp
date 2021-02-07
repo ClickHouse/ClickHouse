@@ -3,6 +3,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct BitTestAnyImpl
 {
@@ -12,6 +14,8 @@ struct BitTestAnyImpl
 
 struct NameBitTestAny { static constexpr auto name = "bitTestAny"; };
 using FunctionBitTestAny = FunctionBitTestMany<BitTestAnyImpl, NameBitTestAny>;
+
+}
 
 void registerFunctionBitTestAny(FunctionFactory & factory)
 {

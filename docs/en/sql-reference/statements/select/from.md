@@ -25,11 +25,13 @@ It is applicable when selecting data from tables that use the [MergeTree](../../
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) versions of `MergeTree` engines.
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
 
+Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. But there are drawbacks (see below). The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+
 ### Drawbacks {#drawbacks}
 
-Queries that use `FINAL` are executed not as fast as similar queries that don’t, because:
+Queries that use `FINAL` are executed slightly slower than similar queries that don’t, because:
 
--   Query is executed in a single thread and data is merged during query execution.
+-   Data is merged during query execution.
 -   Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
 
 **In most cases, avoid using `FINAL`.** The common approach is to use different queries that assume the background processes of the `MergeTree` engine have’t happened yet and deal with it by applying aggregation (for example, to discard duplicates). {## TODO: examples ##}

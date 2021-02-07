@@ -82,8 +82,8 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 -   [Introspection Functions](../../sql-reference/functions/introspection.md) — Which introspection functions are available and how to use them.
 -   [system.trace_log](../system-tables/trace_log.md) — Contains stack traces collected by the sampling query profiler.
--   [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) — Description and usage example of the `arrayMap` function.
--   [arrayFilter](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-filter) — Description and usage example of the `arrayFilter` function.
+-   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — Description and usage example of the `arrayMap` function.
+-   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — Description and usage example of the `arrayFilter` function.
 
 
 [Original article](https://clickhouse.tech/docs/en/operations/system-tables/stack_trace) <!--hide-->

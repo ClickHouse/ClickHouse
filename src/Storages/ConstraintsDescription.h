@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTConstraintDeclaration.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

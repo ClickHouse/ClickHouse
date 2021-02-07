@@ -23,7 +23,8 @@ Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
-void removeLowCardinalityInplace(Block & block, const Names & names);
+void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
+void restoreLowCardinalityInplace(Block & block);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
@@ -32,6 +33,8 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 
 void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block);
+
+void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 }
 

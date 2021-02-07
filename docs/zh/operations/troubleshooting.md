@@ -103,7 +103,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   端点设置。
 
-    检查 [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) 和 [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 设置。
+    检查 [listen_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) 和 [tcp_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 设置。
 
     ClickHouse服务器默认情况下仅接受本地主机连接。
 
@@ -115,7 +115,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     检查:
 
-    -   [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 设置。
+    -   [tcp_port_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 设置。
     -   [SSL证书](server-configuration-parameters/settings.md#server_configuration_parameters-openssl) 设置.
 
     连接时使用正确的参数。 例如，使用 `clickhouse_client` 的时候使用 `port_secure` 参数 .

@@ -1,3 +1,8 @@
+---
+toc_priority: 63
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u004e\u0075\u006c\u006c\u0061\u0062\u006c\u0065\u002d\u0430\u0440\u0433\u0443\u043c\u0435\u043d\u0442\u0430\u043c\u0438"
+---
+
 # Функции для работы с Nullable-аргументами {#funktsii-dlia-raboty-s-nullable-argumentami}
 
 ## isNull {#isnull}

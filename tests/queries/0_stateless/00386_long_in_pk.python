@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 def gen_queries():
     create_template = 'create table tab_00386 (a Int8, b String, c Tuple(Int8), d Tuple(Tuple(Int8)), e Tuple(Int8, String), f Tuple(Tuple(Int8, String))) engine = MergeTree order by ({}) partition by {}'
@@ -45,10 +45,12 @@ def main():
     for q in gen_queries():
         resp = requests.post(url, data=q)
         if resp.status_code != 200 or resp.text.strip() not in ('1', ''):
-            print 'Query:', q
-            print 'Code:', resp.status_code
-            print resp.text
+            print('Query:', q)
+            print('Code:', resp.status_code)
+            print(resp.text)
             break
+
+    requests.post(url, data='drop table tab_00386')
 
 if __name__ == "__main__":
     main()

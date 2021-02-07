@@ -1,24 +1,26 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-#include <memory>
-#include <DataStreams/copyData.h>
-#include <DataTypes/DataTypeFactory.h>
 #include "ODBCBlockInputStream.h"
 #include "ODBCBlockOutputStream.h"
+#include "getIdentifierQuote.h"
+#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromIStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
-#include <common/logger_useful.h>
-#include <mutex>
 #include <Poco/ThreadPool.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <Columns/ColumnsNumber.h>
-#include "getIdentifierQuote.h"
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <common/logger_useful.h>
+
+#include <mutex>
+#include <memory>
+
 
 #if USE_ODBC
 #include <Poco/Data/ODBC/SessionImpl.h>
@@ -162,8 +164,9 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
             auto pool = getPool(connection_string);
             ReadBufferFromIStream read_buf(request.stream());
-            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block,
-                                                                                  context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block,
+                                                                   context, max_block_size);
+            auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
             ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
@@ -173,7 +176,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStream(format, out, *sample_block, context);
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);

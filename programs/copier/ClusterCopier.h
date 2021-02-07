@@ -154,7 +154,7 @@ protected:
     /// table we can get rid of partition pieces (partitions in helping tables).
     void dropParticularPartitionPieceFromAllHelpingTables(const TaskTable & task_table, const String & partition_name);
 
-    String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings = nullptr);
+    String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings);
 
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 

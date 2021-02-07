@@ -10,13 +10,16 @@
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <ext/range.h>
 #include <ext/size.h>
+#include <ext/map.h>
+#include <ext/chrono_io.h>
 #include <Common/setThreadName.h>
-#include "CacheDictionary.inc.h"
+#include <DataTypes/DataTypesDecimal.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-
+#include <Functions/FunctionHelpers.h>
 
 namespace ProfileEvents
 {
@@ -128,9 +131,9 @@ const IDictionarySource * CacheDictionary::getSource() const
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-
-    getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, [&](const size_t) { return null_value; });
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
+    DictionaryDefaultValueExtractor<UInt64> default_value_extractor(null_value);
+    getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, default_value_extractor);
 }
 
 
@@ -153,7 +156,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     size_t out_size = out.size();
     memset(out.data(), 0xFF, out_size); /// 0xFF means "not calculated"
 
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
@@ -225,7 +228,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 {
     /// Special case with single child value.
 
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     PaddedPODArray<Key> child(1, child_id);
     PaddedPODArray<Key> parent(1);
@@ -248,47 +251,458 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
         out[i] = std::find(ancestors.begin(), ancestors.end(), ancestor_ids[i]) != ancestors.end();
 }
 
-void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+ColumnPtr CacheDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_values_column) const
 {
+    ColumnPtr result;
+
+    PaddedPODArray<Key> backup_storage;
+    const auto & keys = getColumnVectorData(this, key_columns.front(), backup_storage);
+    auto keys_size = keys.size();
+
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-    getItemsString(attribute, ids, out, [&](const size_t) { return null_value; });
+        const auto & null_value = std::get<AttributeType>(attribute.null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            getItemsString(attribute, keys, column.get(), default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+            getItemsNumberImpl<AttributeType, AttributeType>(attribute, keys, out, default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
-void CacheDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
+template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
+void CacheDictionary::getItemsNumberImpl(
+    Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    ResultArrayType<OutputType> & out,
+    DefaultValueExtractor & default_value_extractor) const
 {
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    /// First fill everything with default values
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = default_value_extractor[row];
 
-    getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
+    /// Maybe there are duplicate keys, so we remember their indices.
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
+
+    auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
+
+    size_t cache_hit = 0;
+    size_t cache_not_found_count = 0;
+    size_t cache_expired_cound = 0;
+
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        const auto now = std::chrono::system_clock::now();
+
+        auto insert_to_answer_routine = [&](size_t row, size_t idx)
+        {
+            auto & cell = cells[idx];
+            if (!cell.isDefault())
+                out[row] = static_cast<OutputType>(attribute_array[idx]);
+        };
+
+        /// fetch up-to-date values, decide which ones require update
+        for (const auto row : ext::range(0, rows))
+        {
+            const auto id = ids[row];
+
+            /** cell should be updated if either:
+                *    1. ids do not match,
+                *    2. cell has expired,
+                *    3. explicit defaults were specified and cell was set default. */
+
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+
+            if (state == ResultState::FoundAndValid)
+            {
+                ++cache_hit;
+                insert_to_answer_routine(row, cell_idx);
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                cache_expired_cound++;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_to_answer_routine(row, cell_idx);
+            }
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_cound);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+    hit_count.fetch_add(rows - cache_not_found_count - cache_expired_cound, std::memory_order_release);
+
+    if (!cache_not_found_count)
+    {
+        /// Nothing to update - return
+        if (!cache_expired_cound)
+            return;
+
+        /// Update async only if allow_read_expired_keys_is_enabledadd condvar usage and better code
+        if (allow_read_expired_keys)
+        {
+            std::vector<Key> required_expired_ids;
+            required_expired_ids.reserve(cache_expired_cound);
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+                           std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
+
+            /// request new values
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
+
+            tryPushToUpdateQueueOrThrow(update_unit_ptr);
+
+            /// Nothing to do - return
+            return;
+        }
+    }
+
+    /// From this point we have to update all keys sync.
+    /// Maybe allow_read_expired_keys_from_cache_dictionary is disabled
+    /// and there no cache_not_found_ids but some cache_expired.
+
+    std::vector<Key> required_ids;
+    required_ids.reserve(cache_not_found_count + cache_expired_cound);
+    std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+                   std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+
+    /// Request new values
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
+
+    tryPushToUpdateQueueOrThrow(update_unit_ptr);
+    waitForCurrentUpdateFinish(update_unit_ptr);
+
+    /// Add updated keys to answer.
+
+    const size_t attribute_index = getAttributeIndex(attribute.name);
+
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+        {
+            for (const size_t row : cache_expired_or_not_found_ids[key])
+                out[row] = std::get<OutputType>(value.values[attribute_index]);
+        }
+    }
 }
 
-void CacheDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
+void CacheDictionary::getItemsString(
+    Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    ColumnString * out,
+    DictionaryDefaultValueExtractor<String> & default_value_extractor) const
 {
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto rows = ext::size(ids);
 
-    getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
+    /// Save on some allocations.
+    out->getOffsets().reserve(rows);
+
+    auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
+
+    auto found_outdated_values = false;
+
+    /// Perform optimistic version, fallback to pessimistic if failed.
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        const auto now = std::chrono::system_clock::now();
+
+        /// Fetch up-to-date values, discard on fail.
+        for (const auto row : ext::range(0, rows))
+        {
+            const auto id = ids[row];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+
+            if (state == ResultState::FoundAndValid)
+            {
+                auto & cell = cells[cell_idx];
+                const auto string_ref = cell.isDefault() ? default_value_extractor[row] : attribute_array[cell_idx];
+                out->insertData(string_ref.data, string_ref.size);
+            }
+            else
+            {
+                found_outdated_values = true;
+                break;
+            }
+        }
+    }
+
+    /// Optimistic code completed successfully.
+    if (!found_outdated_values)
+    {
+        query_count.fetch_add(rows, std::memory_order_relaxed);
+        hit_count.fetch_add(rows, std::memory_order_release);
+        ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, ids.size());
+        return;
+    }
+
+    /// Now onto the pessimistic one, discard possible partial results from the optimistic path.
+    out->getChars().resize_assume_reserved(0);
+    out->getOffsets().resize_assume_reserved(0);
+
+    /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
+    /// we are going to store every string separately
+    std::unordered_map<Key, String> local_cache;
+
+    size_t cache_not_found_count = 0;
+    size_t cache_expired_count = 0;
+
+    size_t total_length = 0;
+    size_t cache_hit = 0;
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        const auto now = std::chrono::system_clock::now();
+
+        auto insert_value_routine = [&](size_t row, size_t id, size_t cell_idx)
+        {
+            const auto & cell = cells[cell_idx];
+            const auto string_ref = cell.isDefault() ? default_value_extractor[row] : attribute_array[cell_idx];
+
+            /// Do not store default, but count it in total length.
+            if (!cell.isDefault())
+                local_cache[id] = String{string_ref};
+
+            total_length += string_ref.size + 1;
+        };
+
+        for (const auto row : ext::range(0, ids.size()))
+        {
+            const auto id = ids[row];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+
+            if (state == ResultState::FoundAndValid)
+            {
+                ++cache_hit;
+                insert_value_routine(row, id, cell_idx);
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                ++cache_expired_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_value_routine(row, id, cell_idx);
+            }
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+    hit_count.fetch_add(rows - cache_expired_count - cache_not_found_count, std::memory_order_release);
+
+    /// Async update of expired keys.
+    if (!cache_not_found_count)
+    {
+        if (allow_read_expired_keys && cache_expired_count)
+        {
+            std::vector<Key> required_expired_ids;
+            required_expired_ids.reserve(cache_expired_count);
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+                           std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
+
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
+
+            tryPushToUpdateQueueOrThrow(update_unit_ptr);
+
+            /// Insert all found keys and defaults to output array.
+            out->getChars().reserve(total_length);
+
+            for (const auto row : ext::range(0, ext::size(ids)))
+            {
+                const auto id = ids[row];
+                StringRef value;
+
+                /// Previously we stored found keys in map.
+                const auto it = local_cache.find(id);
+                if (it != local_cache.end())
+                    value = StringRef(it->second);
+                else
+                    value = default_value_extractor[row];
+
+                out->insertData(value.data, value.size);
+            }
+
+            /// Nothing to do else.
+            return;
+        }
+    }
+
+    /// We will request both cache_not_found_ids and cache_expired_ids sync.
+    std::vector<Key> required_ids;
+    required_ids.reserve(cache_not_found_count + cache_expired_count);
+    std::transform(
+        std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+        std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
+
+    tryPushToUpdateQueueOrThrow(update_unit_ptr);
+    waitForCurrentUpdateFinish(update_unit_ptr);
+
+    const size_t attribute_index = getAttributeIndex(attribute.name);
+
+    /// Only calculate the total length.
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+        {
+            const auto found_value_ref = std::get<String>(value.values[attribute_index]);
+            total_length += (found_value_ref.size() + 1) * cache_expired_or_not_found_ids[key].size();
+        }
+        else
+        {
+            for (const auto row : cache_expired_or_not_found_ids[key])
+                total_length += default_value_extractor[row].size + 1;
+        }
+    }
+
+    out->getChars().reserve(total_length);
+
+    for (const auto row : ext::range(0, ext::size(ids)))
+    {
+        const auto id = ids[row];
+        StringRef value;
+
+        /// We have two maps: found in cache and found in source.
+        const auto local_it = local_cache.find(id);
+        if (local_it != local_cache.end())
+            value = StringRef(local_it->second);
+        else
+        {
+            const auto found_it = update_unit_ptr->found_ids.find(id);
+
+            /// Previously we didn't store defaults in local cache.
+            if (found_it != update_unit_ptr->found_ids.end() && found_it->second.found)
+                value = std::get<String>(found_it->second.values[attribute_index]);
+            else
+                value = default_value_extractor[row];
+        }
+
+        out->insertData(value.data, value.size);
+    }
 }
 
 
-/// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag
-/// true  false   found and valid
-/// false true    not found (something outdated, maybe our cell)
-/// false false   not found (other id stored with valid data)
-/// true  true    impossible
-///
-/// todo: split this func to two: find_for_get and find_for_set
-CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const CellMetadata::time_point_t now) const
+template<class... Ts>
+struct Overloaded : Ts... {using Ts::operator()...;};
+
+template<class... Ts>
+Overloaded(Ts...) -> Overloaded<Ts...>;
+
+std::string CacheDictionary::AttributeValuesForKey::dump()
+{
+    WriteBufferFromOwnString os;
+    for (auto & attr : values)
+        std::visit(Overloaded {
+            [&os](UInt8 arg)   { os << "type: UInt8, value: "   <<  std::to_string(arg) << "\n"; },
+            [&os](UInt16 arg)  { os << "type: UInt16, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](UInt32 arg)  { os << "type: UInt32, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](UInt64 arg)  { os << "type: UInt64, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](UInt128 arg) { os << "type: UInt128, value: " << arg.toHexString() << "\n"; },
+            [&os](Int8 arg)   { os << "type: Int8, value: "   <<  std::to_string(arg) << "\n"; },
+            [&os](Int16 arg)  { os << "type: Int16, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](Int32 arg)  { os << "type: Int32, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](Int64 arg)  { os << "type: Int64, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](Decimal32 arg)   { os << "type: Decimal32, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](Decimal64 arg)   { os << "type: Decimal64, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](Decimal128)  { os << "type: Decimal128, value: ???" << "\n" ; },
+            [&os](Float32 arg)   { os << "type: Float32, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](Float64 arg)   { os << "type: Float64, value: "  <<  std::to_string(arg) << "\n"; },
+            [&os](String arg)  { os << "type: String, value: " <<  arg + "\n"; }
+        }, attr);
+    return os.str();
+};
+
+
+std::string CacheDictionary::UpdateUnit::dumpFoundIds()
+{
+    WriteBufferFromOwnString os;
+    for (auto it : found_ids)
+    {
+        os << "Key: " << std::to_string(it.first) << "\n";
+        if (it.second.found)
+            os << it.second.dump() << "\n";
+    }
+    return os.str();
+};
+
+/// Returns cell_idx in handmade open addressing cache table and the state of the cell stored the key.
+CacheDictionary::FindResult CacheDictionary::findCellIdxForGet(const Key & id, const time_point_t now) const
+{
+    auto pos = getCellIdx(id);
+    const auto stop = pos + max_collision_length;
+    for (; pos < stop; ++pos)
+    {
+        const auto cell_idx = pos & size_overlap_mask;
+        const auto & cell = cells[cell_idx];
+
+        if (cell.id != id)
+            continue;
+
+        if (isExpiredPermanently(now, cell.expiresAt()))
+            return {cell_idx, ResultState::FoundButExpiredPermanently};
+
+        if (isExpired(now, cell.expiresAt()))
+            return {cell_idx, ResultState::FoundButExpired};
+
+        return {cell_idx, ResultState::FoundAndValid};
+    }
+
+    return {pos & size_overlap_mask, ResultState::NotFound};
+}
+
+/// Returns cell_idx such that cells[cell_idx].id = id or the oldest cell in bounds of max_coolision_length.
+size_t CacheDictionary::findCellIdxForSet(const Key & id) const
 {
     auto pos = getCellIdx(id);
     auto oldest_id = pos;
-    auto oldest_time = CellMetadata::time_point_t::max();
+    auto oldest_time = time_point_t::max();
     const auto stop = pos + max_collision_length;
     for (; pos < stop; ++pos)
     {
@@ -298,7 +712,7 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const C
         if (cell.id != id)
         {
             /// maybe we already found nearest expired cell (try minimize collision_length on insert)
-            if (oldest_time > now && oldest_time > cell.expiresAt())
+            if (cell.expiresAt() < oldest_time)
             {
                 oldest_time = cell.expiresAt();
                 oldest_id = cell_idx;
@@ -306,31 +720,39 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const C
             continue;
         }
 
-        if (cell.expiresAt() < now)
-        {
-            return {cell_idx, false, true};
-        }
-
-        return {cell_idx, true, false};
+        /// We found the exact place for id.
+        return cell_idx;
     }
 
-    return {oldest_id, false, false};
+    return oldest_id;
 }
 
-void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr CacheDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
+
     /// There are three types of ids.
     /// - Valid ids. These ids are presented in local cache and their lifetime is not expired.
     /// - CacheExpired ids. Ids that are in local cache, but their values are rotted (lifetime is expired).
     /// - CacheNotFound ids. We have to go to external storage to know its value.
 
+    /// Mark everything as absent.
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = false;
+
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
-    std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
 
     size_t cache_hit = 0;
 
-    const auto rows = ext::size(ids);
+    size_t cache_expired_count = 0;
+    size_t cache_not_found_count = 0;
+
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -339,106 +761,88 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            const auto find_result = findCellIdx(id, now);
-            const auto & cell_idx = find_result.cell_idx;
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+            auto & cell = cells[cell_idx];
 
             auto insert_to_answer_routine = [&] ()
             {
-                out[row] = !cells[cell_idx].isDefault();
+                out[row] = !cell.isDefault();
             };
 
-            if (!find_result.valid)
-            {
-                if (find_result.outdated)
-                {
-                    /// Protection of reading very expired keys.
-                    if (now > cells[find_result.cell_idx].strict_max)
-                    {
-                        cache_not_found_ids[id].push_back(row);
-                        continue;
-                    }
-
-                    cache_expired_ids[id].push_back(row);
-
-                    if (allow_read_expired_keys)
-                        insert_to_answer_routine();
-                }
-                else
-                {
-                    cache_not_found_ids[id].push_back(row);
-                }
-            }
-            else
+            if (state == ResultState::FoundAndValid)
             {
                 ++cache_hit;
                 insert_to_answer_routine();
             }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                /// Permanently expired equals to not found semantically.
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                cache_expired_count++;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_to_answer_routine();
+            }
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_ids.size());
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_ids.size());
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    hit_count.fetch_add(rows - cache_expired_ids.size() - cache_not_found_ids.size(), std::memory_order_release);
+    hit_count.fetch_add(rows - cache_expired_count - cache_not_found_count, std::memory_order_release);
 
-    if (cache_not_found_ids.empty())
+    if (!cache_not_found_count)
     {
         /// Nothing to update - return;
-        if (cache_expired_ids.empty())
-            return;
+        if (!cache_expired_count)
+            return result;
 
         if (allow_read_expired_keys)
         {
             std::vector<Key> required_expired_ids;
-            required_expired_ids.reserve(cache_expired_ids.size());
+            required_expired_ids.reserve(cache_expired_count);
             std::transform(
-                    std::begin(cache_expired_ids), std::end(cache_expired_ids),
+                    std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
                     std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
 
-            /// Callbacks are empty because we don't want to receive them after an unknown period of time.
-            auto update_unit_ptr = std::make_shared<UpdateUnit>(required_expired_ids);
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
 
             tryPushToUpdateQueueOrThrow(update_unit_ptr);
             /// Update is async - no need to wait.
-            return;
+            return result;
         }
     }
 
     /// At this point we have two situations.
-    /// There may be both types of keys: cache_expired_ids and cache_not_found_ids.
+    /// There may be both types of keys: expired and not_found.
     /// We will update them all synchronously.
 
     std::vector<Key> required_ids;
-    required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
+    required_ids.reserve(cache_not_found_count + cache_expired_count);
     std::transform(
-            std::begin(cache_not_found_ids), std::end(cache_not_found_ids),
-            std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
-    std::transform(
-            std::begin(cache_expired_ids), std::end(cache_expired_ids),
+            std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
             std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
-    auto on_cell_updated = [&] (const Key id, const size_t)
-    {
-        for (const auto row : cache_not_found_ids[id])
-            out[row] = true;
-        for (const auto row : cache_expired_ids[id])
-            out[row] = true;
-    };
-
-    auto on_id_not_found = [&] (const Key id, const size_t)
-    {
-        for (const auto row : cache_not_found_ids[id])
-            out[row] = false;
-        for (const auto row : cache_expired_ids[id])
-            out[row] = true;
-    };
-
-    auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
 
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
+
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+            for (const auto row : cache_expired_or_not_found_ids[key])
+                out[row] = true;
+    }
+
+    return result;
 }
 
 
@@ -453,7 +857,7 @@ void CacheDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttributeWithTypeAndName(attribute.underlying_type, attribute.name, attribute.null_value));
 
         if (attribute.hierarchical)
         {
@@ -465,18 +869,62 @@ void CacheDictionary::createAttributes()
     }
 }
 
-CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+/* For unknown reason clang-tidy wants this function to be static, but it uses bytes_allocated, which is a class member.
+ * NOLINT(readability-convert-member-functions-to-static) */
+CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value)
 {
-    Attribute attr{type, {}, {}};
+    Attribute attr{type, name, {}, {}};
 
     switch (type)
     {
-#define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
-        bytes_allocated += size * sizeof(TYPE); \
-        break;
+        /* Macro argument should be enclosed in parentheses, but if do so we cannot initialize \
+         * NearestFieldType which takes TYPE as a template parameter. */
+#define DISPATCH(TYPE)\
+        case AttributeUnderlyingType::ut##TYPE:\
+        {\
+            attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT(bugprone-macro-parentheses) */ \
+            attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT(bugprone-macro-parentheses) */ \
+            bytes_allocated += size * sizeof(TYPE);\
+            break;\
+        }
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
+        case AttributeUnderlyingType::utString: {
+            attr.null_value = null_value.get<String>();
+            attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
+            bytes_allocated += size * sizeof(StringRef);
+            if (!string_arena)
+                string_arena = std::make_unique<ArenaWithFreeLists>();
+            break;
+        }
+    }
+
+    return attr;
+}
+
+void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key idx) const
+{
+    switch (attribute.type)
+    {
+        /* Macro argument should be enclosed in parentheses, but if do so we cannot initialize \
+        * NearestFieldType which takes TYPE as a template parameter.  */
+#define DISPATCH(TYPE)\
+        case AttributeUnderlyingType::ut##TYPE:\
+            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_value); /* NOLINT(bugprone-macro-parentheses) */ \
+            break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)
         DISPATCH(UInt32)
@@ -493,68 +941,8 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
         DISPATCH(Float64)
 #undef DISPATCH
         case AttributeUnderlyingType::utString:
-            attr.null_values = null_value.get<String>();
-            attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
-            bytes_allocated += size * sizeof(StringRef);
-            if (!string_arena)
-                string_arena = std::make_unique<ArenaWithFreeLists>();
-            break;
-    }
-
-    return attr;
-}
-
-void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key idx) const
-{
-    switch (attribute.type)
-    {
-        case AttributeUnderlyingType::utUInt8:
-            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = std::get<UInt128>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values);
-            break;
-
-        case AttributeUnderlyingType::utDecimal32:
-            std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = std::get<Decimal32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = std::get<Decimal64>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = std::get<Decimal128>(attribute.null_values);
-            break;
-
-        case AttributeUnderlyingType::utString:
         {
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
+            const auto & null_value_ref = std::get<String>(attribute.null_value);
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 
             if (string_ref.data != null_value_ref.data())
@@ -607,7 +995,6 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
         case AttributeUnderlyingType::utFloat64:
             std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
-
         case AttributeUnderlyingType::utDecimal32:
             std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>();
             break;
@@ -622,7 +1009,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
         {
             const auto & string = value.get<String>();
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
+            const auto & null_value_ref = std::get<String>(attribute.null_value);
 
             /// free memory unless it points to a null_value
             if (string_ref.data && string_ref.data != null_value_ref.data())
@@ -645,18 +1032,24 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
 
 CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & attribute_name) const
 {
+    const size_t attr_index = getAttributeIndex(attribute_name);
+    return attributes[attr_index];
+}
+
+size_t CacheDictionary::getAttributeIndex(const std::string & attribute_name) const
+{
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
         throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
-    return attributes[it->second];
+    return it->second;
 }
 
 bool CacheDictionary::isEmptyCell(const UInt64 idx) const
 {
-    return (idx != zero_cell_idx && cells[idx].id == 0)
-        || (cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].deadline == time_point_t());
 }
+
 
 PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
 {
@@ -667,16 +1060,14 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     {
         auto & cell = cells[idx];
         if (!isEmptyCell(idx) && !cells[idx].isDefault())
-        {
             array.push_back(cell.id);
-        }
     }
     return array;
 }
 
 BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
+    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
 }
 
@@ -805,16 +1196,6 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 
     if (!result)
     {
-        std::lock_guard<std::mutex> callback_lock(update_unit_ptr->callback_mutex);
-        /*
-         * We acquire a lock here and store false to special variable to avoid SEGFAULT's.
-         * Consider timeout for wait had expired and main query's thread ended with exception
-         * or some other error. But the UpdateUnit with callbacks is left in the queue.
-         * It has these callback that capture god knows what from the current thread
-         * (most of the variables lies on the stack of finished thread) that
-         * intended to do a synchronous update. AsyncUpdate thread can touch deallocated memory and explode.
-         * */
-        update_unit_ptr->can_use_callback = false;
         throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                             "Dictionary {} source seems unavailable, because {}ms timeout exceeded.",
                             getDictionaryID().getNameForLogs(), toString(query_wait_timeout_milliseconds));
@@ -822,7 +1203,23 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 
 
     if (update_unit_ptr->current_exception)
-        std::rethrow_exception(update_unit_ptr->current_exception);
+    {
+        // Don't just rethrow it, because sharing the same exception object
+        // between multiple threads can lead to weird effects if they decide to
+        // modify it, for example, by adding some error context.
+        try
+        {
+            std::rethrow_exception(update_unit_ptr->current_exception);
+        }
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                "Update failed for dictionary '{}': {}",
+                getDictionaryID().getNameForLogs(),
+                getCurrentExceptionMessage(true /*with stack trace*/,
+                    true /*check embedded stack trace*/));
+        }
+    }
 }
 
 void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const
@@ -835,17 +1232,53 @@ void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_pt
                 std::to_string(update_queue.size()));
 }
 
-void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
+
+std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position)
+{
+    std::vector<AttributeValue> answer;
+    answer.reserve(column_ptrs.size());
+
+    for (const auto * pure_column : column_ptrs)
+    {
+#define DISPATCH(TYPE) \
+        if (const auto * column = typeid_cast<const Column##TYPE *>(pure_column)) { \
+            answer.emplace_back(column->getElement(position)); \
+            continue; \
+        }
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal<Decimal32>)
+        DISPATCH(Decimal<Decimal64>)
+        DISPATCH(Decimal<Decimal128>)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
+        if (const auto * column = typeid_cast<const ColumnString *>(pure_column))
+        {
+            answer.emplace_back(column->getDataAt(position).toString());
+            continue;
+        }
+    }
+    return answer;
+}
+
+void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr)
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, update_unit_ptr->requested_ids.size());
 
-    std::unordered_map<Key, UInt8> remaining_ids{update_unit_ptr->requested_ids.size()};
-    for (const auto id : update_unit_ptr->requested_ids)
-        remaining_ids.insert({id, 0});
+    auto & map_ids = update_unit_ptr->found_ids;
+
+    size_t found_num = 0;
 
     const auto now = std::chrono::system_clock::now();
-
 
     if (now > backoff_end_time.load())
     {
@@ -857,7 +1290,6 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 
             BlockInputStreamPtr stream = current_source_ptr->loadIds(update_unit_ptr->requested_ids);
             stream->readPrefix();
-
 
             while (true)
             {
@@ -876,16 +1308,26 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                 const auto column_ptrs = ext::map<std::vector>(
                         ext::range(0, attributes.size()), [&block](size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
 
+                found_num += ids.size();
+
                 for (const auto i : ext::range(0, ids.size()))
                 {
                     /// Modifying cache with write lock
                     ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
                     const auto id = ids[i];
 
-                    const auto find_result = findCellIdx(id, now);
-                    const auto & cell_idx = find_result.cell_idx;
-
+                    const auto cell_idx = findCellIdxForSet(id);
                     auto & cell = cells[cell_idx];
+
+                    auto it = map_ids.find(id);
+
+                    /// We have some extra keys from source. Won't add them to cache.
+                    if (it == map_ids.end())
+                        continue;
+
+                    auto & all_attributes = it->second;
+                    all_attributes.found = true;
+                    all_attributes.values = getAttributeValuesFromBlockAtPosition(column_ptrs, i);
 
                     for (const auto attribute_idx : ext::range(0, attributes.size()))
                     {
@@ -900,24 +1342,26 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                         element_count.fetch_add(1, std::memory_order_relaxed);
 
                     cell.id = id;
-                    if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-                    {
-                        std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
-                    }
-                    else
-                        cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-                    update_unit_ptr->getPresentIdHandler()(id, cell_idx);
-                    /// mark corresponding id as found
-                    remaining_ids[id] = 1;
+                    setLifetime(cell, now);
                 }
             }
 
             stream->readSuffix();
 
-            /// Lock just for last_exception safety
+            /// Lock for cache modification
             ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
+            for (auto & [key, value] : update_unit_ptr->found_ids)
+            {
+                if (!value.found)
+                {
+                    auto cell_idx = findCellIdxForSet(key);
+                    auto & cell = cells[cell_idx];
+                    cell.id = key;
+                    setLifetime(cell, now);
+                    cell.setDefault();
+                }
+            }
 
             error_count = 0;
             last_exception = std::exception_ptr{};
@@ -936,80 +1380,33 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
             tryLogException(last_exception, log,
                             "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +
                             "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
-        }
-    }
-
-    /// Modifying cache state again with write lock
-    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-    size_t not_found_num = 0;
-    size_t found_num = 0;
-
-    /// Check which ids have not been found and require setting null_value
-    for (const auto & id_found_pair : remaining_ids)
-    {
-        if (id_found_pair.second)
-        {
-            ++found_num;
-            continue;
-        }
-        ++not_found_num;
-
-        const auto id = id_found_pair.first;
-
-        const auto find_result = findCellIdx(id, now);
-        const auto & cell_idx = find_result.cell_idx;
-        auto & cell = cells[cell_idx];
-
-        if (error_count)
-        {
-            if (find_result.outdated)
+            try
             {
-                /// We have expired data for that `id` so we can continue using it.
-                bool was_default = cell.isDefault();
-                cell.setExpiresAt(backoff_end_time);
-                if (was_default)
-                    cell.setDefault();
-                if (was_default)
-                    update_unit_ptr->getAbsentIdHandler()(id, cell_idx);
-                else
-                    update_unit_ptr->getPresentIdHandler()(id, cell_idx);
-                continue;
+                std::rethrow_exception(last_exception);
             }
-            /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-            std::rethrow_exception(last_exception);
-        }
-
-        /// Check if cell had not been occupied before and increment element counter if it hadn't
-        if (cell.id == 0 && cell_idx != zero_cell_idx)
-            element_count.fetch_add(1, std::memory_order_relaxed);
-
-        cell.id = id;
-
-        if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-        {
-            std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-            cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
-            cell.strict_max = now + std::chrono::seconds{strict_max_lifetime_seconds};
-        }
-        else
-        {
-            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-            cell.strict_max = now + std::chrono::seconds{strict_max_lifetime_seconds};
+            catch (...)
+            {
+                throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                    "Update failed for dictionary {} : {}",
+                    getDictionaryID().getNameForLogs(),
+                    getCurrentExceptionMessage(true /*with stack trace*/,
+                                               true /*check embedded stack trace*/));
+            }
         }
 
 
-        /// Set null_value for each attribute
-        cell.setDefault();
-        for (auto & attribute : attributes)
-            setDefaultAttributeValue(attribute, cell_idx);
-
-        /// inform caller that the cell has not been found
-        update_unit_ptr->getAbsentIdHandler()(id, cell_idx);
-    }
-
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, update_unit_ptr->requested_ids.size() - found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+    }
+    else
+    {
+        /// Won't request source for keys
+        throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+            "Query contains keys that are not present in cache or expired. Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
+            getDictionaryID().getNameForLogs(),
+            ext::to_string(backoff_end_time.load()));
+    }
 }
 
 }

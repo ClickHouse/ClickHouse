@@ -1,7 +1,7 @@
 #include "DNSCacheUpdater.h"
 #include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+
 
 namespace DB
 {
@@ -42,6 +42,7 @@ void DNSCacheUpdater::run()
 
 void DNSCacheUpdater::start()
 {
+    LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "Update period {} seconds", update_period_seconds);
     task_handle->activateAndSchedule();
 }
 

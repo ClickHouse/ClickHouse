@@ -21,6 +21,9 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+#include <common/errnoToString.h>
+
+
 namespace DB
 {
 
@@ -65,7 +68,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
     case MetricsProvider::Netlink:
         stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
                 {
-                    ::taskstats result;
+                    ::taskstats result{};
                     metrics_provider->getStat(result, tid);
                     return result;
                 };
@@ -73,7 +76,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
     case MetricsProvider::Procfs:
         stats_getter = [metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid)]()
                 {
-                    ::taskstats result;
+                    ::taskstats result{};
                     metrics_provider->getTaskStats(result);
                     return result;
                 };
@@ -246,7 +249,7 @@ static void enablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't enable perf event with file descriptor {}: '{}' ({})",
-            event_fd, strerror(errno), errno);
+            event_fd, errnoToString(errno), errno);
     }
 }
 
@@ -256,7 +259,7 @@ static void disablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't disable perf event with file descriptor {}: '{}' ({})",
-            event_fd, strerror(errno), errno);
+            event_fd, errnoToString(errno), errno);
     }
 }
 
@@ -266,7 +269,7 @@ static void releasePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't close perf event file descriptor {}: {} ({})",
-            event_fd, strerror(errno), errno);
+            event_fd, errnoToString(errno), errno);
     }
 }
 
@@ -284,7 +287,7 @@ static bool validatePerfEventDescriptor(int & fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Error while checking availability of event descriptor {}: {} ({})",
-            fd, strerror(errno), errno);
+            fd, errnoToString(errno), errno);
 
         disablePerfEvent(fd);
         releasePerfEvent(fd);
@@ -391,15 +394,14 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Failed to open perf event {} (event_type={}, event_config={}): "
                 "'{}' ({})", event_info.settings_name, event_info.event_type,
-                event_info.event_config, strerror(errno), errno);
+                event_info.event_config, errnoToString(errno), errno);
         }
     }
 
     return true;
 }
 
-// Parse comma-separated list of event names. Empty means all available
-// events.
+// Parse comma-separated list of event names. Empty means all available events.
 std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string & events_list)
 {
     std::vector<size_t> result;
@@ -414,12 +416,12 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         return result;
     }
 
-    std::istringstream iss(events_list);
+
+    std::istringstream iss(events_list);        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     std::string event_name;
     while (std::getline(iss, event_name, ','))
     {
-        // Allow spaces at the beginning of the token, so that you can write
-        // 'a, b'.
+        // Allow spaces at the beginning of the token, so that you can write 'a, b'.
         event_name.erase(0, event_name.find_first_not_of(' '));
 
         auto entry = event_name_to_index.find(event_name);
@@ -478,7 +480,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         {
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Can't read event value from file descriptor {}: '{}' ({})",
-                fd, strerror(errno), errno);
+                fd, errnoToString(errno), errno);
             current_values[i] = {};
         }
     }

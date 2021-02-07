@@ -2,6 +2,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -210,6 +211,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
 void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
+    frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
     {
@@ -236,8 +238,10 @@ void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
 void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.expression_list_prepend_whitespace = true;
+
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN " << (settings.hilite ? hilite_none : "");
+        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
     settings.one_line
         ? expression_list->formatImpl(settings, state, frame)

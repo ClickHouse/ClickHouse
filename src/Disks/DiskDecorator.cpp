@@ -103,11 +103,6 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
     delegate->replaceFile(from_path, to_path);
 }
 
-void DiskDecorator::copyFile(const String & from_path, const String & to_path)
-{
-    delegate->copyFile(from_path, to_path);
-}
-
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
@@ -125,14 +120,24 @@ DiskDecorator::readFile(const String & path, size_t buf_size, size_t estimated_s
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    return delegate->writeFile(path, buf_size, mode, estimated_size, aio_threshold);
+    return delegate->writeFile(path, buf_size, mode);
 }
 
-void DiskDecorator::remove(const String & path)
+void DiskDecorator::removeFile(const String & path)
 {
-    delegate->remove(path);
+    delegate->removeFile(path);
+}
+
+void DiskDecorator::removeFileIfExists(const String & path)
+{
+    delegate->removeFileIfExists(path);
+}
+
+void DiskDecorator::removeDirectory(const String & path)
+{
+    delegate->removeDirectory(path);
 }
 
 void DiskDecorator::removeRecursive(const String & path)
@@ -163,6 +168,21 @@ void DiskDecorator::createHardLink(const String & src_path, const String & dst_p
 void DiskDecorator::truncateFile(const String & path, size_t size)
 {
     delegate->truncateFile(path, size);
+}
+
+Executor & DiskDecorator::getExecutor()
+{
+    return delegate->getExecutor();
+}
+
+SyncGuardPtr DiskDecorator::getDirectorySyncGuard(const String & path) const
+{
+    return delegate->getDirectorySyncGuard(path);
+}
+
+void DiskDecorator::onFreeze(const String & path)
+{
+    delegate->onFreeze(path);
 }
 
 }

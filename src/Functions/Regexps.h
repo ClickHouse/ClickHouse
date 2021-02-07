@@ -58,21 +58,24 @@ namespace Regexps
       * You must hold the ownership while using the object.
       * In destructor, it returns the object back to the Pool for further reuse.
       */
-    template <bool like, bool no_capture>
-    inline Pool::Pointer get(const std::string & pattern, int flags = 0)
+    template <bool like, bool no_capture, bool case_insensitive = false>
+    inline Pool::Pointer get(const std::string & pattern)
     {
         /// C++11 has thread-safe function-local statics on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
-        return known_regexps.get(pattern, [flags, &pattern]
+        return known_regexps.get(pattern, [&pattern]
         {
-            int flags_final = flags | OptimizedRegularExpression::RE_DOT_NL;
+            int flags = OptimizedRegularExpression::RE_DOT_NL;
 
             if (no_capture)
-                flags_final |= OptimizedRegularExpression::RE_NO_CAPTURE;
+                flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+
+            if (case_insensitive)
+                flags |= Regexps::Regexp::RE_CASELESS;
 
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
-            return new Regexp{createRegexp<like>(pattern, flags_final)};
+            return new Regexp{createRegexp<like>(pattern, flags)};
         });
     }
 }
@@ -164,7 +167,6 @@ namespace MultiRegexps
         }
         hs_database_t * db = nullptr;
         hs_compile_error_t * compile_error;
-
 
         std::unique_ptr<unsigned int[]> ids;
 

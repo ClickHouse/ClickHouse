@@ -6,16 +6,11 @@
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
-#include <Core/BigInt.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
@@ -111,10 +106,7 @@ private:
 
 public:
     using ValueType = T;
-    static constexpr bool is_POD = !is_big_int_v<T>;
-    using Container = std::conditional_t<is_POD,
-                                         PaddedPODArray<ValueType>,
-                                         std::vector<ValueType>>;
+    using Container = PaddedPODArray<ValueType>;
 
 private:
     ColumnVector() {}
@@ -135,15 +127,12 @@ public:
 
     void insertFrom(const IColumn & src, size_t n) override
     {
-        data.push_back(static_cast<const Self &>(src).getData()[n]);
+        data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
     void insertData(const char * pos, size_t) override
     {
-        if constexpr (is_POD)
-            data.emplace_back(unalignedLoad<T>(pos));
-        else
-            data.emplace_back(BigInt<T>::deserialize(pos));
+        data.emplace_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
@@ -153,18 +142,12 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        if constexpr (is_POD)
-            data.resize_fill(data.size() + length, T());
-        else
-            data.resize(data.size() + length, T());
+        data.resize_fill(data.size() + length, T());
     }
 
     void popBack(size_t n) override
     {
-        if constexpr (is_POD)
-            data.resize_assume_reserved(data.size() - n);
-        else
-            data.resize(data.size() - n);
+        data.resize_assume_reserved(data.size() - n);
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -182,18 +165,19 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
+    size_t byteSizeAt(size_t) const override
+    {
+        return sizeof(data[0]);
+    }
+
     size_t allocatedBytes() const override
     {
-        if constexpr (is_POD)
-            return data.allocated_bytes();
-        else
-            return data.capacity() * sizeof(data[0]);
+        return data.allocated_bytes();
     }
 
     void protect() override
     {
-        if constexpr (is_POD)
-            data.protect();
+        data.protect();
     }
 
     void insertValue(const T value)
@@ -210,20 +194,18 @@ public:
     /// This method implemented in header because it could be possibly devirtualized.
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
-        return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
+        return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override
     {
-        return this->template doCompareColumn<Self>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+        return this->template doCompareColumn<Self>(assert_cast<const Self &>(rhs), rhs_row_num, row_indexes,
                                                     compare_results, direction, nan_direction_hint);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
-                               IColumn::SpecialSort) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
@@ -298,23 +280,17 @@ public:
     void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return is_POD; }
+    bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     StringRef getRawData() const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
-        else
-            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-        else
-            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool structureEquals(const IColumn & rhs) const override

@@ -30,9 +30,9 @@ def main():
 
     client = kafka.KafkaAdminClient(**config)
     if args.create:
-        print(client.create_topics(args.create))
+        print((client.create_topics(args.create)))
     elif args.delete:
-        print(client.delete_topics(args.delete))
+        print((client.delete_topics(args.delete)))
 
     client.close()
     return 0

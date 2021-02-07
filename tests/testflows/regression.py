@@ -9,14 +9,15 @@ from helpers.argparser import argparser
 @TestModule
 @Name("clickhouse")
 @ArgumentParser(argparser)
-def regression(self, local, clickhouse_binary_path):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse regression.
     """
-    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path}
+    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path, "stress": stress, "parallel": parallel}
 
     Feature(test=load("example.regression", "regression"))(**args)
     Feature(test=load("ldap.regression", "regression"))(**args)
     Feature(test=load("rbac.regression", "regression"))(**args)
+    Feature(test=load("aes_encryption.regression", "regression"))(**args)
 
 if main():
     regression()

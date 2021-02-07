@@ -2,17 +2,16 @@ import time
 from contextlib import contextmanager
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
-
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -84,11 +83,11 @@ def test(started_cluster):
         assert_eq_with_retry(node2, "SELECT * FROM distributed ORDER BY id", expected_from_distributed)
 
         with pytest.raises(Exception):
-            print node3.query_with_retry("SELECT * FROM distributed ORDER BY id", retry_count=5)
+            print(node3.query_with_retry("SELECT * FROM distributed ORDER BY id", retry_count=5))
 
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

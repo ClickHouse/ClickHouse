@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。merge\_tree\_settings {#system-merge_tree_settings}
+# 系统。merge_tree_settings {#system-merge_tree_settings}
 
 包含有关以下设置的信息 `MergeTree` 桌子
 

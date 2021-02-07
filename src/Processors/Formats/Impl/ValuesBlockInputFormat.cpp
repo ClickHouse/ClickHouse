@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -35,12 +36,13 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
 }
 
 Chunk ValuesBlockInputFormat::generate()
 {
+    if (total_rows == 0)
+        readPrefix();
+
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
@@ -53,8 +55,6 @@ Chunk ValuesBlockInputFormat::generate()
             if (buf.eof() || *buf.position() == ';')
                 break;
             readRow(columns, rows_in_block);
-            if (params.callback)
-                params.callback();
         }
         catch (Exception & e)
         {
@@ -405,8 +405,23 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
     return false;
 }
 
+void ValuesBlockInputFormat::readPrefix()
+{
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(buf);
+}
+
 void ValuesBlockInputFormat::readSuffix()
 {
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+        if (buf.hasUnreadData())
+            throw Exception("Cannot read data after semicolon", ErrorCodes::CANNOT_READ_ALL_DATA);
+        return;
+    }
+
     if (buf.hasUnreadData())
         throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }

@@ -21,7 +21,7 @@ void registerOutputFormatProcessorNull(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Null", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings &)
     {
         return std::make_shared<NullOutputFormat>(sample, buf);

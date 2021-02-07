@@ -8,7 +8,8 @@
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
-#include <Core/Types.h>
+#include <ext/scope_guard.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>
@@ -71,6 +72,7 @@ class TraceLog;
 class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
+class OpenTelemetrySpanLog;
 
 
 class ISystemLog
@@ -105,6 +107,8 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
+    /// OpenTelemetry trace spans.
+    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -226,14 +230,23 @@ void SystemLog<LogElement>::startup()
 }
 
 
+static thread_local bool recursive_add_call = false;
+
 template <typename LogElement>
 void SystemLog<LogElement>::add(const LogElement & element)
 {
+    /// It is possible that the method will be called recursively.
+    /// Better to drop these events to avoid complications.
+    if (recursive_add_call)
+        return;
+    recursive_add_call = true;
+    SCOPE_EXIT({ recursive_add_call = false; });
+
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
@@ -438,7 +451,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context(context);
+        Context insert_context(context);
         insert_context.makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);

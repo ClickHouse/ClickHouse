@@ -1,5 +1,4 @@
 #include <Access/AccessRights.h>
-#include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -8,12 +7,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int INVALID_GRANT;
-}
-
-
 namespace
 {
     using Kind = AccessRightsElementWithOptions::Kind;
@@ -214,30 +207,14 @@ namespace
         COLUMN_LEVEL,
     };
 
-    AccessFlags getAcceptableFlags(Level level)
+    AccessFlags getAllGrantableFlags(Level level)
     {
         switch (level)
         {
-            case GLOBAL_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allFlags();
-                return res;
-            }
-            case DATABASE_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allDatabaseFlags() | AccessFlags::allTableFlags() | AccessFlags::allDictionaryFlags() | AccessFlags::allColumnFlags();
-                return res;
-            }
-            case TABLE_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allTableFlags() | AccessFlags::allDictionaryFlags() | AccessFlags::allColumnFlags();
-                return res;
-            }
-            case COLUMN_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allColumnFlags();
-                return res;
-            }
+            case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
+            case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
+            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
         __builtin_unreachable();
     }
@@ -276,21 +253,7 @@ public:
 
     void grant(const AccessFlags & flags_)
     {
-        if (!flags_)
-            return;
-
-        AccessFlags flags_to_add = flags_ & getAcceptableFlags();
-
-        if (!flags_to_add)
-        {
-            if (level == DATABASE_LEVEL)
-                throw Exception(flags_.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
-            else if (level == TABLE_LEVEL)
-                throw Exception(flags_.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
-            else if (level == COLUMN_LEVEL)
-                throw Exception(flags_.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
-        }
-
+        AccessFlags flags_to_add = flags_ & getAllGrantableFlags();
         addGrantsRec(flags_to_add);
         optimizeTree();
     }
@@ -456,8 +419,8 @@ public:
     }
 
 private:
-    AccessFlags getAcceptableFlags() const { return ::DB::getAcceptableFlags(level); }
-    AccessFlags getChildAcceptableFlags() const { return ::DB::getAcceptableFlags(static_cast<Level>(level + 1)); }
+    AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
+    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level + 1)); }
 
     Node * tryGetChild(const std::string_view & name) const
     {
@@ -480,7 +443,7 @@ private:
         Node & new_child = (*children)[*new_child_name];
         new_child.node_name = std::move(new_child_name);
         new_child.level = static_cast<Level>(level + 1);
-        new_child.flags = flags & new_child.getAcceptableFlags();
+        new_child.flags = flags & new_child.getAllGrantableFlags();
         return new_child;
     }
 
@@ -496,12 +459,12 @@ private:
 
     bool canEraseChild(const Node & child) const
     {
-        return ((flags & child.getAcceptableFlags()) == child.flags) && !child.children;
+        return ((flags & child.getAllGrantableFlags()) == child.flags) && !child.children;
     }
 
     void addGrantsRec(const AccessFlags & flags_)
     {
-        if (auto flags_to_add = flags_ & getAcceptableFlags())
+        if (auto flags_to_add = flags_ & getAllGrantableFlags())
         {
             flags |= flags_to_add;
             if (children)
@@ -547,7 +510,7 @@ private:
         const AccessFlags & parent_flags)
     {
         auto flags = node.flags;
-        auto parent_fl = parent_flags & node.getAcceptableFlags();
+        auto parent_fl = parent_flags & node.getAllGrantableFlags();
         auto revokes = parent_fl - flags;
         auto grants = flags - parent_fl;
 
@@ -576,9 +539,9 @@ private:
         const Node * node_go,
         const AccessFlags & parent_flags_go)
     {
-        auto acceptable_flags = ::DB::getAcceptableFlags(static_cast<Level>(full_name.size()));
-        auto parent_fl = parent_flags & acceptable_flags;
-        auto parent_fl_go = parent_flags_go & acceptable_flags;
+        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        auto parent_fl = parent_flags & grantable_flags;
+        auto parent_fl_go = parent_flags_go & grantable_flags;
         auto flags = node ? node->flags : parent_fl;
         auto flags_go = node_go ? node_go->flags : parent_fl_go;
         auto revokes = parent_fl - flags;
@@ -672,8 +635,8 @@ private:
         }
 
         max_flags_with_children |= max_among_children;
-        AccessFlags add_acceptable_flags = getAcceptableFlags() - getChildAcceptableFlags();
-        min_flags_with_children &= min_among_children | add_acceptable_flags;
+        AccessFlags add_flags = getAllGrantableFlags() - getChildAllGrantableFlags();
+        min_flags_with_children &= min_among_children | add_flags;
     }
 
     void makeUnionRec(const Node & rhs)
@@ -689,7 +652,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags |= rhs.flags & lhs_child.getAcceptableFlags();
+                    lhs_child.flags |= rhs.flags & lhs_child.getAllGrantableFlags();
             }
         }
     }
@@ -738,7 +701,7 @@ private:
 
         if (new_flags != flags)
         {
-            new_flags &= getAcceptableFlags();
+            new_flags &= getAllGrantableFlags();
             flags_added |= static_cast<bool>(new_flags - flags);
             flags_removed |= static_cast<bool>(flags - new_flags);
             flags = new_flags;

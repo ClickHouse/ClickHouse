@@ -1,8 +1,7 @@
 import time
-import pytest
 
+import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True, stay_alive=True)
@@ -24,7 +23,7 @@ def start_cluster():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()
@@ -50,4 +49,3 @@ def test_startup_without_zookeeper(start_cluster):
 
     assert node1.query("SELECT COUNT(*) from test_table") == "3\n"
     assert node1.query("SELECT is_readonly from system.replicas where table='test_table'") == "1\n"
-

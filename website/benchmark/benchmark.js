@@ -403,7 +403,7 @@ function generate_diagram() {
         var table_row = "";
 
         table_row += "<tr>";
-        table_row += "<td class='text-right w-15 align-middle'";
+        table_row += "<td class='text-right text-nowrap w-15 align-middle'";
         if (filtered_results[j].system_full) {
             table_row += ' data-toggle="tooltip" data-placement="right" title="' + filtered_results[j].system_full + '"';
         }

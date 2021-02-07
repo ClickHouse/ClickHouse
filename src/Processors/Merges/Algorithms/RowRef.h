@@ -136,7 +136,7 @@ struct RowRef
     {
         sort_columns = cursor.impl->sort_columns.data();
         num_columns = cursor.impl->sort_columns.size();
-        row_num = cursor.impl->pos;
+        row_num = cursor.impl->getRow();
     }
 
     static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
@@ -192,7 +192,7 @@ struct RowRefWithOwnedChunk
     void set(SortCursor & cursor, SharedChunkPtr chunk)
     {
         owned_chunk = std::move(chunk);
-        row_num = cursor.impl->pos;
+        row_num = cursor.impl->getRow();
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
     }

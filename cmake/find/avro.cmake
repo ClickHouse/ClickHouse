@@ -1,3 +1,4 @@
+# Needed when using Apache Avro serialization format
 option (ENABLE_AVRO "Enable Avro" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_AVRO)

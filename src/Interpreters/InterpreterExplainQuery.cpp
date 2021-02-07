@@ -11,10 +11,8 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/StorageView.h>
-#include <sstream>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/printPipeline.h>
 
@@ -119,13 +117,17 @@ struct QueryPlanSettings
 {
     QueryPlan::ExplainPlanOptions query_plan_options;
 
+    /// Apply query plan optimisations.
+    bool optimize = true;
+
     constexpr static char name[] = "PLAN";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
-            {"actions", query_plan_options.actions}
+            {"actions", query_plan_options.actions},
+            {"optimize", optimize},
     };
 };
 
@@ -218,14 +220,14 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-    std::stringstream ss;
+    WriteBufferFromOwnString buf;
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
 
-        dumpAST(*ast.getExplainedQuery(), ss);
+        dumpAST(*ast.getExplainedQuery(), buf);
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
@@ -235,7 +237,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         ExplainAnalyzedSyntaxVisitor::Data data{.context = context};
         ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-        ast.getExplainedQuery()->format(IAST::FormatSettings(ss, false));
+        ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPlan)
     {
@@ -248,10 +250,10 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
-        plan.optimize();
+        if (settings.optimize)
+            plan.optimize();
 
-        WriteBufferFromOStream buffer(ss);
-        plan.explainPlan(buffer, settings.query_plan_options);
+        plan.explainPlan(buf, settings.query_plan_options);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
@@ -265,24 +267,24 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         interpreter.buildQueryPlan(plan);
         auto pipeline = plan.buildQueryPipeline();
 
-        WriteBufferFromOStream buffer(ss);
-
         if (settings.graph)
         {
-            auto processors = Pipe::detachProcessors(QueryPipeline::getPipe(std::move(*pipeline)));
+            /// Pipe holds QueryPlan, should not go out-of-scope
+            auto pipe = QueryPipeline::getPipe(std::move(*pipeline));
+            const auto & processors = pipe.getProcessors();
 
             if (settings.compact)
-                printPipelineCompact(processors, buffer, settings.query_pipeline_options.header);
+                printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
             else
-                printPipeline(processors, buffer);
+                printPipeline(processors, buf);
         }
         else
         {
-            plan.explainPipeline(buffer, settings.query_pipeline_options);
+            plan.explainPipeline(buf, settings.query_pipeline_options);
         }
     }
 
-    fillColumn(*res_columns[0], ss.str());
+    fillColumn(*res_columns[0], buf.str());
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }

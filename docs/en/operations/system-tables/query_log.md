@@ -5,11 +5,11 @@ Contains information about executed queries, for example, start time, duration o
 !!! note "Note"
     This table doesn’t contain the ingested data for `INSERT` queries.
 
-You can change settings of queries logging in the [query\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
+You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 
-You can disable queries logging by setting [log\_queries = 0](../../operations/settings/settings.md#settings-log-queries). We don’t recommend to turn off logging because information in this table is important for solving issues.
+You can disable queries logging by setting [log_queries = 0](../../operations/settings/settings.md#settings-log-queries). We don’t recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse doesn’t delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
@@ -20,8 +20,8 @@ The `system.query_log` table registers two kinds of queries:
 
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
-1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created .
-2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created .
+1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created.
+2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
 Columns:
@@ -33,10 +33,12 @@ Columns:
     -   `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Query starting date.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time.
+-   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time with microseconds precision.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
+-   `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it’s `read_rows` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn’t affect this value.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it’s `read_bytes` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn’t affect this value.
+-   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it’s `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes don’t affect this value.
+-   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it’s `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes don’t affect this value.
 -   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
 -   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
 -   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
@@ -83,59 +85,62 @@ Columns:
 **Example**
 
 ``` sql
-SELECT * FROM system.query_log LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.query_log LIMIT 1 \G
 ```
 
 ``` text
 Row 1:
 ──────
-type:                 QueryStart
-event_date:           2020-05-13
-event_time:           2020-05-13 14:02:28
-query_start_time:     2020-05-13 14:02:28
-query_duration_ms:    0
-read_rows:            0
-read_bytes:           0
-written_rows:         0
-written_bytes:        0
-result_rows:          0
-result_bytes:         0
-memory_usage:         0
-query:                SELECT 1
-exception_code:       0
-exception:
-stack_trace:
-is_initial_query:     1
-user:                 default
-query_id:             5e834082-6f6d-4e34-b47b-cd1934f4002a
-address:              ::ffff:127.0.0.1
-port:                 57720
-initial_user:         default
-initial_query_id:     5e834082-6f6d-4e34-b47b-cd1934f4002a
-initial_address:      ::ffff:127.0.0.1
-initial_port:         57720
-interface:            1
-os_user:              bayonet
-client_hostname:      clickhouse.ru-central1.internal
-client_name:          ClickHouse client
-client_revision:      54434
-client_version_major: 20
-client_version_minor: 4
-client_version_patch: 1
-http_method:          0
-http_user_agent:
-quota_key:
-revision:             54434
-thread_ids:           []
-ProfileEvents.Names:  []
-ProfileEvents.Values: []
-Settings.Names:       ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage']
-Settings.Values:      ['0','random','1','10000000000']
+type:                          QueryStart
+event_date:                    2020-09-11
+event_time:                    2020-09-11 10:08:17
+event_time_microseconds:       2020-09-11 10:08:17.063321
+query_start_time:              2020-09-11 10:08:17
+query_start_time_microseconds: 2020-09-11 10:08:17.063321
+query_duration_ms:             0
+read_rows:                     0
+read_bytes:                    0
+written_rows:                  0
+written_bytes:                 0
+result_rows:                   0
+result_bytes:                  0
+memory_usage:                  0
+current_database:              default
+query:                         INSERT INTO test1 VALUES
+exception_code:                0
+exception:                     
+stack_trace:                   
+is_initial_query:              1
+user:                          default
+query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
+address:                       ::ffff:127.0.0.1
+port:                          33452
+initial_user:                  default
+initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
+initial_address:               ::ffff:127.0.0.1
+initial_port:                  33452
+interface:                     1
+os_user:                       bharatnc
+client_hostname:               tower
+client_name:                   ClickHouse 
+client_revision:               54437
+client_version_major:          20
+client_version_minor:          7
+client_version_patch:          2
+http_method:                   0
+http_user_agent:               
+quota_key:                     
+revision:                      54440
+thread_ids:                    []
+ProfileEvents.Names:           []
+ProfileEvents.Values:          []
+Settings.Names:                ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage','allow_introspection_functions']
+Settings.Values:               ['0','random','1','10000000000','1']
 ```
 
 **See Also**
 
--   [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_log) <!--hide-->
 

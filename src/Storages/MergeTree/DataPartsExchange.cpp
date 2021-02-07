@@ -11,12 +11,12 @@
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
-    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
@@ -44,12 +44,37 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 
 
 std::string getEndpointId(const std::string & node_id)
 {
     return "DataPartsExchange:" + node_id;
 }
+
+/// Simple functor for tracking fetch progress in system.replicated_fetches table.
+struct ReplicatedFetchReadCallback
+{
+    ReplicatedFetchList::Entry & replicated_fetch_entry;
+
+    explicit ReplicatedFetchReadCallback(ReplicatedFetchList::Entry & replicated_fetch_entry_)
+        : replicated_fetch_entry(replicated_fetch_entry_)
+    {}
+
+    void operator() (size_t bytes_count)
+    {
+        replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
+
+        /// It's possible when we fetch part from very old clickhouse version
+        /// which doesn't send total size.
+        if (replicated_fetch_entry->total_size_bytes_compressed != 0)
+        {
+            replicated_fetch_entry->progress.store(
+                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    std::memory_order_relaxed);
+        }
+    }
+};
 
 }
 
@@ -84,7 +109,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID))});
 
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
@@ -113,12 +138,14 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
             writeStringBinary(part->getType().toString(), out);
 
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+            writeUUIDText(part->uuid, out);
+
         if (isInMemoryPart(part))
             sendPartFromMemory(part, out);
         else
         {
-            bool send_default_compression_file = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION;
-            sendPartFromDisk(part, out, send_default_compression_file);
+            sendPartFromDisk(part, out, client_protocol_version);
         }
     }
     catch (const NetException &)
@@ -151,7 +178,7 @@ void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteB
     block_out.write(part_in_memory->block);
 }
 
-void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, bool send_default_compression_file)
+void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version)
 {
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -159,8 +186,9 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
     auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
     for (const auto & file_name : file_names_without_checksums)
     {
-        if (!send_default_compression_file && file_name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
+        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION && file_name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             continue;
+
         checksums.files[file_name] = {};
     }
 
@@ -227,7 +255,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
     /// Validation of the input that may come from malicious replica.
-    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
 
     Poco::URI uri;
@@ -238,7 +266,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)},
         {"compress",                "false"}
     });
 
@@ -263,9 +291,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
 
     ReservationPtr reservation;
+    size_t sum_files_size = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
-        size_t sum_files_size;
         readBinary(sum_files_size, in);
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -275,7 +303,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
-            reservation = data.reserveSpacePreferringTTLRules(sum_files_size, ttl_infos, std::time(nullptr));
+            reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
         }
         else
             reservation = data.reserveSpace(sum_files_size);
@@ -286,16 +314,34 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
+    bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
+                    && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
+
     String part_type = "Wide";
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
 
-    return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
-        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
+    UUID part_uuid = UUIDHelpers::Nil;
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+        readUUIDText(part_uuid, in);
+
+    auto storage_id = data.getStorageID();
+    String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
+    auto entry = data.global_context.getReplicatedFetchList().insert(
+        storage_id.getDatabaseName(), storage_id.getTableName(),
+        part_info.partition_id, part_name, new_part_path,
+        replica_path, uri, to_detached, sum_files_size);
+
+    in.setNextCallback(ReplicatedFetchReadCallback(*entry));
+
+
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in)
+                                   : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
+    const UUID & part_uuid,
     const StorageMetadataPtr & metadata_snapshot,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
@@ -307,10 +353,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk());
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk(), 0);
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
 
+    new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
@@ -330,6 +377,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
+    bool sync,
     const ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
@@ -347,9 +395,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     if (disk->exists(part_download_path))
         throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
-
     disk->createDirectories(part_download_path);
+
+    SyncGuardPtr sync_guard;
+    if (data.getSettings()->fsync_part_directory)
+        sync_guard = disk->getDirectorySyncGuard(part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
@@ -392,11 +442,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
+
+        if (sync)
+            hashing_out.sync();
     }
 
     assertEOF(in);
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);

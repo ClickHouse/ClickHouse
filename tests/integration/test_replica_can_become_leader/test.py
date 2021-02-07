@@ -1,12 +1,12 @@
 import pytest
-
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/notleader.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/notleaderignorecase.xml'], with_zookeeper=True)
 node3 = cluster.add_instance('node3', with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():

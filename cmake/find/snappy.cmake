@@ -1,4 +1,4 @@
-option(USE_SNAPPY "Enable support of snappy library" ${ENABLE_LIBRARIES})
+option(USE_SNAPPY "Enable snappy library" ${ENABLE_LIBRARIES})
 
 if(NOT USE_SNAPPY)
     if (USE_INTERNAL_SNAPPY_LIBRARY)
