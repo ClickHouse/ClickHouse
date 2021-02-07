@@ -22,7 +22,6 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
@@ -213,6 +212,9 @@ void TCPHandler::runImpl()
 
                 /// Get blocks of temporary tables
                 readData(connection_settings);
+
+                if (state.io.out)
+                    state.io.out->writeSuffix();
 
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
