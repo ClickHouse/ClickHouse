@@ -4,9 +4,9 @@ toc_priority: 32
 
 # varPop(x) {#varpopx}
 
-Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
+计算 `Σ((x - x̅)^2) / n`，这里 `n` 是样本大小， `x̅` 是 `x` 的平均值。
 
-In other words, dispersion for a set of values. Returns `Float64`.
+换句话说，计算一组数据的离差。 返回 `Float64`。
 
-!!! note "Note"
-    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
+!!! note "注"
+该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varPopStable` 函数。 它的工作速度较慢，但提供较低的计算错误。

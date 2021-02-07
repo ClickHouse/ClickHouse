@@ -5,11 +5,6 @@ toc_title: 参考手册
 
 # 参考手册 {#aggregate-functions-reference}
 
-## sumWithOverflow(x) {#sumwithoverflowx}
-
-使用与输入参数相同的数据类型计算数字的总和。 如果总和超过此数据类型的最大值，则函数返回错误。
-
-只适用于数字。
 
 
 ## skewPop {#skewpop}
@@ -207,68 +202,7 @@ uniqExact(x[, ...])
 -   [uniqHLL12](#agg_function-uniqhll12)
 
 
-## quantile {#quantile}
 
-计算数字序列的近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
-
-此功能适用 [水塘抽样(](https://en.wikipedia.org/wiki/Reservoir_sampling)，使用储存器最大到8192和随机数发生器进行采样。 结果是非确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
-
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
-
-**语法**
-
-``` sql
-quantile(level)(expr)
-```
-
-别名: `median`.
-
-**参数**
-
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
-
-**返回值**
-
--   指定层次的近似分位数。
-
-类型:
-
--   [Float64](../../sql-reference/data-types/float.md) 对于数字数据类型输入。
--   [日期](../../sql-reference/data-types/date.md) 如果输入值具有 `Date` 类型。
--   [日期时间](../../sql-reference/data-types/datetime.md) 如果输入值具有 `DateTime` 类型。
-
-**示例**
-
-输入表:
-
-``` text
-┌─val─┐
-│   1 │
-│   1 │
-│   2 │
-│   3 │
-└─────┘
-```
-
-查询:
-
-``` sql
-SELECT quantile(val) FROM t
-```
-
-结果:
-
-``` text
-┌─quantile(val)─┐
-│           1.5 │
-└───────────────┘
-```
-
-**另请参阅**
-
--   [中位数](#median)
--   [分位数](#quantiles)
 
 ## quantileDeterministic {#quantiledeterministic}
 
@@ -770,25 +704,7 @@ SELECT medianDeterministic(val, 1) FROM t
 
 所有分位数函数也有相应的函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`。这些函数一次计算所列层次的所有分位数，并返回结果值的数组。
 
-## varSamp(x) {#varsampx}
 
-计算 `Σ((x - x̅)^2) / (n - 1)`，这里 `n` 是样本大小， `x̅`是`x`的平均值。
-
-它表示随机变量的方差的无偏估计，如果传递的值形成其样本。
-
-返回 `Float64`. 当 `n <= 1`，返回 `+∞`.
-
-!!! note "注"
-    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
-
-## varPop(x) {#varpopx}
-
-计算 `Σ((x - x̅)^2) / n`，这里 `n` 是样本大小， `x̅`是`x`的平均值。
-
-换句话说，计算一组数据的离差。 返回 `Float64`。
-
-!!! note "注"
-    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varPopStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## stddevSamp(x) {#stddevsampx}
 
