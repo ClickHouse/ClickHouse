@@ -113,8 +113,12 @@ struct TextClassificationImpl
         for (size_t i = 0; i < offsets_size; ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
-            std::string s1 = haystack;
-            res[i] = s1.size();
+            std::string str = haystack;
+
+            std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
+            std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
+
+            res[i] = calculateStats(str.data(), str.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
             prev_offset = offsets[i];
         }
     }
@@ -126,12 +130,12 @@ struct NameBiGramcount
 {
     static constexpr auto name = "biGramcount";
 };
-/*
+
 struct NameTriGramcount
 {
     static constexpr auto name = "triGramcount";
 };
-*/
+
 
 using FunctionBiGramcount = FunctionsTextClassification<TextClassificationImpl<2>, NameBiGramcount>;
 using FunctionTriGramcount = FunctionsTextClassification<TextClassificationImpl<3>, NameTriGramcount>;
