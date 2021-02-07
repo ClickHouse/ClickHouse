@@ -142,7 +142,7 @@ void testInsertElementsIntoHashMap(size_t map_size, const std::vector<UInt64> & 
 
     for (size_t i = 0; i < numbers_to_insert_size; ++i)
     {
-        auto it = hash_map.find(numbers_to_insert[i]);
+        auto * it = hash_map.find(numbers_to_insert[i]);
 
         if (it)
             summ += it->getMapped();

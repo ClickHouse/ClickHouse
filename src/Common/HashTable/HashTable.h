@@ -341,6 +341,32 @@ struct ZeroValueStorage<false, Cell>
 };
 
 
+template <bool enable, typename Allocator, typename Cell>
+struct AllocatorBufferDeleter;
+
+template <typename Allocator, typename Cell>
+struct AllocatorBufferDeleter<false, Allocator, Cell>
+{
+    AllocatorBufferDeleter(Allocator &, size_t) {}
+
+    void operator()(Cell *) const {}
+
+};
+
+template <typename Allocator, typename Cell>
+struct AllocatorBufferDeleter<true, Allocator, Cell>
+{
+    AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
+        : allocator(allocator_)
+        , size(size_) {}
+
+    void operator()(Cell * buffer) const { allocator.free(buffer, size); }
+
+    Allocator & allocator;
+    size_t size;
+};
+
+
 // The HashTable
 template
 <
@@ -434,35 +460,6 @@ protected:
         }
     }
 
-    template<bool enable>
-    struct AllocatorBufferDeleter;
-
-    template<>
-    struct AllocatorBufferDeleter<false>
-    {
-        AllocatorBufferDeleter(Allocator &, size_t) {}
-
-        void operator()(Cell *) const {}
-
-    };
-
-    template<>
-    struct AllocatorBufferDeleter<true>
-    {
-        AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
-            : allocator(allocator_)
-            , size(size_)
-        {}
-
-        void operator()(Cell * buffer) const
-        {
-            allocator.free(buffer, size);
-        }
-
-        Allocator & allocator;
-        size_t size;
-    };
-
     /// Increase the size of the buffer.
     void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
@@ -501,8 +498,9 @@ protected:
         /** If cell required to be notified during move we need to temporary keep old buffer
          * because realloc does not quarantee for reallocated buffer to have same base address
          */
-        AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move> buffer_deleter(*this, old_buffer_size);
-        std::unique_ptr<Cell, decltype(buffer_deleter)> old_buffer(buf, buffer_deleter);
+        using Deleter = AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move, Allocator, Cell>;
+        Deleter buffer_deleter(*this, old_buffer_size);
+        std::unique_ptr<Cell, Deleter> old_buffer(buf, buffer_deleter);
 
         if constexpr (Cell::need_to_notify_cell_during_move)
         {
