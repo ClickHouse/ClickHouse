@@ -317,7 +317,6 @@ SRCS(
     lcm.cpp
     least.cpp
     lengthUTF8.cpp
-    lengthFalse.cpp
     less.cpp
     lessOrEquals.cpp
     lgamma.cpp
@@ -361,7 +360,6 @@ SRCS(
     multiSearchFirstPositionCaseInsensitiveUTF8.cpp
     multiSearchFirstPositionUTF8.cpp
     multiply.cpp
-    nGramstats.cpp
     negate.cpp
     neighbor.cpp
     normalizeQuery.cpp
