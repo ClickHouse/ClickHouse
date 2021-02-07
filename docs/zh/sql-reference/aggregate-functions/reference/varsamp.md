@@ -4,11 +4,12 @@ toc_priority: 33
 
 # varSamp {#varsamp}
 
-Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
+计算 `Σ((x - x̅)^2) / (n - 1)`，这里 `n` 是样本大小， `x̅`是`x`的平均值。
 
-It represents an unbiased estimate of the variance of a random variable if passed values form its sample.
+它表示随机变量的方差的无偏估计，如果传递的值形成其样本。
 
-Returns `Float64`. When `n <= 1`, returns `+∞`.
+返回 `Float64`。 当 `n <= 1`，返回 `+∞`。
 
-!!! note "Note"
-    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower but provides a lower computational error.
+!!! note "注"
+该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varSampStable` 函数。 它的工作速度较慢，但提供较低的计算错误。
+
