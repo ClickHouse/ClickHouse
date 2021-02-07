@@ -520,7 +520,7 @@ Result:
 
 ## date\_sub {#date_sub}
 
-This subtracts a time/date interval from a date and then returns the date.
+Subtracts a time/date interval from the provided date.
 
 **Syntax**
 
@@ -536,7 +536,7 @@ Aliases: `dateSub`, `DATE_SUB`.
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 -   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
--   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md) to subtract value from.
 
 **Returned value**
 
