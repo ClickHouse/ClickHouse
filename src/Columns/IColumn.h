@@ -357,6 +357,14 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Compress column in memory to some representation that allows to decompress it back.
+    using Lazy = std::function<Ptr()>;
+    virtual Lazy compress() const
+    {
+        /// No compression by default, just wrap the object.
+        return [column = getPtr()] { return column; };
+    }
+
 
     static MutablePtr mutate(Ptr ptr)
     {
@@ -461,6 +469,9 @@ using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
 //using MutableColumnRawPtrs = std::vector<IColumn *>;
+
+using LazyColumn = IColumn::Lazy;
+using LazyColumns = std::vector<LazyColumn>;
 
 template <typename ... Args>
 struct IsMutableColumns;
