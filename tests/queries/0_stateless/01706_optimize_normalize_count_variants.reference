@@ -1,0 +1,5 @@
+SELECT
+    count(),
+    count(),
+    count(),
+    count()
