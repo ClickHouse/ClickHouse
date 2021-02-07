@@ -1,5 +1,6 @@
 #include <boost/program_options.hpp>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
@@ -13,7 +14,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
@@ -34,11 +35,12 @@ ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = FormatFactory::instance().getInputFormat(format, *read_buffer, sample_block, context, DEFAULT_BLOCK_SIZE);
+    auto input = context.getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
+    auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
 
     auto data = std::make_unique<ExternalTableData>();
     data->table_name = name;
-    data->pipe = std::make_unique<Pipe>(std::move(input));
+    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromInputStream>(std::move(stream)));
 
     return data;
 }
