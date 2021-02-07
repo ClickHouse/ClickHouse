@@ -1719,7 +1719,7 @@ private:
             }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
-            parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
+            parsed_insert_query->end = parsed_insert_query->data + data_in.count();
         }
         else if (!is_interactive)
         {
