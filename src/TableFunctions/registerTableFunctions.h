@@ -11,6 +11,7 @@ class TableFunctionFactory;
 void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
@@ -30,10 +31,15 @@ void registerTableFunctionHDFS(TableFunctionFactory & factory);
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
+void registerTableFunctionView(TableFunctionFactory & factory);
+
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
 #endif
 
+#if USE_LIBPQXX
+void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
+#endif
 
 void registerTableFunctions();
 

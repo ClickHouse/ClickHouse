@@ -1,3 +1,7 @@
+---
+toc_title: LIMIT BY
+---
+
 # Секция LIMIT BY {#limit-by-clause}
 
 Запрос с секцией `LIMIT n BY expressions` выбирает первые `n` строк для каждого отличного значения `expressions`. Ключ `LIMIT BY` может содержать любое количество [выражений](../../syntax.md#syntax-expressions).

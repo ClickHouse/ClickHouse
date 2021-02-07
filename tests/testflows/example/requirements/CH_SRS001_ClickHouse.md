@@ -1,4 +1,4 @@
-# CH-SRS001 ClickHouse Software Requirements Specification Template
+# SRS-001 ClickHouse Software Requirements Specification Template
 
 **Author:** [name of the author]
 
@@ -15,9 +15,9 @@
   * 3.1 [SRS](#srs)
   * 3.2 [Some term that you will use](#some-term-that-you-will-use)
 * 4 [Requirements](#requirements)
-  * 4.1 [RQ.CH-SRS001.Example](#rqch-srs001example)
-  * 4.2 [RQ.CH-SRS001.Example.Subgroup](#rqch-srs001examplesubgroup)
-  * 4.3 [RQ.CH-SRS001.Example.Select.1](#rqch-srs001exampleselect1)
+  * 4.1 [RQ.SRS-001.Example](#rqsrs-001example)
+  * 4.2 [RQ.SRS-001.Example.Subgroup](#rqsrs-001examplesubgroup)
+  * 4.3 [RQ.SRS-001.Example.Select.1](#rqsrs-001exampleselect1)
 * 5 [References](#references)
 
 ## Revision History
@@ -30,11 +30,11 @@ This section provides an introduction to the project or the feature.
 All [SRS] documents must be uniquely identified by a number. In this
 case this document is identified by the number
 
-    CH-SRS001
+    SRS-001
 
 The document number must always be used as a prefix to the document title. For example,
 
-    CH-SRSxxx Name of the document
+    SRS-xxx Name of the document
 
 All the requirements must be specified in the [Requirements](#requirements) section.
 
@@ -90,7 +90,7 @@ the following prefix:
 then immediately followed by a one-line block that contains the 
 the `version` of the requirement.
 
-### RQ.CH-SRS001.Example
+### RQ.SRS-001.Example
 version: 1.0
 
 This is a long description of the requirement that can include any
@@ -107,16 +107,16 @@ because if the requirement must be moved the numbering will not match.
 Therefore, the requirement name should start with the group
 name which is then followed by a number if any. For example,
 
-    RQ.SRS001.Group.Subgroup.1
+    RQ.SRS-001.Group.Subgroup.1
 
 To keep names short, try to use abbreviations for the requirement's group name.
 
-### RQ.CH-SRS001.Example.Subgroup
+### RQ.SRS-001.Example.Subgroup
 version: 1.0
 
-This an example of a sub-requirement of the [RQ.CH-SRS001.Example](#rqch-srs001example).
+This an example of a sub-requirement of the [RQ.SRS-001.Example](#rqsrs-001example).
 
-### RQ.CH-SRS001.Example.Select.1
+### RQ.SRS-001.Example.Select.1
 version: 1.0
 
 [ClickHouse] SHALL return `1` when user executes query

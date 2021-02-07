@@ -25,4 +25,8 @@
 -   `execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Общее время выполнения запроса, в секундах.
 -   `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса.
 
+## Смотрите также {#see-also}
+
+-   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/quotas_usage) <!--hide-->

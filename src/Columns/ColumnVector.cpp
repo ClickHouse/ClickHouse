@@ -1,34 +1,27 @@
 #include "ColumnVector.h"
 
-#include <cstring>
-#include <cmath>
-#include <common/unaligned.h>
-#include <Common/Exception.h>
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/NaNUtils.h>
-#include <Common/RadixSort.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
-#include <IO/WriteHelpers.h>
+#include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Arena.h>
+#include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/NaNUtils.h>
+#include <Common/RadixSort.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <common/sort.h>
+#include <common/unaligned.h>
 #include <ext/bit_cast.h>
-#include <pdqsort.h>
-#include <numeric>
+#include <ext/scope_guard.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    if USE_OPENCL
-#        include "Common/BitonicSort.h" // Y_IGNORE
-#    endif
-#else
-#undef USE_OPENCL
-#endif
+#include <cmath>
+#include <cstring>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
+#if defined(__SSE2__)
+#    include <emmintrin.h>
 #endif
 
 namespace DB
@@ -38,40 +31,22 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int OPENCL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    if constexpr (is_big_int_v<T>)
-    {
-        static constexpr size_t bytesize = BigInt<T>::size;
-        char * pos = arena.allocContinue(bytesize, begin);
-        return BigInt<T>::serialize(data[n], pos);
-    }
-    else
-    {
-        auto * pos = arena.allocContinue(sizeof(T), begin);
-        unalignedStore<T>(pos, data[n]);
-        return StringRef(pos, sizeof(T));
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
+    unalignedStore<T>(pos, data[n]);
+    return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    if constexpr (is_big_int_v<T>)
-    {
-        data.emplace_back(BigInt<T>::deserialize(pos));
-        return pos + BigInt<T>::size;
-    }
-    else
-    {
-        data.emplace_back(unalignedLoad<T>(pos));
-        return pos + sizeof(T);
-    }
+    data.emplace_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
 }
 
 template <typename T>
@@ -146,29 +121,6 @@ namespace
     };
 }
 
-template <typename T>
-void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
-                                            IColumn::SpecialSort special_sort) const
-{
-    if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
-    {
-#if !defined(ARCADIA_BUILD)
-#if USE_OPENCL
-        if (!limit || limit >= data.size())
-        {
-            res.resize(data.size());
-
-            if (data.empty() || BitonicSort::getInstance().sort(data, res, !reverse))
-                return;
-        }
-#else
-        throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
-#endif
-#endif
-    }
-
-    getPermutation(reverse, limit, nan_direction_hint, res);
-}
 
 template <typename T>
 void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -188,9 +140,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+            partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
     }
     else
     {
@@ -243,10 +195,14 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= data.size() || limit >= equal_range.back().second)
         limit = 0;
 
     EqualRanges new_ranges;
+    SCOPE_EXIT({equal_range = std::move(new_ranges);});
 
     for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
     {
@@ -275,10 +231,16 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     if (limit)
     {
         const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then, we are working inside the interval.
+
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
@@ -307,7 +269,6 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
             new_ranges.emplace_back(new_first, new_last);
         }
     }
-    equal_range = std::move(new_ranges);
 }
 
 template <typename T>
@@ -321,18 +282,10 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (is_POD)
-        {
-            memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
+        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-                memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
-        }
-        else
-        {
-            for (size_t i = 0; i < count; i++)
-                new_col.data[i] = data[i];
-        }
+        if (size > count)
+            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
     }
 
     return res;
@@ -370,15 +323,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (is_POD)
-    {
-        memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
-    }
-    else
-    {
-        for (size_t i = 0; i < length; i++)
-            data[old_size + i] = src_vec.data[start + i];
-    }
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -394,70 +339,53 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-    if constexpr (is_POD)
-    {
-        const UInt8 * filt_pos = filt.data();
-        const UInt8 * filt_end = filt_pos + size;
-        const T * data_pos = data.data();
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
 
 #ifdef __SSE2__
-        /** A slightly more optimized version.
-        * Based on the assumption that often pieces of consecutive values
-        *  completely pass or do not pass the filter.
-        * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
-        */
+    /** A slightly more optimized version.
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
 
-        static constexpr size_t SIMD_BYTES = 16;
-        const __m128i zero16 = _mm_setzero_si128();
-        const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+    static constexpr size_t SIMD_BYTES = 16;
+    const __m128i zero16 = _mm_setzero_si128();
+    const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
-        while (filt_pos < filt_end_sse)
+    while (filt_pos < filt_end_sse)
+    {
+        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        mask = ~mask;
+
+        if (0 == mask)
         {
-            int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-
-            if (0 == mask)
-            {
-                /// Nothing is inserted.
-            }
-            else if (0xFFFF == mask)
-            {
-                res_data.insert(data_pos, data_pos + SIMD_BYTES);
-            }
-            else
-            {
-                for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (filt_pos[i])
-                        res_data.push_back(data_pos[i]);
-            }
-
-            filt_pos += SIMD_BYTES;
-            data_pos += SIMD_BYTES;
+            /// Nothing is inserted.
         }
+        else if (0xFFFF == mask)
+        {
+            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+        }
+        else
+        {
+            for (size_t i = 0; i < SIMD_BYTES; ++i)
+                if (filt_pos[i])
+                    res_data.push_back(data_pos[i]);
+        }
+
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
 #endif
 
-        while (filt_pos < filt_end)
-        {
-            if (*filt_pos)
-                res_data.push_back(*data_pos);
-
-            ++filt_pos;
-            ++data_pos;
-        }
-    }
-    else
+    while (filt_pos < filt_end)
     {
-        const auto * filt_pos = filt.begin();
-        const auto * filt_end = filt.end();
-        auto data_pos = data.begin();
+        if (*filt_pos)
+            res_data.push_back(*data_pos);
 
-        while (filt_pos < filt_end)
-        {
-            if (*filt_pos)
-                res_data.push_back(*data_pos);
-
-            ++filt_pos;
-            ++data_pos;
-        }
+        ++filt_pos;
+        ++data_pos;
     }
 
     return res;

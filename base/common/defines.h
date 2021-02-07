@@ -61,6 +61,20 @@
 #    endif
 #endif
 
+#if defined(ADDRESS_SANITIZER)
+#    define BOOST_USE_ASAN 1
+#    define BOOST_USE_UCONTEXT 1
+#endif
+
+#if defined(THREAD_SANITIZER)
+#    define BOOST_USE_TSAN 1
+#    define BOOST_USE_UCONTEXT 1
+#endif
+
+#if defined(ARCADIA_BUILD) && defined(BOOST_USE_UCONTEXT)
+#    undef BOOST_USE_UCONTEXT
+#endif
+
 /// TODO: Strange enough, there is no way to detect UB sanitizer.
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
@@ -70,18 +84,16 @@
 #    define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
+#    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS
 #    define NO_SANITIZE_THREAD
+#    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
 
-#if defined __GNUC__ && !defined __clang__
-#    define OPTIMIZE(x) __attribute__((__optimize__(x)))
-#else
-#    define OPTIMIZE(x)
-#endif
-
-/// A macro for suppressing warnings about unused variables or function results.
-/// Useful for structured bindings which have no standard way to declare this.
-#define UNUSED(...) (void)(__VA_ARGS__)
+/// A template function for suppressing warnings about unused variables or function results.
+template <typename... Args>
+constexpr void UNUSED(Args &&... args [[maybe_unused]])
+{
+}

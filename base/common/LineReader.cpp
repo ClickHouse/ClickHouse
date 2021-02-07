@@ -38,10 +38,10 @@ bool hasInputData()
 
 }
 
-LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
+std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
 {
     if (!ready)
-        return std::make_pair(words.end(), words.end());
+        return std::nullopt;
 
     std::string_view last_word;
 
@@ -127,7 +127,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         }
 #endif
 
-        line += (line.empty() ? "" : " ") + input;
+        line += (line.empty() ? "" : "\n") + input;
 
         if (!need_next_line)
             break;

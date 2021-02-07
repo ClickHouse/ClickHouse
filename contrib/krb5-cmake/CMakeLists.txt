@@ -210,7 +210,7 @@ set(ALL_SRCS
     # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
+    #${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/sha256.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hmac.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c

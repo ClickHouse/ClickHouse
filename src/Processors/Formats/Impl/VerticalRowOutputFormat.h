@@ -18,7 +18,7 @@ class Context;
 class VerticalRowOutputFormat : public IRowOutputFormat
 {
 public:
-    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_);
+    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 

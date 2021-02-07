@@ -34,18 +34,23 @@ ext::scope_guard EnabledRoles::subscribeForChanges(const OnChangeHandler & handl
 }
 
 
-void EnabledRoles::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_)
+void EnabledRoles::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, ext::scope_guard & notifications)
 {
-    std::vector<OnChangeHandler> handlers_to_notify;
-    SCOPE_EXIT({ for (const auto & handler : handlers_to_notify) handler(info_); });
-
     std::lock_guard lock{mutex};
 
     if (info && info_ && *info == *info_)
         return;
 
     info = info_;
+
+    std::vector<OnChangeHandler> handlers_to_notify;
     boost::range::copy(handlers, std::back_inserter(handlers_to_notify));
+
+    notifications.join(ext::scope_guard([info = info, handlers_to_notify = std::move(handlers_to_notify)]
+    {
+        for (const auto & handler : handlers_to_notify)
+            handler(info);
+    }));
 }
 
 }

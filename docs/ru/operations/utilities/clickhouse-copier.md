@@ -1,3 +1,8 @@
+---
+toc_priority: 59
+toc_title: clickhouse-copier
+---
+
 # clickhouse-copier {#clickhouse-copier}
 
 Копирует данные из таблиц одного кластера в таблицы другого (или этого же) кластера.
@@ -24,7 +29,7 @@
 Утилиту следует запускать вручную следующим образом:
 
 ``` bash
-$ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+$ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 Параметры запуска:
@@ -62,11 +67,21 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
+		    <!--
+                source cluster & destination clusters accept exactly the same
+                parameters as parameters for the usual Distributed table
+                see https://clickhouse.tech/docs/ru/engines/table-engines/special/distributed/
+            --> 	
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
                         <host>127.0.0.1</host>
                         <port>9000</port>
+						<!--
+                        <user>default</user>
+                        <password>default</password>
+                        <secure>1</secure>
+                        -->
                     </replica>
             </shard>
             ...

@@ -4,7 +4,7 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -145,7 +145,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -163,6 +163,11 @@ public:
 
     String name;
     MergeTreePartInfo info;
+
+    /// Part unique identifier.
+    /// The intention is to use it for identifying cases where the same part is
+    /// processed by multiple shards.
+    UUID uuid = UUIDHelpers::Nil;
 
     VolumePtr volume;
 
@@ -216,7 +221,8 @@ public:
     TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    mutable State state{State::Temporary};
+    void setState(State new_state) const;
+    State getState() const;
 
     /// Returns name of state
     static String stateToString(State state);
@@ -316,15 +322,19 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+    /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
+    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
+    virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
+
+    /// Returns true if this part shall participate in merges according to
+    /// settings of given storage policy.
+    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
@@ -343,6 +353,13 @@ public:
     static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
 
     static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+
+    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
+
+    /// Checks that all TTLs (table min/max, column ttls, so on) for part
+    /// calculated. Part without calculated TTL may exist if TTL was added after
+    /// part creation (using alter query with materialize_ttl setting).
+    bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
 protected:
 
@@ -375,6 +392,9 @@ private:
     /// In compact parts order of columns is necessary
     NameToPosition column_name_to_position;
 
+    /// Reads part unique identifier (if exists) from uuid.txt
+    void loadUUID();
+
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
@@ -404,6 +424,8 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    mutable State state{State::Temporary};
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

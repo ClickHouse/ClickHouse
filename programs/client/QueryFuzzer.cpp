@@ -8,11 +8,13 @@
 #include <Core/Types.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -20,12 +22,18 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TOO_DEEP_RECURSION;
+}
 
 Field QueryFuzzer::getRandomField(int type)
 {
@@ -204,14 +212,88 @@ void QueryFuzzer::replaceWithTableLike(ASTPtr & ast)
     ast = new_ast;
 }
 
-void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
+void QueryFuzzer::fuzzOrderByElement(ASTOrderByElement * elem)
+{
+    switch (fuzz_rand() % 10)
+    {
+        case 0:
+            elem->direction = -1;
+            break;
+        case 1:
+            elem->direction = 1;
+            break;
+        case 2:
+            elem->nulls_direction = -1;
+            elem->nulls_direction_was_explicitly_specified = true;
+            break;
+        case 3:
+            elem->nulls_direction = 1;
+            elem->nulls_direction_was_explicitly_specified = true;
+            break;
+        case 4:
+            elem->nulls_direction = elem->direction;
+            elem->nulls_direction_was_explicitly_specified = false;
+            break;
+        default:
+            // do nothing
+            break;
+    }
+}
+
+void QueryFuzzer::fuzzOrderByList(IAST * ast)
 {
     if (!ast)
     {
         return;
     }
 
-    auto * impl = assert_cast<ASTExpressionList *>(ast.get());
+    auto * list = assert_cast<ASTExpressionList *>(ast);
+
+    // Remove element
+    if (fuzz_rand() % 50 == 0 && list->children.size() > 1)
+    {
+        // Don't remove last element -- this leads to questionable
+        // constructs such as empty select.
+        list->children.erase(list->children.begin()
+                             + fuzz_rand() % list->children.size());
+    }
+
+    // Add element
+    if (fuzz_rand() % 50 == 0)
+    {
+        auto pos = list->children.empty()
+                ? list->children.begin()
+                : list->children.begin() + fuzz_rand() % list->children.size();
+        auto col = getRandomColumnLike();
+        if (col)
+        {
+            auto elem = std::make_shared<ASTOrderByElement>();
+            elem->children.push_back(col);
+            elem->direction = 1;
+            elem->nulls_direction = 1;
+            elem->nulls_direction_was_explicitly_specified = false;
+            elem->with_fill = false;
+
+            list->children.insert(pos, elem);
+        }
+        else
+        {
+            fprintf(stderr, "no random col!\n");
+        }
+    }
+
+    // We don't have to recurse here to fuzz the children, this is handled by
+    // the generic recursion into IAST.children.
+}
+
+void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
+{
+    if (!ast)
+    {
+        return;
+    }
+
+    auto * impl = assert_cast<ASTExpressionList *>(ast);
 
     // Remove element
     if (fuzz_rand() % 50 == 0 && impl->children.size() > 1)
@@ -243,6 +325,51 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
     // the generic recursion into IAST.children.
 }
 
+void QueryFuzzer::fuzzWindowFrame(WindowFrame & frame)
+{
+    switch (fuzz_rand() % 40)
+    {
+        case 0:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.type = r == 0 ? WindowFrame::FrameType::Rows
+                : r == 1 ? WindowFrame::FrameType::Range
+                    : WindowFrame::FrameType::Groups;
+            break;
+        }
+        case 1:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.begin_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+                : r == 1 ? WindowFrame::BoundaryType::Current
+                    : WindowFrame::BoundaryType::Offset;
+            break;
+        }
+        case 2:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.end_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+                : r == 1 ? WindowFrame::BoundaryType::Current
+                    : WindowFrame::BoundaryType::Offset;
+            break;
+        }
+        case 3:
+        {
+            frame.begin_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        case 4:
+        {
+            frame.end_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        default:
+            break;
+    }
+
+    frame.is_default = (frame == WindowFrame{});
+}
+
 void QueryFuzzer::fuzz(ASTs & asts)
 {
     for (auto & ast : asts)
@@ -251,11 +378,44 @@ void QueryFuzzer::fuzz(ASTs & asts)
     }
 }
 
+struct ScopedIncrement
+{
+    size_t & counter;
+
+    explicit ScopedIncrement(size_t & counter_) : counter(counter_) { ++counter; }
+    ~ScopedIncrement() { --counter; }
+};
+
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
     if (!ast)
         return;
 
+    // Check for exceeding max depth.
+    ScopedIncrement depth_increment(current_ast_depth);
+    if (current_ast_depth > 500)
+    {
+        // The AST is too deep (see the comment for current_ast_depth). Throw
+        // an exception to fail fast and not use this query as an etalon, or we'll
+        // end up in a very slow and useless loop. It also makes sense to set it
+        // lower than the default max parse depth on the server (1000), so that
+        // we don't get the useless error about parse depth from the server either.
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "AST depth exceeded while fuzzing ({})", current_ast_depth);
+    }
+
+    // Check for loops.
+    auto [_, inserted] = debug_visited_nodes.insert(ast.get());
+    if (!inserted)
+    {
+        fmt::print(stderr, "The AST node '{}' was already visited before."
+            " Depth {}, {} visited nodes, current top AST:\n{}\n",
+            static_cast<void *>(ast.get()), current_ast_depth,
+            debug_visited_nodes.size(), (*debug_top_ast)->dumpTree());
+        assert(false);
+    }
+
+    // The fuzzing.
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
         fuzz(with_union->list_of_selects);
@@ -280,20 +440,50 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzz(expr_list->children);
     }
+    else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
+    {
+        fuzzOrderByElement(order_by_element);
+    }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
-        fuzzColumnLikeExpressionList(fn->arguments);
-        fuzzColumnLikeExpressionList(fn->parameters);
+        fuzzColumnLikeExpressionList(fn->arguments.get());
+        fuzzColumnLikeExpressionList(fn->parameters.get());
+
+        if (fn->is_window_function && fn->window_definition)
+        {
+            auto & def = fn->window_definition->as<ASTWindowDefinition &>();
+            fuzzColumnLikeExpressionList(def.partition_by.get());
+            fuzzOrderByList(def.order_by.get());
+            fuzzWindowFrame(def.frame);
+        }
 
         fuzz(fn->children);
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
-        fuzzColumnLikeExpressionList(select->select());
-        fuzzColumnLikeExpressionList(select->groupBy());
+        fuzzColumnLikeExpressionList(select->select().get());
+        fuzzColumnLikeExpressionList(select->groupBy().get());
+        fuzzOrderByList(select->orderBy().get());
 
         fuzz(select->children);
     }
+    /*
+     * The time to fuzz the settings has not yet come.
+     * Apparently we don't have any infractructure to validate the values of
+     * the settings, and the first query with max_block_size = -1 breaks
+     * because of overflows here and there.
+     *//*
+     * else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
+     * {
+     *      for (auto & c : set->changes)
+     *      {
+     *          if (fuzz_rand() % 50 == 0)
+     *          {
+     *              c.value = fuzzField(c.value);
+     *          }
+     *      }
+     * }
+     */
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
         // There is a caveat with fuzzing the children: many ASTs also keep the
@@ -352,7 +542,7 @@ void QueryFuzzer::addTableLike(const ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
-        return;
+        table_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -366,7 +556,7 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
-        return;
+        column_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -380,10 +570,12 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
-        if (aliases_set.size() < 1000)
+        if (aliases_set.size() > 1000)
         {
-            aliases_set.insert(impl->alias);
+            aliases_set.clear();
         }
+
+        aliases_set.insert(impl->alias);
     }
 
     if (typeid_cast<ASTLiteral *>(ast.get()))
@@ -415,11 +607,17 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
+    current_ast_depth = 0;
+    debug_visited_nodes.clear();
+    debug_top_ast = &ast;
+
     collectFuzzInfoMain(ast);
     fuzz(ast);
 
     std::cout << std::endl;
-    formatAST(*ast, std::cout, false /*highlight*/);
+    WriteBufferFromOStream ast_buf(std::cout, 4096);
+    formatAST(*ast, ast_buf, false /*highlight*/);
+    ast_buf.next();
     std::cout << std::endl << std::endl;
 }
 

@@ -1,16 +1,16 @@
 ---
-toc_priority: 6
+toc_priority: 40
 toc_title: ROLE
 ---
 
 # CREATE ROLE {#create-role-statement}
 
-Creates a new [role](../../../operations/access-rights.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
+Creates new [roles](../../../operations/access-rights.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 
 Syntax:
 
 ``` sql
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 

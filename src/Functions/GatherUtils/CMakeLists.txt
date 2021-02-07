@@ -3,7 +3,17 @@ add_headers_and_sources(clickhouse_functions_gatherutils .)
 add_library(clickhouse_functions_gatherutils ${clickhouse_functions_gatherutils_sources} ${clickhouse_functions_gatherutils_headers})
 target_link_libraries(clickhouse_functions_gatherutils PRIVATE dbms)
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+check_cxx_compiler_flag("-Wsuggest-override" HAS_SUGGEST_OVERRIDE)
+check_cxx_compiler_flag("-Wsuggest-destructor-override" HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+
+if (HAS_SUGGEST_OVERRIDE)
+    target_compile_definitions(clickhouse_functions_gatherutils PUBLIC HAS_SUGGEST_OVERRIDE)
+endif()
+
+if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+    target_compile_definitions(clickhouse_functions_gatherutils PUBLIC HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+endif()
+
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     target_compile_options(clickhouse_functions_gatherutils PRIVATE "-g0")
-endif ()
+endif()

@@ -1,3 +1,8 @@
+---
+toc_priority: 52
+toc_title: Array(T)
+---
+
 # Array(T) {#data-type-array}
 
 Массив из элементов типа `T`.
@@ -41,6 +46,8 @@ SELECT [1, 2] AS x, toTypeName(x)
 ```
 
 ## Особенности работы с типами данных {#osobennosti-raboty-s-tipami-dannykh}
+
+Максимальный размер массива ограничен одним миллионом элементов.
 
 При создании массива «на лету» ClickHouse автоматически определяет тип аргументов как наиболее узкий тип данных, в котором можно хранить все перечисленные аргументы. Если среди аргументов есть [NULL](../../sql-reference/data-types/array.md#null-literal) или аргумент типа [Nullable](nullable.md#data_type-nullable), то тип элементов массива — [Nullable](nullable.md).
 

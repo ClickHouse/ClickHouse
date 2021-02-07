@@ -44,7 +44,7 @@ Los detalles de cada cláusula opcional se cubren en secciones separadas, que se
 -   [Cláusula HAVING](having.md)
 -   [Cláusula SELECT](#select-clause)
 -   [Cláusula LIMIT](limit.md)
--   [UNION ALL cláusula](union-all.md)
+-   [UNION ALL cláusula](union.md)
 
 ## SELECT Cláusula {#select-clause}
 

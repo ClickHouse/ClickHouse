@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL(
@@ -12,10 +14,12 @@ PEERDIR(
     contrib/libs/zstd
 )
 
+
 SRCS(
     CachedCompressedReadBuffer.cpp
-    CompressedReadBufferBase.cpp
+    CheckingCompressedReadBuffer.cpp
     CompressedReadBuffer.cpp
+    CompressedReadBufferBase.cpp
     CompressedReadBufferFromFile.cpp
     CompressedWriteBuffer.cpp
     CompressionCodecDelta.cpp
@@ -27,9 +31,9 @@ SRCS(
     CompressionCodecT64.cpp
     CompressionCodecZSTD.cpp
     CompressionFactory.cpp
-    getCompressionCodecForFile.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
+    getCompressionCodecForFile.cpp
 
 )
 

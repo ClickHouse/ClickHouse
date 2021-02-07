@@ -4,9 +4,11 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Core/BigInt.h>
 
 #include <common/unaligned.h>
+#include <common/sort.h>
+#include <ext/scope_guard.h>
+
 
 #include <IO/WriteHelpers.h>
 
@@ -52,32 +54,16 @@ void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    if constexpr (is_POD)
-    {
-        auto * pos = arena.allocContinue(sizeof(T), begin);
-        memcpy(pos, &data[n], sizeof(T));
-        return StringRef(pos, sizeof(T));
-    }
-    else
-    {
-        char * pos = arena.allocContinue(BigInt<T>::size, begin);
-        return BigInt<Int256>::serialize(data[n], pos);
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
+    memcpy(pos, &data[n], sizeof(T));
+    return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    if constexpr (is_POD)
-    {
-        data.push_back(unalignedLoad<T>(pos));
-        return pos + sizeof(T);
-    }
-    else
-    {
-        data.push_back(BigInt<Int256>::deserialize(pos));
-        return pos + BigInt<Int256>::size;
-    }
+    data.push_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
 }
 
 template <typename T>
@@ -142,25 +128,31 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 }
 
 template <typename T>
-void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (limit >= data.size() || limit >= equal_range.back().second)
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= data.size() || limit >= equal_ranges.back().second)
         limit = 0;
 
-    size_t n = equal_range.size();
+    size_t number_of_ranges = equal_ranges.size();
     if (limit)
-        --n;
+        --number_of_ranges;
 
     EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i)
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto& [first, last] = equal_range[i];
+        const auto& [first, last] = equal_ranges[i];
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+            std::sort(res.begin() + first, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+            std::sort(res.begin() + first, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
+
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
@@ -178,12 +170,18 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
 
     if (limit)
     {
-        const auto& [first, last] = equal_range.back();
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
@@ -208,7 +206,6 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
         if (new_last - new_first > 1)
             new_ranges.emplace_back(new_first, new_last);
     }
-    equal_range = std::move(new_ranges);
 }
 
 template <typename T>
@@ -238,24 +235,13 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (is_POD)
-        {
-            memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-            {
-                void * tail = &new_col.data[count];
-                memset(tail, 0, (size - count) * sizeof(T));
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < count; i++)
-                new_col.data[i] = data[i];
+        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-                for (size_t i = count; i < size; i++)
-                    new_col.data[i] = T{};
+        if (size > count)
+        {
+            void * tail = &new_col.data[count];
+            memset(tail, 0, (size - count) * sizeof(T));
         }
     }
 
@@ -265,16 +251,9 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 template <typename T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    if constexpr (is_POD)
-    {
-        T tmp;
-        memcpy(&tmp, src, sizeof(T));
-        data.emplace_back(tmp);
-    }
-    else
-    {
-        data.push_back(BigInt<Int256>::deserialize(src));
-    }
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
 template <typename T>
@@ -289,13 +268,8 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (is_POD)
-        memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
-    else
-    {
-        for (size_t i = 0; i < length; i++)
-            data[old_size + i] = src_vec.data[start + i];
-    }
+
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -395,4 +369,5 @@ template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
+template class ColumnDecimal<DateTime64>;
 }

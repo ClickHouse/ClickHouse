@@ -1,0 +1,17 @@
+<yandex>
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/ssl/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/ssl/server.key</privateKeyFile>
+            <verificationMode>none</verificationMode>
+            <cacheSessions>true</cacheSessions>
+        </server>
+        <client>
+            <cacheSessions>true</cacheSessions>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</yandex>

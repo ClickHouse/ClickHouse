@@ -44,8 +44,6 @@ SELECT sum(y) FROM t_null_big
 └────────┘
 ```
 
-The `sum` function interprets `NULL` as `0`. In particular, this means that if the function receives input of a selection where all the values are `NULL`, then the result will be `0`, not `NULL`.
-
 Now you can use the `groupArray` function to create an array from the `y` column:
 
 ``` sql

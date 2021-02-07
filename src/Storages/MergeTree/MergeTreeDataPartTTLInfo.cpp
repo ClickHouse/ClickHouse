@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
+#include <algorithm>
 
 #include <common/JSON.h>
 
@@ -16,10 +17,23 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
         updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
-    for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
+    for (const auto & [name, ttl_info] : other_infos.rows_where_ttl)
     {
-        moves_ttl[expression].update(ttl_info);
+        rows_where_ttl[name].update(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
+
+    for (const auto & [name, ttl_info] : other_infos.group_by_ttl)
+    {
+        group_by_ttl[name].update(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+    }
+
+    for (const auto & [name, ttl_info] : other_infos.recompression_ttl)
+        recompression_ttl[name].update(ttl_info);
+
+    for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
+        moves_ttl[expression].update(ttl_info);
 
     table_ttl.update(other_infos.table_ttl);
     updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
@@ -55,17 +69,41 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
+
+    auto fill_ttl_info_map = [this](const JSON & json_part, TTLInfoMap & ttl_info_map, bool update_min_max)
+    {
+        for (auto elem : json_part) // NOLINT
+        {
+            MergeTreeDataPartTTLInfo ttl_info;
+            ttl_info.min = elem["min"].getUInt();
+            ttl_info.max = elem["max"].getUInt();
+            String expression = elem["expression"].getString();
+            ttl_info_map.emplace(expression, ttl_info);
+
+            if (update_min_max)
+                updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        }
+    };
+
     if (json.has("moves"))
     {
         const JSON & moves = json["moves"];
-        for (auto move : moves) // NOLINT
-        {
-            MergeTreeDataPartTTLInfo ttl_info;
-            ttl_info.min = move["min"].getUInt();
-            ttl_info.max = move["max"].getUInt();
-            String expression = move["expression"].getString();
-            moves_ttl.emplace(expression, ttl_info);
-        }
+        fill_ttl_info_map(moves, moves_ttl, false);
+    }
+    if (json.has("recompression"))
+    {
+        const JSON & recompressions = json["recompression"];
+        fill_ttl_info_map(recompressions, recompression_ttl, false);
+    }
+    if (json.has("group_by"))
+    {
+        const JSON & group_by = json["group_by"];
+        fill_ttl_info_map(group_by, group_by_ttl, true);
+    }
+    if (json.has("rows_where"))
+    {
+        const JSON & rows_where = json["rows_where"];
+        fill_ttl_info_map(rows_where, rows_where_ttl, true);
     }
 }
 
@@ -102,14 +140,17 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeIntText(table_ttl.max, out);
         writeString("}", out);
     }
-    if (!moves_ttl.empty())
+
+    auto write_infos = [&out](const TTLInfoMap & infos, const String & type, bool is_first)
     {
-        if (!columns_ttl.empty() || table_ttl.min)
+        if (!is_first)
             writeString(",", out);
-        writeString(R"("moves":[)", out);
-        for (auto it = moves_ttl.begin(); it != moves_ttl.end(); ++it)
+
+        writeDoubleQuotedString(type, out);
+        writeString(":[", out);
+        for (auto it = infos.begin(); it != infos.end(); ++it)
         {
-            if (it != moves_ttl.begin())
+            if (it != infos.begin())
                 writeString(",", out);
 
             writeString(R"({"expression":)", out);
@@ -121,8 +162,74 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             writeString("}", out);
         }
         writeString("]", out);
+    };
+
+    bool is_first = columns_ttl.empty() && !table_ttl.min;
+    if (!moves_ttl.empty())
+    {
+        write_infos(moves_ttl, "moves", is_first);
+        is_first = false;
     }
+
+    if (!recompression_ttl.empty())
+    {
+        write_infos(recompression_ttl, "recompression", is_first);
+        is_first = false;
+    }
+
+    if (!group_by_ttl.empty())
+    {
+        write_infos(group_by_ttl, "group_by", is_first);
+        is_first = false;
+    }
+
+    if (!rows_where_ttl.empty())
+        write_infos(rows_where_ttl, "rows_where", is_first);
+
     writeString("}", out);
+}
+
+time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
+{
+    time_t max = std::numeric_limits<time_t>::max();
+    for (const auto & [name, info] : recompression_ttl)
+        if (info.max != 0)
+            max = std::min(info.max, max);
+
+    if (max == std::numeric_limits<time_t>::max())
+        return 0;
+
+    return max;
+}
+
+std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
+{
+    time_t best_ttl_time = 0;
+    TTLDescriptions::const_iterator best_entry_it;
+    for (auto ttl_entry_it = descriptions.begin(); ttl_entry_it != descriptions.end(); ++ttl_entry_it)
+    {
+        auto ttl_info_it = ttl_info_map.find(ttl_entry_it->result_column);
+
+        if (ttl_info_it == ttl_info_map.end())
+            continue;
+
+        time_t ttl_time;
+
+        if (use_max)
+            ttl_time = ttl_info_it->second.max;
+        else
+            ttl_time = ttl_info_it->second.min;
+
+        /// Prefer TTL rule which went into action last.
+        if (ttl_time <= current_time
+                && best_ttl_time <= ttl_time)
+        {
+            best_entry_it = ttl_entry_it;
+            best_ttl_time = ttl_time;
+        }
+    }
+
+    return best_ttl_time ? *best_entry_it : std::optional<TTLDescription>();
 }
 
 }

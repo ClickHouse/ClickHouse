@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 ISource::ISource(Block header)
     : IProcessor({}, {std::move(header)}), output(outputs.front())
 {
@@ -45,17 +50,37 @@ void ISource::work()
 {
     try
     {
-        current_chunk.chunk = generate();
-        if (!current_chunk.chunk || isCancelled())
-            finished = true;
+        if (auto chunk = tryGenerate())
+        {
+            current_chunk.chunk = std::move(*chunk);
+            if (current_chunk.chunk)
+                has_input = true;
+        }
         else
-            has_input = true;
+            finished = true;
+
+        if (isCancelled())
+            finished = true;
     }
     catch (...)
     {
         finished = true;
         throw;
     }
+}
+
+Chunk ISource::generate()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "generate is not implemented for {}", getName());
+}
+
+std::optional<Chunk> ISource::tryGenerate()
+{
+    auto chunk = generate();
+    if (!chunk)
+        return {};
+
+    return chunk;
 }
 
 }

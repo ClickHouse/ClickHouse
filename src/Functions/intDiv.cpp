@@ -15,11 +15,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
+namespace
+{
+
 /// Optimizations for integer division by a constant.
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl
-    : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
+    : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
@@ -83,6 +86,10 @@ struct DivideIntegralByConstantImpl
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
+}
+
+namespace impl_
+{
 template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralImpl<UInt64, UInt8>> : DivideIntegralByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
 template <> struct BinaryOperationImpl<UInt64, UInt32, DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
@@ -102,10 +109,10 @@ template <> struct BinaryOperationImpl<Int32, Int8, DivideIntegralImpl<Int32, In
 template <> struct BinaryOperationImpl<Int32, Int16, DivideIntegralImpl<Int32, Int16>> : DivideIntegralByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralImpl<Int32, Int32>> : DivideIntegralByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, Int64>> : DivideIntegralByConstantImpl<Int32, Int64> {};
-
+}
 
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
-using FunctionIntDiv = FunctionBinaryArithmetic<DivideIntegralImpl, NameIntDiv, false>;
+using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
 
 void registerFunctionIntDiv(FunctionFactory & factory)
 {

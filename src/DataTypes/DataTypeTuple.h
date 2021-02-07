@@ -22,11 +22,14 @@ private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
+    bool serialize_names = true;
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeTuple(const DataTypes & elems);
-    DataTypeTuple(const DataTypes & elems, const Strings & names);
+    DataTypeTuple(const DataTypes & elems, const Strings & names, bool serialize_names_ = true);
+
+    static bool canBeCreatedWithNames(const Strings & names);
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
@@ -50,32 +53,33 @@ public:
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void serializeBinaryBulkStatePrefix(
+    void serializeBinaryBulkStatePrefixImpl(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffix(
+    void serializeBinaryBulkStateSuffixImpl(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefix(
+    void deserializeBinaryBulkStatePrefixImpl(
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreams(
+    void serializeBinaryBulkWithMultipleStreamsImpl(
             const IColumn & column,
             size_t offset,
             size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreams(
+    void deserializeBinaryBulkWithMultipleStreamsImpl(
             IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
+            DeserializeBinaryBulkStatePtr & state,
+            SubstreamsCache * cache) const override;
 
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
@@ -95,12 +99,16 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
+    bool serializeNames() const { return serialize_names; }
 };
 
 }

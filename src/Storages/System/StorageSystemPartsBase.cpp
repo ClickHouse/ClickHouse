@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMaterializeMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -84,9 +84,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            /// Lazy database can not contain MergeTree tables
-            /// and it's unnecessary to load all tables of Lazy database just to filter all of them.
-            if (database.second->getEngineName() != "Lazy")
+            /// Checck if database can contain MergeTree tables,
+            /// if not it's unnecessary to load all tables of database just to filter all of them.
+            if (database.second->canContainMergeTreeTables())
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -120,6 +120,13 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
                     String engine_name = storage->getName();
 
+#if USE_MYSQL
+                    if (auto * proxy = dynamic_cast<StorageMaterializeMySQL *>(storage.get()))
+                    {
+                        auto nested = proxy->getNested();
+                        storage.swap(nested);
+                    }
+#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
@@ -226,7 +233,7 @@ StoragesInfo StoragesInfoStream::next()
 Pipe StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,

@@ -1,100 +1,108 @@
-# 第三方集成库 {#di-san-fang-ji-cheng-ku}
+---
+toc_priority: 27
+toc_title: 第三方集成库
+---
+
+# 第三方集成库 {#integration-libraries-from-third-party-developers}
 
 !!! warning "声明"
-    Yandex不维护下面列出的库，也没有进行任何广泛的测试以确保其质量。
+Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
 
-## 基建产品 {#ji-jian-chan-pin}
+## 基础设施 {#infrastructure-products}
 
--   关系数据库管理系统
+-   关系数据库
     -   [MySQL](https://www.mysql.com)
         -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
-        -   [horgh-复制器](https://github.com/larsnovikov/horgh-replicator)
+        -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [infi.clickhouse\_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (使用 [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         -   [pg2ch](https://github.com/mkabilov/pg2ch)
+        -   [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
-        -   [ClickHouseMightrator](https://github.com/zlzforever/ClickHouseMigrator)
+        -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   消息队列
-    -   [卡夫卡](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (使用 [去客户](https://github.com/ClickHouse/clickhouse-go/))
+    -   [Kafka](https://kafka.apache.org)
+        -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   流处理
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   对象存储
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
-    -   [ﾂ环板backupｮﾂ嘉ｯﾂ偲](https://github.com/AlexAkulov/clickhouse-backup)
+        -   [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
 -   容器编排
     -   [Kubernetes](https://kubernetes.io)
-    -   [clickhouse-操](https://github.com/Altinity/clickhouse-operator)
+        -   [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
 -   配置管理
-    -   [木偶](https://puppet.com)
-    -   [ﾂ环板/ｮﾂ嘉ｯﾂ偲](https://forge.puppet.com/innogames/clickhouse)
-    -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
--   监控
-    -   [石墨](https://graphiteapp.org)
+    -   [puppet](https://puppet.com)
+        -   [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
+        -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
+-   Monitoring
+    -   [Graphite](https://graphiteapp.org)
         -   [graphouse](https://github.com/yandex/graphouse)
-        -   [ﾂ暗ｪﾂ氾环催ﾂ団](https://github.com/lomik/carbon-clickhouse) +
-        -   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/lomik/graphite-clickhouse)
-        -   [石墨-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) -优化静态分区 [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) 如果从规则 [汇总配置](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) 可以应用
+        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
-    -   [普罗米修斯号](https://prometheus.io/)
-        -   [clickhouse\_exporter](https://github.com/f1yegor/clickhouse_exporter)
+    -   [Prometheus](https://prometheus.io/)
+        -   [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         -   [PromHouse](https://github.com/Percona-Lab/PromHouse)
-        -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) （用途 [去客户](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (uses [Go client](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
-        -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
-        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+        -   [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+        -   [check_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
-        -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/Altinity/clickhouse-zabbix-template)
+        -   [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
-        -   [clickhouse积分](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
--   记录
+        -   [clickhouse integration](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
+-   Logging
     -   [rsyslog](https://www.rsyslog.com/)
-        -   [鹿茫house omhousee酶](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
+        -   [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     -   [fluentd](https://www.fluentd.org)
-        -   [loghouse](https://github.com/flant/loghouse) (对于 [Kubernetes](https://kubernetes.io))
-    -   [Sematext](https://www.sematext.com/logagent)
-        -   [logagent输出-插件-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
--   地理
+        -   [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
+    -   [logagent](https://www.sematext.com/logagent)
+        -   [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+-   Geo
     -   [MaxMind](https://dev.maxmind.com/geoip/)
-        -   [ﾂ环板-ｮﾂ嘉ｯﾂ偲青clickｼﾂ氾ｶﾂ鉄ﾂ工ﾂ渉](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+        -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
-## 编程语言生态系统 {#bian-cheng-yu-yan-sheng-tai-xi-tong}
+## 编程语言 {#programming-language-ecosystems}
 
 -   Python
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/cloudflare/sqlalchemy-clickhouse) (使用 [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
-    -   [熊猫](https://pandas.pydata.org)
+        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+    -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
-    -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (使用 [ﾂ暗ｪﾂ氾环催ﾂ団](https://github.com/artpaul/clickhouse-cpp))
+        -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-    -   [clickhouse-hdfs-装载机](https://github.com/jaykelin/clickhouse-hdfs-loader) (使用 [JDBC](../../sql-reference/table-functions/jdbc.md))
--   斯卡拉
+        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql-reference/table-functions/jdbc.md))
+-   Scala
     -   [Akka](https://akka.io)
-    -   [掳胫client-禄脢鹿脷露胫鲁隆鹿-client酶](https://github.com/crobox/clickhouse-scala-client)
--   C\#
+        -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
+-   C#
     -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
-    -   [克莱克豪斯Ado](https://github.com/killwort/ClickHouse-Net)
-    -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-    -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
--   仙丹
+        -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+        -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
+        -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
+        -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
+-   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
-    -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+        -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
     -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/integrations/) <!--hide-->
+[源文章](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

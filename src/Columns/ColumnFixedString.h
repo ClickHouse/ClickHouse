@@ -57,6 +57,11 @@ public:
         return chars.size() + sizeof(n);
     }
 
+    size_t byteSizeAt(size_t) const override
+    {
+        return n;
+    }
+
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + sizeof(n);

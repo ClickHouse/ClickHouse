@@ -1,4 +1,5 @@
 #include <common/ReadlineLineReader.h>
+#include <common/errnoToString.h>
 #include <ext/scope_guard.h>
 
 #include <errno.h>
@@ -30,7 +31,8 @@ static LineReader::Suggest::Words::const_iterator end;
 static void findRange(const char * prefix, size_t prefix_length)
 {
     std::string prefix_str(prefix);
-    std::tie(pos, end) = suggest->getCompletions(prefix_str, prefix_length);
+    if (auto completions = suggest->getCompletions(prefix_str, prefix_length))
+        std::tie(pos, end) = *completions;
 }
 
 /// Iterates through matched range.
@@ -68,7 +70,7 @@ ReadlineLineReader::ReadlineLineReader(
     {
         int res = read_history(history_file_path.c_str());
         if (res)
-            std::cerr << "Cannot read history from file " + history_file_path + ": "+ strerror(errno) << std::endl;
+            std::cerr << "Cannot read history from file " + history_file_path + ": "+ errnoToString(errno) << std::endl;
     }
 
     /// Added '.' to the default list. Because it is used to separate database and table.
@@ -106,7 +108,7 @@ ReadlineLineReader::ReadlineLineReader(
     };
 
     if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
-        throw std::runtime_error(std::string("Cannot set signal handler for readline: ") + strerror(errno));
+        throw std::runtime_error(std::string("Cannot set signal handler for readline: ") + errnoToString(errno));
 
     rl_variable_bind("completion-ignore-case", "on");
     // TODO: it doesn't work

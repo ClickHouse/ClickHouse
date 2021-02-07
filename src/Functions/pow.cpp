@@ -3,9 +3,13 @@
 
 namespace DB
 {
+namespace
+{
 
 struct PowName { static constexpr auto name = "pow"; };
 using FunctionPow = FunctionMathBinaryFloat64<BinaryFunctionVectorized<PowName, pow>>;
+
+}
 
 void registerFunctionPow(FunctionFactory & factory)
 {

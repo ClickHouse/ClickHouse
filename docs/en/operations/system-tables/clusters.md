@@ -20,7 +20,47 @@ Please note that `errors_count` is updated once per query to the cluster, but `e
 **See also**
 
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
--   [distributed\_replica\_error\_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed\_replica\_error\_half\_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+-   [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+
+**Example**
+
+```sql
+:) SELECT * FROM system.clusters LIMIT 2 FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+cluster:                 test_cluster
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               clickhouse01
+host_address:            172.23.0.11
+port:                    9000
+is_local:                1
+user:                    default
+default_database:        
+errors_count:            0
+estimated_recovery_time: 0
+
+Row 2:
+──────
+cluster:                 test_cluster
+shard_num:               1
+shard_weight:            1
+replica_num:             2
+host_name:               clickhouse02
+host_address:            172.23.0.12
+port:                    9000
+is_local:                0
+user:                    default
+default_database:        
+errors_count:            0
+estimated_recovery_time: 0
+
+2 rows in set. Elapsed: 0.002 sec. 
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/clusters) <!--hide-->

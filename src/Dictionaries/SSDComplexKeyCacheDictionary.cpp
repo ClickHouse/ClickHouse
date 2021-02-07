@@ -9,6 +9,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/MemorySanitizer.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <IO/AIO.h>
@@ -22,6 +23,8 @@
 #include <numeric>
 #include <filesystem>
 #include <city.h>
+#include <fcntl.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace ProfileEvents
 {
@@ -54,6 +57,7 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR;
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_FSYNC;
@@ -458,8 +462,12 @@ void SSDComplexKeyCachePartition::flush()
 
 template <typename Out, typename GetDefault>
 void SSDComplexKeyCachePartition::getValue(
-    const size_t attribute_index, const Columns & key_columns, const DataTypes & key_types,
-    ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
+    const size_t attribute_index,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    ResultArrayType<Out> & out,
+    std::vector<bool> & found,
+    GetDefault & default_value_extractor,
     std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
@@ -471,7 +479,7 @@ void SSDComplexKeyCachePartition::getValue(
         if (metadata.expiresAt() > now)
         {
             if (metadata.isDefault())
-                out[index] = get_default(index);
+                out[index] = default_value_extractor[index];
             else
             {
                 ignoreFromBufferToAttributeIndex(attribute_index, buf);
@@ -517,7 +525,7 @@ void SSDComplexKeyCachePartition::getString(const size_t attribute_index,
     getImpl(key_columns, key_types, set_value, found);
 }
 
-void SSDComplexKeyCachePartition::has(
+void SSDComplexKeyCachePartition::hasKeys(
     const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
     std::vector<bool> & found, std::chrono::system_clock::time_point now) const
 {
@@ -1015,7 +1023,7 @@ void SSDComplexKeyCacheStorage::getString(
     hit_count.fetch_add(n - count_not_found, std::memory_order_release);
 }
 
-void SSDComplexKeyCacheStorage::has(
+void SSDComplexKeyCacheStorage::hasKeys(
     const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
     std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
     TemporalComplexKeysPool & not_found_pool, std::chrono::system_clock::time_point now) const
@@ -1028,7 +1036,7 @@ void SSDComplexKeyCacheStorage::has(
     {
         std::shared_lock lock(rw_lock);
         for (const auto & partition : partitions)
-            partition->has(key_columns, key_types, out, found, now);
+            partition->hasKeys(key_columns, key_types, out, found, now);
     }
 
     size_t count_not_found = 0;
@@ -1120,6 +1128,8 @@ void SSDComplexKeyCacheStorage::update(
     AbsentIdHandler && on_key_not_found,
     const DictionaryLifetime lifetime)
 {
+    assert(key_columns.size() == key_types.size());
+
     auto append_block = [&key_types, this](
         const Columns & new_keys,
         const SSDComplexKeyCachePartition::Attributes & new_attributes,
@@ -1264,8 +1274,23 @@ void SSDComplexKeyCacheStorage::update(
             {
                 /// TODO: use old values.
 
-                /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-                std::rethrow_exception(last_update_exception);
+                // We don't have expired data for that `id` so all we can do is
+                // to rethrow `last_exception`. We might have to throw the same
+                // exception for different callers of dictGet() in different
+                // threads, which might then modify the exception object, so we
+                // have to throw a copy.
+                try
+                {
+                    std::rethrow_exception(last_update_exception);
+                }
+                catch (...)
+                {
+                    throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                        "Update failed for dictionary '{}': {}",
+                        getPath(),
+                        getCurrentExceptionMessage(true /*with stack trace*/,
+                            true /*check embedded stack trace*/));
+                }
             }
 
             std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
@@ -1356,102 +1381,75 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
     createAttributes();
 }
 
-#define DECLARE(TYPE) \
-    void SSDComplexKeyCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
-        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
-    }
+ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const ColumnPtr default_values_column) const
+{
+    ColumnPtr result;
 
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    dict_struct.validateKeyTypes(key_types);
 
-#define DECLARE(TYPE) \
-    void SSDComplexKeyCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t row) { return def[row]; }); /* NOLINT */ \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    const auto index = getAttributeIndex(attribute_name);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-#define DECLARE(TYPE) \
-    void SSDComplexKeyCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return def; }); /* NOLINT */ \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    auto keys_size = key_columns.front()->size();
 
-template <typename AttributeType, typename OutputType, typename DefaultGetter>
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+        const auto & null_value = std::get<AttributeType>(null_values[index]);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto * out = column.get();
+            getItemsStringImpl(index, key_columns, key_types, out, default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+            getItemsNumberImpl<AttributeType, AttributeType>(
+                index,
+                key_columns,
+                key_types,
+                out,
+                default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
+
+    return result;
+}
+
+template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
 void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     const size_t attribute_index,
-    const Columns & key_columns, const DataTypes & key_types,
-    ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    ResultArrayType<OutputType> & out,
+    DefaultValueExtractor & default_value_extractor) const
 {
+    assert(dict_struct.key);
+    assert(key_columns.size() == key_types.size());
+
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
     std::unordered_map<KeyRef, std::vector<size_t>> not_found_keys;
-    storage.getValue<OutputType>(attribute_index, key_columns, key_types, out, not_found_keys, not_found_pool, get_default, now);
+    storage.getValue<OutputType>(attribute_index, key_columns, key_types, out, not_found_keys, not_found_pool, default_value_extractor, now);
     if (not_found_keys.empty())
         return;
 
@@ -1478,55 +1476,20 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
             [&](const auto key)
             {
                 for (const size_t row : not_found_keys[key])
-                    out[row] = get_default(row);
+                    out[row] = default_value_extractor[row];
             },
             getLifetime());
 }
 
-void SSDComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name,
-    const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    const auto null_value = StringRef{std::get<String>(null_values[index])};
-
-    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return null_value; });
-}
-
-void SSDComplexKeyCacheDictionary::getString(
-        const std::string & attribute_name,
-        const Columns & key_columns, const DataTypes & key_types,
-        const ColumnString * const def, ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return def->getDataAt(row); });
-}
-
-void SSDComplexKeyCacheDictionary::getString(
-        const std::string & attribute_name,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const String & def,
-        ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return StringRef{def}; });
-}
-
-template <typename DefaultGetter>
 void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     const size_t attribute_index,
     const Columns & key_columns,
     const DataTypes & key_types,
     ColumnString * out,
-    DefaultGetter && get_default) const
+    DictionaryDefaultValueExtractor<String> & default_value_extractor) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
@@ -1549,7 +1512,7 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
         {
             if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
             {
-                auto to_insert = get_default(row);
+                auto to_insert = default_value_extractor[row];
                 out->insertData(to_insert.data, to_insert.size);
                 ++default_index;
             }
@@ -1592,7 +1555,7 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
         SCOPE_EXIT(tmp_keys_pool.rollback(key));
         if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
         {
-            auto to_insert = get_default(row);
+            auto to_insert = default_value_extractor[row];
             out->insertData(to_insert.data, to_insert.size);
             ++default_index;
         }
@@ -1606,24 +1569,31 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
         }
         else
         {
-            auto to_insert = get_default(row);
+            auto to_insert = default_value_extractor[row];
             out->insertData(to_insert.data, to_insert.size);
         }
     }
 }
 
-void SSDComplexKeyCacheDictionary::has(
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr SSDComplexKeyCacheDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
+    const auto rows_num = key_columns.front()->size();
+
+    auto result = ColumnUInt8::create(rows_num);
+    auto& out = result->getData();
+
+    for (const auto row : ext::range(0, rows_num))
+        out[row] = false;
+
     const auto now = std::chrono::system_clock::now();
 
     std::unordered_map<KeyRef, std::vector<size_t>> not_found_keys;
     TemporalComplexKeysPool not_found_pool;
-    storage.has(key_columns, key_types, out, not_found_keys, not_found_pool, now);
+    storage.hasKeys(key_columns, key_types, out, not_found_keys, not_found_pool, now);
     if (not_found_keys.empty())
-        return;
+        return result;
 
     std::vector<KeyRef> required_keys(not_found_keys.size());
     std::transform(std::begin(not_found_keys), std::end(not_found_keys), std::begin(required_keys), [](const auto & pair) { return pair.first; });
@@ -1652,6 +1622,8 @@ void SSDComplexKeyCacheDictionary::has(
                     out[row] = false;
             },
             getLifetime());
+
+    return result;
 }
 
 BlockInputStreamPtr SSDComplexKeyCacheDictionary::getBlockInputStream(

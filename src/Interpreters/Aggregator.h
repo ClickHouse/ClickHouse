@@ -16,7 +16,6 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/UInt128.h>
-#include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
@@ -135,7 +134,7 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 {
     using Base::impls;
 
-    AggregationDataWithNullKeyTwoLevel() {}
+    AggregationDataWithNullKeyTwoLevel() = default;
 
     template <typename Other>
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
@@ -185,7 +184,7 @@ struct AggregationMethodOneNumber
 
     Data data;
 
-    AggregationMethodOneNumber() {}
+    AggregationMethodOneNumber() = default;
 
     template <typename Other>
     AggregationMethodOneNumber(const Other & other) : data(other.data) {}
@@ -200,8 +199,8 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
-        auto key_holder = reinterpret_cast<const char *>(&key);
-        auto column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
+        const auto * key_holder = reinterpret_cast<const char *>(&key);
+        auto * column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
         column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
@@ -217,7 +216,7 @@ struct AggregationMethodString
 
     Data data;
 
-    AggregationMethodString() {}
+    AggregationMethodString() = default;
 
     template <typename Other>
     AggregationMethodString(const Other & other) : data(other.data) {}
@@ -228,7 +227,7 @@ struct AggregationMethodString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -243,7 +242,7 @@ struct AggregationMethodStringNoCache
 
     Data data;
 
-    AggregationMethodStringNoCache() {}
+    AggregationMethodStringNoCache() = default;
 
     template <typename Other>
     AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
@@ -254,7 +253,7 @@ struct AggregationMethodStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -269,7 +268,7 @@ struct AggregationMethodFixedString
 
     Data data;
 
-    AggregationMethodFixedString() {}
+    AggregationMethodFixedString() = default;
 
     template <typename Other>
     AggregationMethodFixedString(const Other & other) : data(other.data) {}
@@ -280,7 +279,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -294,7 +293,7 @@ struct AggregationMethodFixedStringNoCache
 
     Data data;
 
-    AggregationMethodFixedStringNoCache() {}
+    AggregationMethodFixedStringNoCache() = default;
 
     template <typename Other>
     AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
@@ -305,7 +304,7 @@ struct AggregationMethodFixedStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -335,7 +334,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static void insertKeyIntoColumns(const Key & key,
         MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
-        auto col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
+        auto * col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
 
         if constexpr (std::is_same_v<Key, StringRef>)
         {
@@ -361,7 +360,7 @@ struct AggregationMethodKeysFixed
 
     Data data;
 
-    AggregationMethodKeysFixed() {}
+    AggregationMethodKeysFixed() = default;
 
     template <typename Other>
     AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
@@ -439,7 +438,7 @@ struct AggregationMethodSerialized
 
     Data data;
 
-    AggregationMethodSerialized() {}
+    AggregationMethodSerialized() = default;
 
     template <typename Other>
     AggregationMethodSerialized(const Other & other) : data(other.data) {}
@@ -450,7 +449,7 @@ struct AggregationMethodSerialized
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        auto pos = key.data;
+        const auto * pos = key.data;
         for (auto & column : key_columns)
             pos = column->deserializeAndInsertFromArena(pos);
     }
@@ -784,9 +783,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys128_two_level) \
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
-        M(low_cardinality_key_fixed_string_two_level) \
+        M(low_cardinality_key_fixed_string_two_level)
 
-    bool isLowCardinality()
+    bool isLowCardinality() const
     {
         switch (type)
         {
@@ -929,9 +928,6 @@ public:
 
     Aggregator(const Params & params_);
 
-    /// Aggregate the source. Get the result in the form of one of the data structures.
-    void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
-
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
     using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
@@ -955,15 +951,7 @@ public:
       */
     BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
-    /** Merge several aggregation data structures and output the result as a block stream.
-      */
-    std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const;
-
-    /** Merge the stream of partially aggregated blocks into one data structure.
-      * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
-      */
-    void mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads);
 
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
@@ -984,7 +972,7 @@ public:
 
     /** Set a function that checks whether the current task can be aborted.
       */
-    void setCancellationHook(const CancellationHook cancellation_hook);
+    void setCancellationHook(const CancellationHook & cancellation_hook);
 
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path);
@@ -1013,7 +1001,6 @@ public:
 
 protected:
     friend struct AggregatedDataVariants;
-    friend class MergingAndConvertingBlockInputStream;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
@@ -1213,6 +1200,7 @@ protected:
     Block convertOneBucketToBlock(
         AggregatedDataVariants & data_variants,
         Method & method,
+        Arena * arena,
         bool final,
         size_t bucket) const;
 

@@ -73,6 +73,7 @@ private:
         /// Memory pool for SimpleAggregateFunction
         /// (only when allocates_memory_in_arena == true).
         std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
 
         bool is_group_started = false;
 

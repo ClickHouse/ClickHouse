@@ -1,4 +1,3 @@
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -14,6 +13,7 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
 
@@ -89,9 +89,9 @@ size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
 
 std::string IAST::formatForErrorMessage() const
 {
-    std::stringstream ss;
-    format(FormatSettings(ss, true /* one line */));
-    return ss.str();
+    WriteBufferFromOwnString buf;
+    format(FormatSettings(buf, true /* one line */));
+    return buf.str();
 }
 
 void IAST::cloneChildren()
@@ -109,10 +109,16 @@ String IAST::getColumnName() const
 }
 
 
+String IAST::getColumnNameWithoutAlias() const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnNameWithoutAlias(write_buffer);
+    return write_buffer.str();
+}
+
+
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
-    WriteBufferFromOStream out(ostr, 32);
-
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -120,36 +126,54 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
             if (always_quote_identifiers)
                 throw Exception("Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None",
                     ErrorCodes::BAD_ARGUMENTS);
-            writeString(name, out);
+            writeString(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::Backticks:
         {
             if (always_quote_identifiers)
-                writeBackQuotedString(name, out);
+                writeBackQuotedString(name, ostr);
             else
-                writeProbablyBackQuotedString(name, out);
+                writeProbablyBackQuotedString(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
             if (always_quote_identifiers)
-                writeDoubleQuotedString(name, out);
+                writeDoubleQuotedString(name, ostr);
             else
-                writeProbablyDoubleQuotedString(name, out);
+                writeProbablyDoubleQuotedString(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
             if (always_quote_identifiers)
-                writeBackQuotedStringMySQL(name, out);
+                writeBackQuotedStringMySQL(name, ostr);
             else
-                writeProbablyBackQuotedStringMySQL(name, out);
+                writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
     }
+}
 
-    out.next();
+void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
+{
+    String indent_str(indent, '-');
+    ostr << indent_str << getID() << ", ";
+    writePointerHex(this, ostr);
+    writeChar('\n', ostr);
+    for (const auto & child : children)
+    {
+        if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+        child->dumpTree(ostr, indent + 1);
+    }
+}
+
+std::string IAST::dumpTree(size_t indent) const
+{
+    WriteBufferFromOwnString wb;
+    dumpTree(wb, indent);
+    return wb.str();
 }
 
 }

@@ -43,6 +43,8 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
 
         {"http_method", std::make_shared<DataTypeUInt8>()},
         {"http_user_agent", std::make_shared<DataTypeString>()},
+        {"http_referer", std::make_shared<DataTypeString>()},
+        {"forwarded_for", std::make_shared<DataTypeString>()},
 
         {"quota_key", std::make_shared<DataTypeString>()},
 
@@ -91,13 +93,15 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
-        res_columns[i++]->insert(process.client_info.client_revision);
+        res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
         res_columns[i++]->insert(process.client_info.client_version_patch);
 
         res_columns[i++]->insert(UInt64(process.client_info.http_method));
         res_columns[i++]->insert(process.client_info.http_user_agent);
+        res_columns[i++]->insert(process.client_info.http_referer);
+        res_columns[i++]->insert(process.client_info.forwarded_for);
 
         res_columns[i++]->insert(process.client_info.quota_key);
 

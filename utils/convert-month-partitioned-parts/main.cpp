@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>

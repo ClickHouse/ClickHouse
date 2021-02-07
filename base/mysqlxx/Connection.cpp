@@ -104,6 +104,11 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile_arg))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
+    /// Enables auto-reconnect.
+    bool reconnect = true;
+    if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
+        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
     /// Specifies particular ssl key and certificate if it needs
     if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
@@ -111,13 +116,8 @@ void Connection::connect(const char* db,
     if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Sets UTF-8 as default encoding.
-    if (mysql_set_character_set(driver.get(), "UTF8"))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
-
-    /// Enables auto-reconnect.
-    bool reconnect = true;
-    if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
+    /// Sets UTF-8 as default encoding. See https://mariadb.com/kb/en/mysql_set_character_set/
+    if (mysql_set_character_set(driver.get(), "utf8mb4"))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     is_connected = true;

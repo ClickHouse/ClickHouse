@@ -24,6 +24,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
+    ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
     ParserKeyword s_in("IN");
     ParserKeyword s_not("NOT");
@@ -43,11 +45,30 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!s_show.ignore(pos, expected))
         return false;
 
-    if (s_databases.ignore(pos))
+    if (s_databases.ignore(pos, expected))
     {
         query->databases = true;
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
+            return false;
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->limit_length, expected))
+                return false;
+        }
     }
-    else if (s_clusters.ignore(pos))
+    else if (s_clusters.ignore(pos, expected))
     {
         query->clusters = true;
 
@@ -70,7 +91,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
         }
     }
-    else if (s_cluster.ignore(pos))
+    else if (s_cluster.ignore(pos, expected))
     {
         query->cluster = true;
 
@@ -79,6 +100,29 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
 
         query->cluster_str = std::move(cluster_str);
+    }
+    else if (bool changed = s_changed.ignore(pos, expected); changed || s_settings.ignore(pos, expected))
+    {
+        query->m_settings = true;
+
+        if (changed)
+        {
+            query->changed = true;
+            if (!s_settings.ignore(pos, expected))
+                return false;
+        }
+
+        /// Not expected due to "SHOW SETTINGS PROFILES"
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else
+            return false;
     }
     else
     {

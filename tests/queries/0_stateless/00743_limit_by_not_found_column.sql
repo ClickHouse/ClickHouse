@@ -24,7 +24,7 @@ CREATE TEMPORARY TABLE Accounts (AccountID UInt64, Currency String);
 SELECT AccountID
 FROM 
 (
-    SELECT 
+    SELECT
         AccountID, 
         Currency
     FROM Accounts 

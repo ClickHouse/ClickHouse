@@ -4,13 +4,16 @@ if (NOT USE_LIBCXX)
     if (USE_INTERNAL_LIBCXX_LIBRARY)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal libcxx with USE_LIBCXX=OFF")
     endif()
+
     target_link_libraries(global-libs INTERFACE -l:libstdc++.a -l:libstdc++fs.a) # Always link these libraries as static
     target_link_libraries(global-libs INTERFACE ${EXCEPTION_HANDLING_LIBRARY})
     return()
 endif()
 
 set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ${NOT_UNBUNDLED})
-option (USE_INTERNAL_LIBCXX_LIBRARY "Set to FALSE to use system libcxx and libcxxabi libraries instead of bundled" ${USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT})
+
+option (USE_INTERNAL_LIBCXX_LIBRARY "Disable to use system libcxx and libcxxabi libraries instead of bundled"
+    ${USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/CMakeLists.txt")
     if (USE_INTERNAL_LIBCXX_LIBRARY)

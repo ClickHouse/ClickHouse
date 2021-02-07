@@ -6,7 +6,7 @@ toc_priority: 101
 
 # Can I Use ClickHouse As a Key-Value Storage? {#can-i-use-clickhouse-as-a-key-value-storage}
 
-The short answer is **“no”**. The key-value workload is among top positions in the list of cases when NOT{.text-danger} to use ClickHouse. It’s an [OLAP](../../faq/general/olap.md) system after all, while there are many excellent key-value storage systems out there.
+The short answer is **“no”**. The key-value workload is among top positions in the list of cases when **NOT**{.text-danger} to use ClickHouse. It’s an [OLAP](../../faq/general/olap.md) system after all, while there are many excellent key-value storage systems out there.
 
 However, there might be situations where it still makes sense to use ClickHouse for key-value-like queries. Usually, it’s some low-budget products where the main workload is analytical in nature and fits ClickHouse well, but there’s also some secondary process that needs a key-value pattern with not so high request throughput and without strict latency requirements. If you had an unlimited budget, you would have installed a secondary key-value database for thus secondary workload, but in reality, there’s an additional cost of maintaining one more storage system (monitoring, backups, etc.) which might be desirable to avoid.
 

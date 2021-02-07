@@ -3,6 +3,7 @@
         <server>
             <certificateFile>/etc/clickhouse-server/ssl/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/ssl/server.key</privateKeyFile>
+            <dhParamsFile>/etc/clickhouse-server/ssl/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <cacheSessions>true</cacheSessions>
         </server>

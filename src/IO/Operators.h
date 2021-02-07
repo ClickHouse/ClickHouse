@@ -45,7 +45,10 @@ struct BinaryManipReadBuffer         : std::reference_wrapper<ReadBuffer> { usin
 template <typename T>     WriteBuffer & operator<< (WriteBuffer & buf, const T & x)        { writeText(x, buf);     return buf; }
 /// If you do not use the manipulators, the string is displayed without an escape, as is.
 template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const String & x)   { writeString(x, buf);   return buf; }
+template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const std::string_view & x)   { writeString(StringRef(x), buf);   return buf; }
+template <> inline WriteBuffer & operator<< (WriteBuffer & buf, const StringRef & x) { writeString(x, buf); return buf; }
 template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const char & x)     { writeChar(x, buf);     return buf; }
+template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const pcg32_fast & x) { PcgSerializer::serializePcg32(x, buf); return buf; }
 
 inline WriteBuffer & operator<< (WriteBuffer & buf, const char * x)     { writeCString(x, buf); return buf; }
 
@@ -59,7 +62,11 @@ template <typename T> WriteBuffer & operator<< (QuoteManipWriteBuffer buf,      
 template <typename T> WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf,   const T & x) { writeDoubleQuoted(x, buf.get()); return buf; }
 template <typename T> WriteBuffer & operator<< (BinaryManipWriteBuffer buf,        const T & x) { writeBinary(x, buf.get());       return buf; }
 
-inline WriteBuffer & operator<< (EscapeManipWriteBuffer buf,      const char * x) { writeAnyEscapedString<'\''>(x, x + strlen(x), buf.get()); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const String & x)           { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const std::string_view & x) { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const StringRef & x)        { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const char * x)             { writeEscapedString(x, strlen(x), buf); return buf; }
+
 inline WriteBuffer & operator<< (QuoteManipWriteBuffer buf,       const char * x) { writeAnyQuotedString<'\''>(x, x + strlen(x), buf.get()); return buf; }
 inline WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf, const char * x) { writeAnyQuotedString<'"'>(x, x + strlen(x), buf.get()); return buf; }
 inline WriteBuffer & operator<< (BinaryManipWriteBuffer buf,      const char * x) { writeStringBinary(x, buf.get()); return buf; }
@@ -73,6 +80,7 @@ inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip) { buf.next(); re
 template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)              { readText(x, buf);     return buf; }
 template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, String & x)         { readString(x, buf);   return buf; }
 template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)           { readChar(x, buf);     return buf; }
+template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, pcg32_fast & x)     { PcgDeserializer::deserializePcg32(x, buf); return buf; }
 
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }

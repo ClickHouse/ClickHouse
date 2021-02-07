@@ -26,15 +26,22 @@ protected:
     /// Don't checksum on decompressing.
     bool disable_checksum = false;
 
+    /// Allow reading data, compressed by different codecs from one file.
+    bool allow_different_codecs;
+
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
+    ///
+    /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer() it will be copied into own_compressed_buffer.
+    /// This is required for CheckingCompressedReadBuffer, since this is just a proxy.
+    ///
     /// Returns number of compressed bytes read.
-    size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum);
+    size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy);
 
     void decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-    CompressedReadBufferBase(ReadBuffer * in = nullptr);
+    CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);
     ~CompressedReadBufferBase();
 
     /** Disable checksums.

@@ -3,7 +3,7 @@
 set -x -e
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+tar xJf MacOSX10.15.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
 mkdir -p build/cmake/toolchain/linux-aarch64
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1
@@ -17,10 +17,13 @@ ccache --show-stats ||:
 ccache --zero-stats ||:
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
-cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS ..
+# Read cmake arguments into array (possibly empty)
+read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
+cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+# shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS clickhouse-bundle
 mv ./programs/clickhouse* /output
-mv ./src/unit_tests_dbms /output
+mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
@@ -28,6 +31,7 @@ find . -name '*.so.*' -print -exec mv '{}' /output \;
 if [ "performance" == "$COMBINED_OUTPUT" ]
 then
     cp -r ../tests/performance /output
+    cp -r ../tests/config/top_level_domains  /output
     cp -r ../docker/test/performance-comparison/config /output ||:
     rm /output/unit_tests_dbms ||:
     rm /output/clickhouse-odbc-bridge ||:
@@ -60,7 +64,7 @@ then
     mkdir -p /output/config
     cp ../programs/server/config.xml /output/config
     cp ../programs/server/users.xml /output/config
-    cp -r ../programs/server/config.d /output/config
+    cp -r --dereference ../programs/server/config.d /output/config
     tar -czvf "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output

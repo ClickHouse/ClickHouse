@@ -1,18 +1,16 @@
 ---
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_priority: 3
-toc_title: "\u788C\u83BD\u7984Support:"
+toc_title: 支持
 ---
 
-# ClickHouse商业支持服务提供商 {#clickhouse-commercial-support-service-providers}
+# ClickHouse 商业支持服务提供商 {#clickhouse-commercial-support-service-providers}
 
-!!! info "信息"
-    如果您已经推出ClickHouse商业支持服务，请随时 [打开拉取请求](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/support.md) 将其添加到以下列表。
+!!! info "注意"
+    如果您已经推出 ClickHouse 商业支持服务，请随时[提交一个 pull request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/support.md) 将其添加到以下列表。
 
-## 敏锐性 {#altinity}
+## Altinity {#altinity}
 
-隆隆隆隆路虏脢..陇.貌.垄拢卢虏禄and陇.貌路.隆拢脳枚脢虏 隆隆隆隆路虏脢..陇.貌.垄拢卢虏禄.陇 访问 [www.altinity.com](https://www.altinity.com/) 欲了解更多信息.
+ Altinity 自从 2017 年开始为企业提供 ClickHouse 支持服务。Altinity 的客户范围包含百强企业到初创企业等。访问 [www.altinity.com](https://www.altinity.com/) 了解更多信息。
 
 ## Mafiree {#mafiree}
 

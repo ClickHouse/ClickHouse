@@ -57,7 +57,7 @@ Esta fila adicional solo se produce en `JSON*`, `TabSeparated*`, y `Pretty*` for
 -   En `Pretty*` formatea, la fila se muestra como una tabla separada después del resultado principal.
 -   En los otros formatos no está disponible.
 
-`WITH TOTALS` se puede ejecutar de diferentes maneras cuando HAVING está presente. El comportamiento depende de la ‘totals\_mode’ configuración.
+`WITH TOTALS` se puede ejecutar de diferentes maneras cuando HAVING está presente. El comportamiento depende de la ‘totals_mode’ configuración.
 
 ### Configuración del procesamiento de totales {#configuring-totals-processing}
 
@@ -67,9 +67,9 @@ Las otras alternativas incluyen solo las filas que pasan por HAVING en ‘totals
 
 `after_having_exclusive` – Don't include rows that didn't pass through `max_rows_to_group_by`. En otras palabras, ‘totals’ tendrá menos o el mismo número de filas que si `max_rows_to_group_by` se omitieron.
 
-`after_having_inclusive` – Include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ en ‘totals’. En otras palabras, ‘totals’ tendrá más o el mismo número de filas como lo haría si `max_rows_to_group_by` se omitieron.
+`after_having_inclusive` – Include all the rows that didn't pass through ‘max_rows_to_group_by’ en ‘totals’. En otras palabras, ‘totals’ tendrá más o el mismo número de filas como lo haría si `max_rows_to_group_by` se omitieron.
 
-`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ en ‘totals’. De lo contrario, no los incluya.
+`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max_rows_to_group_by’ en ‘totals’. De lo contrario, no los incluya.
 
 `totals_auto_threshold` – By default, 0.5. The coefficient for `after_having_auto`.
 
@@ -117,7 +117,7 @@ La agregación es una de las características más importantes de un DBMS orient
 ### GROUP BY en memoria externa {#select-group-by-in-external-memory}
 
 Puede habilitar el volcado de datos temporales en el disco para restringir el uso de memoria durante `GROUP BY`.
-El [max\_bytes\_before\_external\_group\_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) determina el umbral de consumo de RAM para el dumping `GROUP BY` datos temporales al sistema de archivos. Si se establece en 0 (el valor predeterminado), está deshabilitado.
+El [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) determina el umbral de consumo de RAM para el dumping `GROUP BY` datos temporales al sistema de archivos. Si se establece en 0 (el valor predeterminado), está deshabilitado.
 
 Cuando se utiliza `max_bytes_before_external_group_by`, le recomendamos que establezca `max_memory_usage` aproximadamente el doble de alto. Esto es necesario porque hay dos etapas para la agregación: leer los datos y formar datos intermedios (1) y fusionar los datos intermedios (2). El volcado de datos al sistema de archivos solo puede ocurrir durante la etapa 1. Si los datos temporales no se volcaron, entonces la etapa 2 puede requerir hasta la misma cantidad de memoria que en la etapa 1.
 

@@ -9,7 +9,7 @@ toc_title: "\u30E1\u30E2\u30EA\u3078\u306E\u8F9E\u66F8\u306E\u683C\u7D0D"
 
 辞書をメモリに保存するには、さまざまな方法があります。
 
-私達は推薦します [平ら](#flat), [ハッシュ](#dicts-external_dicts_dict_layout-hashed) と [complex\_key\_hashed](#complex-key-hashed). 最適の処理速度を提供するかどれが。
+私達は推薦します [平ら](#flat), [ハッシュ](#dicts-external_dicts_dict_layout-hashed) と [complex_key_hashed](#complex-key-hashed). 最適の処理速度を提供するかどれが。
 
 キャッシュ推奨されていないものになる可能性のある性能や困難の選定に最適なパラメータ。 セクションの続きを読む “[キャッシュ](#cache)”.
 
@@ -54,13 +54,13 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [平ら](#flat)
 -   [ハッシュ](#dicts-external_dicts_dict_layout-hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [キャッシュ](#cache)
 -   [直接](#direct)
--   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [ip\_trie](#ip-trie)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [ip_trie](#ip-trie)
 
 ### 平ら {#flat}
 
@@ -106,7 +106,7 @@ LAYOUT(FLAT())
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 に類似した `hashed` が、使用メモリ賛以上のCPUます。
 
@@ -122,7 +122,7 @@ LAYOUT(HASHED())
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### complex_key_hashed {#complex-key-hashed}
 
 このタイプの貯蔵は合成物との使用のためです [キー](external-dicts-dict-structure.md). に類似した `hashed`.
 
@@ -138,7 +138,7 @@ LAYOUT(SPARSE_HASHED())
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 辞書は、範囲とそれに対応する値の順序付き配列を持つハッシュテーブルの形式でメモリに格納されます。
 
@@ -293,7 +293,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 !!! warning "警告"
     ClickHouseをソースとして使用しないでください。
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_cache {#complex-key-cache}
 
 このタイプの貯蔵は合成物との使用のためです [キー](external-dicts-dict-structure.md). に類似した `cache`.
 
@@ -319,7 +319,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 LAYOUT(DIRECT())
 ```
 
-### ip\_trie {#ip-trie}
+### ip_trie {#ip-trie}
 
 このタイプの貯蔵するマッピングするネットワーク接頭辞(IPアドレスへのメタデータなどのASN.
 
@@ -362,6 +362,12 @@ LAYOUT(DIRECT())
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 または

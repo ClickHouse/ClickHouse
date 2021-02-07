@@ -1,9 +1,9 @@
-#!/usr/bin/env python
-from __future__ import print_function
-import os, itertools, urllib, urllib2, sys
+#!/usr/bin/env python3
+
+import os, itertools, urllib.request, urllib.parse, urllib.error, urllib.request, urllib.error, urllib.parse, sys
 
 def get_ch_answer(query):
-    return urllib.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123') ), data=query).read()
+    return urllib.request.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123') ), data=query.encode()).read().decode()
 
 def check_answers(query, answer):
     ch_answer = get_ch_answer(query)
@@ -83,9 +83,9 @@ def test_pair(v1, v2):
     answers += a
 
     if TEST_WITH_CASTING:
-        for t1 in TYPES.iterkeys():
+        for t1 in TYPES.keys():
             if inside_range(v1, t1):
-                for t2 in TYPES.iterkeys():
+                for t2 in TYPES.keys():
                     if inside_range(v2, t2):
                         q, a = test_operators(v1, v2, 'to{}({})'.format(t1, v1), 'to{}({})'.format(t2, v2))
                         query += ', ' + q
@@ -108,7 +108,7 @@ def test_float_pair(i, f):
     answers += a
 
     if TEST_WITH_CASTING:
-        for t1 in TYPES.iterkeys():
+        for t1 in TYPES.keys():
             if inside_range(i, t1):
                 q, a = test_operators(i, f, 'to{}({})'.format(t1, i), f_str)
                 query += ', ' + q
@@ -127,9 +127,9 @@ def main():
     num_int_tests = len(list(itertools.combinations(VALUES, 2)))
 
     num_parts = 4
-    for part in xrange(0, num_parts):
+    for part in range(0, num_parts):
         if 'int' + str(part + 1) in sys.argv[1:]:
-            for (v1, v2) in itertools.islice(itertools.combinations(VALUES, 2), part * num_int_tests / num_parts, (part + 1) * num_int_tests / num_parts):
+            for (v1, v2) in itertools.islice(itertools.combinations(VALUES, 2), part * num_int_tests // num_parts, (part + 1) * num_int_tests // num_parts):
                 q, a = test_pair(v1, v2)
                 if GENERATE_TEST_FILES:
                     sql_file.write(q + ";\n")

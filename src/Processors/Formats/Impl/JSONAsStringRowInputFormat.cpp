@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONEachRowUtils.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <common/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
@@ -8,17 +10,22 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
     IRowInputFormat(header_, in_, std::move(params_)), buf(in)
 {
-    if (header_.columns() > 1 || header_.getDataTypes()[0]->getTypeId() != TypeIndex::String)
-    {
-        throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::LOGICAL_ERROR);
-    }
+    if (header_.columns() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "This input format is only suitable for tables with a single column of type String but the number of columns is {}",
+            header_.columns());
+
+    if (!isString(removeNullable(removeLowCardinality(header_.getByPosition(0).type))))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "This input format is only suitable for tables with a single column of type String but the column type is {}",
+            header_.getByPosition(0).type->getName());
 }
 
 void JSONAsStringRowInputFormat::resetParser()

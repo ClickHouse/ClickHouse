@@ -6,24 +6,6 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunctionImpl.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunctionImpl.h FunctionFactory.h FunctionHelpers.h)
 
-if (NOT USE_H3)
-    list (REMOVE_ITEM clickhouse_functions_sources
-        geoToH3.cpp
-        h3EdgeAngle.cpp
-        h3EdgeLengthM.cpp
-        h3GetBaseCell.cpp
-        h3GetResolution.cpp
-        h3HexAreaM2.cpp
-        h3IndexesAreNeighbors.cpp
-        h3IsValid.cpp
-        h3kRing.cpp
-        h3ToChildren.cpp
-        h3ToParent.cpp
-        h3ToString.cpp
-        stringToH3.cpp
-    )
-endif ()
-
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
@@ -36,7 +18,6 @@ target_link_libraries(clickhouse_functions
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         consistent-hashing
-        consistent-hashing-sumbur
         dbms
         metrohash
         murmurhash
@@ -53,10 +34,26 @@ endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    set (STRIP_DSF_DEFAULT ON)
+else()
+    set (STRIP_DSF_DEFAULT OFF)
+endif()
+
+
+#  Provides faster linking and lower binary size.
+#  Tradeoff is the inability to debug some source files with e.g. gdb
+#  (empty stack frames and no local variables)."
+option(STRIP_DEBUG_SYMBOLS_FUNCTIONS "Do not generate debugger info for ClickHouse functions" ${STRIP_DSF_DEFAULT})
+
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
+    message(WARNING "Not generating debugger info for ClickHouse functions")
     target_compile_options(clickhouse_functions PRIVATE "-g0")
-endif ()
+else()
+    message(STATUS "Generating debugger info for ClickHouse functions")
+endif()
 
 if (USE_ICU)
     target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
@@ -97,7 +94,11 @@ if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
-option(ENABLE_MULTITARGET_CODE "" ON)
+# ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
+# If turned ON, this option defines such macro.
+# See `src/Functions/TargetSpecific.h`
+option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
+
 if (ENABLE_MULTITARGET_CODE)
     add_definitions(-DENABLE_MULTITARGET_CODE=1)
 else()
@@ -116,3 +117,6 @@ target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)
 if (USE_STATS)
     target_link_libraries(clickhouse_functions PRIVATE stats)
 endif()
+
+# Signed integer overflow on user-provided data inside boost::geometry - ignore.
+set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

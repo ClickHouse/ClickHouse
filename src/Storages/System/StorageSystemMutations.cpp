@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -45,8 +44,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        /// Lazy database can not contain MergeTree tables
-        if (db.second->getEngineName() == "Lazy")
+        /// Check if database can contain MergeTree tables
+        if (!db.second->canContainMergeTreeTables())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
