@@ -125,23 +125,32 @@ public:
     void write(const Block & block) override
     {
         metadata_snapshot->check(block, true);
-        new_blocks.emplace_back(block);
+
+        inserted_bytes += block.allocatedBytes();
+        inserted_rows += block.rows();
+
+        Block sample = metadata_snapshot->getSampleBlock();
+
+        LazyColumns lazy_columns;
+        lazy_columns.reserve(sample.columns());
+
+        for (const auto & elem : sample)
+        {
+            const ColumnPtr & column = block.getByName(elem.name).column;
+
+            if (storage.compress)
+                lazy_columns.emplace_back(column->compress());
+            else
+                lazy_columns.emplace_back([=]{ return column; });
+        }
+
+        new_blocks.emplace_back(std::move(lazy_columns));
     }
 
     void writeSuffix() override
     {
-        size_t inserted_bytes = 0;
-        size_t inserted_rows = 0;
-
-        for (const auto & block : new_blocks)
-        {
-            inserted_bytes += block.allocatedBytes();
-            inserted_rows += block.rows();
-        }
-
         std::lock_guard lock(storage.mutex);
-
-        auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
+        auto new_data = std::make_unique<LazyBlocks>(*(storage.data.get()));
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
         storage.data.set(std::move(new_data));
@@ -150,7 +159,9 @@ public:
     }
 
 private:
-    Blocks new_blocks;
+    LazyBlocks new_blocks;
+    size_t inserted_bytes = 0;
+    size_t inserted_rows = 0;
 
     StorageMemory & storage;
     StorageMetadataPtr metadata_snapshot;
