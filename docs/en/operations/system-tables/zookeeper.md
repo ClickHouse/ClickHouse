@@ -1,7 +1,7 @@
 # system.zookeeper {#system-zookeeper}
 
 The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
-The query must have a ‘path’ equality condition in the WHERE clause, or ‘path’ condition in the set in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
+The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children in ZooKeeper that you want to get data for.
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
 To output data for all root nodes, write path = ‘/’.
