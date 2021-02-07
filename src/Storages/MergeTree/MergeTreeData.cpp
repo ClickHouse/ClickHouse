@@ -2346,7 +2346,7 @@ size_t MergeTreeData::getPartsCount() const
 }
 
 
-size_t MergeTreeData::getMaxPartsCountForPartition() const
+size_t MergeTreeData::getMaxPartsCountForPartition(size_t * inactive) const
 {
     auto lock = lockParts();
 
@@ -2367,6 +2367,26 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
         }
 
         res = std::max(res, cur_count);
+    }
+
+    if (inactive)
+    {
+        *inactive = 0;
+        cur_count = 0;
+        for (const auto & part : getDataPartsStateRange(DataPartState::Outdated))
+        {
+            if (cur_partition_id && part->info.partition_id == *cur_partition_id)
+            {
+                ++cur_count;
+            }
+            else
+            {
+                cur_partition_id = &part->info.partition_id;
+                cur_count = 1;
+            }
+
+            *inactive = std::max(*inactive, cur_count);
+        }
     }
 
     return res;
@@ -2398,15 +2418,35 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
     }
 
-    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
+    size_t parts_count_in_partition;
+    bool should_delay = false;
+    if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
+    {
+        size_t inactive_parts;
+        parts_count_in_partition = getMaxPartsCountForPartition(&inactive_parts);
+        if (inactive_parts >= settings->inactive_parts_to_throw_insert)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            throw Exception(
+                "Too many inactive parts (" + toString(parts_count_in_partition)
+                    + "). Parts cleaning are processing significantly slower than inserts.",
+                ErrorCodes::TOO_MANY_PARTS);
+        }
+        if (inactive_parts >= settings->inactive_parts_to_delay_insert)
+            should_delay = true;
+    }
+    else
+        parts_count_in_partition = getMaxPartsCountForPartition();
 
     if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception(
+            "Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.",
+            ErrorCodes::TOO_MANY_PARTS);
     }
 
-    if (parts_count_in_partition < settings->parts_to_delay_insert)
+    if (!should_delay && parts_count_in_partition < settings->parts_to_delay_insert)
         return;
 
     const size_t max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert; /// always > 0
