@@ -15,6 +15,11 @@
 namespace DB
 {
 
+/// Lazy block contains possibly compressed columns. LazyColumn is std::function that reconstructs Column on call.
+using LazyBlock = LazyColumns;
+using LazyBlocks = std::vector<LazyBlock>;
+
+
 /** Implements storage in the RAM.
   * Suitable for temporary data.
   * It does not support keys.
@@ -95,7 +100,8 @@ public:
 
 private:
     /// MultiVersion data storage, so that we can copy the list of blocks to readers.
-    MultiVersion<Blocks> data;
+
+    MultiVersion<LazyBlocks> data;
 
     mutable std::mutex mutex;
 
@@ -104,8 +110,14 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
+    bool compress;
+
 protected:
-    StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        bool compress_ = false);
 };
 
 }

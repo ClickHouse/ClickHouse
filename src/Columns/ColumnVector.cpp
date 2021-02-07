@@ -16,6 +16,9 @@
 #include <common/unaligned.h>
 #include <ext/bit_cast.h>
 #include <ext/scope_guard.h>
+#include <lz4.h>
+#include <Compression/LZ4_decompress_faster.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #include <cmath>
 #include <cstring>
@@ -32,6 +35,8 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
 }
 
 template <typename T>
@@ -518,6 +523,52 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
     min = NearestFieldType<T>(cur_min);
     max = NearestFieldType<T>(cur_max);
+}
+
+
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
+template <typename T>
+LazyColumn ColumnVector<T>::compress() const
+{
+    size_t source_size = data.size() * sizeof(T);
+    size_t max_dest_size = LZ4_COMPRESSBOUND(source_size);
+
+    if (max_dest_size > std::numeric_limits<int>::max())
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source_size));
+
+    auto compressed = std::make_shared<Memory<>>(max_dest_size);
+
+    auto compressed_size = LZ4_compress_default(
+        reinterpret_cast<const char *>(data.data()),
+        compressed->data(),
+        source_size,
+        max_dest_size);
+
+    if (compressed_size <= 0)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column");
+
+    /// If compression is inefficient.
+    if (static_cast<size_t>(compressed_size) * 2 > source_size)
+        return IColumn::compress();
+
+    /// Shrink to fit.
+    auto shrank = std::make_shared<Memory<>>(compressed_size);
+    memcpy(shrank->data(), compressed->data(), compressed_size);
+
+    return [compressed = std::move(shrank), column_size = data.size()]
+    {
+        auto res = ColumnVector<T>::create(column_size);
+        auto processed_size = LZ4_decompress_fast(
+            compressed->data(),
+            reinterpret_cast<char *>(res->getData().data()),
+            column_size * sizeof(T));
+
+        if (processed_size <= 0)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress column");
+
+        return res;
+    };
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

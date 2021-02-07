@@ -6,6 +6,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MemorySettings.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
@@ -23,7 +24,7 @@ namespace ErrorCodes
 
 class MemorySource : public SourceWithProgress
 {
-    using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
+    using InitializerFunc = std::function<void(std::shared_ptr<const LazyBlocks> &)>;
 public:
     /// Blocks are stored in std::list which may be appended in another thread.
     /// We use pointer to the beginning of the list and its current size.
@@ -34,7 +35,7 @@ public:
         Names column_names_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot,
-        std::shared_ptr<const Blocks> data_,
+        std::shared_ptr<const LazyBlocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
@@ -43,6 +44,8 @@ public:
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
     {
+        for (const auto & elem : column_names_and_types)
+            column_positions.push_back(metadata_snapshot->getSampleBlock().getPositionByName(elem.getNameInStorage()));
     }
 
     String getName() const override { return "Memory"; }
@@ -63,21 +66,25 @@ protected:
             return {};
         }
 
-        const Block & src = (*data)[current_index];
+        const LazyBlock & src = (*data)[current_index];
         Columns columns;
         columns.reserve(columns.size());
 
         /// Add only required columns to `res`.
+        size_t i = 0;
         for (const auto & elem : column_names_and_types)
         {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
+            auto current_column = src[column_positions[i]]();
             if (elem.isSubcolumn())
                 columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
             else
                 columns.emplace_back(std::move(current_column));
+
+            ++i;
         }
 
-        return Chunk(std::move(columns), src.rows());
+        size_t rows = columns.at(0)->size();
+        return Chunk(std::move(columns), rows);
     }
 
 private:
@@ -95,9 +102,10 @@ private:
 
     const NamesAndTypesList column_names_and_types;
     size_t execution_index = 0;
-    std::shared_ptr<const Blocks> data;
+    std::shared_ptr<const LazyBlocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
     InitializerFunc initializer_func;
+    std::vector<size_t> column_positions;
 };
 
 
@@ -149,8 +157,12 @@ private:
 };
 
 
-StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
-    : IStorage(table_id_), data(std::make_unique<const Blocks>())
+StorageMemory::StorageMemory(
+    const StorageID & table_id_,
+    ColumnsDescription columns_description_,
+    ConstraintsDescription constraints_,
+    bool compress_)
+    : IStorage(table_id_), data(std::make_unique<const LazyBlocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
@@ -186,7 +198,7 @@ Pipe StorageMemory::read(
             metadata_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [this](std::shared_ptr<const Blocks> & data_to_initialize)
+            [this](std::shared_ptr<const LazyBlocks> & data_to_initialize)
             {
                 data_to_initialize = data.get();
             }));
@@ -219,18 +231,18 @@ BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const Storag
 
 void StorageMemory::drop()
 {
-    data.set(std::make_unique<Blocks>());
+    data.set(std::make_unique<LazyBlocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
 
-static inline void updateBlockData(Block & old_block, const Block & new_block)
+static inline void updateBlockData(LazyBlock & old_block, const LazyBlock & new_block, const Block & old_header, const Block & new_header)
 {
-    for (const auto & it : new_block)
+    size_t i = 0;
+    for (const auto & it : new_header)
     {
-        auto col_name = it.name;
-        auto & col_with_type_name = old_block.getByName(col_name);
-        col_with_type_name.column = it.column;
+        old_block[old_header.getPositionByName(it.name)] = new_block[i];
+        ++i;
     }
 }
 
@@ -242,36 +254,47 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
     auto in = interpreter->execute();
+    Block old_header = metadata_snapshot->getSampleBlock();
+    Block mutation_header = in->getHeader();
 
     in->readPrefix();
-    Blocks out;
-    Block block;
-    while ((block = in->read()))
+    LazyBlocks out;
+    while (Block block = in->read())
     {
-        out.push_back(block);
+        LazyColumns lazy_columns;
+
+        for (const auto & elem : block)
+        {
+            if (compress)
+                lazy_columns.emplace_back(elem.column->compress());
+            else
+                lazy_columns.emplace_back([=]{ return elem.column; });
+        }
+
+        out.emplace_back(std::move(lazy_columns));
     }
     in->readSuffix();
 
-    std::unique_ptr<Blocks> new_data;
+    std::unique_ptr<LazyBlocks> new_data;
 
-    // all column affected
+    /// All columns affected.
     if (interpreter->isAffectingAllColumns())
     {
-        new_data = std::make_unique<Blocks>(out);
+        new_data = std::make_unique<LazyBlocks>(out);
     }
     else
     {
-        /// just some of the column affected, we need update it with new column
-        new_data = std::make_unique<Blocks>(*(data.get()));
+        /// Just some of the columns affected, we need update it with new column.
+        new_data = std::make_unique<LazyBlocks>(*(data.get()));
         auto data_it = new_data->begin();
         auto out_it = out.begin();
 
         while (data_it != new_data->end())
         {
-            /// Mutation does not change the number of blocks
+            /// Mutation does not change the number of blocks.
             assert(out_it != out.end());
 
-            updateBlockData(*data_it, *out_it);
+            updateBlockData(*data_it, *out_it, old_header, mutation_header);
             ++data_it;
             ++out_it;
         }
@@ -279,7 +302,7 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
         assert(out_it == out.end());
     }
 
-    size_t rows = 0;
+/*    size_t rows = 0;
     size_t bytes = 0;
     for (const auto & buffer : *new_data)
     {
@@ -287,7 +310,8 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
         bytes += buffer.bytes();
     }
     total_size_bytes.store(rows, std::memory_order_relaxed);
-    total_size_rows.store(bytes, std::memory_order_relaxed);
+    total_size_rows.store(bytes, std::memory_order_relaxed);*/
+
     data.set(std::move(new_data));
 }
 
@@ -295,7 +319,7 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
-    data.set(std::make_unique<Blocks>());
+    data.set(std::make_unique<LazyBlocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -317,13 +341,19 @@ void registerStorageMemory(StorageFactory & factory)
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints);
+        bool has_settings = args.storage_def->settings;
+        MemorySettings settings;
+        if (has_settings)
+            settings.loadFromQuery(*args.storage_def);
+
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
     },
     {
+        .supports_settings = true,
         .supports_parallel_insert = true,
     });
 }
