@@ -13,7 +13,7 @@ using ResponsesQueue = ThreadSafeQueue<NuKeeperStorage::ResponseForSession>;
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(ResponsesQueue & responses_queue_, long tick_time = 500);
+    NuKeeperStateMachine(ResponsesQueue & responses_queue_, int64_t tick_time = 500);
 
     nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
