@@ -772,3 +772,11 @@ def multi_table_update_test(clickhouse_node, mysql_node, service_name):
 
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.a", "1\tbaz\n")
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.b", "1\tquux\n")
+
+def system_tables_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS system_tables_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS system_tables_test")
+    mysql_node.query("CREATE DATABASE system_tables_test")
+    mysql_node.query("CREATE TABLE system_tables_test.test (id int NOT NULL PRIMARY KEY) ENGINE=InnoDB")
+    clickhouse_node.query("CREATE DATABASE system_tables_test ENGINE = MaterializeMySQL('{}:3306', 'system_tables_test', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'", "intDiv(id, 4294967)\tid\tid\n")

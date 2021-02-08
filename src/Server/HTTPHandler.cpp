@@ -219,8 +219,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
         }
     }
 
-    ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-    copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    if (!read_buffers_raw_ptr.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    }
 }
 
 
