@@ -4,35 +4,37 @@ toc_priority: 190
 
 # uniq {#agg_function-uniq}
 
-Calculates the approximate number of different values of the argument.
+计算参数的不同值的近似数量。
+
+**语法**
 
 ``` sql
 uniq(x[, ...])
 ```
 
-**Parameters**
+**参数**
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`, 或数字类型。
 
-**Returned value**
+**返回值**
 
--   A [UInt64](../../../sql-reference/data-types/int-uint.md)-type number.
+-  [UInt64](../../../sql-reference/data-types/int-uint.md) 类型数值。
 
-**Implementation details**
+**实现细节**
 
-Function:
+功能:
 
--   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+-   计算聚合中所有参数的哈希值，然后在计算中使用它。
 
--   Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
+-   使用自适应采样算法。 对于计算状态，该函数使用最多65536个元素哈希值的样本。
 
-        This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+    这个算法是非常精确的，并且对于CPU来说非常高效。如果查询包含一些这样的函数，那和其他聚合函数相比 `uniq` 将是几乎一样快。
 
--   Provides the result deterministically (it doesn’t depend on the query processing order).
+-   确定性地提供结果（它不依赖于查询处理顺序）。
 
-We recommend using this function in almost all scenarios.
+我们建议在几乎所有情况下使用此功能。
 
-**See Also**
+**参见**
 
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
