@@ -17,10 +17,6 @@
 #include <memory>
 #include <utility>
 
-#ifdef __SSE4_2__
-#    include <nmmintrin.h>
-#endif
-
 namespace DB
 {
 template <size_t N>
@@ -77,7 +73,7 @@ struct TextClassificationImpl
         {
             for (; i + N <= found; ++i)
             {
-                UInt16 hash = 0;
+                UInt32 hash = 0;
                 for (size_t j = 0; j < N; ++j) {
                     hash <<= 8;
                     hash += *(cp + i + j);
@@ -131,24 +127,12 @@ struct NameBiGramcount
     static constexpr auto name = "biGramcount";
 };
 
-struct NameTriGramcount
-{
-    static constexpr auto name = "triGramcount";
-};
-
 
 using FunctionBiGramcount = FunctionsTextClassification<TextClassificationImpl<2>, NameBiGramcount>;
-using FunctionTriGramcount = FunctionsTextClassification<TextClassificationImpl<3>, NameTriGramcount>;
 
 void registerFunctionsTextClassification(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBiGramcount>();
-    factory.registerFunction<FunctionTriGramcount>();
 }
 
 }
-
-
-//
-// Created by sergey on 04.02.2021.
-//

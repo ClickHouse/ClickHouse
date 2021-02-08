@@ -75,8 +75,3 @@ public:
 };
 
 }
-
-//
-// Created by sergey on 04.02.2021.
-//
-
