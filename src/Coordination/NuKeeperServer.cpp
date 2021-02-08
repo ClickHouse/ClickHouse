@@ -53,8 +53,6 @@ void NuKeeperServer::startup(int64_t operation_timeout_ms)
     params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = operation_timeout_ms;
     params.auto_forwarding_ = true;
-    /// For some reason may lead to a very long timeouts
-    params.use_bg_thread_for_urgent_commit_ = false;
     params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
