@@ -61,7 +61,7 @@ def process_test(sleep_setting_name, receive_timeout_name):
     print(query_time)
 
 
-def test(started_cluster):
+def test_hedged_requests(started_cluster):
     node.query("INSERT INTO distributed VALUES (1, '2020-01-01')")
 
     process_test("sleep_before_send_hello", "receive_hello_timeout")

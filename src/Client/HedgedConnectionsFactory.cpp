@@ -76,7 +76,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
     Connection * connection = nullptr;
     while (connections.size() < max_entries)
     {
-        auto state = processConnections(true, connection);
+        auto state = getNextConnection(false, true, connection);
         if (state == State::READY)
             connections.push_back(connection);
         else if (state == State::CANNOT_CHOOSE)
@@ -100,15 +100,18 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
     return connections;
 }
 
-HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool start_new_connection, Connection *& connection_out)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool start_new_connection, bool blocking, Connection *& connection_out)
 {
+    ReplicaStatePtr replica = nullptr;
+    int index = -1;
+    
     if (start_new_connection)
     {
         /// Try to start establishing connection to the new replica.
-        int index = getNextIndex();
+        index = getNextIndex();
         if (index != -1)
         {
-            ReplicaStatePtr replica = startEstablishingConnection(index);
+            replica = startEstablishingConnection(index);
             if (replica->state == State::READY)
             {
                 connection_out = replica->connection;
@@ -116,14 +119,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool
             }
         }
     }
-
-    return processConnections(false, connection_out);
-}
-
-HedgedConnectionsFactory::State HedgedConnectionsFactory::processConnections(bool blocking, Connection *& connection_out)
-{
-    ReplicaStatePtr replica = nullptr;
-    int index = -1;
 
     while (index != -1 || !epoll.empty())
     {

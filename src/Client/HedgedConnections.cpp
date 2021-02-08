@@ -409,13 +409,13 @@ void HedgedConnections::processTimeoutEvent(ReplicaLocation & replica_location, 
 void HedgedConnections::tryGetNewReplica(bool start_new_connection)
 {
     Connection * connection = nullptr;
-    HedgedConnectionsFactory::State state = hedged_connections_factory.getNextConnection(start_new_connection, connection);
+    HedgedConnectionsFactory::State state = hedged_connections_factory.getNextConnection(start_new_connection, false, connection);
 
     /// Skip replicas that doesn't support two-level aggregation if we didn't disable it in sendQuery.
     while (state == HedgedConnectionsFactory::State::READY && !disable_two_level_aggregation
            && connection->getServerRevision(hedged_connections_factory.getConnectionTimeouts())
                < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
-        state = hedged_connections_factory.getNextConnection(true, connection);
+        state = hedged_connections_factory.getNextConnection(true, false, connection);
 
     if (state == HedgedConnectionsFactory::State::READY)
     {
