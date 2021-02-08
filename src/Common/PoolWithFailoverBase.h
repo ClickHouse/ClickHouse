@@ -230,6 +230,15 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     bool finished = false;
     while (!finished)
     {
+        if (total_timeout && stopwatch.elapsedSeconds() > total_timeout)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                "Total timeout {} s exceeded ({} s elapsed) while establishing pooled connections. Log: \n\n{}\n",
+                total_timeout, stopwatch.elapsedSeconds(),
+                fail_messages);
+        }
+
         for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
             if (up_to_date_count >= max_entries /// Already enough good entries.
@@ -262,19 +271,9 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             }
             else
             {
-                LOG_WARNING(log, "Connection failed at try №{}, reason: {} at {}",
-                    (shuffled_pool.error_count + 1), fail_message,
-                    StackTrace().toString());
+                LOG_WARNING(log, "Connection failed at try №{}, reason: {}",
+                    (shuffled_pool.error_count + 1), fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
-                if (total_timeout && stopwatch.elapsedSeconds() > total_timeout)
-                {
-                    throw DB::Exception(
-                        DB::ErrorCodes::TIMEOUT_EXCEEDED,
-                        "Total timeout {} s exceeded ({} s elapsed) at connection try #{}. Log: \n\n{}\n",
-                        total_timeout, stopwatch.elapsedSeconds(),
-                        shuffled_pool.error_count + 1, fail_messages);
-                }
-
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 
                 if (shuffled_pool.error_count >= max_tries)

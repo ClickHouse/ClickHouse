@@ -120,12 +120,27 @@ ColumnsDescription getStructureOfRemoteTable(
     const Context & context,
     const ASTPtr & table_func_ptr)
 {
+    // This can take arbitrarily long, so we have to respect the query execution
+    // timeout.
+    uint64_t timeout_seconds = context.getSettingsRef().max_execution_time
+        .totalSeconds();
+    Stopwatch stopwatch;
+
     const auto & shards_info = cluster.getShardsInfo();
 
     std::string fail_messages;
 
     for (const auto & shard_info : shards_info)
     {
+        if (timeout_seconds > 0 && stopwatch.elapsedSeconds() > timeout_seconds)
+        {
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Attempts to get table structure for table '{}' have timed out"
+                " ({} s elapsed, {} s allowed)",
+                table_id.getNameForLogs(), stopwatch.elapsedSeconds(),
+                timeout_seconds);
+        }
+
         try
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
