@@ -670,8 +670,8 @@ void HTTPHandler::trySendExceptionToClient(
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
             && response.getKeepAlive()
-            && !request.getStream().eof()
-            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
+            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
+            && !request.getStream().eof())
         {
             request.getStream().ignoreAll();
         }
@@ -719,6 +719,11 @@ void HTTPHandler::trySendExceptionToClient(
             used_output.out_maybe_compressed->next();
             used_output.out->next();
             used_output.out->finalize();
+        }
+        else
+        {
+            assert(false);
+            __builtin_unreachable();
         }
     }
     catch (...)
