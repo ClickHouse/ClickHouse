@@ -33,7 +33,7 @@ argMin(tuple(arg, val))
 
 Если передан кортеж:
 
--   Кортеж с минимальным значением `val`.
+-   Кортеж `(arg, val)` c минимальным значением `val` и соответствующим ему `arg`.
 
 Тип: [Tuple](../../../sql-reference/data-types/tuple.md).
 
