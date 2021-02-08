@@ -103,6 +103,10 @@ You can execute [SELECT](../../../sql-reference/statements/select/index.md) quer
 in the same way as for any regular view or a table. If the query result is cached 
 it will return the result immediately without running the stored query on the underlying tables.
 
+```sql
+SELECT * FROM [db.]live_view WHERE ...
+```
+
 ### Force Refresh {#live-view-alter-refresh}
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
@@ -110,11 +114,14 @@ You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRE
 ### With Timeout {#live-view-with-timeout}
 
 When a live view is create with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified
-number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query. 
+number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query
+that was watching the live view. 
 
 ```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT value_in_sec AS SELECT ...
+CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
+
+If the timeout value is not specified then the value specified by the `temporary_live_view_timeout` setting is used.
 
 ### With Refresh {#live-view-with-refresh}
 
@@ -122,22 +129,24 @@ When a live view is created with a `WITH REFRESH` clause then it will be automat
 after the specified number of seconds elapse since the last refresh or trigger.
 
 ```sql
-CREATE LIVE VIEW [db.]table_name WITH REFRESH value_in_sec AS SELECT ...
+CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 ```
 
-You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND`. 
+If the refresh value is not specified then the value specified by the `periodic_live_view_refresh` setting is used.
+
+You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND` clause. 
 
 ```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT value_in_sec AND REFRESH value_in_sec AS SELECT ...
+CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
 ```
 
 ### Settings {#live-view-settings}
 
 You can use the following settings to control the behaviour of live views.
 
-- `allow_experimental_live_view` - enable live views. Default `0`.
-- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default `15` seconds.
+- `allow_experimental_live_view` - enable live views. Default is `0`.
+- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default is `15` seconds.
 - `max_live_view_insert_blocks_before_refresh` - maximum number of inserted blocks after which
-   mergeable blocks are dropped and query is re-executed. Default `64` inserts.
--  `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default `5` seconds.
--  `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default `60` seconds.
+   mergeable blocks are dropped and query is re-executed. Default is `64` inserts.
+- `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default is `5` seconds.
+- `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
