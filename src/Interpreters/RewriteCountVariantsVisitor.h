@@ -10,7 +10,7 @@ class ASTFunction;
 class RewriteCountVariantsVisitor
 {
 public:
-    static void visit(ASTPtr & ast);
+    static void visit(ASTPtr &);
     static void visit(ASTFunction &);
 };
 
