@@ -916,9 +916,6 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
-    /// Selects parts for move and moves them, used in background process
-    bool selectPartsAndMove();
-
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
