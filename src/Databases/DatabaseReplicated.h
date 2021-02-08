@@ -15,6 +15,9 @@ namespace DB
 class DatabaseReplicatedDDLWorker;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
+
 /** DatabaseReplicated engine
   * supports replication of metadata
   * via DDL log being written to ZooKeeper
@@ -67,7 +70,10 @@ public:
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
-    String getFullReplicaName() const { return shard_name + '|' + replica_name; }
+    String getFullReplicaName() const;
+    static std::pair<String, String> parseFullReplicaName(const String & name);
+
+    ClusterPtr getCluster() const;
 
     //FIXME
     friend struct DatabaseReplicatedTask;
