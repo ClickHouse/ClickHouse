@@ -47,7 +47,7 @@ void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr &, Data
     // First argument of dictGet can be a dictionary name, perhaps with a database.
     if (functionIsJoinGet(func.name) || functionIsDictGet(func.name))
     {
-        if (func.arguments->children.empty())
+        if (!func.arguments || func.arguments->children.empty())
         {
             return;
         }
