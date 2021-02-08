@@ -65,12 +65,15 @@ WindowTransform::WindowTransform(const Block & input_header_,
     }
 
 // FIXME this is just all wrong. Disabled desc order for now.
-    if (window_description.frame.type == WindowFrame::FrameType::Range
+    const auto & frame = window_description.frame;
+    if (frame.type == WindowFrame::FrameType::Range
         && window_description.order_by.size() == 1
-        && window_description.order_by[0].direction < 0)
+        && window_description.order_by[0].direction < 0
+        && (frame.begin_type == WindowFrame::BoundaryType::Offset
+            || frame.end_type == WindowFrame::BoundaryType::Offset))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ORDER BY DESC for RANGE frames is not implemented");
+            "ORDER BY DESC for RANGE OFFSET frames is not implemented");
     }
 //     // If we have at least one RANGE OFFSET frame boundary, no UNBOUNDED frame
 //     // boundaries, and the ORDER BY is DESC, we have to swap the frame end
@@ -417,7 +420,7 @@ void WindowTransform::advanceFrameStartRangeOffsetDispatch()
     {
         advanceFrameStartRangeOffset<ColumnVector<UInt8>>();
     }
-    else if(typeid_cast<const ColumnVector<Int8> *>(column))
+    else if (typeid_cast<const ColumnVector<Int8> *>(column))
     {
         advanceFrameStartRangeOffset<ColumnVector<Int8>>();
     }
