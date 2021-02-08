@@ -64,6 +64,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 
 namespace ProfileEvents
@@ -2517,6 +2518,24 @@ MetadataTransactionPtr Context::getMetadataTransaction() const
 {
     assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
+}
+
+PartUUIDsPtr Context::getPartUUIDs()
+{
+    auto lock = getLock();
+    if (!part_uuids)
+        part_uuids = std::make_shared<PartUUIDs>();
+
+    return part_uuids;
+}
+
+PartUUIDsPtr Context::getIgnoredPartUUIDs()
+{
+    auto lock = getLock();
+    if (!ignored_part_uuids)
+        ignored_part_uuids = std::make_shared<PartUUIDs>();
+
+    return ignored_part_uuids;
 }
 
 }

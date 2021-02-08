@@ -342,6 +342,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
             affected_rows += progress.written_rows;
         });
+
         CurrentThread::QueryScope query_scope{query_context};
 
         executeQuery(should_replace ? replacement : payload, *out, false, query_context,

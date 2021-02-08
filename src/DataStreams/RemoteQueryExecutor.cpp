@@ -13,6 +13,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Common/FiberStack.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int DUPLICATED_PART_UUIDS;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -158,6 +160,7 @@ void RemoteQueryExecutor::sendQuery()
     std::lock_guard guard(was_cancelled_mutex);
 
     established = true;
+    was_cancelled = false;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context.getClientInfo();
@@ -165,6 +168,12 @@ void RemoteQueryExecutor::sendQuery()
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+    }
+
+    {
+        std::lock_guard lock(duplicated_part_uuids_mutex);
+        if (!duplicated_part_uuids.empty())
+            multiplexed_connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
     }
 
     multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
@@ -196,6 +205,8 @@ Block RemoteQueryExecutor::read()
 
         if (auto block = processPacket(std::move(packet)))
             return *block;
+        else if (got_duplicated_part_uuids)
+            return std::get<Block>(restartQueryWithoutDuplicatedUUIDs());
     }
 }
 
@@ -211,7 +222,7 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
             return Block();
     }
 
-    if (!read_context)
+    if (!read_context || resent_query)
     {
         std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
@@ -234,6 +245,8 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         {
             if (auto data = processPacket(std::move(read_context->packet)))
                 return std::move(*data);
+            else if (got_duplicated_part_uuids)
+                return restartQueryWithoutDuplicatedUUIDs(&read_context);
         }
     }
     while (true);
@@ -242,10 +255,39 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
 #endif
 }
 
+
+std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context)
+{
+    /// Cancel previous query and disconnect before retry.
+    cancel(read_context);
+    multiplexed_connections->disconnect();
+
+    /// Only resend once, otherwise throw an exception
+    if (!resent_query)
+    {
+        if (log)
+            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
+
+        resent_query = true;
+        sent_query = false;
+        got_duplicated_part_uuids = false;
+        /// Consecutive read will implicitly send query first.
+        if (!read_context)
+            return read();
+        else
+            return read(*read_context);
+    }
+    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
+}
+
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
+        case Protocol::Server::PartUUIDs:
+            if (!setPartUUIDs(packet.part_uuids))
+                got_duplicated_part_uuids = true;
+            break;
         case Protocol::Server::Data:
             /// If the block is not empty and is not a header block
             if (packet.block && (packet.block.rows() > 0))
@@ -304,6 +346,20 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
     }
 
     return {};
+}
+
+bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
+{
+    Context & query_context = const_cast<Context &>(context).getQueryContext();
+    auto duplicates = query_context.getPartUUIDs()->add(uuids);
+
+    if (!duplicates.empty())
+    {
+        std::lock_guard lock(duplicated_part_uuids_mutex);
+        duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
+        return false;
+    }
+    return true;
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
@@ -383,6 +439,7 @@ void RemoteQueryExecutor::sendExternalTables()
     {
         std::lock_guard lock(external_tables_mutex);
 
+        external_tables_data.clear();
         external_tables_data.reserve(count);
 
         for (size_t i = 0; i < count; ++i)
