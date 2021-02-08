@@ -109,9 +109,10 @@ private:
     void advanceFrameStart();
     void advanceFrameStartChoose();
     void advanceFrameStartRowsOffset();
-    void advanceFrameEnd();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
+    void advanceFrameEndRowsOffset();
+    void advanceFrameEnd();
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -257,6 +258,10 @@ public:
 
     // The row for which we are now computing the window functions.
     RowNumber current_row;
+    // The start of current peer group, needed for CURRENT ROW frame start.
+    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
+    // frames may be earlier.
+    RowNumber peer_group_start;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the

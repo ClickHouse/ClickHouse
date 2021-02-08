@@ -30,7 +30,7 @@ static constexpr auto threshold = 2;
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
-    const MergeTreeData & data,
+    std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
     Poco::Logger * log_)
@@ -39,25 +39,17 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
     , log{log_}
+    , column_sizes{std::move(column_sizes_)}
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 
-    calculateColumnSizes(data, queried_columns);
+    for (const auto & [_, size] : column_sizes)
+        total_size_of_queried_columns += size;
+
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
     optimize(query_info.query->as<ASTSelectQuery &>());
-}
-
-
-void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, const Names & column_names)
-{
-    for (const auto & column_name : column_names)
-    {
-        UInt64 size = data.getColumnCompressedSize(column_name);
-        column_sizes[column_name] = size;
-        total_size_of_queried_columns += size;
-    }
 }
 
 
