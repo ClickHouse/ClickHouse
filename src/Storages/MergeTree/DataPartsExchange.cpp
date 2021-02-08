@@ -157,7 +157,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
                 if (send_s3_metadata == 1)
                 {
                     auto disk = part->volume->getDisk();
-                    if (disk->getType() == "s3")
+                    if (disk->getType() == DB::DiskType::Type::S3)
                     {
                         try_use_s3_copy = true;
                     }
@@ -262,7 +262,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
         checksums.files[file_name] = {};
 
     auto disk = part->volume->getDisk();
-    if (disk->getType() != "s3")
+    if (disk->getType() != DB::DiskType::Type::S3)
         throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
 
     part->lockSharedData();
@@ -347,7 +347,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress",                "false"}
     });
 
-    if (try_use_s3_copy && disk_s3 && disk_s3->getType() != "s3")
+    if (try_use_s3_copy && disk_s3 && disk_s3->getType() != DB::DiskType::Type::S3)
         throw Exception("Try to fetch shared s3 part on non-s3 disk", ErrorCodes::LOGICAL_ERROR);
 
     Disks disks_s3;

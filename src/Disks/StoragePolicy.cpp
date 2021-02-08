@@ -164,7 +164,7 @@ Disks StoragePolicy::getDisksByType(const String & type) const
     Disks res;
     for (const auto & volume : volumes)
         for (const auto & disk : volume->getDisks())
-            if (disk->getType() == type)
+            if (DB::DiskType::toString(disk->getType()) == type)
                 res.push_back(disk);
     return res;
 }
