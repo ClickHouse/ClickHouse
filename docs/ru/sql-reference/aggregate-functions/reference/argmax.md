@@ -33,7 +33,7 @@ argMax(tuple(arg, val))
 
 Если передан кортеж:
 
--   Кортеж с максимальным значением `val`.
+-   Кортеж `(arg, val)` c максимальным значением `val` и соответствующим ему `arg`.
 
 Тип: [Tuple](../../../sql-reference/data-types/tuple.md).
 
