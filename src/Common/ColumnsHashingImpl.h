@@ -87,6 +87,9 @@ public:
     bool isInserted() const { return inserted; }
 };
 
+/// FindResult optionally may contain pointer to value and offset in hashtable buffer.
+/// Only bool found is required.
+/// So we will have 4 different specializations for FindResultImpl
 class FindResultImplBase
 {
     bool found;
@@ -241,6 +244,8 @@ protected:
     {
         if constexpr (Cache::consecutive_keys_optimization)
         {
+            /// It's possible to support such combination, but code will became more complex.
+            /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
             if (cache.check(key))
             {

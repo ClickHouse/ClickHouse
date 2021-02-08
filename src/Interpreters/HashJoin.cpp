@@ -57,6 +57,7 @@ struct NotProcessedCrossJoin : public ExtraBlock
 
 namespace JoinStuff
 {
+    /// Version of `getUsed` with dynamic dispatch
     bool JoinUsedFlags::getUsedSafe(size_t i) const
     {
         if (flags.empty())
@@ -576,6 +577,7 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
+        __builtin_unreachable();
     }
 }
 
