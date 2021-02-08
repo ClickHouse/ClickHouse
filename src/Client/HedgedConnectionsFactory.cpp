@@ -106,19 +106,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool
     int index = -1;
 
     if (start_new_connection)
-    {
-        /// Try to start establishing connection to the new replica.
         index = getNextIndex();
-        if (index != -1)
-        {
-            replica = startEstablishingConnection(index);
-            if (replica->state == State::READY)
-            {
-                connection_out = replica->connection;
-                return State::READY;
-            }
-        }
-    }
 
     while (index != -1 || !epoll.empty())
     {
