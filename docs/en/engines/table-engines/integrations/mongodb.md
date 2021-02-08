@@ -5,7 +5,7 @@ toc_title: MongoDB
 
 # MongoDB {#mongodb}
 
-MongoDB engine is read-only, it allows to perform `SELECT` queries on data, stored on a remote MongoBD server. MongoDB engine supports onle flat fields (primitive, not nested types).
+MongoDB engine is read-only, it allows to perform `SELECT` queries on data, stored on a remote MongoDB server. MongoDB engine supports onle flat fields (primitive, not nested types).
 
 ## Creating a Table {#creating-a-table}
 
