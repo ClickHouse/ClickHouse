@@ -6,7 +6,7 @@ This table contains information about events that occurred with [data parts](../
 
 The `system.part_log` table contains the following columns:
 
--   `query_id` ([String](../../sql-reference/data-types/string.md)) — Id of the query to insert data parts.
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the `INSERT` query that created this data part.
 -   `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event that occurred with the data part. Can have one of the following values:
     -   `NEW_PART` — Inserting of a new data part.
     -   `MERGE_PARTS` — Merging of data parts.
