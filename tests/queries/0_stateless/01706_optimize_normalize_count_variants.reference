@@ -2,4 +2,5 @@ SELECT
     count(),
     count(),
     count(),
-    count()
+    count(),
+    count(NULL)
