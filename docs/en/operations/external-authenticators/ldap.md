@@ -41,8 +41,11 @@ Parameters:
 - `host` - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
 - `port` - LDAP server port, default is `636` if `enable_tls` is set to `true`, `389` otherwise.
 - `bind_dn` - template used to construct the DN to bind to.
-  - The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.
-- `verification_cooldown` - a period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server.
+  - The resulting DN will be constructed by replacing all `{user_name}` substrings of the
+    template with the actual user name during each authentication attempt.
+- `verification_cooldown` - a period of time, in seconds, after a successful bind attempt,
+  during which the user will be assumed to be successfully authenticated for all consecutive
+  requests without contacting the LDAP server.
   - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
 - `enable_tls` - flag to trigger use of secure connection to the LDAP server.
   - Specify `no` for plain text `ldap://` protocol (not recommended).
@@ -58,13 +61,14 @@ Parameters:
 - `tls_ca_cert_dir` - path to the directory containing CA certificates.
 - `tls_cipher_suite` - allowed cipher suite (in OpenSSL notation).
 
-## External Authenticator {#ldap-external-authenticator}
+## Using LDAP As External Authenticator {#ldap-external-authenticator}
 
-A remote LDAP server can be used as a method for verifying the passwords for locally defined users (users defined in `users.xml` or in local access control paths). In order to achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
+A remote LDAP server can be used as a method for verifying passwords for locally defined users (users defined in `users.xml` or in local access control paths). In order to achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
 
-At each login attempt, ClickHouse will try to "bind" to the specified DN (see `bind_dn` sections in LDAP server config in `config.xml`) at the LDAP server using the provided credentials, and, if successful, the user will be considered authenticated. This is often called "simple bind" method.
+At each login attempt, ClickHouse will try to "bind" to the specified DN defined by the `bind_dn` parameter
+in the [LDAP server definition](#ldap-server-definition) using the provided credentials, and if successful, the user will be considered authenticated. This is often called a "simple bind" method.
 
-Example (goes into `users.xml`):
+For example,
 
 ```xml
 <yandex>
@@ -81,21 +85,20 @@ Example (goes into `users.xml`):
 </yandex>
 ```
 
-Note, that now, once user `my_user` refers to `my_ldap_server`, this LDAP server must be configured in the main `config.xml` file as described previously.
+Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
 
-When SQL-driven Access Control and Account Management is enabled in ClickHouse, users that are identified by LDAP servers can also be created using queries.
+When SQL-driven [Access Control and Account Management](#access-control) is enabled in ClickHouse, users that are identified by LDAP servers can also be created using the [CRATE USER](#create-user-statement) statement.
 
-Example (execute in ClickHouse client):
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server'
 ```
 
-## Exernal User Directory {#ldap-external-user-directory}
+## Using LDAP As Exernal User Directory {#ldap-external-user-directory}
 
-A remote LDAP server can be used as a source of user definitions, in addition to the locally defined users. In order to achieve this, specify previously defined LDAP server name in `ldap` section inside `users_directories` section in main `config.xml` file.
+In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. In order to achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section in of the `config.xml` file.
 
-At each login attempt, ClickHouse will try to find the user definition locally and authenticate it as usual, but if the user is not defined, ClickHouse will assume it exists in the external LDAP directory, and will try to "bind" to the specified DN (see `bind_dn` sections in LDAP server config in `config.xml`) at the LDAP server using the provided credentials, and, if successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in `roles`. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then assigned to the user if `role_mapping` section is also configured. All this implies that the SQL-driven Access Control and Account Management is enabled in ClickHouse and roles are created using `CREATE ROLE ...` queries.
+At each login attempt, ClickHouse will try to find the user definition locally and authenticate it as usual, but if the user is not defined, ClickHouse will assume it exists in the external LDAP directory, and will try to "bind" to the specified DN at the LDAP server using the provided credentials, and if successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](#access-control) is enabled in ClickHouse and roles are created using the [CREATE ROLE](#create-role-statement) statement.
 
 Example (goes into `config.xml`):
 
@@ -122,24 +125,34 @@ Example (goes into `config.xml`):
 </yandex>
 ```
 
-Note, that now, once `my_ldap_server` is referred from `ldap` inside `user_directories` section, this LDAP server must be configured in the main `config.xml` file as described previously.
+Note that `my_ldap_server` referred in the `ldap` section inside the `user_directories` section must be a previously
+defined LDAP server that is configured in the `config.xml` (see [LDAP Server Definition](#ldap-server-definition)).
 
 Parameters:
 
-- `server` - one of LDAP server names defined in `ldap_servers` config section above. This parameter is mandatory and cannot be empty.
+- `server` - one of LDAP server names defined in `ldap_servers` config section above.
+  This parameter is mandatory and cannot be empty.
 - `roles` - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-  - If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication.
+  - If no roles are specified here or assigned during role mapping (below), user will not be able
+    to perform any actions after authentication.
 - `role_mapping` - section with LDAP search parameters and mapping rules.
-  - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by `CREATE ROLE ...` command.
-
+  - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter`
+    and the name of the logged in user. For each entry found during that search, the value of the specified
+    attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed,
+    and the rest of the value becomes the name of a local role defined in ClickHouse,
+    which is expected to be created beforehand by the [CREATE ROLE](#create-role-statement) statement.
   - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
     - `base_dn` - template used to construct the base DN for the LDAP search.
-      - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during each LDAP search.
+      - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}`
+        substrings of the template with the actual user name and bind DN during each LDAP search.
     - `scope` - scope of the LDAP search.
       - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
     - `search_filter` - template used to construct the search filter for the LDAP search.
-      - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}`  substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
+      - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}`
+        substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
       - Note, that the special characters must be escaped properly in XML.
     - `attribute` - attribute name whose values will be returned by the LDAP search.
-    - `prefix` - prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated as local role names. Empty, by default.
+    - `prefix` - prefix, that will be expected to be in front of each string in the original
+      list of strings returned by the LDAP search. Prefix will be removed from the original
+      strings and resulting strings will be treated as local role names. Empty, by default.
 
