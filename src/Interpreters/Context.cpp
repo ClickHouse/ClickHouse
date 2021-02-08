@@ -1102,12 +1102,6 @@ String Context::getCurrentDatabase() const
 }
 
 
-String Context::getCurrentQueryId() const
-{
-    return client_info.current_query_id;
-}
-
-
 String Context::getInitialQueryId() const
 {
     return client_info.initial_query_id;
