@@ -34,7 +34,7 @@ it can be forwarded to a different table.
 INSERT INTO [db.]table WATCH [db.]live_view ...
 ```
 
-## EVENTS Clause
+## EVENTS Clause {#events-clause}
 
 The `EVENTS` clause can be used to obtain a short form of the `WATCH` query
 where instead of the query result you will just get the latest query
