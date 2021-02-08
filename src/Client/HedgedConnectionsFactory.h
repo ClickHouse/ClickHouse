@@ -74,14 +74,12 @@ public:
     /// Create and return active connections according to pool_mode.
     std::vector<Connection *> getManyConnections(PoolMode pool_mode);
 
-    /// Try to get connection to the new replica without blocking. If start_new_connection is true, we start establishing connection
-    /// with the new replica and then call processConnections, otherwise just call processConnections.
-    State getNextConnection(bool start_new_connection, Connection *& connection_out);
-
-    /// Process all current events in epoll (connections, timeouts), if there is no events in epoll and blocking is false,
-    /// return NOT_READY. Returned state might be READY, NOT_READY and CANNOT_CHOOSE.
+    /// Try to get connection to the new replica. If start_new_connection is true, we start establishing connection
+    /// with the new replica. Process all current events in epoll (connections, timeouts), 
+    /// if there is no events in epoll and blocking is false, return NOT_READY.
+    /// Returned state might be READY, NOT_READY and CANNOT_CHOOSE.
     /// If state is READY, replica connection will be written in connection_out.
-    State processConnections(bool blocking, Connection *& connection_out);
+    State getNextConnection(bool start_new_connection, bool blocking, Connection *& connection_out);
 
     /// Check if we can try to produce new READY replica.
     bool canGetNewConnection() const { return ready_indexes.size() + failed_pools_count < shuffled_pools.size(); }

@@ -41,7 +41,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def test(started_cluster):
+def test_hedged_requests_with_max_parallel_replicas(started_cluster):
     node.query("INSERT INTO distributed VALUES (1, '2020-01-01')")
     
     # Without hedged requests select query will last more 30 seconds,
