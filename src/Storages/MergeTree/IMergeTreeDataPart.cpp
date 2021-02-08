@@ -1168,7 +1168,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
 
     bool is_fetched = false;
 
-    if (disk->getType() == "s3")
+    if (disk->getType() == DB::DiskType::Type::S3)
     {
         auto data_settings = storage.getSettings();
         if (data_settings->allow_s3_zero_copy_replication)
@@ -1317,7 +1317,7 @@ String IMergeTreeDataPart::getUniqueId() const
 
     auto disk = volume->getDisk();
 
-    if (disk->getType() == "s3")
+    if (disk->getType() == DB::DiskType::Type::S3)
         id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
 
     if (id.empty())
@@ -1333,7 +1333,7 @@ void IMergeTreeDataPart::lockSharedData() const
     DiskPtr disk = volume->getDisk();
     if (!disk)
         return;
-    if (disk->getType() != "s3")
+    if (disk->getType() != DB::DiskType::Type::S3)
         return;
 
     const StorageReplicatedMergeTree *replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(&storage);
@@ -1384,7 +1384,7 @@ bool IMergeTreeDataPart::unlockSharedData(const String & path) const
     DiskPtr disk = volume->getDisk();
     if (!disk)
         return true;
-    if (disk->getType() != "s3")
+    if (disk->getType() != DB::DiskType::Type::S3)
         return true;
 
     const StorageReplicatedMergeTree *replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(&storage);

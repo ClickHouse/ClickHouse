@@ -1491,10 +1491,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
-<<<<<<< HEAD
     {
         auto disk = reserved_space->getDisk();
-        if (disk->getType() == "s3")
+        if (disk->getType() == DB::DiskType::Type::S3)
         {
             auto zookeeper = getZooKeeper();
             String zookeeper_node = zookeeper_path + "/zero_copy_s3/merged/" + entry.new_part_name;
@@ -1522,11 +1521,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             }
         }
     }
-=======
+
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part.merge_type))
         global_context.getMergeList().bookMergeWithTTL();
->>>>>>> master
 
     auto table_id = getStorageID();
     /// Add merge to list
