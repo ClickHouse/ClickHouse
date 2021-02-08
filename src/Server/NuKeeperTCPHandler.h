@@ -16,6 +16,7 @@
 #include <Coordination/NuKeeperStorageDispatcher.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <Coordination/ThreadSafeQueue.h>
 #include <unordered_map>
 
 namespace DB
@@ -23,7 +24,9 @@ namespace DB
 
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
-class ThreadSafeResponseQueue;
+
+using ThreadSafeResponseQueue = ThreadSafeQueue<Coordination::ZooKeeperResponsePtr>;
+
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
 class NuKeeperTCPHandler : public Poco::Net::TCPServerConnection

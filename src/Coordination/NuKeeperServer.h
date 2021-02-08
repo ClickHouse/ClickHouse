@@ -31,12 +31,14 @@ private:
 
     std::mutex append_entries_mutex;
 
+    ResponsesQueue & responses_queue;
+
 public:
-    NuKeeperServer(int server_id_, const std::string & hostname_, int port_);
+    NuKeeperServer(int server_id_, const std::string & hostname_, int port_, ResponsesQueue & responses_queue_);
 
     void startup(int64_t operation_timeout_ms);
 
-    NuKeeperStorage::ResponsesForSessions putRequest(const NuKeeperStorage::RequestForSession & request);
+    void putRequest(const NuKeeperStorage::RequestForSession & request);
 
     int64_t getSessionID(int64_t session_timeout_ms);
 

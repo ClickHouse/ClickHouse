@@ -31,13 +31,15 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<NuKeeperStorage::RequestForSession>;
     RequestsQueue requests_queue{1};
+    ResponsesQueue responses_queue;
     std::atomic<bool> shutdown_called{false};
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
 
     std::mutex session_to_response_callback_mutex;
     SessionToResponseCallback session_to_response_callback;
 
-    ThreadFromGlobalPool processing_thread;
+    ThreadFromGlobalPool request_thread;
+    ThreadFromGlobalPool responses_thread;
 
     ThreadFromGlobalPool session_cleaner_thread;
 
@@ -46,7 +48,8 @@ private:
     Poco::Logger * log;
 
 private:
-    void processingThread();
+    void requestThread();
+    void responseThread();
     void sessionCleanerTask();
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 

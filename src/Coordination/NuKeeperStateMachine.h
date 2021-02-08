@@ -3,14 +3,17 @@
 #include <Coordination/NuKeeperStorage.h>
 #include <libnuraft/nuraft.hxx>
 #include <common/logger_useful.h>
+#include <Coordination/ThreadSafeQueue.h>
 
 namespace DB
 {
 
+using ResponsesQueue = ThreadSafeQueue<NuKeeperStorage::ResponseForSession>;
+
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(long tick_time = 500);
+    NuKeeperStateMachine(ResponsesQueue & responses_queue_, long tick_time = 500);
 
     nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
@@ -47,7 +50,7 @@ public:
         return storage;
     }
 
-    NuKeeperStorage::ResponsesForSessions processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session);
+    void processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session);
 
     std::unordered_set<int64_t> getDeadSessions();
 
@@ -74,6 +77,8 @@ private:
     static void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out);
 
     NuKeeperStorage storage;
+
+    ResponsesQueue & responses_queue;
     /// Mutex for snapshots
     std::mutex snapshots_lock;
 

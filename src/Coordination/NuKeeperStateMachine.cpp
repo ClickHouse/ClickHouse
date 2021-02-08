@@ -43,8 +43,9 @@ nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions
 }
 
 
-NuKeeperStateMachine::NuKeeperStateMachine(int64_t tick_time)
+NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, long tick_time)
     : storage(tick_time)
+    , responses_queue(responses_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("NuRaftStateMachine"))
 {
@@ -76,10 +77,12 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
         {
             std::lock_guard lock(storage_lock);
             responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
+            for (auto & response_for_session : responses_for_sessions)
+                responses_queue.push(response_for_session);
         }
 
         last_committed_idx = log_idx;
-        return writeResponses(responses_for_sessions);
+        return nullptr;
     }
 }
 
@@ -228,10 +231,15 @@ int NuKeeperStateMachine::read_logical_snp_obj(
     return 0;
 }
 
-NuKeeperStorage::ResponsesForSessions NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session)
+void NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session)
 {
-    std::lock_guard lock(storage_lock);
-    return storage.processRequest(request_for_session.request, request_for_session.session_id);
+    NuKeeperStorage::ResponsesForSessions responses;
+    {
+        std::lock_guard lock(storage_lock);
+        responses = storage.processRequest(request_for_session.request, request_for_session.session_id);
+    }
+    for (const auto & response : responses)
+        responses_queue.push(response);
 }
 
 std::unordered_set<int64_t> NuKeeperStateMachine::getDeadSessions()
