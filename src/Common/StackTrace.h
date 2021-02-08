@@ -34,7 +34,15 @@ public:
         std::optional<std::string> file;
         std::optional<UInt64> line;
     };
-    static constexpr size_t capacity = 32;
+
+    static constexpr size_t capacity =
+#ifndef NDEBUG
+        /* The stacks are normally larger in debug version due to less inlining. */
+        64
+#else
+        32
+#endif
+        ;
     using FramePointers = std::array<void *, capacity>;
     using Frames = std::array<Frame, capacity>;
 
