@@ -53,6 +53,11 @@ struct RowNumber
     {
         return block == other.block && row == other.row;
     }
+
+    bool operator <= (const RowNumber & other) const
+    {
+        return *this < other || *this == other;
+    }
 };
 
 /*
@@ -101,11 +106,15 @@ public:
 
 private:
     void advancePartitionEnd();
-    void advanceFrameStart() const;
-    void advanceFrameEnd();
+    void advanceFrameStart();
+    void advanceFrameStartChoose();
+    void advanceFrameStartRowsOffset();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
+    void advanceFrameEndRowsOffset();
+    void advanceFrameEnd();
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    void updateAggregationState();
     void writeOutCurrentRow();
 
     Columns & inputAt(const RowNumber & x)
@@ -169,8 +178,27 @@ private:
 #endif
     }
 
+    auto moveRowNumber(const RowNumber & _x, int offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int offset) const;
+
+    void assertValid(const RowNumber & x) const
+    {
+        assert(x.block >= first_block_number);
+        if (x.block == first_block_number + blocks.size())
+        {
+            assert(x.row == 0);
+        }
+        else
+        {
+            assert(x.row < blockRowsNumber(x));
+        }
+    }
+
     RowNumber blocksEnd() const
     { return RowNumber{first_block_number + blocks.size(), 0}; }
+
+    RowNumber blocksBegin() const
+    { return RowNumber{first_block_number, 0}; }
 
 public:
     /*
@@ -217,18 +245,26 @@ public:
     // Used to determine which resulting blocks we can pass to the consumer.
     RowNumber first_not_ready_row;
 
-    // We don't keep the pointer to start of partition, because we don't really
-    // need it, and we want to be able to drop the starting blocks to save memory.
-    // The `partition_end` is past-the-end, as usual. When partition_ended = false,
-    // it still haven't ended, and partition_end is the next row to check.
+    // Boundaries of the current partition.
+    // partition_start doesn't point to a valid block, because we want to drop
+    // the blocks early to save memory. We still have to track it so that we can
+    // cut off a PRECEDING frame at the partition start.
+    // The `partition_end` is past-the-end, as usual. When
+    // partition_ended = false, it still haven't ended, and partition_end is the
+    // next row to check.
+    RowNumber partition_start;
     RowNumber partition_end;
     bool partition_ended = false;
 
-    // This is the row for which we are computing the window functions now.
+    // The row for which we are now computing the window functions.
     RowNumber current_row;
+    // The start of current peer group, needed for CURRENT ROW frame start.
+    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
+    // frames may be earlier.
+    RowNumber peer_group_start;
 
-    // The frame is [frame_start, frame_end) if frame_ended, and unknown
-    // otherwise. Note that when we move to the next row, both the
+    // The frame is [frame_start, frame_end) if frame_ended && frame_started,
+    // and unknown otherwise. Note that when we move to the next row, both the
     // frame_start and the frame_end may jump forward by an unknown amount of
     // blocks, e.g. if we use a RANGE frame. This means that sometimes we don't
     // know neither frame_end nor frame_start.
@@ -239,6 +275,13 @@ public:
     RowNumber frame_start;
     RowNumber frame_end;
     bool frame_ended = false;
+    bool frame_started = false;
+
+    // The previous frame boundaries that correspond to the current state of the
+    // aggregate function. We use them to determine how to update the aggregation
+    // state after we find the new frame.
+    RowNumber prev_frame_start;
+    RowNumber prev_frame_end;
 };
 
 }
