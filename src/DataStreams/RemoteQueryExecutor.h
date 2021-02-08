@@ -57,6 +57,9 @@ public:
     /// Create connection and send query, external tables and scalars.
     void sendQuery();
 
+    /// Query is resent to a replica, the query itself can be modified.
+    std::atomic<bool> resent_query { false };
+
     /// Read next block of data. Returns empty block if query is finished.
     Block read();
 
@@ -152,6 +155,14 @@ private:
       */
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
+    /** Got duplicated uuids from replica
+      */
+    std::atomic<bool> got_duplicated_part_uuids{ false };
+
+    /// Parts uuids, collected from remote replicas
+    std::mutex duplicated_part_uuids_mutex;
+    std::vector<UUID> duplicated_part_uuids;
+
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
@@ -162,6 +173,14 @@ private:
 
     /// Send all temporary tables to remote servers
     void sendExternalTables();
+
+    /// Set part uuids to a query context, collected from remote replicas.
+    /// Return true if duplicates found.
+    bool setPartUUIDs(const std::vector<UUID> & uuids);
+
+    /// Cancell query and restart it with info about duplicated UUIDs
+    /// only for `allow_experimental_query_deduplication`.
+    std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
@@ -174,6 +193,10 @@ private:
 
     /// Process packet for read and return data block if possible.
     std::optional<Block> processPacket(Packet packet);
+
+    /// Reads packet by packet
+    Block readPackets();
+
 };
 
 }

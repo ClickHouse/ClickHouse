@@ -107,6 +107,8 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+struct PartUUIDs;
+using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -263,6 +265,9 @@ private:
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
+
+    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
+    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -436,7 +441,7 @@ public:
     StoragePtr getViewSource();
 
     String getCurrentDatabase() const;
-    String getCurrentQueryId() const;
+    String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
@@ -734,6 +739,9 @@ public:
     };
 
     MySQLWireContext mysql;
+
+    PartUUIDsPtr getPartUUIDs();
+    PartUUIDsPtr getIgnoredPartUUIDs();
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
