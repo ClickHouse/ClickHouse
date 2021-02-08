@@ -398,7 +398,8 @@ bool joinEquals(const Block & left_block, const Block & right_block, const Block
 }
 
 template <bool copy_left>
-void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, MutableColumns & right_columns,
+void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
+                      const Block & right_block, MutableColumns & right_columns,
                       size_t start, size_t end)
 {
     if (end <= start)
@@ -408,9 +409,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
     if constexpr (copy_left)
         copyLeftRange(left_block, left_columns, start, rows_to_add);
 
-    /// append nulls
-    for (auto & column : right_columns)
-        column->insertManyDefaults(rows_to_add);
+    for (size_t i = 0; i < right_columns.size(); ++i)
+    {
+        JoinCommon::addDefaultValues(*right_columns[i], right_block.getByPosition(i).type, rows_to_add);
+    }
 }
 
 }
@@ -696,7 +698,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
         }
 
         left_cursor.nextN(left_key_tail);
-        joinInequalsLeft<is_all>(block, left_columns, right_columns, left_cursor.position(), left_cursor.end());
+        joinInequalsLeft<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
         //left_cursor.nextN(left_cursor.end() - left_cursor.position());
 
         changeLeftColumns(block, std::move(left_columns));
@@ -773,7 +775,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         Range range = left_cursor.getNextEqualRange(right_cursor);
 
-        joinInequalsLeft<is_all>(left_block, left_columns, right_columns, left_unequal_position, range.left_start);
+        joinInequalsLeft<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
 
         if (range.empty())
             break;
@@ -928,7 +930,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
+            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 

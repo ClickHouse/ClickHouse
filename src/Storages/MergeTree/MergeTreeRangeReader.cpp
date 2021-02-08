@@ -414,18 +414,19 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
         end -= 64;
         const auto * pos = end;
         UInt64 val =
-                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
                         zero16)))
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
                         zero16))) << 16u)
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
                         zero16))) << 32u)
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
                         zero16))) << 48u);
+        val = ~val;
         if (val == 0)
             count += 64;
         else

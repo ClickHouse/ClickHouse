@@ -178,6 +178,11 @@ public:
         return query_id;
     }
 
+    const Context * getQueryContext() const
+    {
+        return query_context;
+    }
+
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
 

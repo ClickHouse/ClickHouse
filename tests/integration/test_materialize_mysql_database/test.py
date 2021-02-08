@@ -1,12 +1,11 @@
 import os
 import os.path as p
-import subprocess
 import time
 import pwd
 import re
 import pymysql.cursors
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 import docker
 
 from . import materialize_with_ddl
@@ -87,7 +86,7 @@ class MySQLNodeInstance:
                 print("Can't connect to MySQL " + str(ex))
                 time.sleep(0.5)
 
-        subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
+        run_and_check(['docker-compose', 'ps', '--services', 'all'])
         raise Exception("Cannot wait MySQL container")
 
 @pytest.fixture(scope="module")
@@ -96,13 +95,13 @@ def started_mysql_5_7():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
-        subprocess.check_call(
+        run_and_check(
             ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
         mysql_node.wait_mysql_to_start(120)
         yield mysql_node
     finally:
         mysql_node.close()
-        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
+        run_and_check(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
                                '--remove-orphans'])
 
 
@@ -112,13 +111,13 @@ def started_mysql_8_0():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
-        subprocess.check_call(
+        run_and_check(
             ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
         mysql_node.wait_mysql_to_start(120)
         yield mysql_node
     finally:
         mysql_node.close()
-        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
+        run_and_check(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
                                '--remove-orphans'])
 
 
@@ -229,3 +228,21 @@ def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7, 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_utf8mb4(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_system_parts_table(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.system_parts_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_multi_table_update(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_system_tables_table(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_8_0, "mysql8_0")

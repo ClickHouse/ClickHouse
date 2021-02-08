@@ -212,4 +212,12 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
+bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    const auto & lhs_name = lhs->getName();
+    const auto & rhs_name = rhs->getName();
+
+    return lhs_name == rhs_name;
+}
+
 }
