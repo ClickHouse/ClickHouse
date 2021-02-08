@@ -53,20 +53,23 @@ def test_config_with_only_regexp_hosts(start_cluster):
 
 def test_config_without_allowed_hosts_section(start_cluster):
     assert node4.query("CREATE TABLE table_test_4_1 (word String) Engine=URL('https://host:80', CSV)") == ""
-    assert node4.query("CREATE TABLE table_test_4_2 (word String) Engine=URL('https://host', HDFS)") == ""
-    assert node4.query("CREATE TABLE table_test_4_3 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
-    assert node4.query("CREATE TABLE table_test_4_4 (word String) Engine=URL('ftp://something.com', S3)") == ""
+    assert node4.query("CREATE TABLE table_test_4_2 (word String) Engine=S3('https://host:80/bucket/key', CSV)") == ""
+    assert node4.query("CREATE TABLE table_test_4_3 (word String) Engine=URL('https://host', HDFS)") == ""
+    assert node4.query("CREATE TABLE table_test_4_4 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
+    assert node4.query("CREATE TABLE table_test_4_5 (word String) Engine=URL('ftp://something.com', S3)") == ""
 
 
 def test_config_without_allowed_hosts(start_cluster):
     assert "not allowed" in node5.query_and_get_error(
         "CREATE TABLE table_test_5_1 (word String) Engine=URL('https://host:80', CSV)")
     assert "not allowed" in node5.query_and_get_error(
-        "CREATE TABLE table_test_5_2 (word String) Engine=URL('https://host', HDFS)")
+        "CREATE TABLE table_test_5_2 (word String) Engine=S3('https://host:80/bucket/key', CSV)")
     assert "not allowed" in node5.query_and_get_error(
-        "CREATE TABLE table_test_5_3 (word String) Engine=URL('https://yandex.ru', CSV)")
+        "CREATE TABLE table_test_5_3 (word String) Engine=URL('https://host', HDFS)")
     assert "not allowed" in node5.query_and_get_error(
-        "CREATE TABLE table_test_5_4 (word String) Engine=URL('ftp://something.com', S3)")
+        "CREATE TABLE table_test_5_4 (word String) Engine=URL('https://yandex.ru', CSV)")
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE TABLE table_test_5_5 (word String) Engine=URL('ftp://something.com', S3)")
 
 
 def test_table_function_remote(start_cluster):
