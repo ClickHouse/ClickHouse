@@ -17,16 +17,16 @@ namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
     extern const int RAFT_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
-NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_)
+NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_, ResponsesQueue & responses_queue_)
     : server_id(server_id_)
     , hostname(hostname_)
     , port(port_)
     , endpoint(hostname + ":" + std::to_string(port))
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(500 /* FIXME */))
+    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_))
     , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, endpoint))
+    , responses_queue(responses_queue_)
 {
 }
 
@@ -53,6 +53,7 @@ void NuKeeperServer::startup(int64_t operation_timeout_ms)
     params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = operation_timeout_ms;
     params.auto_forwarding_ = true;
+    params.auto_forwarding_req_timeout_ = operation_timeout_ms * 2;
     params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
@@ -94,58 +95,14 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
     return buf.getBuffer();
 }
 
-NuKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
-{
-    DB::NuKeeperStorage::ResponsesForSessions results;
-    DB::ReadBufferFromNuraftBuffer buf(buffer);
-    bool response_found = false;
-
-    while (!buf.eof())
-    {
-        int64_t session_id;
-        DB::readIntBinary(session_id, buf);
-        int32_t length;
-        Coordination::XID xid;
-        int64_t zxid;
-        Coordination::Error err;
-
-        Coordination::read(length, buf);
-        Coordination::read(xid, buf);
-        Coordination::read(zxid, buf);
-        Coordination::read(err, buf);
-        Coordination::ZooKeeperResponsePtr response;
-
-        if (xid == Coordination::WATCH_XID)
-            response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-        else
-        {
-            if (response_found)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "More than one non-watch response for single request with xid {}, response xid {}", request->xid, xid);
-
-            response_found = true;
-            response = request->makeResponse();
-        }
-
-        if (err == Coordination::Error::ZOK && (xid == Coordination::WATCH_XID || response->getOpNum() != Coordination::OpNum::Close))
-            response->readImpl(buf);
-
-        response->xid = xid;
-        response->zxid = zxid;
-        response->error = err;
-
-        results.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
-    }
-    return results;
 }
 
-}
-
-NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequest(const NuKeeperStorage::RequestForSession & request_for_session)
+void NuKeeperServer::putRequest(const NuKeeperStorage::RequestForSession & request_for_session)
 {
     auto [session_id, request] = request_for_session;
-    if (isLeaderAlive() && request_for_session.request->isReadRequest())
+    if (isLeaderAlive() && request->isReadRequest())
     {
-        return state_machine->processReadRequest(request_for_session);
+        state_machine->processReadRequest(request_for_session);
     }
     else
     {
@@ -162,8 +119,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequest(const NuKeeperS
             response->xid = request->xid;
             response->zxid = 0;
             response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
-            return responses;
+            responses_queue.push(DB::NuKeeperStorage::ResponseForSession{session_id, response});
         }
 
         if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
@@ -173,17 +129,10 @@ NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequest(const NuKeeperS
             response->xid = request->xid;
             response->zxid = 0;
             response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
-            return responses;
+            responses_queue.push(DB::NuKeeperStorage::ResponseForSession{session_id, response});
         }
         else if (result->get_result_code() != nuraft::cmd_result_code::OK)
             throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
-
-        auto result_buf = result->get();
-        if (result_buf == nullptr)
-            throw Exception(ErrorCodes::RAFT_ERROR, "Received nullptr from RAFT leader");
-
-        return readZooKeeperResponses(result_buf, request);
     }
 }
 

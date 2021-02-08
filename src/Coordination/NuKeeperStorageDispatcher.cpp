@@ -16,9 +16,9 @@ NuKeeperStorageDispatcher::NuKeeperStorageDispatcher()
 {
 }
 
-void NuKeeperStorageDispatcher::processingThread()
+void NuKeeperStorageDispatcher::requestThread()
 {
-    setThreadName("NuKeeperSProc");
+    setThreadName("NuKeeperReqT");
     while (!shutdown_called)
     {
         NuKeeperStorage::RequestForSession request;
@@ -32,9 +32,33 @@ void NuKeeperStorageDispatcher::processingThread()
 
             try
             {
-                auto responses = server->putRequest(request);
-                for (const auto & response_for_session : responses)
-                    setResponse(response_for_session.session_id, response_for_session.response);
+                server->putRequest(request);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+}
+
+void NuKeeperStorageDispatcher::responseThread()
+{
+    setThreadName("NuKeeperRspT");
+    while (!shutdown_called)
+    {
+        NuKeeperStorage::ResponseForSession response_for_session;
+
+        UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
+
+        if (responses_queue.tryPop(response_for_session, max_wait))
+        {
+            if (shutdown_called)
+                break;
+
+            try
+            {
+                 setResponse(response_for_session.session_id, response_for_session.response);
             }
             catch (...)
             {
@@ -139,7 +163,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         ids.push_back(server_id);
     }
 
-    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
+    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, responses_queue);
     try
     {
         server->startup(operation_timeout.totalMilliseconds());
@@ -170,7 +194,8 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         throw;
     }
 
-    processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
+    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
+    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
@@ -192,8 +217,11 @@ void NuKeeperStorageDispatcher::shutdown()
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
-            if (processing_thread.joinable())
-                processing_thread.join();
+            if (request_thread.joinable())
+                request_thread.join();
+
+            if (responses_thread.joinable())
+                responses_thread.join();
         }
 
         if (server)
@@ -246,12 +274,7 @@ void NuKeeperStorageDispatcher::sessionCleanerTask()
                     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
                     putRequest(request, dead_session);
-                    {
-                        std::lock_guard lock(session_to_response_callback_mutex);
-                        auto session_it = session_to_response_callback.find(dead_session);
-                        if (session_it != session_to_response_callback.end())
-                            session_to_response_callback.erase(session_it);
-                    }
+                    finishSession(dead_session);
                 }
             }
         }

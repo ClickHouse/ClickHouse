@@ -45,36 +45,6 @@ struct PollResult
     bool error{false};
 };
 
-/// Queue with mutex. As simple as possible.
-class ThreadSafeResponseQueue
-{
-private:
-    mutable std::mutex queue_mutex;
-    std::queue<Coordination::ZooKeeperResponsePtr> queue;
-public:
-    void push(const Coordination::ZooKeeperResponsePtr & response)
-    {
-        std::lock_guard lock(queue_mutex);
-        queue.push(response);
-    }
-    bool tryPop(Coordination::ZooKeeperResponsePtr & response)
-    {
-        std::lock_guard lock(queue_mutex);
-        if (!queue.empty())
-        {
-            response = queue.front();
-            queue.pop();
-            return true;
-        }
-        return false;
-    }
-    size_t size() const
-    {
-        std::lock_guard lock(queue_mutex);
-        return queue.size();
-    }
-};
-
 struct SocketInterruptablePollWrapper
 {
     int sockfd;
