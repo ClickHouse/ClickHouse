@@ -426,7 +426,7 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
         int socket_fd = replica->connection->getSocket()->impl()->sockfd();
         epoll.add(socket_fd);
         fd_to_replica[socket_fd] = replica;
-        offset_states[offset].replicas.push_back(std::move(replica));
+        offset_states[offset].replicas.push_back(replica);
         ++offset_states[offset].active_connection_count;
         ++active_connection_count;
         pipeline_for_new_replicas.run(replica);
