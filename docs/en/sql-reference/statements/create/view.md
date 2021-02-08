@@ -99,6 +99,18 @@ When a live view query includes a subquery then the cached partial result is onl
    Only queries where one can combine partial result from the old data plus partial result from the new data will work.
    Live view will not work for queries that require the complete data set to compute the final result.
 
+You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query
+
+```sql
+WATCH [db.]live_view
+```
+
+or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
+
+```sql
+WATCH [db.]live_view EVENTS
+```
+
 You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view
 in the same way as for any regular view or a table. If the query result is cached 
 it will return the result immediately without running the stored query on the underlying tables.
