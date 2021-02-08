@@ -137,7 +137,8 @@ void HedgedConnections::sendQuery(
             break;
     }
 
-    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaStatePtr & replica) {
+    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaStatePtr & replica)
+    {
         Settings modified_settings = settings;
 
         if (disable_two_level_aggregation)
