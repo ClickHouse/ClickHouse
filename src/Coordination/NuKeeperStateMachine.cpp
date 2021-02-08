@@ -43,7 +43,7 @@ nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions
 }
 
 
-NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, long tick_time)
+NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, int64_t tick_time)
     : storage(tick_time)
     , responses_queue(responses_queue_)
     , last_committed_idx(0)

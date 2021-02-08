@@ -132,7 +132,6 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
             else
             {
                 NuKeeperStorage::Node created_node;
-                created_node.seq_num = 0;
                 created_node.stat.czxid = zxid;
                 created_node.stat.mzxid = zxid;
                 created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);

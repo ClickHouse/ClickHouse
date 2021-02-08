@@ -41,7 +41,7 @@ private:
     std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
-    int64_t session_id;
+    int64_t session_id{-1};
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
 
