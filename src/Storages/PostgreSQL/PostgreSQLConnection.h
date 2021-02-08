@@ -16,9 +16,10 @@ namespace DB
 /// Connection is not made until actually used.
 class PostgreSQLConnection
 {
-    using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 public:
+    using ConnectionPtr = std::shared_ptr<pqxx::connection>;
+
     PostgreSQLConnection(std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
         : connection_str(formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password))) {}
 

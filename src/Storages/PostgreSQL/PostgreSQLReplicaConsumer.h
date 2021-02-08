@@ -29,29 +29,20 @@ public:
             const size_t max_block_size_,
             Storages storages_);
 
-    /// Start reading WAL from current_lsn position. Initial data sync from created snapshot already done.
     void startSynchronization();
+
     void stopSynchronization();
 
 private:
-    /// Executed by wal_reader_task. A separate thread reads wal and advances lsn to last commited position
-    /// after rows were written via copyData.
-    void replicationStream();
-    void stopReplicationStream();
-
-    enum class PostgreSQLQuery
-    {
-        INSERT,
-        UPDATE,
-        DELETE
-    };
+    void synchronizationStream();
 
     bool readFromReplicationSlot();
-    void syncTables(std::shared_ptr<pqxx::nontransaction> tx, const std::unordered_set<std::string> & tables_to_sync);
+
+    void syncTables(std::shared_ptr<pqxx::nontransaction> tx);
+
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
-    void processReplicationMessage(
-            const char * replication_message, size_t size, std::unordered_set<std::string> & tables_to_sync);
+    void processReplicationMessage(const char * replication_message, size_t size);
 
     struct BufferData
     {
@@ -74,26 +65,34 @@ private:
 
     void insertDefaultValue(BufferData & buffer, size_t column_idx);
     void insertValue(BufferData & buffer, const std::string & value, size_t column_idx);
-    void readTupleData(BufferData & buffer, const char * message, size_t & pos, PostgreSQLQuery type, bool old_value = false);
 
-    /// Methods to parse replication message data.
+    enum class PostgreSQLQuery
+    {
+        INSERT,
+        UPDATE,
+        DELETE
+    };
+
+    void readTupleData(BufferData & buffer, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
+
     void readString(const char * message, size_t & pos, size_t size, String & result);
-    Int64 readInt64(const char * message, size_t & pos);
-    Int32 readInt32(const char * message, size_t & pos);
-    Int16 readInt16(const char * message, size_t & pos);
-    Int8 readInt8(const char * message, size_t & pos);
+    Int64 readInt64(const char * message, size_t & pos, size_t size);
+    Int32 readInt32(const char * message, size_t & pos, size_t size);
+    Int16 readInt16(const char * message, size_t & pos, size_t size);
+    Int8 readInt8(const char * message, size_t & pos, size_t size);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
-    const std::string replication_slot_name;
-    const std::string publication_name;
-    PostgreSQLReplicaMetadata metadata;
+    const std::string replication_slot_name, publication_name;
 
+    PostgreSQLReplicaMetadata metadata;
     PostgreSQLConnectionPtr connection;
 
     std::string current_lsn, final_lsn;
     const size_t max_block_size;
+
     std::string table_to_insert;
+    std::unordered_set<std::string> tables_to_sync;
 
     BackgroundSchedulePool::TaskHolder wal_reader_task;
     std::atomic<bool> stop_synchronization = false;

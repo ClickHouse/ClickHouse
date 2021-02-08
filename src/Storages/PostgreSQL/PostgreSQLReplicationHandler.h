@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class StoragePostgreSQLReplica;
+
 class PostgreSQLReplicationHandler
 {
 public:
@@ -22,13 +24,17 @@ public:
             const size_t max_block_size_);
 
     void startup();
-    void addStoragePtr(const std::string & table_name, StoragePtr storage);
+
     void shutdown();
+
     void shutdownFinal();
+
+    void addStorage(const std::string & table_name, const StoragePostgreSQLReplica * storage);
+
+    std::unordered_set<std::string> fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
-    using Storages = std::unordered_map<String, StoragePtr>;
 
     bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
@@ -40,8 +46,12 @@ private:
     void dropPublication(NontransactionPtr ntx);
 
     void waitConnectionAndStart();
-    void startReplication();
+
+    void startSynchronization();
+
     void loadFromSnapshot(std::string & snapshot_name);
+
+    std::unordered_set<std::string> fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
@@ -53,8 +63,10 @@ private:
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task;
+    std::atomic<bool> tables_loaded = false;
 
-    Storages storages;
+    std::unordered_map<String, const StoragePostgreSQLReplica *> storages;
+    std::unordered_map<String, StoragePtr> nested_storages;
 };
 
 

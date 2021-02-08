@@ -25,6 +25,20 @@ namespace ErrorCodes
 }
 
 
+std::unordered_set<std::string> fetchPostgreSQLTablesList(ConnectionPtr connection)
+{
+    std::unordered_set<std::string> tables;
+    std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
+        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
+    pqxx::read_transaction tx(*connection);
+
+    for (auto table_name : tx.stream<std::string>(query))
+        tables.insert(std::get<0>(table_name));
+
+    return tables;
+}
+
+
 static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
 {
     DataTypePtr res;

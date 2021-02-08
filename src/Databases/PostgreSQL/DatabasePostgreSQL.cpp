@@ -58,7 +58,7 @@ bool DatabasePostgreSQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto tables_list = fetchTablesList();
+    auto tables_list = fetchPostgreSQLTablesList(connection->conn());
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.count(table_name))
@@ -74,27 +74,13 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
-    auto table_names = fetchTablesList();
+    auto table_names = fetchPostgreSQLTablesList(connection->conn());
 
     for (const auto & table_name : table_names)
         if (!detached_or_dropped.count(table_name))
             tables[table_name] = fetchTable(table_name, context, true);
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
-}
-
-
-std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
-{
-    std::unordered_set<std::string> tables;
-    std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
-        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    pqxx::read_transaction tx(*connection->conn());
-
-    for (auto table_name : tx.stream<std::string>(query))
-        tables.insert(std::get<0>(table_name));
-
-    return tables;
 }
 
 
@@ -299,7 +285,7 @@ void DatabasePostgreSQL::loadStoredObjects(Context & /* context */, bool, bool /
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
-    auto actual_tables = fetchTablesList();
+    auto actual_tables = fetchPostgreSQLTablesList(connection->conn());
 
     if (cache_tables)
     {
