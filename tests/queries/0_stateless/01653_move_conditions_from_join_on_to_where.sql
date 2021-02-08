@@ -34,5 +34,15 @@ SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt
 EXPLAIN SYNTAX SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt32(40)) where table1.b < 1;
 SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt32(40)) where table1.b > 10;
 
+SELECT '---------Q8----------';
+SELECT * FROM table1 INNER JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt32(table1, 10)); -- { serverError 47 }
+
+SELECT '---------Q9---will not be optimized----------';
+EXPLAIN SYNTAX SELECT * FROM table1 LEFT JOIN table2 ON (table1.a = table2.a) AND (table1.b = toUInt32(10));
+EXPLAIN SYNTAX SELECT * FROM table1 RIGHT JOIN table2 ON (table1.a = table2.a) AND (table1.b = toUInt32(10));
+EXPLAIN SYNTAX SELECT * FROM table1 FULL JOIN table2 ON (table1.a = table2.a) AND (table1.b = toUInt32(10));
+EXPLAIN SYNTAX SELECT * FROM table1 FULL JOIN table2 ON (table1.a = table2.a) AND (table2.b = toUInt32(10)) WHERE table1.a < toUInt32(20);
+EXPLAIN SYNTAX SELECT * FROM table1 , table2;
+
 DROP TABLE table1;
 DROP TABLE table2;
