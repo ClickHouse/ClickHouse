@@ -1107,6 +1107,13 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
+    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    {
+        assertOrSetUUID(create, database);
+        guard->releaseTableLock();
+        return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
+    }
+
     if (database->isDictionaryExist(dictionary_name))
     {
         /// TODO Check structure of dictionary

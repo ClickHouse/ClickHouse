@@ -212,6 +212,19 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
+    bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
+    bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
+                                   context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY &&
+                                   !is_drop_or_detach_database;
+    if (is_replicated_ddl_query)
+    {
+        if (kind == ASTDropQuery::Kind::Detach)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH DICTIONARY is not allowed for Replicated databases.");
+
+        ddl_guard->releaseTableLock();
+        return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
+    }
+
     if (!database || !database->isDictionaryExist(dictionary_name))
     {
         if (!if_exists)
