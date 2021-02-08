@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <common/logger_useful.h>
 
 namespace DB

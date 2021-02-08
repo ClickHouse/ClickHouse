@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Coordination/NuKeeperStorage.h>
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <common/logger_useful.h>
 #include <Coordination/ThreadSafeQueue.h>
 
