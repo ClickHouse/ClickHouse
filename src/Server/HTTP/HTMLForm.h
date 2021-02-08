@@ -118,7 +118,7 @@ public:
     static const int UNKNOWN_CONTENT_LENGTH;
 
 protected:
-    void readUrl(ReadBuffer & in);
+    void readQuery(ReadBuffer & in);
     void readMultipart(ReadBuffer & in, PartHandler & handler);
 
 private:

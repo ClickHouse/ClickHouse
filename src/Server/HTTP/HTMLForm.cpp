@@ -67,7 +67,7 @@ HTMLForm::HTMLForm(const Poco::Net::HTTPRequest & request) : HTMLForm(Poco::URI(
 HTMLForm::HTMLForm(const Poco::URI & uri) : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH)
 {
     ReadBufferFromString istr(uri.getRawQuery()); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    readUrl(istr);
+    readQuery(istr);
 }
 
 
@@ -97,7 +97,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
     if (!query.empty())
     {
         ReadBufferFromString istr(query);
-        readUrl(istr);
+        readQuery(istr);
     }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
@@ -113,7 +113,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
         }
         else
         {
-            readUrl(requestBody);
+            readQuery(requestBody);
         }
     }
 }
@@ -137,7 +137,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request)
 void HTMLForm::read(ReadBuffer & in, PartHandler & handler)
 {
     if (encoding == ENCODING_URL)
-        readUrl(in);
+        readQuery(in);
     else
         readMultipart(in, handler);
 }
@@ -145,18 +145,18 @@ void HTMLForm::read(ReadBuffer & in, PartHandler & handler)
 
 void HTMLForm::read(ReadBuffer & in)
 {
-    readUrl(in);
+    readQuery(in);
 }
 
 
 void HTMLForm::read(const std::string & queryString)
 {
     ReadBufferFromString istr(queryString);
-    readUrl(istr);
+    readQuery(istr);
 }
 
 
-void HTMLForm::readUrl(ReadBuffer & in)
+void HTMLForm::readQuery(ReadBuffer & in)
 {
     size_t fields = 0;
     char ch;
