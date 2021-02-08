@@ -19,7 +19,7 @@ DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) co
 {
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                        "Function {} expect at leas two arguments, got {}", getName(), arguments.size());
+                        "Function {} expect at least two arguments, got {}", getName(), arguments.size());
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
