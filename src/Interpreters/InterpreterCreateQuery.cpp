@@ -827,17 +827,28 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.attach_from_path)
     {
-        fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
         fs::path user_files = fs::path(context.getUserFilesPath()).lexically_normal();
-        if (data_path.is_relative())
-            data_path = (user_files / data_path).lexically_normal();
-        if (!startsWith(data_path, user_files))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                            "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
-
         fs::path root_path = fs::path(context.getPath()).lexically_normal();
-        /// Data path must be relative to root_path
-        create.attach_from_path = fs::relative(data_path, root_path) / "";
+
+        if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+            fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
+            if (data_path.is_relative())
+                data_path = (user_files / data_path).lexically_normal();
+            if (!startsWith(data_path, user_files))
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+
+            /// Data path must be relative to root_path
+            create.attach_from_path = fs::relative(data_path, root_path) / "";
+        }
+        else
+        {
+            fs::path data_path = (root_path / *create.attach_from_path).lexically_normal();
+            if (!startsWith(data_path, user_files))
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+        }
     }
     else if (create.attach && !create.attach_short_syntax && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
     {

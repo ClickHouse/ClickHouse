@@ -488,7 +488,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
         /// updating metadata in Replicated database), so we make create request for finished_node_path with status "0",
         /// which means that query executed successfully.
         task.ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
-        task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, "0", zkutil::CreateMode::Persistent));
+        task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, ExecutionStatus(0).serializeText(), zkutil::CreateMode::Persistent));
 
         try
         {

@@ -208,7 +208,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (task->is_initial_query)
     {
         assert(!zookeeper->exists(entry_path + "/try"));
-        assert(zookeeper->exists(entry_path + "/committed") == (zookeeper->get(task->getFinishedNodePath()) == "0"));
+        assert(zookeeper->exists(entry_path + "/committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }

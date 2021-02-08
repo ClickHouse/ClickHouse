@@ -36,7 +36,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
+    extern const int ALL_CONNECTION_TRIES_FAILED;
 }
+
+static constexpr const char * DROPPED_MARK = "DROPPED";
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
@@ -68,6 +71,8 @@ DatabaseReplicated::DatabaseReplicated(
         throw Exception("ZooKeeper path, shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
     if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
         throw Exception("Shard and replica names should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
+    if (shard_name.find('|') != std::string::npos || replica_name.find('|') != std::string::npos)
+        throw Exception("Shard and replica names should not contain '|'", ErrorCodes::BAD_ARGUMENTS);
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -90,7 +95,7 @@ DatabaseReplicated::DatabaseReplicated(
         createDatabaseNodesInZooKeeper(current_zookeeper);
     }
 
-    replica_path = zookeeper_path + "/replicas/" + shard_name + "/" + replica_name;
+    replica_path = zookeeper_path + "/replicas/" + getFullReplicaName();
 
     String replica_host_id;
     if (current_zookeeper->tryGet(replica_path, replica_host_id))
@@ -108,6 +113,93 @@ DatabaseReplicated::DatabaseReplicated(
         /// Throws if replica with the same name was created concurrently
         createReplicaNodesInZooKeeper(current_zookeeper);
     }
+}
+
+String DatabaseReplicated::getFullReplicaName() const
+{
+    return shard_name + '|' + replica_name;
+}
+
+std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String & name)
+{
+    String shard;
+    String replica;
+    auto pos = name.find('|');
+    if (pos == std::string::npos || name.find('|', pos + 1) != std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect replica identifier: {}", name);
+    shard = name.substr(0, pos);
+    replica = name.substr(pos + 1);
+    return {shard, replica};
+}
+
+ClusterPtr DatabaseReplicated::getCluster() const
+{
+    Strings hosts;
+    Strings host_ids;
+
+    auto zookeeper = global_context.getZooKeeper();
+    constexpr int max_retries = 10;
+    int iteration = 0;
+    bool success = false;
+    while (++iteration <= max_retries)
+    {
+        host_ids.resize(0);
+        Coordination::Stat stat;
+        hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
+        if (hosts.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts found");
+        Int32 cver = stat.cversion;
+
+        std::vector<zkutil::ZooKeeper::FutureGet> futures;
+        futures.reserve(hosts.size());
+        host_ids.reserve(hosts.size());
+        for (const auto & host : hosts)
+            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/replicas/" + host));
+
+        success = true;
+        for (auto & future : futures)
+        {
+            auto res = future.get();
+            if (res.error != Coordination::Error::ZOK)
+                success = false;
+            host_ids.emplace_back(res.data);
+        }
+
+        zookeeper->get(zookeeper_path + "/replicas", &stat);
+        if (success && cver == stat.version)
+            break;
+    }
+    if (!success)
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot");
+
+    assert(!hosts.empty());
+    assert(hosts.size() == host_ids.size());
+    std::sort(hosts.begin(), hosts.end());
+    String current_shard = parseFullReplicaName(hosts.front()).first;
+    std::vector<Strings> shards;
+    shards.emplace_back();
+    for (size_t i = 0; i < hosts.size(); ++i)
+    {
+        const auto & id = host_ids[i];
+        if (id == DROPPED_MARK)
+            continue;
+        auto [shard, replica] = parseFullReplicaName(hosts[i]);
+        auto pos = id.find(':');
+        String host = id.substr(0, pos);
+        if (shard != current_shard)
+        {
+            current_shard = shard;
+            if (!shards.back().empty())
+                shards.emplace_back();
+        }
+        shards.back().emplace_back(unescapeForFileName(host));
+    }
+
+    /// TODO make it configurable
+    String username = "default";
+    String password;
+
+    return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, global_context.getTCPPort(), false);
 }
 
 bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
@@ -139,8 +231,6 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
-    current_zookeeper->createAncestors(replica_path);
-
     /// When creating new replica, use latest snapshot version as initial value of log_pointer
     //log_entry_to_execute = 0;   //FIXME
 
@@ -296,9 +386,15 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 void DatabaseReplicated::drop(const Context & context_)
 {
     auto current_zookeeper = getZooKeeper();
-    current_zookeeper->set(replica_path, "DROPPED");
+    current_zookeeper->set(replica_path, DROPPED_MARK);
     DatabaseAtomic::drop(context_);
     current_zookeeper->tryRemoveRecursive(replica_path);
+    /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
+    if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+    {
+        /// It was the last replica, remove all metadata
+        current_zookeeper->tryRemoveRecursive(zookeeper_path);
+    }
 }
 
 void DatabaseReplicated::stopReplication()
@@ -318,7 +414,7 @@ void DatabaseReplicated::shutdown()
 void DatabaseReplicated::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
     auto txn = context.getMetadataTransaction();
-    //assert(!ddl_worker->isCurrentlyActive() || txn /*|| called from DROP DATABASE */);
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->is_initial_query)
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -335,6 +431,8 @@ void DatabaseReplicated::renameTable(const Context & context, const String & tab
 
     if (txn->is_initial_query)
     {
+        if (this != &to_database)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
         if (!isTableExist(table_name, context))
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_name);
         if (exchange && !to_database.isTableExist(to_table_name, context))
