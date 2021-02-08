@@ -2419,7 +2419,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
     }
 
     size_t parts_count_in_partition;
-    bool should_delay = false;
+    ssize_t k_inactive = -1;
     if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
     {
         size_t inactive_parts;
@@ -2432,8 +2432,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
                     + "). Parts cleaning are processing significantly slower than inserts.",
                 ErrorCodes::TOO_MANY_PARTS);
         }
-        if (inactive_parts >= settings->inactive_parts_to_delay_insert)
-            should_delay = true;
+        k_inactive = ssize_t(inactive_parts) - ssize_t(settings->inactive_parts_to_delay_insert);
     }
     else
         parts_count_in_partition = getMaxPartsCountForPartition();
@@ -2446,11 +2445,22 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
             ErrorCodes::TOO_MANY_PARTS);
     }
 
-    if (!should_delay && parts_count_in_partition < settings->parts_to_delay_insert)
+    if (k_inactive < 0 && parts_count_in_partition < settings->parts_to_delay_insert)
         return;
 
-    const size_t max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert; /// always > 0
-    const size_t k = 1 + parts_count_in_partition - settings->parts_to_delay_insert; /// from 1 to max_k
+    const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(settings->parts_to_delay_insert);
+    size_t max_k;
+    size_t k;
+    if (k_active > k_inactive)
+    {
+        max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert;
+        k = k_active + 1;
+    }
+    else
+    {
+        max_k = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
+        k = k_inactive + 1;
+    }
     const double delay_milliseconds = ::pow(settings->max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
