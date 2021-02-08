@@ -14,8 +14,4 @@ set max_memory_usage='80Mi';
 system start merges data_01641;
 optimize table data_01641 final;
 
--- definitely should fail
-set max_memory_usage='1Mi';
-optimize table data_01641 final; -- { serverError 241 }
-
 drop table data_01641;

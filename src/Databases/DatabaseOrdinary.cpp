@@ -135,19 +135,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->database = database_name;
-
-                auto detached_permanently_flag = Poco::File(full_path.string() + detached_suffix);
-                if (detached_permanently_flag.exists())
-                {
-                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
-                    /// if (create_query->uuid != UUIDHelpers::Nil)
-                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-
-                    const std::string table_name = file_name.substr(0, file_name.size() - 4);
-                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-                    return;
-                }
-
                 std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
@@ -171,26 +158,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     std::atomic<size_t> dictionaries_processed{0};
 
     ThreadPool pool;
-
-    /// We must attach dictionaries before attaching tables
-    /// because while we're attaching tables we may need to have some dictionaries attached
-    /// (for example, dictionaries can be used in the default expressions for some tables).
-    /// On the other hand we can attach any dictionary (even sourced from ClickHouse table)
-    /// without having any tables attached. It is so because attaching of a dictionary means
-    /// loading of its config only, it doesn't involve loading the dictionary itself.
-
-    /// Attach dictionaries.
-    for (const auto & [name, query] : file_names)
-    {
-        auto create_query = query->as<const ASTCreateQuery &>();
-        if (create_query.is_dictionary)
-        {
-            tryAttachDictionary(query, *this, getMetadataPath() + name, context);
-
-            /// Messages, so that it's not boring to wait for the server to load for a long time.
-            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
-        }
-    }
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
@@ -216,6 +183,19 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
+
+    /// Attach dictionaries.
+    for (const auto & [name, query] : file_names)
+    {
+        auto create_query = query->as<const ASTCreateQuery &>();
+        if (create_query.is_dictionary)
+        {
+            tryAttachDictionary(query, *this, getMetadataPath() + name, context);
+
+            /// Messages, so that it's not boring to wait for the server to load for a long time.
+            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
+        }
+    }
 }
 
 

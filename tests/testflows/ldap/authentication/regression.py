@@ -29,9 +29,6 @@ xfails = {
 @TestFeature
 @Name("authentication")
 @ArgumentParser(argparser)
-@Specifications(
-    SRS_007_ClickHouse_Authentication_of_Users_via_LDAP
-)
 @Requirements(
     RQ_SRS_007_LDAP_Authentication("1.0")
 )

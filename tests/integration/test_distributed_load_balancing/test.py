@@ -106,7 +106,7 @@ def get_node(query_node, table='dist', *args, **kwargs):
         LIMIT 1
     ) a
     JOIN system.clusters c
-    ON a._shard_num = c.shard_num WHERE cluster = 'shards_cluster'
+    ON a._shard_num = c.shard_num AND cluster = 'shards_cluster'
     """.format(query_id=query_id))
     return rows.strip()
 

@@ -48,9 +48,4 @@ void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const
         appendColumnNameImpl(ostr);
 }
 
-void ASTWithAlias::appendColumnNameWithoutAlias(WriteBuffer & ostr) const
-{
-    appendColumnNameImpl(ostr);
-}
-
 }

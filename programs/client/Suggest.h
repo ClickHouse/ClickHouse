@@ -33,7 +33,7 @@ public:
 private:
 
     void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit);
-    void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings);
+    void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query);
     void fillWordsFromBlock(const Block & block);
 
     /// Words are fetched asynchronously.

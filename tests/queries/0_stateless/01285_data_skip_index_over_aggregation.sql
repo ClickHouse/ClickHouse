@@ -1,5 +1,3 @@
-SET optimize_on_insert = 0;
-
 DROP TABLE IF EXISTS data_01285;
 
 SET max_threads=1;

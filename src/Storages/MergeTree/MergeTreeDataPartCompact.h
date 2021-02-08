@@ -55,7 +55,7 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
-    bool hasColumnFiles(const NameAndTypePair & column) const override;
+    bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 

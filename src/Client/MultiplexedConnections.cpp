@@ -237,7 +237,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet MultiplexedConnections::receivePacketUnlocked()
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -249,7 +249,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(std::function<void(Poco::Ne
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket(std::move(async_callback));
+    Packet packet = current_connection->receivePacket();
 
     switch (packet.type)
     {
