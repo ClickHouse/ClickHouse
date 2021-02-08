@@ -508,6 +508,7 @@
         "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
         "01294_system_distributed_on_cluster",
         "01296_create_row_policy_in_current_database",
+        "01297_create_quota",
         "01305_replica_create_drop_zookeeper",
         "01307_multiple_leaders_zookeeper",
         "01318_long_unsuccessful_mutation_zookeeper",
