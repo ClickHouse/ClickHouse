@@ -57,6 +57,7 @@ WindowStep::WindowStep(const DataStream & input_stream_,
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
+    window_description.frame.checkValid();
 }
 
 void WindowStep::transformPipeline(QueryPipeline & pipeline)
