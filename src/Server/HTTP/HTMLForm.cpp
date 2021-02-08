@@ -28,7 +28,7 @@ public:
     void handlePart(const Poco::Net::MessageHeader &, ReadBuffer &) override {}
 };
 
-}  // namespace
+}
 
 const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
 const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
@@ -159,7 +159,7 @@ void HTMLForm::read(const std::string & queryString)
 void HTMLForm::readQuery(ReadBuffer & in)
 {
     size_t fields = 0;
-    char ch;
+    char ch = 0;  // silence "uninitialized" warning from gcc-*
     bool is_first = true;
 
     while (true)
@@ -248,7 +248,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
             std::string value;
             char ch;
 
-            while(in.read(ch))
+            while (in.read(ch))
             {
                 if (value.size() > value_length_limit)
                     throw Poco::Net::HTMLFormException("Field value too long");
@@ -316,7 +316,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 std::string HTMLForm::MultipartReadBuffer::readLine(bool strict)
 {
     std::string line;
-    char ch;
+    char ch = 0;  // silence "uninitialized" warning from gcc-*
 
     while (in.read(ch) && ch != '\r' && ch != '\n')
         line += ch;

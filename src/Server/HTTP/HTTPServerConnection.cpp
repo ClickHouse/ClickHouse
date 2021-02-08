@@ -40,7 +40,7 @@ void HTTPServerConnection::run()
                 {
                     std::unique_ptr<HTTPRequestHandler> handler(factory->createRequestHandler(request));
 
-					if (handler)
+                    if (handler)
                     {
                         if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
                             response.sendContinue();

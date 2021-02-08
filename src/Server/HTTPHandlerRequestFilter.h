@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;

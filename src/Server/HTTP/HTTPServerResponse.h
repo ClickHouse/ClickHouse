@@ -6,6 +6,7 @@
 #include <Poco/Net/HTTPResponse.h>
 
 #include <iostream>
+#include <memory>
 
 namespace DB
 {

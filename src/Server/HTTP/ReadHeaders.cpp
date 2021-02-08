@@ -11,7 +11,7 @@ namespace DB
 void readHeaders(
     Poco::Net::MessageHeader & headers, ReadBuffer & in, size_t max_fields_number, size_t max_name_length, size_t max_value_length)
 {
-    char ch;
+    char ch = 0;  // silence uninitialized warning from gcc-*
     std::string name;
     std::string value;
 
@@ -62,7 +62,7 @@ void readHeaders(
             throw Poco::Net::MessageException("Field is invalid");
 
         /// Field value - folded values not supported.
-        while(in.read(ch) && ch != '\r' && ch != '\n' && value.size() <= max_value_length)
+        while (in.read(ch) && ch != '\r' && ch != '\n' && value.size() <= max_value_length)
             value += ch;
 
         if (in.eof())
