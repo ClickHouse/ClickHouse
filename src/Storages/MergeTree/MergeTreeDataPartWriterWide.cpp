@@ -96,6 +96,8 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (column_streams.count(stream_name))
             return;
 
+        std::cerr << "adding stream_name: " << stream_name << "\n";
+
         CompressionCodecPtr compression_codec;
         /// If we can use special codec then just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
@@ -113,16 +115,8 @@ void MergeTreeDataPartWriterWide::addStreams(
     };
 
     ISerialization::SubstreamPath stream_path;
-    ISerialization::Settings serialization_settings =
-    {
-        .num_rows = data_part->rows_count,
-        .num_non_default_rows = data_part->getNumberOfNonDefaultValues(column.name),
-        .min_ratio_for_dense_serialization = 10
-    };
 
-    std::cerr << "num_non_default: " << data_part->getNumberOfNonDefaultValues(column.name) << "\n";
-
-    auto serialization = column.type->getSerialization(serialization_settings);
+    auto serialization = column.type->getSerialization(column.name, data_part->serialization_info);
     column.type->enumerateStreams(serialization, callback, stream_path);
     serializations.emplace(column.name, std::move(serialization));
 }
@@ -140,6 +134,8 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.count(stream_name))
             return nullptr;
+
+        std::cerr << "getting stream_name: " << stream_name << "\n";
 
         return &column_streams.at(stream_name)->compressed;
     };

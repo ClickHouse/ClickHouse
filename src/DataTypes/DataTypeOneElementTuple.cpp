@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeOneElementTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/Serializations/SerializationTupleElement.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/quoteString.h>

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <Core/Types.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -116,14 +117,17 @@ struct DataTypeCustomDesc
     DataTypeCustomNamePtr name;
     DataTypeCustomTextSerializationPtr text_serialization;
     DataTypeCustomStreamsPtr streams;
+    SerializationPtr serialization;
 
     DataTypeCustomDesc(
         DataTypeCustomNamePtr name_,
         DataTypeCustomTextSerializationPtr text_serialization_ = nullptr,
-        DataTypeCustomStreamsPtr streams_ = nullptr)
+        DataTypeCustomStreamsPtr streams_ = nullptr,
+        SerializationPtr serialization_ = nullptr)
     : name(std::move(name_))
     , text_serialization(std::move(text_serialization_))
-    , streams(std::move(streams_)) {}
+    , streams(std::move(streams_))
+    , serialization(std::move(serialization_)) {}
 };
 
 using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;

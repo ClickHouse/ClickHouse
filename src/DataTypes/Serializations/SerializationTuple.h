@@ -1,40 +1,36 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <DataTypes/Serializations/SerializationTupleElement.h>
 
 namespace DB
 {
 
-class SerializationArray final : public SimpleTextSerialization
+class SerializationTuple final : public SimpleTextSerialization
 {
-private:
-    SerializationPtr nested;
-
 public:
-    SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    using ElementSerializationPtr = std::shared_ptr<const SerializationTupleElement>;
+    using ElementSerializations = std::vector<ElementSerializationPtr>;
+
+    SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_) 
+        : elems(elems_), have_explicit_names(have_explicit_names_) {}
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    /// Tuples in CSV format will be serialized as separate columns (that is, losing their nesting in the tuple).
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    /** Streaming serialization of arrays is arranged in a special way:
-      * - elements placed in a row are written/read without array sizes;
-      * - the sizes are written/read in a separate stream,
-      * This is necessary, because when implementing nested structures, several arrays can have common sizes.
+    /** Each sub-column in a tuple is serialized in separate stream.
       */
-
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
@@ -57,21 +53,20 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache) const override;
+            ColumnPtr & column,
+            size_t limit,
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state,
+            SubstreamsCache * cache) const override;
 
-    void serializeProtobuf(const IColumn & column,
-            size_t row_num,
-            ProtobufWriter & protobuf,
-            size_t & value_index) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
-    void deserializeProtobuf(IColumn & column,
-            ProtobufReader & protobuf,
-            bool allow_add_row,
-            bool & row_added) const override;
+private:
+    ElementSerializations elems;
+    bool have_explicit_names;
+
+    size_t getPositionByName(const String & name) const;
 };
 
 }

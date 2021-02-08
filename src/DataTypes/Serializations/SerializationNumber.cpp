@@ -180,9 +180,6 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 
     size_t size = x.size();
 
-    std::cerr << "column: " << column.dumpStructure() << "\n";
-    std::cerr << "size: " << size << ", limit: " << limit << "offset: " << offset << "\n";
-
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 

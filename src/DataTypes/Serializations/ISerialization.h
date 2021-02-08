@@ -176,19 +176,19 @@ public:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
-    void deserializeBinaryBulkWithMultipleStreams(
+    virtual void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache = nullptr) const;
       
-    virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
-          IColumn & column,
-          size_t limit,
-          DeserializeBinaryBulkSettings & settings,
-          DeserializeBinaryBulkStatePtr & state,
-          SubstreamsCache * cache) const;
+    // virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
+    //       IColumn & column,
+    //       size_t limit,
+    //       DeserializeBinaryBulkSettings & settings,
+    //       DeserializeBinaryBulkStatePtr & state,
+    //       SubstreamsCache * cache) const;
       
 
     /** Override these methods for data types that require just single stream (most of data types).

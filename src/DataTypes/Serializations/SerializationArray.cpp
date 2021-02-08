@@ -102,9 +102,8 @@ namespace
         }
     }
 
-    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, UInt64 limit)
+    void deserializeArraySizesPositionIndependent(ColumnArray & column_array, ReadBuffer & istr, UInt64 limit)
     {
-        ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
         ColumnArray::Offsets & offset_values = column_array.getOffsets();
         size_t initial_size = offset_values.size();
         offset_values.resize(initial_size + limit);
@@ -259,14 +258,15 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 }
 
 
-void SerializationArray::deserializeBinaryBulkWithMultipleStreamsImpl(
-    IColumn & column,
+void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
+    auto mutable_column = column->assumeMutable();
+    ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
     settings.path.push_back(Substream::ArraySizes);
 
     if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
@@ -276,7 +276,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     else if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
-            deserializeArraySizesPositionIndependent(column, *stream, limit);
+            deserializeArraySizesPositionIndependent(column_array, *stream, limit);
         else
             SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
 
@@ -306,6 +306,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     if (!nested_column->empty() && nested_column->size() != last_offset)
         throw ParsingException("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
             ErrorCodes::CANNOT_READ_ALL_DATA);
+    
+    column = std::move(mutable_column);
 }
 
 

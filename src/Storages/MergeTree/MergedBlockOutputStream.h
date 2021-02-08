@@ -57,6 +57,7 @@ private:
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
+    SerializationInfo serialization_info;
 };
 
 }

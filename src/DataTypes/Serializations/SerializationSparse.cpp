@@ -14,7 +14,6 @@ namespace
 
 void serializeOffsetsPositionIndependent(const IColumn::Offsets & offsets, WriteBuffer & ostr)
 {
-    /// TODO: offset and limit
     size_t size = offsets.size();
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
@@ -48,7 +47,7 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 void SerializationSparse::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::SparseOffsets);
-    callback(path);
+    nested->enumerateStreams(callback, path);
     path.back() = Substream::SparseElements;
     nested->enumerateStreams(callback, path);
     path.pop_back();
@@ -106,17 +105,14 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     if (auto * stream = settings.getter(settings.path))
         serializeOffsetsPositionIndependent(offsets_data, *stream);
 
-    std::cerr << "offsets_column: " << offsets_column->dumpStructure() << "\n";
-    std::cerr << "values: " << values->dumpStructure() << "\n";
-    
     settings.path.back() = Substream::SparseElements;
     nested->serializeBinaryBulkWithMultipleStreams(*values, 0, 0, settings, state);
 
     settings.path.pop_back();
 }
 
-void SerializationSparse::deserializeBinaryBulkWithMultipleStreamsImpl(
-    IColumn & column,
+void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -132,26 +128,26 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreamsImpl(
     
     settings.path.back() = Substream::SparseElements;
 
-    ColumnPtr values = column.cloneEmpty();
+    ColumnPtr values = column->cloneEmpty();
     nested->deserializeBinaryBulkWithMultipleStreams(values, limit, settings, state, cache);
 
-    std::cerr << "offsets: " << offsets_column->dumpStructure() << ", values: " << values->dumpStructure() << "\n";
-
+    auto mutable_column = column->assumeMutable();
     size_t size = values->size();
     IColumn::Offset prev_offset = 0;
+
     for (size_t i = 0; i < size; ++i)
     {
         size_t offsets_diff = offsets_data[i] - prev_offset;
         if (offsets_diff > 1)
-            column.insertManyDefaults(offsets_diff - 1);
+            mutable_column->insertManyDefaults(offsets_diff - 1);
 
-        column.insertFrom(*values, i);
+        mutable_column->insertFrom(*values, i);
         prev_offset = offsets_data[i];
     }
 
     size_t offsets_diff = offsets_data[size] - prev_offset;
-    if (offsets_diff > 1)
-        column.insertManyDefaults(offsets_diff - 1);
+    if (offsets_diff > 0)
+        mutable_column->insertManyDefaults(offsets_diff);
 
     settings.path.pop_back();
 }

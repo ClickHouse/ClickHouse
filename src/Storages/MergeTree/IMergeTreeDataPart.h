@@ -16,7 +16,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Columns/IColumn.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Poco/Path.h>
 
@@ -220,6 +220,8 @@ public:
 
     TTLInfos ttl_infos;
 
+    SerializationInfo serialization_info;
+
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(State new_state) const;
     State getState() const;
@@ -361,11 +363,6 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    void calculateNumberOfNonDefaultValues(const Block & block);
-    void setNumberOfNonDefaultValues(NameToNumber && number_of_non_default_values_);
-    size_t getNumberOfNonDefaultValues(const String & column_name) const;
-
-
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -396,8 +393,6 @@ protected:
 private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
-
-    NameToNumber number_of_non_default_values;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

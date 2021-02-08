@@ -116,7 +116,7 @@ public:
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
-    SerializationPtr getDefaultSerialization() const override;
+    SerializationPtr doGetDefaultSerialization() const override;
     DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }

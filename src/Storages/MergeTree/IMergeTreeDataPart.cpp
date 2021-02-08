@@ -1293,25 +1293,6 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     return true;
 }
 
-void IMergeTreeDataPart::calculateNumberOfNonDefaultValues(const Block & block)
-{
-    for (const auto & elem : block)
-        number_of_non_default_values[elem.name] = elem.column->getNumberOfNonDefaultValues();
-}
-
-void IMergeTreeDataPart::setNumberOfNonDefaultValues(NameToNumber && number_of_non_default_values_)
-{
-    number_of_non_default_values = std::move(number_of_non_default_values_);
-}
-
-size_t IMergeTreeDataPart::getNumberOfNonDefaultValues(const String & column_name) const
-{
-    auto it = number_of_non_default_values.find(column_name);
-    if (it == number_of_non_default_values.end())
-        return 0;
-    return it->second;
-}
-
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);

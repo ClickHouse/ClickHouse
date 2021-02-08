@@ -40,14 +40,14 @@ void SerializationWrapper::serializeBinaryBulkWithMultipleStreams(
     nested->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
 }
 
-void SerializationWrapper::deserializeBinaryBulkWithMultipleStreamsImpl(
-    IColumn & column,
+void SerializationWrapper::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    nested->deserializeBinaryBulkWithMultipleStreamsImpl(column, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
 }
 
 void SerializationWrapper::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const

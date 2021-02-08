@@ -80,9 +80,14 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (new_part->isStoredOnDisk())
         finalizePartOnDisk(new_part, part_columns, checksums, sync);
+    
+    std::cerr << "serialization_info: rows: " << serialization_info.getNumberOfRows() << "\n";
+    for (const auto & col : columns_list)
+        std::cerr << "name: " << col.name << "non-default: " << serialization_info.getNumberOfNonDefaultValues(col.name) << "\n";
 
     new_part->setColumns(part_columns);
     new_part->rows_count = rows_count;
+    new_part->serialization_info = serialization_info;
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
@@ -155,6 +160,15 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             out->sync();
     }
 
+    if (serialization_info.getNumberOfRows() > 0)
+    {
+        auto out = volume->getDisk()->writeFile(part_path + "serialization.txt", 4096);
+        serialization_info.write(*out);
+        out->finalize();
+        if (sync)
+            out->sync();
+    }
+
     if (default_codec != nullptr)
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
@@ -185,6 +199,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
+    serialization_info.add(block);
 
     rows_count += rows;
 }

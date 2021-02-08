@@ -137,9 +137,13 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    auto serialization = name_and_type.type->getSerialization(name_and_type,
+    std::cerr << "full_name: " << name_and_type.name << ", custom_ser: " << !!name_and_type.type->getCustomSerialization() << "\n";
+    std::cerr << "name: " << name_and_type.getNameInStorage() << ", subname: " << name_and_type.getSubcolumnName() << "\n";
+    auto serialization = IDataType::getSerialization(name_and_type,
         [&](const String & stream_name)
         {
+            std::cerr << "stream_name: " << stream_name
+                << "has: " << data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION) << "\n";
             return data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION) != 0;
         });
 
@@ -151,6 +155,9 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             return;
 
         bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
+
+        std::cerr << "path: " << substream_path.toString() << "\n";
+        std::cerr << "adding stream: " << stream_name << ", exists: " << data_file_exists << "\n";
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -211,6 +218,8 @@ void MergeTreeReaderWide::readData(
 
     const auto & name = name_and_type.name;
     auto serialization = serializations[name];
+
+    std::cerr << "name: " << name << "\n";
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
     {

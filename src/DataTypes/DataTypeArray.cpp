@@ -628,14 +628,14 @@ ColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, const I
     return ColumnArray::create(subcolumn, column_array.getOffsetsPtr());
 }
 
-SerializationPtr DataTypeArray::getDefaultSerialization() const
+SerializationPtr DataTypeArray::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationArray>(nested->getDefaultSerialization());
 }
 
 DataTypePtr DataTypeArray::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const
 {
-    if (substream_path.back().type == ISerialization::Substream::ArraySizes)
+    if (!substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes)
         return std::make_shared<DataTypeUInt64>();
     
     return nested->getTypeForSubstream(substream_path);

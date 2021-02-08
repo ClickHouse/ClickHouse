@@ -31,6 +31,7 @@ class ProtobufReader;
 class ProtobufWriter;
 
 struct NameAndTypePair;
+class SerializationInfo;
 
 
 /** Properties of data type.
@@ -275,12 +276,19 @@ public:
       */
     void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
-    virtual SerializationPtr getDefaultSerialization() const;
-    SerializationPtr getSerialization(const IColumn & column) const;
-    SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
+    SerializationPtr getDefaultSerialization() const;
+    SerializationPtr getSparseSerialization() const;
 
     using StreamExistenceCallback = std::function<bool(const String &)>;
-    SerializationPtr getSerialization(const NameAndTypePair & name_and_type, const StreamExistenceCallback & callback) const;
+    virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
+    virtual SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serializaiton) const;
+
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const StreamExistenceCallback & callback);
+
+    virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
+
+    SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
+    SerializationPtr getSerialization(const IColumn & column) const;
 
     virtual DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 
@@ -291,6 +299,7 @@ public:
 
 protected:
     virtual String doGetName() const;
+    virtual SerializationPtr doGetDefaultSerialization() const;
 
     virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
     {
@@ -524,9 +533,12 @@ protected:
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
     mutable DataTypeCustomStreamsPtr custom_streams;
 
+    mutable SerializationPtr custom_serialization;
+
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const IDataTypeCustomStreams * getCustomStreams() const { return custom_streams.get(); }
+    const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 };
 
 

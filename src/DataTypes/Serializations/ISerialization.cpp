@@ -82,46 +82,56 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
         serializeBinaryBulk(column, *stream, offset, limit);
 }
 
-void ISerialization::deserializeBinaryBulkWithMultipleStreamsImpl(
-    IColumn & column,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & /* state */,
-    SubstreamsCache * /* cache */) const
-{
-    if (ReadBuffer * stream = settings.getter(settings.path))
-        deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
-}
-
-
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
+    DeserializeBinaryBulkStatePtr & /* state */,
     SubstreamsCache * cache) const
 {
-    /// Do not cache complex type, because they can be constructed
-    /// from their subcolumns, which are in cache.
-    // if (!haveSubtypes())
-    // {
-    //     auto cached_column = getFromSubstreamsCache(cache, settings.path);
-    //     if (cached_column)
-    //     {
-    //         column = cached_column;
-    //         return;
-    //     }
-    // }
-
-    UNUSED(cache);
-
-    auto mutable_column = column->assumeMutable();
-    deserializeBinaryBulkWithMultipleStreamsImpl(*mutable_column, limit, settings, state, cache);
-    column = std::move(mutable_column);
-
-    // if (!haveSubtypes())
-    //     addToSubstreamsCache(cache, settings.path, column);
+    auto cached_column = getFromSubstreamsCache(cache, settings.path);
+    if (cached_column)  
+    {
+        column = cached_column;
+    }
+    else if (ReadBuffer * stream = settings.getter(settings.path))
+    {
+        auto mutable_column = column->assumeMutable();
+        deserializeBinaryBulk(*mutable_column, *stream, limit, settings.avg_value_size_hint);
+        column = std::move(mutable_column);
+        addToSubstreamsCache(cache, settings.path, column);
+    }
 }
+
+
+// void ISerialization::deserializeBinaryBulkWithMultipleStreams(
+//     ColumnPtr & column,
+//     size_t limit,
+//     DeserializeBinaryBulkSettings & settings,
+//     DeserializeBinaryBulkStatePtr & state,
+//     SubstreamsCache * cache) const
+// {
+//     /// Do not cache complex type, because they can be constructed
+//     /// from their subcolumns, which are in cache.
+//     // if (!haveSubtypes())
+//     // {
+//     //     auto cached_column = getFromSubstreamsCache(cache, settings.path);
+//     //     if (cached_column)
+//     //     {
+//     //         column = cached_column;
+//     //         return;
+//     //     }
+//     // }
+
+//     UNUSED(cache);
+
+//     auto mutable_column = column->assumeMutable();
+//     deserializeBinaryBulkWithMultipleStreamsImpl(*mutable_column, limit, settings, state, cache);
+//     column = std::move(mutable_column);
+
+//     // if (!haveSubtypes())
+//     //     addToSubstreamsCache(cache, settings.path, column);
+// }
 
 static String getNameForSubstreamPath(
     String stream_name,
@@ -167,7 +177,7 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
     if (name_in_storage != nested_storage_name && (path.size() == 1 && path[0].type == ISerialization::Substream::ArraySizes))
-        stream_name  = escapeForFileName(nested_storage_name);
+        stream_name = escapeForFileName(nested_storage_name);
     else
         stream_name = escapeForFileName(name_in_storage);
 

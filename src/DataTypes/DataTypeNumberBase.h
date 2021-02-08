@@ -70,7 +70,7 @@ public:
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr getDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
+    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };
 
 }

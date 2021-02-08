@@ -5,15 +5,27 @@
 namespace DB
 {
 
-class SerializationSparse final : public SerializationWrapper
+class SerializationTupleElement final : public SerializationWrapper
 {
-public:
-    SerializationSparse(const SerializationPtr & nested_);
+private:
+    String name;
+    bool escape_delimiter;
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+public:
+    SerializationTupleElement(const SerializationPtr & nested_, const String & name_, bool escape_delimiter_ = true)
+        : SerializationWrapper(nested_)
+        , name(name_), escape_delimiter(escape_delimiter_)
+    {
+    }
+
+    const String & getElementName() const { return name; }
+
+    void enumerateStreams(
+        const StreamCallback & callback,
+        SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
-        SerializeBinaryBulkSettings & settings,
+         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkStateSuffix(
@@ -23,7 +35,7 @@ public:
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const override;
-      
+
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
@@ -37,6 +49,9 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
+
+private:
+    void addToPath(SubstreamPath & path) const;
 };
 
 }

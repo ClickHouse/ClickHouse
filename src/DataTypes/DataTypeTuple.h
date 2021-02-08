@@ -102,6 +102,14 @@ public:
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
+    SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const override;
+    SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const override;
+
+    SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const SerializationPtr & base_serializaiton) const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
+
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
@@ -109,6 +117,11 @@ public:
 
     bool haveExplicitNames() const { return have_explicit_names; }
     bool serializeNames() const { return serialize_names; }
+
+private:
+    template <typename OnSuccess, typename OnContinue>
+    auto getSubcolumnEntity(const String & subcolumn_name,
+        const OnSuccess & on_success, const OnContinue & on_continue) const;
 };
 
 }

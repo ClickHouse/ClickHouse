@@ -34,8 +34,8 @@ public:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
-        IColumn & column,
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

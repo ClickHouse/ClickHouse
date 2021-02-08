@@ -637,7 +637,7 @@ public:
     }
 };
 
-static bool needSyncPart(const size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
+static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
 {
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
@@ -725,6 +725,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             need_remove_expired_values = true;
             force_ttl = true;
         }
+
+        new_data_part->serialization_info.add(part->serialization_info);
     }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
