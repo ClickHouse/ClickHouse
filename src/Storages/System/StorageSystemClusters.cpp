@@ -41,7 +41,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
     }
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster) const
+void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;

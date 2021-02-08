@@ -129,13 +129,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
         bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
-                                       context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY &&
+                                       context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
                                        !is_drop_or_detach_database;
         if (is_replicated_ddl_query)
         {
             if (query.kind == ASTDropQuery::Kind::Detach && !query.permanently)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
                                                              "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA");
+
+            if (query.kind == ASTDropQuery::Kind::Detach)
+                context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+            else if (query.kind == ASTDropQuery::Kind::Truncate)
+                context.checkAccess(AccessType::TRUNCATE, table_id);
+            else if (query.kind == ASTDropQuery::Kind::Drop)
+                context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
 
             ddl_guard->releaseTableLock();
             table.reset();
@@ -214,12 +221,14 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
     bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
-                                   context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY &&
+                                   context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
                                    !is_drop_or_detach_database;
     if (is_replicated_ddl_query)
     {
         if (kind == ASTDropQuery::Kind::Detach)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH DICTIONARY is not allowed for Replicated databases.");
+
+        context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
 
         ddl_guard->releaseTableLock();
         return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);

@@ -79,7 +79,6 @@ namespace CurrentMetrics
     extern const Metric BackgroundSchedulePoolTask;
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
-    extern const Metric BackgroundReplicatedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
 }
 

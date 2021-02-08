@@ -29,7 +29,7 @@ protected:
     using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;
 
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
-    void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster) const;
+    static void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster);
 };
 
 }

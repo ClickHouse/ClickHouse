@@ -454,7 +454,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool is_replicated_database = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY &&
+        bool is_replicated_database = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
                                       DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
         bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 

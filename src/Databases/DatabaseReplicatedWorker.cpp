@@ -48,7 +48,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
     UInt32 max_log_ptr = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     UInt32 logs_to_keep = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-    if (our_log_ptr + logs_to_keep < max_log_ptr)
+    if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
         database->recoverLostReplica(current_zookeeper, 0);
 }
 

@@ -80,7 +80,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             if (1 < descriptions.size())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "

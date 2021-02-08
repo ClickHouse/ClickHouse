@@ -144,7 +144,7 @@ struct MetadataTransaction
     enum State
     {
         CREATED,
-        COMMITED,
+        COMMITTED,
         FAILED
     };
 
@@ -154,10 +154,11 @@ struct MetadataTransaction
     bool is_initial_query;
     Coordination::Requests ops;
 
-    void addOps(Coordination::Requests & other_ops)
+    void moveOpsTo(Coordination::Requests & other_ops)
     {
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
+        state = COMMITTED;
     }
 
     void commit();
