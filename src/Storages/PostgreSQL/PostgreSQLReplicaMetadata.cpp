@@ -27,6 +27,7 @@ PostgreSQLReplicaMetadata::PostgreSQLReplicaMetadata(const std::string & metadat
 
 void PostgreSQLReplicaMetadata::readMetadata()
 {
+    LOG_DEBUG(&Poco::Logger::get("PostgreSQLReplicaMetadata"), "kssenii 1 {}", metadata_file);
     if (Poco::File(metadata_file).exists())
     {
         ReadBufferFromFile in(metadata_file, DBMS_DEFAULT_BUFFER_SIZE);

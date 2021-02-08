@@ -1,7 +1,11 @@
 #include "PostgreSQLReplicationHandler.h"
 
-#include <DataStreams/copyData.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/PostgreSQL/StoragePostgreSQLReplica.h>
+
+#include <Common/setThreadName.h>
+#include <DataStreams/copyData.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Poco/File.h>
 
@@ -17,6 +21,8 @@ namespace ErrorCodes
 }
 
 static const auto reschedule_ms = 500;
+
+/// TODO: context should be const
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
@@ -45,9 +51,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 }
 
 
-void PostgreSQLReplicationHandler::addStoragePtr(const std::string & table_name, StoragePtr storage)
+void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, const StoragePostgreSQLReplica * storage)
 {
-    storages[table_name] = std::move(storage);
+    storages[table_name] = storage;
 }
 
 
@@ -61,23 +67,22 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
 {
     try
     {
+        /// Will throw pqxx::broken_connection if no connection at the moment
         connection->conn();
+
+        startSynchronization();
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
-        LOG_ERROR(log,
-                "Unable to set up connection. Reconnection attempt continue. Error message: {}",
+        LOG_ERROR(log, "Unable to set up connection. Reconnection attempt continue. Error message: {}",
                 pqxx_error.what());
 
         startup_task->scheduleAfter(reschedule_ms);
     }
-    catch (Exception & e)
+    catch (...)
     {
-        e.addMessage("while setting up connection for PostgreSQLReplica engine");
-        throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    startReplication();
 }
 
 
@@ -118,7 +123,7 @@ void PostgreSQLReplicationHandler::createPublication(std::shared_ptr<pqxx::work>
     try
     {
         tx->exec(query_str);
-        LOG_TRACE(log, "Created publication {}", publication_name);
+        LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, table_names);
     }
     catch (Exception & e)
     {
@@ -131,10 +136,8 @@ void PostgreSQLReplicationHandler::createPublication(std::shared_ptr<pqxx::work>
 }
 
 
-void PostgreSQLReplicationHandler::startReplication()
+void PostgreSQLReplicationHandler::startSynchronization()
 {
-    LOG_DEBUG(log, "PostgreSQLReplica starting replication proccess");
-
     /// used commands require a specific transaction isolation mode.
     replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
 
@@ -177,10 +180,17 @@ void PostgreSQLReplicationHandler::startReplication()
         dropReplicationSlot(ntx, replication_slot);
         initial_sync();
     }
+    else
+    {
+        for (const auto & [table_name, storage] : storages)
+        {
+            nested_storages[table_name] = storage->getNested();
+            storage->setNestedLoaded();
+        }
+    }
 
     ntx->commit();
 
-    LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Creating replication consumer");
     consumer = std::make_shared<PostgreSQLReplicaConsumer>(
             context,
             std::move(connection),
@@ -189,13 +199,10 @@ void PostgreSQLReplicationHandler::startReplication()
             metadata_path,
             start_lsn,
             max_block_size,
-            storages);
-
-    LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Successfully created replication consumer");
+            nested_storages);
 
     consumer->startSynchronization();
 
-    /// Takes time to close
     replication_connection->conn()->close();
 }
 
@@ -206,6 +213,12 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
 
     for (const auto & [table_name, storage] : storages)
     {
+        storage->createNestedIfNeeded();
+        auto nested_storage = storage->tryGetNested();
+
+        if (!nested_storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to create nested storage");
+
         try
         {
             auto stx = std::make_unique<pqxx::work>(*connection->conn());
@@ -221,19 +234,23 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
 
             Context insert_context(*context);
             insert_context.makeQueryContext();
+            insert_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
             auto insert = std::make_shared<ASTInsertQuery>();
-            insert->table_id = storage->getStorageID();
+            insert->table_id = nested_storage->getStorageID();
 
             InterpreterInsertQuery interpreter(insert, insert_context);
             auto block_io = interpreter.execute();
 
-            const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
+            const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
             auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
             PostgreSQLBlockInputStream input(std::move(stx), query_str, sample_block, DEFAULT_BLOCK_SIZE);
 
             copyData(input, *block_io.out);
+
+            storage->setNestedLoaded();
+            nested_storages[table_name] = nested_storage;
         }
         catch (Exception & e)
         {
@@ -271,7 +288,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(NontransactionPtr ntx, 
         pqxx::result result{ntx->exec(query_str)};
         start_lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
-        LOG_TRACE(log, "Created temporary replication slot: {}, start lsn: {}, snapshot: {}",
+        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}, snapshot: {}",
                 replication_slot, start_lsn, snapshot_name);
     }
     catch (Exception & e)
@@ -286,7 +303,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, st
 {
     std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
     ntx->exec(query_str);
-    LOG_TRACE(log, "Replication slot {} is dropped", slot_name);
+    LOG_TRACE(log, "Dropped replication slot {}", slot_name);
 }
 
 
@@ -306,13 +323,50 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         Poco::File(metadata_path).remove();
 
     connection = std::make_shared<PostgreSQLConnection>(connection_str);
-    auto ntx = std::make_shared<pqxx::nontransaction>(*connection->conn());
+    auto tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
 
-    dropPublication(ntx);
-    if (isReplicationSlotExist(ntx, replication_slot))
-        dropReplicationSlot(ntx, replication_slot);
+    dropPublication(tx);
+    if (isReplicationSlotExist(tx, replication_slot))
+        dropReplicationSlot(tx, replication_slot);
 
-    ntx->commit();
+    tx->commit();
+}
+
+
+/// TODO: publication can be created with option `whole_database`. Check this case.
+std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_)
+{
+    auto publication_exist = [&]()
+    {
+        auto tx = std::make_shared<pqxx::work>(*connection_);
+        bool exist = isPublicationExist(tx);
+        tx->commit();
+        return exist;
+    };
+
+    if (publication_name.empty() || !publication_exist())
+    {
+        /// Replicate the whole database and create our own pg_publication
+        return fetchPostgreSQLTablesList(connection_);
+    }
+    else
+    {
+        /// Replicate only tables, which are included in a pg_publication
+        return fetchTablesFromPublication(connection_);
+    }
+}
+
+
+std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_)
+{
+    std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
+    std::unordered_set<std::string> tables;
+    pqxx::read_transaction tx(*connection_);
+
+    for (auto table_name : tx.stream<std::string>(query))
+        tables.insert(std::get<0>(table_name));
+
+    return tables;
 }
 
 }

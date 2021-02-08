@@ -34,7 +34,9 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
+#include <Databases/PostgreSQL/DatabasePostgreSQLReplica.h>
 #include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Storages/PostgreSQL/PostgreSQLReplicaSettings.h>
 #endif
 
 namespace DB
@@ -96,7 +98,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL" && engine_name != "Lazy" && engine_name != "PostgreSQL" && engine_define->engine->arguments)
+    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL"
+            && engine_name != "PostgreSQL" && engine_name != "PostgreSQLReplica"
+            && engine_name != "Lazy" && engine_define->engine->arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
@@ -219,6 +223,52 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);
     }
+    else if (engine_name == "PostgreSQLReplica")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 4)
+        {
+            throw Exception(
+                    fmt::format("{} Database require host:port, database_name, username, password arguments ", engine_name),
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        ASTs & engine_args = engine->arguments->children;
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
+        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+        auto parsed_host_port = parseAddress(host_port, 5432);
+        auto connection = std::make_shared<PostgreSQLConnection>(
+            postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
+
+        auto postgresql_replica_settings = std::make_unique<PostgreSQLReplicaSettings>();
+
+        if (engine_define->settings)
+            postgresql_replica_settings->loadFromQuery(*engine_define);
+
+        if (create.uuid == UUIDHelpers::Nil)
+        {
+            return std::make_shared<DatabasePostgreSQLReplica<DatabaseOrdinary>>(
+                    context, metadata_path, uuid, engine_define,
+                    database_name, postgres_database_name, connection,
+                    std::move(postgresql_replica_settings));
+        }
+        else
+        {
+            return std::make_shared<DatabasePostgreSQLReplica<DatabaseAtomic>>(
+                    context, metadata_path, uuid, engine_define,
+                    database_name, postgres_database_name, connection,
+                    std::move(postgresql_replica_settings));
+        }
+    }
+
 
 #endif
 

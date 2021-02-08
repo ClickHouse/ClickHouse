@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Storages/StorageFactory.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static const auto NESTED_STORAGE_SUFFIX = "_ReplacingMergeTree";
@@ -36,20 +38,18 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     const String & remote_database_name,
     const String & remote_table_name_,
     const String & connection_str,
-    const String & relative_data_path_,
     const StorageInMemoryMetadata & storage_metadata,
     const Context & context_,
     std::unique_ptr<PostgreSQLReplicaSettings> replication_settings_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
-    , relative_data_path(relative_data_path_)
     , global_context(std::make_shared<Context>(context_.getGlobalContext()))
     , replication_settings(std::move(replication_settings_))
 {
     setInMemoryMetadata(storage_metadata);
-    if (relative_data_path.ends_with("/"))
-        relative_data_path.resize(relative_data_path.size() - 1);
-    relative_data_path += NESTED_STORAGE_SUFFIX;
+
+    is_postgresql_replica_database = DatabaseCatalog::instance().getDatabase(
+            getStorageID().database_name)->getEngineName() == "PostgreSQLReplica";
 
     auto metadata_path = DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getMetadataPath()
                        +  "/.metadata_" + table_id_.database_name + "_" + table_id_.table_name;
@@ -69,8 +69,47 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
 }
 
 
+StoragePostgreSQLReplica::StoragePostgreSQLReplica(
+    const StorageID & table_id_,
+    const String & /* metadata_path_ */,
+    const StorageInMemoryMetadata & storage_metadata,
+    const Context & context_)
+    : IStorage(table_id_)
+    , global_context(std::make_shared<Context>(context_))
+{
+    setInMemoryMetadata(storage_metadata);
+    is_postgresql_replica_database = DatabaseCatalog::instance().getDatabase(
+            getStorageID().database_name)->getEngineName() == "PostgreSQLReplica";
+}
+
+
+StoragePostgreSQLReplica::StoragePostgreSQLReplica(
+    const StorageID & table_id_,
+    StoragePtr nested_storage_,
+    const Context & context_)
+    : IStorage(table_id_)
+    , global_context(std::make_shared<Context>(context_))
+    , nested_storage(nested_storage_)
+{
+    is_postgresql_replica_database = DatabaseCatalog::instance().getDatabase(
+            getStorageID().database_name)->getEngineName() == "PostgreSQLReplica";
+
+}
+
+
+std::string StoragePostgreSQLReplica::getNestedTableName() const
+{
+    auto table_name = getStorageID().table_name;
+
+    if (!is_postgresql_replica_database)
+        table_name += NESTED_STORAGE_SUFFIX;
+
+    return table_name;
+}
+
+
 std::shared_ptr<ASTColumnDeclaration> StoragePostgreSQLReplica::getMaterializedColumnsDeclaration(
-        const String name, const String type, UInt64 default_value)
+        const String name, const String type, UInt64 default_value) const
 {
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
@@ -87,7 +126,7 @@ std::shared_ptr<ASTColumnDeclaration> StoragePostgreSQLReplica::getMaterializedC
 }
 
 
-ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_type)
+ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_type) const
 {
     WhichDataType which(data_type);
 
@@ -101,12 +140,13 @@ ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_t
 }
 
 
-std::shared_ptr<ASTColumns> StoragePostgreSQLReplica::getColumnsListFromStorage()
+std::shared_ptr<ASTColumns> StoragePostgreSQLReplica::getColumnsListFromStorage() const
 {
     auto columns_declare_list = std::make_shared<ASTColumns>();
 
     auto columns_expression_list = std::make_shared<ASTExpressionList>();
     auto metadata_snapshot = getInMemoryMetadataPtr();
+
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
         const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
@@ -114,6 +154,7 @@ std::shared_ptr<ASTColumns> StoragePostgreSQLReplica::getColumnsListFromStorage(
         column_declaration->type = getColumnDeclaration(column_type_and_name.type);
         columns_expression_list->children.emplace_back(column_declaration);
     }
+
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
 
     columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", UInt64(1)));
@@ -123,14 +164,14 @@ std::shared_ptr<ASTColumns> StoragePostgreSQLReplica::getColumnsListFromStorage(
 }
 
 
-ASTPtr StoragePostgreSQLReplica::getCreateHelperTableQuery()
+ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery() const
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
     auto table_id = getStorageID();
-    create_table_query->table = table_id.table_name + NESTED_STORAGE_SUFFIX;
+    create_table_query->table = getNestedTableName();
     create_table_query->database = table_id.database_name;
-    create_table_query->if_not_exists = true;
+    //create_table_query->if_not_exists = true;
 
     create_table_query->set(create_table_query->columns_list, getColumnsListFromStorage());
 
@@ -138,12 +179,128 @@ ASTPtr StoragePostgreSQLReplica::getCreateHelperTableQuery()
     storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>("_version")));
 
     auto primary_key_ast = getInMemoryMetadataPtr()->getPrimaryKeyAST();
-    if (primary_key_ast)
-        storage->set(storage->order_by, primary_key_ast);
+    if (!primary_key_ast)
+        primary_key_ast = std::make_shared<ASTIdentifier>("key");
+
+    storage->set(storage->order_by, primary_key_ast);
 
     create_table_query->set(create_table_query->storage, storage);
 
     return create_table_query;
+}
+
+
+void StoragePostgreSQLReplica::createNestedIfNeeded() const
+{
+    nested_storage = tryGetNested();
+
+    if (nested_storage)
+        return;
+
+    Context context_copy(*global_context);
+    const auto ast_create = getCreateNestedTableQuery();
+
+    InterpreterCreateQuery interpreter(ast_create, context_copy);
+    try
+    {
+        interpreter.execute();
+    }
+    catch (...)
+    {
+        throw;
+    }
+
+    nested_storage = getNested();
+}
+
+
+Context StoragePostgreSQLReplica::makeGetNestedTableContext() const
+{
+    auto get_context(*global_context);
+    get_context.makeQueryContext();
+    get_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+
+    return get_context;
+}
+
+
+StoragePtr StoragePostgreSQLReplica::getNested() const
+{
+    if (nested_storage)
+        return nested_storage;
+
+    auto context = makeGetNestedTableContext();
+    nested_storage = DatabaseCatalog::instance().getTable(
+            StorageID(getStorageID().database_name, getNestedTableName()), context);
+
+    return nested_storage;
+}
+
+
+StoragePtr StoragePostgreSQLReplica::tryGetNested() const
+{
+    if (nested_storage)
+        return nested_storage;
+
+    auto context = makeGetNestedTableContext();
+    nested_storage = DatabaseCatalog::instance().tryGetTable(
+            StorageID(getStorageID().database_name, getNestedTableName()), context);
+
+    return nested_storage;
+}
+
+
+void StoragePostgreSQLReplica::startup()
+{
+    if (!is_postgresql_replica_database)
+    {
+        replication_handler->addStorage(remote_table_name, this);
+        replication_handler->startup();
+    }
+}
+
+
+void StoragePostgreSQLReplica::shutdown()
+{
+    if (replication_handler)
+        replication_handler->shutdown();
+}
+
+
+void StoragePostgreSQLReplica::shutdownFinal()
+{
+    if (is_postgresql_replica_database)
+        return;
+
+    if (replication_handler)
+        replication_handler->shutdownFinal();
+
+    if (nested_storage)
+        dropNested();
+}
+
+
+void StoragePostgreSQLReplica::dropNested()
+{
+    auto table_id = nested_storage->getStorageID();
+    auto ast_drop = std::make_shared<ASTDropQuery>();
+
+    ast_drop->kind = ASTDropQuery::Drop;
+    ast_drop->table = table_id.table_name;
+    ast_drop->database = table_id.database_name;
+    ast_drop->if_exists = true;
+
+    auto drop_context(*global_context);
+    drop_context.makeQueryContext();
+
+    auto interpreter = InterpreterDropQuery(ast_drop, drop_context);
+    interpreter.execute();
+}
+
+
+NamesAndTypesList StoragePostgreSQLReplica::getVirtuals() const
+{
+    return NamesAndTypesList{};
 }
 
 
@@ -156,13 +313,16 @@ Pipe StoragePostgreSQLReplica::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    if (!nested_storage)
+    /// If initial table sync has not yet finished, nested tables might not be created yet.
+    if (!nested_loaded)
     {
-        auto table_id = getStorageID();
-        nested_storage = DatabaseCatalog::instance().getTable(
-                StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX),
-                *global_context);
+        LOG_WARNING(&Poco::Logger::get("StoragePostgreSQLReplica"), "Table {} is not loaded yet", getNestedTableName());
+        return Pipe();
     }
+
+    /// Should throw if there is no nested storage
+    if (!nested_storage)
+        getNested();
 
     auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
@@ -227,70 +387,6 @@ Pipe StoragePostgreSQLReplica::read(
 }
 
 
-void StoragePostgreSQLReplica::startup()
-{
-    Context context_copy(*global_context);
-    const auto ast_create = getCreateHelperTableQuery();
-    auto table_id = getStorageID();
-
-    Poco::File path(relative_data_path);
-    if (!path.exists())
-    {
-        LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
-                "Creating helper table {}", table_id.table_name + NESTED_STORAGE_SUFFIX);
-        InterpreterCreateQuery interpreter(ast_create, context_copy);
-        interpreter.execute();
-    }
-    else
-        LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
-                "Directory already exists {}", relative_data_path);
-
-    replication_handler->addStoragePtr(
-            remote_table_name,
-            DatabaseCatalog::instance().getTable(
-            StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX), *global_context));
-
-    replication_handler->startup();
-}
-
-
-void StoragePostgreSQLReplica::shutdown()
-{
-    replication_handler->shutdown();
-}
-
-
-void StoragePostgreSQLReplica::shutdownFinal()
-{
-    replication_handler->shutdownFinal();
-    dropNested();
-}
-
-
-void StoragePostgreSQLReplica::dropNested()
-{
-    auto table_id = nested_storage->getStorageID();
-    auto ast_drop = std::make_shared<ASTDropQuery>();
-
-    ast_drop->kind = ASTDropQuery::Drop;
-    ast_drop->table = table_id.table_name;
-    ast_drop->database = table_id.database_name;
-    ast_drop->if_exists = true;
-
-    auto drop_context(*global_context);
-    drop_context.makeQueryContext();
-
-    auto interpreter = InterpreterDropQuery(ast_drop, drop_context);
-    interpreter.execute();
-}
-
-
-NamesAndTypesList StoragePostgreSQLReplica::getVirtuals() const
-{
-    return NamesAndTypesList{};
-}
-
-
 void registerStoragePostgreSQLReplica(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
@@ -339,7 +435,7 @@ void registerStoragePostgreSQLReplica(StorageFactory & factory)
 
         return StoragePostgreSQLReplica::create(
                 args.table_id, remote_database, remote_table, connection.conn_str(),
-                args.relative_data_path, metadata, args.context,
+                metadata, args.context,
                 std::move(postgresql_replication_settings));
     };
 

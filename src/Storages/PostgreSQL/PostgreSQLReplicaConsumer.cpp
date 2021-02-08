@@ -47,21 +47,28 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
         buffers.emplace(table_name, BufferData(storage->getInMemoryMetadata().getSampleBlock()));
     }
 
-    wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ replicationStream(); });
+    wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ synchronizationStream(); });
     wal_reader_task->deactivate();
 }
 
 
 void PostgreSQLReplicaConsumer::startSynchronization()
 {
-    metadata.readMetadata();
-
-    if (!metadata.lsn().empty())
+    try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
-        final_lsn = metadata.lsn();
-        final_lsn = advanceLSN(tx);
-        tx->commit();
+        metadata.readMetadata();
+
+        if (!metadata.lsn().empty())
+        {
+            auto tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
+            final_lsn = metadata.lsn();
+            final_lsn = advanceLSN(tx);
+            tx->commit();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     wal_reader_task->activateAndSchedule();
@@ -75,11 +82,10 @@ void PostgreSQLReplicaConsumer::stopSynchronization()
 }
 
 
-void PostgreSQLReplicaConsumer::replicationStream()
+void PostgreSQLReplicaConsumer::synchronizationStream()
 {
     auto start_time = std::chrono::steady_clock::now();
-
-    LOG_TRACE(log, "Starting replication stream");
+    LOG_TRACE(log, "Starting synchronization stream");
 
     while (!stop_synchronization)
     {
@@ -89,10 +95,7 @@ void PostgreSQLReplicaConsumer::replicationStream()
         auto end_time = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         if (duration.count() > max_thread_work_duration_ms)
-        {
-            LOG_TRACE(log, "Reschedule replication_stream. Thread work duration limit exceeded.");
             break;
-        }
     }
 
     if (!stop_synchronization)
@@ -148,7 +151,7 @@ void PostgreSQLReplicaConsumer::readString(const char * message, size_t & pos, s
 }
 
 
-Int32 PostgreSQLReplicaConsumer::readInt32(const char * message, size_t & pos)
+Int32 PostgreSQLReplicaConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 8);
     Int32 result = (UInt32(unhex2(message + pos)) << 24)
@@ -160,7 +163,7 @@ Int32 PostgreSQLReplicaConsumer::readInt32(const char * message, size_t & pos)
 }
 
 
-Int16 PostgreSQLReplicaConsumer::readInt16(const char * message, size_t & pos)
+Int16 PostgreSQLReplicaConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 4);
     Int16 result = (UInt32(unhex2(message + pos)) << 8)
@@ -170,7 +173,7 @@ Int16 PostgreSQLReplicaConsumer::readInt16(const char * message, size_t & pos)
 }
 
 
-Int8 PostgreSQLReplicaConsumer::readInt8(const char * message, size_t & pos)
+Int8 PostgreSQLReplicaConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 2);
     Int8 result = unhex2(message + pos);
@@ -179,7 +182,7 @@ Int8 PostgreSQLReplicaConsumer::readInt8(const char * message, size_t & pos)
 }
 
 
-Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos)
+Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 16);
     Int64 result = (UInt64(unhex4(message + pos)) << 48)
@@ -192,19 +195,19 @@ Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos)
 
 
 void PostgreSQLReplicaConsumer::readTupleData(
-        BufferData & buffer, const char * message, size_t & pos, PostgreSQLQuery type, bool old_value)
+        BufferData & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
 {
-    Int16 num_columns = readInt16(message, pos);
+    Int16 num_columns = readInt16(message, pos, size);
     /// 'n' means nullable, 'u' means TOASTed value, 't' means text formatted data
     LOG_DEBUG(log, "num_columns {}", num_columns);
     for (int column_idx = 0; column_idx < num_columns; ++column_idx)
     {
-        char identifier = readInt8(message, pos);
-        Int32 col_len = readInt32(message, pos);
+        char identifier = readInt8(message, pos, size);
+        Int32 col_len = readInt32(message, pos, size);
         String value;
         for (int i = 0; i < col_len; ++i)
         {
-            value += readInt8(message, pos);
+            value += readInt8(message, pos, size);
         }
 
         insertValue(buffer, value, column_idx);
@@ -242,32 +245,31 @@ void PostgreSQLReplicaConsumer::readTupleData(
     }
 }
 
-
-void PostgreSQLReplicaConsumer::processReplicationMessage(
-        const char * replication_message, size_t size, std::unordered_set<std::string> & tables_to_sync)
+/// test relation id can be shuffled ?
+void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replication_message, size_t size)
 {
     /// Skip '\x'
     size_t pos = 2;
-    char type = readInt8(replication_message, pos);
+    char type = readInt8(replication_message, pos, size);
 
     LOG_TRACE(log, "TYPE: {}", type);
     switch (type)
     {
         case 'B': // Begin
         {
-            Int64 transaction_end_lsn = readInt64(replication_message, pos);
-            Int64 transaction_commit_timestamp = readInt64(replication_message, pos);
+            Int64 transaction_end_lsn = readInt64(replication_message, pos, size);
+            Int64 transaction_commit_timestamp = readInt64(replication_message, pos, size);
             LOG_DEBUG(log, "transaction lsn {}, transaction commit timespamp {}",
                     transaction_end_lsn, transaction_commit_timestamp);
             break;
         }
         case 'C': // Commit
         {
-            readInt8(replication_message, pos);
-            Int64 commit_lsn = readInt64(replication_message, pos);
-            Int64 transaction_end_lsn = readInt64(replication_message, pos);
+            readInt8(replication_message, pos, size);
+            Int64 commit_lsn = readInt64(replication_message, pos, size);
+            Int64 transaction_end_lsn = readInt64(replication_message, pos, size);
             /// Since postgres epoch
-            Int64 transaction_commit_timestamp = readInt64(replication_message, pos);
+            Int64 transaction_commit_timestamp = readInt64(replication_message, pos, size);
             LOG_DEBUG(log, "commit lsn {}, transaction lsn {}, transaction commit timestamp {}",
                     commit_lsn, transaction_end_lsn, transaction_commit_timestamp);
             final_lsn = current_lsn;
@@ -277,12 +279,17 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(
             break;
         case 'R': // Relation
         {
-            Int32 relation_id = readInt32(replication_message, pos);
+            Int32 relation_id = readInt32(replication_message, pos, size);
             String relation_namespace, relation_name;
             readString(replication_message, pos, size, relation_namespace);
+
             readString(replication_message, pos, size, relation_name);
-            Int8 replica_identity = readInt8(replication_message, pos);
-            Int16 num_columns = readInt16(replication_message, pos);
+            table_to_insert = relation_name;
+            tables_to_sync.insert(table_to_insert);
+            LOG_DEBUG(log, "INSERTING TABLE {}", table_to_insert);
+
+            Int8 replica_identity = readInt8(replication_message, pos, size);
+            Int16 num_columns = readInt16(replication_message, pos, size);
 
             LOG_DEBUG(log,
                     "Replication message type 'R', relation_id: {}, namespace: {}, relation name {}, replica identity {}, columns number {}",
@@ -293,14 +300,13 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(
             for (uint16_t i = 0; i < num_columns; ++i)
             {
                 String column_name;
-                key = readInt8(replication_message, pos);
+                key = readInt8(replication_message, pos, size);
                 readString(replication_message, pos, size, column_name);
-                data_type_id = readInt32(replication_message, pos);
-                type_modifier = readInt32(replication_message, pos);
+                data_type_id = readInt32(replication_message, pos, size);
+                type_modifier = readInt32(replication_message, pos, size);
                 LOG_DEBUG(log, "Key {}, column name {}, data type id {}, type modifier {}", key, column_name, data_type_id, type_modifier);
             }
 
-            table_to_insert = relation_name;
             if (storages.find(table_to_insert) == storages.end())
             {
                 throw Exception(ErrorCodes::UNKNOWN_TABLE,
@@ -309,57 +315,55 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(
             [[maybe_unused]] auto buffer_iter = buffers.find(table_to_insert);
             assert(buffer_iter != buffers.end());
 
-            tables_to_sync.insert(relation_name);
-
             break;
         }
         case 'Y': // Type
             break;
         case 'I': // Insert
         {
-            Int32 relation_id = readInt32(replication_message, pos);
-            Int8 new_tuple = readInt8(replication_message, pos);
+            Int32 relation_id = readInt32(replication_message, pos, size);
+            Int8 new_tuple = readInt8(replication_message, pos, size);
 
-            LOG_DEBUG(log, "relationID {}, newTuple {}", relation_id, new_tuple);
+            LOG_DEBUG(log, "relationID {}, newTuple {} current insert tabel {}", relation_id, new_tuple, table_to_insert);
             auto buffer = buffers.find(table_to_insert);
             if (buffer == buffers.end())
             {
                 throw Exception(ErrorCodes::UNKNOWN_TABLE,
                         "Buffer for table {} does not exist", table_to_insert);
             }
-            readTupleData(buffer->second, replication_message, pos, PostgreSQLQuery::INSERT);
+            readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::INSERT);
             break;
         }
         case 'U': // Update
         {
-            Int32 relation_id = readInt32(replication_message, pos);
-            Int8 primary_key_or_old_tuple_data = readInt8(replication_message, pos);
+            Int32 relation_id = readInt32(replication_message, pos, size);
+            Int8 primary_key_or_old_tuple_data = readInt8(replication_message, pos, size);
 
-            LOG_DEBUG(log, "relationID {}, key {}", relation_id, primary_key_or_old_tuple_data);
+            LOG_DEBUG(log, "relationID {}, key {} current insert table {}", relation_id, primary_key_or_old_tuple_data, table_to_insert);
 
             auto buffer = buffers.find(table_to_insert);
-            readTupleData(buffer->second, replication_message, pos, PostgreSQLQuery::UPDATE, true);
+            readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
 
             if (pos + 1 < size)
             {
-                Int8 new_tuple_data = readInt8(replication_message, pos);
+                Int8 new_tuple_data = readInt8(replication_message, pos, size);
                 LOG_DEBUG(log, "new tuple data {}", new_tuple_data);
-                readTupleData(buffer->second, replication_message, pos, PostgreSQLQuery::UPDATE);
+                readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE);
             }
 
             break;
         }
         case 'D': // Delete
         {
-            Int32 relation_id = readInt32(replication_message, pos);
+            Int32 relation_id = readInt32(replication_message, pos, size);
             //Int8 index_replica_identity = readInt8(replication_message, pos);
-            Int8 full_replica_identity = readInt8(replication_message, pos);
+            Int8 full_replica_identity = readInt8(replication_message, pos, size);
 
             LOG_DEBUG(log, "relationID {}, full replica identity {}",
                     relation_id, full_replica_identity);
 
             auto buffer = buffers.find(table_to_insert);
-            readTupleData(buffer->second, replication_message, pos, PostgreSQLQuery::DELETE);
+            readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::DELETE);
             break;
         }
         case 'T': // Truncate
@@ -371,54 +375,64 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(
 }
 
 
-void PostgreSQLReplicaConsumer::syncTables(
-        std::shared_ptr<pqxx::nontransaction> tx, const std::unordered_set<std::string> & tables_to_sync)
+void PostgreSQLReplicaConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
 {
+    LOG_TRACE(log, "AVAILABLE TABLES {}", tables_to_sync.size());
     for (const auto & table_name : tables_to_sync)
     {
-        auto & buffer = buffers.find(table_name)->second;
-        Block result_rows = buffer.description.sample_block.cloneWithColumns(std::move(buffer.columns));
-
-        if (result_rows.rows())
+        try
         {
-            LOG_TRACE(log, "SYNCING TABLE {} max_block_size {}", result_rows.rows(), max_block_size);
+            LOG_TRACE(log, "ATTEMPT SYNCING TABLE {}", table_name);
+            auto & buffer = buffers.find(table_name)->second;
+            Block result_rows = buffer.description.sample_block.cloneWithColumns(std::move(buffer.columns));
 
-            metadata.commitMetadata(final_lsn, [&]()
+            if (result_rows.rows())
             {
-                Context insert_context(*context);
-                insert_context.makeQueryContext();
+                LOG_TRACE(log, "SYNCING TABLE {} rows {} max_block_size {}", table_name, result_rows.rows(), max_block_size);
 
-                auto insert = std::make_shared<ASTInsertQuery>();
-                insert->table_id = storages[table_name]->getStorageID();
+                metadata.commitMetadata(final_lsn, [&]()
+                {
+                    Context insert_context(*context);
+                    insert_context.makeQueryContext();
+                    insert_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
-                InterpreterInsertQuery interpreter(insert, insert_context);
-                auto block_io = interpreter.execute();
+                    auto insert = std::make_shared<ASTInsertQuery>();
+                    insert->table_id = storages[table_name]->getStorageID();
 
-                /// TODO: what if one block is not enough
-                OneBlockInputStream input(result_rows);
+                    InterpreterInsertQuery interpreter(insert, insert_context);
+                    auto block_io = interpreter.execute();
 
-                copyData(input, *block_io.out);
+                    /// TODO: what if one block is not enough
+                    OneBlockInputStream input(result_rows);
 
-                LOG_TRACE(log, "TABLE SYNC END");
+                    copyData(input, *block_io.out);
 
-                auto actual_lsn = advanceLSN(tx);
-                buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+                    LOG_TRACE(log, "TABLE SYNC END");
 
-                return actual_lsn;
-            });
+                    auto actual_lsn = advanceLSN(tx);
+                    buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+
+                    return actual_lsn;
+                });
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    tables_to_sync.clear();
+    tx->commit();
 }
 
 
-String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx)
+String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
 {
     LOG_TRACE(log, "CURRENT LSN FROM TO {}", final_lsn);
 
     std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
-    pqxx::result result{ntx->exec(query_str)};
-
-    ntx->commit();
+    pqxx::result result{tx->exec(query_str)};
 
     if (!result.empty())
         return result[0][0].as<std::string>();
@@ -432,7 +446,6 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 {
     std::shared_ptr<pqxx::nontransaction> tx;
     bool slot_empty = true;
-    std::unordered_set<std::string> tables_to_sync;
 
     try
     {
@@ -471,20 +484,18 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 
             current_lsn = (*row)[0];
             LOG_TRACE(log, "Replication message: {}", (*row)[1]);
-            processReplicationMessage((*row)[1].c_str(), (*row)[1].size(), tables_to_sync);
+            processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
     }
     catch (const pqxx::sql_error & e)
     {
-        /// Currently `sql replication interface` is used and it has the problem that it registers relcache
+        /// sql replication interface has the problem that it registers relcache
         /// callbacks on each pg_logical_slot_get_changes and there is no way to invalidate them:
         /// https://github.com/postgres/postgres/blob/master/src/backend/replication/pgoutput/pgoutput.c#L1128
         /// So at some point will get out of limit and then they will be cleaned.
 
         std::string error_message = e.what();
-        if (error_message.find("out of relcache_callback_list slots") != std::string::npos)
-            LOG_DEBUG(log, "Out of rel_cache_list slot");
-        else
+        if (error_message.find("out of relcache_callback_list slots") == std::string::npos)
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
         return false;
@@ -498,8 +509,7 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
         return false;
     }
 
-    syncTables(tx, tables_to_sync);
-
+    syncTables(tx);
     return true;
 }
 
