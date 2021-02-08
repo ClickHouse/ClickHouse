@@ -8,6 +8,7 @@
 #include <common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Storages/PostgreSQL/insertPostgreSQLValue.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 
 namespace DB
@@ -16,16 +17,17 @@ namespace DB
 class PostgreSQLReplicaConsumer
 {
 public:
+    using Storages = std::unordered_map<String, StoragePtr>;
+
     PostgreSQLReplicaConsumer(
             std::shared_ptr<Context> context_,
-            const std::string & table_name_,
             PostgreSQLConnectionPtr connection_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
             const std::string & metadata_path,
             const std::string & start_lsn,
             const size_t max_block_size_,
-            StoragePtr nested_storage_);
+            Storages storages_);
 
     /// Start reading WAL from current_lsn position. Initial data sync from created snapshot already done.
     void startSynchronization();
@@ -44,19 +46,37 @@ private:
         DELETE
     };
 
-    /// Start changes stream from WAL via copy command (up to max_block_size changes).
     bool readFromReplicationSlot();
-    void processReplicationMessage(const char * replication_message, size_t size);
-
-    void insertValue(std::string & value, size_t column_idx);
-    //static void insertValueMaterialized(IColumn & column, uint64_t value);
-    void insertDefaultValue(size_t column_idx);
-
-    void syncIntoTable(Block & block);
+    void syncTables(std::shared_ptr<pqxx::nontransaction> tx, const std::unordered_set<std::string> & tables_to_sync);
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
+    void processReplicationMessage(
+            const char * replication_message, size_t size, std::unordered_set<std::string> & tables_to_sync);
+
+    struct BufferData
+    {
+        ExternalResultDescription description;
+        MutableColumns columns;
+        /// Needed for insertPostgreSQLValue() method to parse array
+        std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+
+        BufferData(const Block block)
+        {
+            description.init(block);
+            columns = description.sample_block.cloneEmptyColumns();
+            for (const auto idx : ext::range(0, description.sample_block.columns()))
+                if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
+                    preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
+        }
+    };
+
+    using Buffers = std::unordered_map<String, BufferData>;
+
+    void insertDefaultValue(BufferData & buffer, size_t column_idx);
+    void insertValue(BufferData & buffer, const std::string & value, size_t column_idx);
+    void readTupleData(BufferData & buffer, const char * message, size_t & pos, PostgreSQLQuery type, bool old_value = false);
+
     /// Methods to parse replication message data.
-    void readTupleData(const char * message, size_t & pos, PostgreSQLQuery type, bool old_value = false);
     void readString(const char * message, size_t & pos, size_t size, String & result);
     Int64 readInt64(const char * message, size_t & pos);
     Int32 readInt32(const char * message, size_t & pos);
@@ -69,23 +89,17 @@ private:
     const std::string publication_name;
     PostgreSQLReplicaMetadata metadata;
 
-    const std::string table_name;
     PostgreSQLConnectionPtr connection;
 
     std::string current_lsn, final_lsn;
+    const size_t max_block_size;
+    std::string table_to_insert;
+
     BackgroundSchedulePool::TaskHolder wal_reader_task;
-    //BackgroundSchedulePool::TaskHolder table_sync_task;
     std::atomic<bool> stop_synchronization = false;
 
-    const size_t max_block_size;
-    StoragePtr nested_storage;
-    Block sample_block;
-    ExternalResultDescription description;
-    MutableColumns columns;
-    /// Needed for insertPostgreSQLValue() method to parse array
-    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
-
-    size_t data_version = 1;
+    Storages storages;
+    Buffers buffers;
 };
 
 }

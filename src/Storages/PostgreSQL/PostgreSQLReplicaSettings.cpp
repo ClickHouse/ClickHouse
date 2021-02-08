@@ -1,4 +1,4 @@
-#include "PostgreSQLReplicationSettings.h"
+#include "PostgreSQLReplicaSettings.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,9 +13,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(PostgreSQLReplicationSettingsTraits, LIST_OF_POSTGRESQL_REPLICATION_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(PostgreSQLReplicaSettingsTraits, LIST_OF_POSTGRESQL_REPLICA_SETTINGS)
 
-void PostgreSQLReplicationSettings::loadFromQuery(ASTStorage & storage_def)
+void PostgreSQLReplicaSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {

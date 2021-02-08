@@ -1,5 +1,4 @@
 #include "StoragePostgreSQLReplica.h"
-#include "PostgreSQLReplicationSettings.h"
 
 #include <Common/Macros.h>
 #include <Core/Settings.h>
@@ -35,13 +34,14 @@ static const auto NESTED_STORAGE_SUFFIX = "_ReplacingMergeTree";
 StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     const StorageID & table_id_,
     const String & remote_database_name,
-    const String & remote_table_name,
+    const String & remote_table_name_,
     const String & connection_str,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & storage_metadata,
     const Context & context_,
-    std::unique_ptr<PostgreSQLReplicationSettings> replication_settings_)
+    std::unique_ptr<PostgreSQLReplicaSettings> replication_settings_)
     : IStorage(table_id_)
+    , remote_table_name(remote_table_name_)
     , relative_data_path(relative_data_path_)
     , global_context(std::make_shared<Context>(context_.getGlobalContext()))
     , replication_settings(std::move(replication_settings_))
@@ -56,7 +56,6 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
-            remote_table_name,
             connection_str,
             metadata_path,
             global_context,
@@ -246,9 +245,12 @@ void StoragePostgreSQLReplica::startup()
         LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
                 "Directory already exists {}", relative_data_path);
 
-    replication_handler->startup(
+    replication_handler->addStoragePtr(
+            remote_table_name,
             DatabaseCatalog::instance().getTable(
             StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX), *global_context));
+
+    replication_handler->startup();
 }
 
 
@@ -295,7 +297,7 @@ void registerStoragePostgreSQLReplica(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         bool has_settings = args.storage_def->settings;
-        auto postgresql_replication_settings = std::make_unique<PostgreSQLReplicationSettings>();
+        auto postgresql_replication_settings = std::make_unique<PostgreSQLReplicaSettings>();
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
