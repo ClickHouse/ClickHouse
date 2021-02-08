@@ -98,7 +98,7 @@ public:
 private:
     ReplicaStatePtr startEstablishingConnection(int index);
 
-    void processConnectionEstablisherStage(ReplicaStatePtr & replica, bool remove_from_epoll = false);
+    void processConnectionEstablisherStage(ReplicaStatePtr replica, bool remove_from_epoll = false);
 
     /// Find an index of the next free replica to start connection.
     /// Return -1 if there is no free replica.
@@ -106,25 +106,25 @@ private:
 
     int getReadyFileDescriptor(bool blocking);
 
-    void addTimeouts(ReplicaStatePtr & replica);
+    void addTimeouts(ReplicaStatePtr replica);
 
-    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr & replica);
+    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica);
 
-    void removeTimeoutsFromReplica(ReplicaStatePtr & replica);
+    void removeTimeoutsFromReplica(ReplicaStatePtr replica);
 
-    void processFailedConnection(ReplicaStatePtr & replica);
+    void processFailedConnection(ReplicaStatePtr replica);
 
-    void processReceiveTimeout(ReplicaStatePtr & replica);
+    void processReceiveTimeout(ReplicaStatePtr replica);
 
-    void processReplicaEvent(ReplicaStatePtr & replica);
+    void processReplicaEvent(ReplicaStatePtr replica);
 
-    void processTimeoutEvent(ReplicaStatePtr & replica, ConnectionTimeoutDescriptorPtr timeout_descriptor);
+    void processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor);
 
     /// Return false if there is no ready events, return true if replica is ready
     /// or we need to try next replica.
     bool processEpollEvents(ReplicaStatePtr & replica, bool blocking);
 
-    void setBestUsableReplica(ReplicaStatePtr & replica);
+    void setBestUsableReplica(ReplicaStatePtr replica);
 
     ReplicaStatePtr createNewReplica() { return std::make_shared<ReplicaState>(); }
 

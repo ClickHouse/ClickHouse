@@ -76,32 +76,32 @@ private:
     class Pipeline
     {
     public:
-        void add(std::function<void(ReplicaStatePtr &)> send_function);
+        void add(std::function<void(ReplicaStatePtr)> send_function);
 
-        void run(ReplicaStatePtr & replica);
+        void run(ReplicaStatePtr replica);
     private:
-        std::vector<std::function<void(ReplicaStatePtr &)>> pipeline;
+        std::vector<std::function<void(ReplicaStatePtr)>> pipeline;
     };
 
-    Packet receivePacketFromReplica(ReplicaStatePtr & replica, AsyncCallback async_callback = {});
+    Packet receivePacketFromReplica(ReplicaStatePtr replica, AsyncCallback async_callback = {});
 
     Packet receivePacketImpl(AsyncCallback async_callback = {});
 
-    void processReceivedFirstDataPacket(ReplicaStatePtr & replica);
+    void processReceivedFirstDataPacket(ReplicaStatePtr replica);
 
-    void processTimeoutEvent(ReplicaStatePtr & replica, ConnectionTimeoutDescriptorPtr timeout_descriptor);
+    void processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor);
 
     void tryGetNewReplica(bool start_new_connection);
 
-    void finishProcessReplica(ReplicaStatePtr & replica, bool disconnect);
+    void finishProcessReplica(ReplicaStatePtr replica, bool disconnect);
 
     int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
-    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr & replica);
+    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica);
 
-    void removeTimeoutsFromReplica(ReplicaStatePtr & replica);
+    void removeTimeoutsFromReplica(ReplicaStatePtr replica);
 
-    void removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaStatePtr & replica);
+    void removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaStatePtr replica);
 
 
     HedgedConnectionsFactory hedged_connections_factory;
