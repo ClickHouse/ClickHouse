@@ -350,6 +350,9 @@ private:
 
     /// Right table data. StorageJoin shares it between many Join objects.
     std::shared_ptr<RightTableData> data;
+    /// Flags that indicate that particular row already used in join.
+    /// Flag is stored for every record in hash map.
+    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
     mutable JoinStuff::JoinUsedFlags used_flags;
     Sizes key_sizes;
 
