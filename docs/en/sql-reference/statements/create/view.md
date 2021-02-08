@@ -74,30 +74,17 @@ There isn’t a separate query for deleting views. To delete a view, use [DROP T
 CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
 ```
 
-Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query
-and are updated any time the result of the query changes. Query result as well as partial result
-needed to combine with new data are stored in memory providing increased performance
-for repeated queries. Live views can provide push notifications
-when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
+Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance
+for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
 
 Live views are triggered by insert into the innermost table specified in the query. 
 
-!!! info "Note"
-    [Table function](../../../sql-reference/table-functions/index.md) is not supported as the innermost table.
+Live views work similarly to how a query in a distributed table works. But instead of combining partial results from different servers they combine partial result from current data with partial result from the new data. When a live view query includes a subquery then the cached partial result is only stored for the innermost subquery.
 
 !!! info "Note"
-    Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md)
-    or a [system table](../../../operations/system-tables/index.md)
-    will not trigger a live view. See [WITH REFRESH](#live-view-with-refresh) to enable periodic
-    updates of a live view.
-
-Live views work similarly to how a query in a distributed table works. But instead of combining partial results
-from different servers they combine partial result from current data with partial result from the new data.
-When a live view query includes a subquery then the cached partial result is only stored for the innermost subquery.
-
-!!! info "Note"
-   Only queries where one can combine partial result from the old data plus partial result from the new data will work.
-   Live view will not work for queries that require the complete data set to compute the final result.
+    - [Table function](../../../sql-reference/table-functions/index.md) is not supported as the innermost table.
+    - Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md) or a [system table](../../../operations/system-tables/index.md) will not trigger a live view. See [WITH REFRESH](#live-view-with-refresh) to enable periodic updates of a live view.
+    - Only queries where one can combine partial result from the old data plus partial result from the new data will work. Live view will not work for queries that require the complete data set to compute the final result.
 
 You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query
 
@@ -111,9 +98,7 @@ or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause
 WATCH [db.]live_view EVENTS
 ```
 
-You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view
-in the same way as for any regular view or a table. If the query result is cached 
-it will return the result immediately without running the stored query on the underlying tables.
+You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view in the same way as for any regular view or a table. If the query result is cached it will return the result immediately without running the stored query on the underlying tables.
 
 ```sql
 SELECT * FROM [db.]live_view WHERE ...
@@ -125,9 +110,7 @@ You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRE
 
 ### With Timeout {#live-view-with-timeout}
 
-When a live view is create with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified
-number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query
-that was watching the live view. 
+When a live view is create with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
@@ -137,8 +120,7 @@ If the timeout value is not specified then the value specified by the `temporary
 
 ### With Refresh {#live-view-with-refresh}
 
-When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed
-after the specified number of seconds elapse since the last refresh or trigger.
+When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
