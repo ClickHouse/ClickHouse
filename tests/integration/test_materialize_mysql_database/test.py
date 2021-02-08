@@ -237,3 +237,12 @@ def test_utf8mb4(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhou
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
 def test_system_parts_table(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.system_parts_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_multi_table_update(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_system_tables_table(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
