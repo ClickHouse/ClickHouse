@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <string>
 #include <Coordination/InMemoryLogStore.h>
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 
 namespace DB
 {
