@@ -103,6 +103,12 @@
         "memory_tracking",     /// FIXME remove it before merge
         "memory_tracking",
         "memory_usage",
+        "01188_attach_table_from_pat",
+        "01110_dictionary_layout_without_arguments",
+        "01018_ddl_dictionaries_create",
+        "01018_ddl_dictionaries_select",
+        "01414_freeze_does_not_prevent_alters",
+        "01018_ddl_dictionaries_bad_queries",
         "01686_rocksdb",
         "01550_mutation_subquery",
         "01070_mutations_with_dependencies",

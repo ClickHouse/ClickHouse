@@ -134,6 +134,7 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
 
 ClusterPtr DatabaseReplicated::getCluster() const
 {
+    /// TODO Maintain up-to-date Cluster and allow to use it in Distributed tables
     Strings hosts;
     Strings host_ids;
 
@@ -149,6 +150,7 @@ ClusterPtr DatabaseReplicated::getCluster() const
         if (hosts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts found");
         Int32 cver = stat.cversion;
+        std::sort(hosts.begin(), hosts.end());
 
         std::vector<zkutil::ZooKeeper::FutureGet> futures;
         futures.reserve(hosts.size());
@@ -174,7 +176,6 @@ ClusterPtr DatabaseReplicated::getCluster() const
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
-    std::sort(hosts.begin(), hosts.end());
     String current_shard = parseFullReplicaName(hosts.front()).first;
     std::vector<Strings> shards;
     shards.emplace_back();
@@ -327,9 +328,7 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_
     if (query_context.getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    //FIXME need list of all replicas, we can obtain it from zk
-    Strings hosts_to_wait;
-    hosts_to_wait.emplace_back(getFullReplicaName());
+    Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
     auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, query_context, hosts_to_wait);
     io.in = std::move(stream);
     return io;
@@ -338,7 +337,7 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot)
 {
-    LOG_WARNING(log, "Will recover replica");
+    //LOG_WARNING(log, "Will recover replica");
 
     //FIXME drop old tables
 
@@ -355,7 +354,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         Context query_context = global_context;
         query_context.makeQueryContext();
-        query_context.getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
+        query_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         query_context.setCurrentDatabase(database_name);
         query_context.setCurrentQueryId(""); // generate random query_id
 
@@ -436,6 +435,8 @@ void DatabaseReplicated::renameTable(const Context & context, const String & tab
     {
         if (this != &to_database)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
+        if (table_name == to_table_name)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot rename table to itself");
         if (!isTableExist(table_name, context))
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_name);
         if (exchange && !to_database.isTableExist(to_table_name, context))

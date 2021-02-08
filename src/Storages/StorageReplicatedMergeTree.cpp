@@ -4284,24 +4284,12 @@ void StorageReplicatedMergeTree::alter(
 
         if (auto txn = query_context.getMetadataTransaction())
         {
-            txn->addOps(ops);
+            txn->moveOpsTo(ops);
             /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
             /// so we have to update metadata of DatabaseReplicated here.
-            /// It also may cause "Table columns structure in ZooKeeper is different" error on server startup
-            /// even for Ordinary and Atomic databases.
             String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
             auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
-            auto & ast_create_query = ast->as<ASTCreateQuery &>();
-
-            //FIXME copy-paste
-            ASTPtr new_columns = InterpreterCreateQuery::formatColumns(future_metadata.columns);
-            ASTPtr new_indices = InterpreterCreateQuery::formatIndices(future_metadata.secondary_indices);
-            ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(future_metadata.constraints);
-
-            ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
-            ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
-            ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
-
+            applyMetadataChangesToCreateQuery(ast, future_metadata);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }
 
@@ -4450,7 +4438,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
     else
     {
         String partition_id = getPartitionIDFromQuery(partition, query_context);
-        did_drop = dropAllPartsInPartition(*zookeeper, partition_id, entry, detach);
+        did_drop = dropAllPartsInPartition(*zookeeper, partition_id, entry, query_context, detach);
     }
 
     if (did_drop)
@@ -4474,7 +4462,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
 
 
 void StorageReplicatedMergeTree::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder & table_lock)
+    const ASTPtr &, const StorageMetadataPtr &, const Context & query_context, TableExclusiveLockHolder & table_lock)
 {
     table_lock.release();   /// Truncate is done asynchronously.
 
@@ -4490,7 +4478,7 @@ void StorageReplicatedMergeTree::truncate(
     {
         LogEntry entry;
 
-        if (dropAllPartsInPartition(*zookeeper, partition_id, entry, false))
+        if (dropAllPartsInPartition(*zookeeper, partition_id, entry, query_context, false))
             waitForAllReplicasToProcessLogEntry(entry);
     }
 }
@@ -5274,6 +5262,9 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         requests.emplace_back(zkutil::makeCreateRequest(
             mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
+        if (auto txn = query_context.getMetadataTransaction())
+            txn->moveOpsTo(requests);
+
         Coordination::Responses responses;
         Coordination::Error rc = zookeeper->tryMulti(requests, responses);
 
@@ -5775,6 +5766,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             }
         }
 
+        if (auto txn = context.getMetadataTransaction())
+            txn->moveOpsTo(ops);
+
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
 
@@ -6243,7 +6237,7 @@ bool StorageReplicatedMergeTree::dropPart(
 }
 
 bool StorageReplicatedMergeTree::dropAllPartsInPartition(
-    zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach)
+    zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, const Context & query_context, bool detach)
 {
     MergeTreePartInfo drop_range_info;
     if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
@@ -6275,6 +6269,8 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version.
+    if (auto txn = query_context.getMetadataTransaction())
+        txn->moveOpsTo(ops);
     Coordination::Responses responses = zookeeper.multi(ops);
 
     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;

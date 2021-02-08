@@ -147,7 +147,16 @@ def test_alters_from_different_replicas(started_cluster):
 
     main_node.query("SYSTEM FLUSH DISTRIBUTED testdb.dist")
     main_node.query("ALTER TABLE testdb.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1")
-    main_node.query("ALTER TABLE testdb.concurrent_test DELETE WHERE UserID % 2")
+    res = main_node.query("ALTER TABLE testdb.concurrent_test DELETE WHERE UserID % 2")
+    assert "shard1|replica1" in res and "shard1|replica2" in res and "shard1|replica3" in res
+    assert "shard2|replica1" in res and "shard2|replica2" in res
+
+    expected = "1\t1\tmain_node\n" \
+               "1\t2\tdummy_node\n" \
+               "1\t3\tcompeting_node\n" \
+               "2\t1\tsnapshotting_node\n" \
+               "2\t2\tsnapshot_recovering_node\n"
+    assert main_node.query("SELECT shard_num, replica_num, host_name FROM system.clusters WHERE cluster='testdb'") == expected
 
     # test_drop_and_create_replica
     main_node.query("DROP DATABASE testdb")

@@ -296,7 +296,7 @@ String DatabaseReplicatedTask::getShardID() const
 std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context);
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY; //FIXME why do we need separate query kind?
+    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<MetadataTransaction>();
@@ -340,7 +340,7 @@ void MetadataTransaction::commit()
     assert(state == CREATED);
     state = FAILED;
     current_zookeeper->multi(ops);
-    state = COMMITED;
+    state = COMMITTED;
 }
 
 }

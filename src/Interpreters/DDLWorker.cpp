@@ -42,7 +42,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
@@ -51,7 +50,6 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int INCORRECT_QUERY;
 }
 
 

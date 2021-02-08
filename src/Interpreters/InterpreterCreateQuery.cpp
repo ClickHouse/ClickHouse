@@ -149,7 +149,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                 engine = makeASTFunction("Replicated",
                                      std::make_shared<ASTLiteral>(fmt::format("/clickhouse/db/{}/", create.database)),
                                      std::make_shared<ASTLiteral>("s1"),
-                                     std::make_shared<ASTLiteral>("r1"));
+                                     std::make_shared<ASTLiteral>("r" + toString(getpid())));
         }
 
         engine->no_empty_args = true;
@@ -573,8 +573,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
-    create.as_database.clear();
-    create.as_table.clear();
+    assert(as_database_saved.empty() && as_table_saved.empty());
+    std::swap(create.as_database, as_database_saved);
+    std::swap(create.as_table, as_table_saved);
 
     return properties;
 }
@@ -722,7 +723,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !internal)
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
             throw Exception("Table UUID is not specified in DDL log", ErrorCodes::LOGICAL_ERROR);
@@ -753,7 +754,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
     else
     {
-        assert(context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY);
         bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -850,7 +850,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
     }
-    else if (create.attach && !create.attach_short_syntax && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    else if (create.attach && !create.attach_short_syntax && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         auto * log = &Poco::Logger::get("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
@@ -874,16 +874,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = setProperties(create);
 
-    /// DDL log for replicated databases can not
-    /// contain the right database name for every replica
-    /// therefore for such queries the AST database
-    /// field is modified right before an actual execution
-    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-    {
-        create.database = current_database;
-    }
-
-    //TODO make code better if possible
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
@@ -893,7 +883,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
         database = DatabaseCatalog::instance().getDatabase(create.database);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
@@ -930,9 +920,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
 
         database = DatabaseCatalog::instance().getDatabase(create.database);
-        //TODO do we need it?
-        if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
         assertOrSetUUID(create, database);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
@@ -1107,9 +1094,10 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        assertOrSetUUID(create, database);
+        if (!create.attach)
+            assertOrSetUUID(create, database);
         guard->releaseTableLock();
         return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
     }
@@ -1266,15 +1254,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     return required_access;
 }
 
-void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
+void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const
 {
-    const auto & create = ast->as<const ASTCreateQuery &>();
     elem.query_kind = "Create";
-    if (!create.as_table.empty())
+    if (!as_table_saved.empty())
     {
-        String database = backQuoteIfNeed(create.as_database.empty() ? context.getCurrentDatabase() : create.as_database);
+        String database = backQuoteIfNeed(as_database_saved.empty() ? context.getCurrentDatabase() : as_database_saved);
         elem.query_databases.insert(database);
-        elem.query_tables.insert(database + "." + backQuoteIfNeed(create.as_table));
+        elem.query_tables.insert(database + "." + backQuoteIfNeed(as_table_saved));
     }
 }
 
