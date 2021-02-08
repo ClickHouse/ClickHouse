@@ -964,6 +964,95 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 }
 
 
+bool DDLWorker::isTaskFinished(const ZooKeeperPtr & zookeeper, const String & node_name)
+{
+    String node_path = fs::path(queue_dir) / node_name;
+
+    String node_data;
+    if (!zookeeper->tryGet(node_path, node_data))
+    {
+        return true;
+    }
+
+    auto log_entry = std::make_unique<DDLLogEntry>();
+    log_entry->parse(node_data);
+
+    ASTPtr ast;
+    try
+    {
+        ParserQuery parser(log_entry->query.data() + log_entry->query.size());
+        ast = parseQuery(parser, log_entry->query, "", 0, context.getSettingsRef().max_parser_depth);
+    }
+    catch (...)
+    {
+        return true;
+    }
+
+    auto * ast_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(ast.get());
+    if (!ast_on_cluster)
+    {
+        return true;
+    }
+
+    auto cluster = context.getCluster(ast_on_cluster->cluster);
+    if (!cluster)
+    {
+        return true;
+    }
+
+    auto cluster_addresses = cluster->getShardsAddresses();
+    std::set<String> cluster_nodes;
+
+    for (auto & shard : cluster_addresses)
+    {
+        for (auto & replica : shard)
+        {
+            cluster_nodes.emplace(replica.toString());
+        }
+    }
+
+    std::set<String> user_initialized_nodes;
+    for (auto & host : log_entry->hosts)
+    {
+        user_initialized_nodes.emplace(host.toString());
+    }
+
+    std::vector<String> must_finished_nodes;
+    std::set_intersection(cluster_nodes.cbegin(),
+        cluster_nodes.cend(),
+        user_initialized_nodes.cbegin(),
+        user_initialized_nodes.cend(),
+        std::insert_iterator<std::vector<String>>(must_finished_nodes, must_finished_nodes.begin()));
+
+    Strings finished_nodes;
+    String finished_path = fs::path(node_path) / "finished";
+
+    if (zookeeper->exists(finished_path))
+    {
+        zookeeper->tryGetChildren(finished_path, finished_nodes);
+    }
+
+    if (finished_nodes.size() < must_finished_nodes.size())
+    {
+        return false;
+    }
+
+    bool task_finished = true;
+    std::set<String> finished_nodes_set(finished_nodes.cbegin(), finished_nodes.cend());
+
+    for (auto & node : must_finished_nodes)
+    {
+        if (!finished_nodes_set.contains(node))
+        {
+            task_finished = false;
+            break;
+        }
+    }
+
+    return task_finished;
+}
+
+
 void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
 {
     LOG_DEBUG(log, "Cleaning queue");
@@ -1010,6 +1099,13 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 continue;
             }
 
+            /// Skip if not finished
+            if (!isTaskFinished(zookeeper, node_name))
+            {
+                LOG_INFO(log, "Task {} should be deleted, but there are not finished workers. Skipping it.", node_name);
+                continue;
+            }
+
             /// Usage of the lock is not necessary now (tryRemoveRecursive correctly removes node in a presence of concurrent cleaners)
             /// But the lock will be required to implement system.distributed_ddl_queue table
             auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
@@ -1023,6 +1119,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 LOG_INFO(log, "Lifetime of task {} is expired, deleting it", node_name);
             else if (node_is_outside_max_window)
                 LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
+
 
             /// Deleting
             {

@@ -1,0 +1,8 @@
+<yandex>
+    <distributed_ddl>
+        <path>/clickhouse/test_clean/ddl</path>
+        <max_tasks_in_queue>10</max_tasks_in_queue>
+        <task_max_lifetime>3</task_max_lifetime>
+        <cleanup_delay_period>1</cleanup_delay_period>
+    </distributed_ddl>
+</yandex>

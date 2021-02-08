@@ -152,6 +152,10 @@ private:
 
     bool tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status);
 
+    /// whether a DDL task is finished by all nodes
+    /// which is composed by the initialized nodes but should except the one who is not in the cluster.
+    bool isTaskFinished(const ZooKeeperPtr & zookeeper, const String & node_name);
+
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
 

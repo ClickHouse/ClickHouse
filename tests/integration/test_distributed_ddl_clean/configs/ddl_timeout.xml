@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <distributed_ddl_task_timeout>3</distributed_ddl_task_timeout>
+        </default>
+    </profiles>
+</yandex>
