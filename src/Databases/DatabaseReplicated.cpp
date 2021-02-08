@@ -303,6 +303,9 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_
     if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
+    if (auto * ddl_query = query->as<ASTQueryWithTableAndOutput>())
+        ddl_query->database.clear();
+
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->children)
@@ -491,6 +494,33 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
         txn->ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
     }
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
+}
+
+void DatabaseReplicated::createDictionary(const Context & context,
+                                          const String & dictionary_name,
+                                          const ASTPtr & query)
+{
+    auto txn = context.getMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->is_initial_query)
+    {
+        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
+        String statement = getObjectDefinitionFromCreateQuery(query->clone());
+        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+    }
+    DatabaseAtomic::createDictionary(context, dictionary_name, query);
+}
+
+void DatabaseReplicated::removeDictionary(const Context & context, const String & dictionary_name)
+{
+    auto txn = context.getMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->is_initial_query)
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
+        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+    }
+    DatabaseAtomic::removeDictionary(context, dictionary_name);
 }
 
 }

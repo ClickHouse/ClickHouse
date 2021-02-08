@@ -58,6 +58,10 @@ public:
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, const Context & query_context) override;
+    void createDictionary(const Context & context,
+                          const String & dictionary_name,
+                          const ASTPtr & query) override;
+    void removeDictionary(const Context & context, const String & dictionary_name) override;
 
     void drop(const Context & /*context*/) override;
 
