@@ -76,3 +76,65 @@ ALL INNER JOIN
     FROM table2
 ) AS table2 ON a = table2.a
 WHERE (table2.b < toUInt32(40)) AND (b < 1)
+---------Q8----------
+---------Q9---will not be optimized----------
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL LEFT JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON (a = table2.a) AND (b = toUInt32(10))
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL RIGHT JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON (a = table2.a) AND (b = toUInt32(10))
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL FULL OUTER JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON (a = table2.a) AND (b = toUInt32(10))
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL FULL OUTER JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON (a = table2.a) AND (table2.b = toUInt32(10))
+WHERE a < toUInt32(20)
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+CROSS JOIN table2

@@ -79,23 +79,26 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(left, right, data);
-        if (table_numbers.first != table_numbers.second)
-        {
-            // related to two different tables
-            data.addJoinKeys(left, right, table_numbers);
-            if (!data.new_on_expression)
-                data.new_on_expression = ast->clone();
-            else
-                data.new_on_expression = makeASTFunction("and", data.new_on_expression, ast->clone());
-        }
-        else
+
+        /**
+          * if this is an inner join and the expression related to less than 2 tables, then move it to WHERE
+          */
+        if (data.kind == ASTTableJoin::Kind::Inner
+            && (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0))
         {
             if (!data.new_where_conditions)
                 data.new_where_conditions = ast->clone();
             else
                 data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
         }
-
+        else
+        {
+            data.addJoinKeys(left, right, table_numbers);
+            if (!data.new_on_expression)
+                data.new_on_expression = ast->clone();
+            else
+                data.new_on_expression = makeASTFunction("and", data.new_on_expression, ast->clone());
+        }
     }
     else if (inequality != ASOF::Inequality::None)
     {
@@ -104,17 +107,21 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             ASTPtr left = func.arguments->children.at(0);
             ASTPtr right = func.arguments->children.at(1);
             auto table_numbers = getTableNumbers(left, right, data);
-            if (table_numbers.first != table_numbers.second)
-            {
-                throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
-                    ErrorCodes::NOT_IMPLEMENTED);
-            }
-            else
+
+            if (data.kind == ASTTableJoin::Kind::Inner
+                && (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0))
             {
                 if (!data.new_where_conditions)
                     data.new_where_conditions = ast->clone();
                 else
                     data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
+
+		return;
+            }
+            else
+            {
+                throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
+                    ErrorCodes::NOT_IMPLEMENTED);
             }
         }
 
@@ -159,11 +166,13 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
     getIdentifiers(left_ast, left_identifiers);
     getIdentifiers(right_ast, right_identifiers);
 
-    if (left_identifiers.empty() || right_identifiers.empty())
-        return {0, 0};
+    size_t left_idents_table = 0;
+    size_t right_idents_table = 0;
 
-    size_t left_idents_table = getTableForIdentifiers(left_identifiers, data);
-    size_t right_idents_table = getTableForIdentifiers(right_identifiers, data);
+    if (!left_identifiers.empty())
+        left_idents_table = getTableForIdentifiers(left_identifiers, data);
+    if (!right_identifiers.empty())
+        right_idents_table = getTableForIdentifiers(right_identifiers, data);
 
     return std::make_pair(left_idents_table, right_idents_table);
 }
