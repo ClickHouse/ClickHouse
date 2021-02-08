@@ -5,7 +5,7 @@ toc_title: MongoDB
 
 # MongoDB {#mongodb}
 
-MongoDB engine is read-only, it allows to perform `SELECT` queries on data, stored on a remote MongoDB server. MongoDB engine supports onle flat fields (primitive, not nested types).
+MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. Engine supports only non-nested data types. `INSERT` queries are not supported.
 
 ## Creating a Table {#creating-a-table}
 
@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 -   `database` — Remote database name.
 
--   `table` — Remote table name.
+-   `collection` — Remote collection name.
 
 -   `user` — MongoDB user.
 
@@ -32,14 +32,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 ## Usage Example {#usage-example}
 
-Table in ClickHouse, retrieving data from the MongoDB table:
+Table in ClickHouse which allows to read data from MongoDB collection:
 
 ``` text
 CREATE TABLE mongo_table
 (
     key UInt64, 
     data String
-) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'test', 'clickhouse');
+) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```
 
 Query:
