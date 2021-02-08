@@ -227,7 +227,7 @@ HedgedConnectionsFactory::ReplicaStatePtr HedgedConnectionsFactory::startEstabli
     return replica;
 }
 
-void HedgedConnectionsFactory::processConnectionEstablisherStage(ReplicaStatePtr & replica, bool remove_from_epoll)
+void HedgedConnectionsFactory::processConnectionEstablisherStage(ReplicaStatePtr replica, bool remove_from_epoll)
 {
     ConnectionEstablisher & connection_establisher = connection_establishers[replica->index];
 
@@ -260,7 +260,7 @@ void HedgedConnectionsFactory::processConnectionEstablisherStage(ReplicaStatePtr
         processFailedConnection(replica);
 }
 
-void HedgedConnectionsFactory::processFailedConnection(ReplicaStatePtr & replica)
+void HedgedConnectionsFactory::processFailedConnection(ReplicaStatePtr replica)
 {
     ShuffledPool & shuffled_pool = shuffled_pools[replica->index];
     LOG_WARNING(
@@ -283,7 +283,7 @@ void HedgedConnectionsFactory::processFailedConnection(ReplicaStatePtr & replica
     replica->reset();
 }
 
-void HedgedConnectionsFactory::addTimeouts(ReplicaStatePtr & replica)
+void HedgedConnectionsFactory::addTimeouts(ReplicaStatePtr replica)
 {
     addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TIMEOUT, replica);
 
@@ -294,7 +294,7 @@ void HedgedConnectionsFactory::addTimeouts(ReplicaStatePtr & replica)
         addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TABLES_STATUS_TIMEOUT, replica);
 }
 
-void HedgedConnectionsFactory::addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr & replica)
+void HedgedConnectionsFactory::addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica)
 {
     ConnectionTimeoutDescriptorPtr timeout_descriptor = createConnectionTimeoutDescriptor(type, timeouts);
     epoll.add(timeout_descriptor->timer.getDescriptor());
@@ -302,7 +302,7 @@ void HedgedConnectionsFactory::addTimeoutToReplica(ConnectionTimeoutType type, R
     replica->active_timeouts[timeout_descriptor->timer.getDescriptor()] = std::move(timeout_descriptor);
 }
 
-void HedgedConnectionsFactory::removeTimeoutsFromReplica(ReplicaStatePtr & replica)
+void HedgedConnectionsFactory::removeTimeoutsFromReplica(ReplicaStatePtr replica)
 {
     for (auto & [fd, _] : replica->active_timeouts)
     {
@@ -359,7 +359,7 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking)
     return event.data.fd;
 }
 
-void HedgedConnectionsFactory::processReplicaEvent(ReplicaStatePtr & replica)
+void HedgedConnectionsFactory::processReplicaEvent(ReplicaStatePtr replica)
 {
     removeTimeoutsFromReplica(replica);
     connection_establishers[replica->index].run();
@@ -368,7 +368,7 @@ void HedgedConnectionsFactory::processReplicaEvent(ReplicaStatePtr & replica)
         addTimeouts(replica);
 }
 
-void HedgedConnectionsFactory::processTimeoutEvent(ReplicaStatePtr & replica, ConnectionTimeoutDescriptorPtr timeout_descriptor)
+void HedgedConnectionsFactory::processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor)
 {
     epoll.remove(timeout_descriptor->timer.getDescriptor());
     replica->active_timeouts.erase(timeout_descriptor->timer.getDescriptor());
@@ -393,7 +393,7 @@ void HedgedConnectionsFactory::processTimeoutEvent(ReplicaStatePtr & replica, Co
         replica = createNewReplica();
 }
 
-void HedgedConnectionsFactory::setBestUsableReplica(ReplicaStatePtr & replica)
+void HedgedConnectionsFactory::setBestUsableReplica(ReplicaStatePtr replica)
 {
     std::vector<int> indexes(connection_establishers.size());
     for (size_t i = 0; i != indexes.size(); ++i)
