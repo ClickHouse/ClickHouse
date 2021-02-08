@@ -14,7 +14,6 @@ public:
     friend class PGReplicaLSN;
     PostgreSQLReplicationHandler(
             const std::string & database_name_,
-            const std::string & table_name_,
             const std::string & conn_str_,
             const std::string & metadata_path_,
             std::shared_ptr<Context> context_,
@@ -22,12 +21,14 @@ public:
             const std::string & replication_slot_name_,
             const size_t max_block_size_);
 
-    void startup(StoragePtr storage);
+    void startup();
+    void addStoragePtr(const std::string & table_name, StoragePtr storage);
     void shutdown();
     void shutdownFinal();
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
+    using Storages = std::unordered_map<String, StoragePtr>;
 
     bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
@@ -44,16 +45,16 @@ private:
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
-    const std::string database_name, table_name, connection_str, metadata_path;
-
+    const std::string database_name, connection_str, metadata_path;
     std::string publication_name, replication_slot;
-    std::string tmp_replication_slot;
     const size_t max_block_size;
 
     PostgreSQLConnectionPtr connection, replication_connection;
-    BackgroundSchedulePool::TaskHolder startup_task;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
-    StoragePtr nested_storage;
+
+    BackgroundSchedulePool::TaskHolder startup_task;
+
+    Storages storages;
 };
 
 

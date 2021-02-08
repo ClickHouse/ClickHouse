@@ -3,7 +3,7 @@
 #include "config_core.h"
 
 #include "PostgreSQLReplicationHandler.h"
-#include "PostgreSQLReplicationSettings.h"
+#include "PostgreSQLReplicaSettings.h"
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -54,7 +54,7 @@ protected:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & storage_metadata,
         const Context & context_,
-        std::unique_ptr<PostgreSQLReplicationSettings> replication_settings_);
+        std::unique_ptr<PostgreSQLReplicaSettings> replication_settings_);
 
 private:
     std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
@@ -64,10 +64,10 @@ private:
     ASTPtr getCreateHelperTableQuery();
     void dropNested();
 
-    String relative_data_path;
+    std::string remote_table_name, relative_data_path;
     std::shared_ptr<Context> global_context;
 
-    std::unique_ptr<PostgreSQLReplicationSettings> replication_settings;
+    std::unique_ptr<PostgreSQLReplicaSettings> replication_settings;
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
 
     /// ReplacingMergeTree table
