@@ -33,7 +33,7 @@ Type: matches `arg` type.
 
 For tuple in the input:
 
--   Tuple with maximum `val` value.
+-   Tuple `(arg, val)`, where `val` is the maximum value and `arg` is a corresponding value.
 
 Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 
