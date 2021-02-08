@@ -136,8 +136,8 @@ CREATE LIVE VIEW [db.]table_name WITH TIMEOUT value_in_sec AND REFRESH value_in_
 You can use the following settings to control the behaviour of live views.
 
 - `allow_experimental_live_view` - enable live views. Default `0`.
-- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive
+- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default `15` seconds.
 - `max_live_view_insert_blocks_before_refresh` - maximum number of inserted blocks after which
-   mergeable blocks are dropped and query is re-executed. Default `64`.
--  `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default `0`.
--  `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default `0`.
+   mergeable blocks are dropped and query is re-executed. Default `64` inserts.
+-  `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default `5` seconds.
+-  `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default `60` seconds.
