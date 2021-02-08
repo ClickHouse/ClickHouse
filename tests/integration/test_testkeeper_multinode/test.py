@@ -42,6 +42,70 @@ def test_simple_replicated_table(started_cluster):
     assert node3.query("SELECT COUNT() FROM t") == "10\n"
 
 
+def get_fake_zk(nodename):
+    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=30.0)
+    def reset_last_zxid_listener(state):
+        print("Fake zk callback called for state", state)
+        _fake_zk_instance.last_zxid = 0
+
+        _fake_zk_instance.add_listener(reset_last_zxid_listener)
+    _fake_zk_instance.start()
+    return _fake_zk_instance
+
+def test_watch_on_follower(started_cluster):
+    try:
+        node1_zk = get_fake_zk("node1")
+        node2_zk = get_fake_zk("node2")
+        node3_zk = get_fake_zk("node3")
+
+        node1_zk.create("/test_data_watches")
+        node2_zk.set("/test_data_watches", b"hello")
+        node3_zk.set("/test_data_watches", b"world")
+
+        node1_data = None
+        def node1_callback(event):
+            print("node1 data watch called")
+            nonlocal node1_data
+            node1_data = event
+
+        node1_zk.get("/test_data_watches", watch=node1_callback)
+
+        node2_data = None
+        def node2_callback(event):
+            print("node2 data watch called")
+            nonlocal node2_data
+            node2_data = event
+
+        node2_zk.get("/test_data_watches", watch=node2_callback)
+
+        node3_data = None
+        def node3_callback(event):
+            print("node3 data watch called")
+            nonlocal node3_data
+            node3_data = event
+
+        node3_zk.get("/test_data_watches", watch=node3_callback)
+
+        node1_zk.set("/test_data_watches", b"somevalue")
+        time.sleep(3)
+
+        print(node1_data)
+        print(node2_data)
+        print(node3_data)
+
+        assert node1_data == node2_data
+        assert node3_data == node2_data
+
+    finally:
+        try:
+            for zk_conn in [node1_zk, node2_zk, node3_zk]:
+                zk_conn.stop()
+                zk_conn.close()
+        except:
+            pass
+
+
+
 # in extremely rare case it can take more than 5 minutes in debug build with sanitizer
 @pytest.mark.timeout(600)
 def test_blocade_leader(started_cluster):
