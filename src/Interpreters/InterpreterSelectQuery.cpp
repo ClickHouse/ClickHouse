@@ -294,7 +294,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     // Only propagate WITH elements to subqueries if we're not a subquery
-    if (options.subquery_depth == 0)
+    if (!options.is_subquery)
     {
         if (context->getSettingsRef().enable_global_with_statement)
             ApplyWithAliasVisitor().visit(query_ptr);
