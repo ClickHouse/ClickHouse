@@ -5,7 +5,7 @@ toc_title: MongoDB
 
 # MongoDB {#mongodb}
 
-Движок MongoDB работает только на чтение данных, он поддерживает запросы `SELECT` над данными, хранящимися на серверах MongoDB. Движок MongoDB поддерживает только плоские типы данных (простые, не вложенные).
+Движок таблиц MongoDB позволяет читать данные из коллекций СУБД MongoDB. В таблицах допустимы только плоские (не вложенные) типы данных. Запись (`INSERT`-запросы) не поддерживаются.
 
 ## Создание таблицы {#creating-a-table}
 
@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 -   `database` — имя базы данных на удалённом сервере.
 
--   `table` — имя таблицы на удалённом сервере.
+-   `collection` — имя коллекции на удалённом сервере.
 
 -   `user` — пользователь MongoDB.
 
@@ -32,14 +32,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 ## Примеры использования {#usage-example}
 
-Таблица в ClickHouse, которая получает данные из таблицы MongoDB:
+Таблица в ClickHouse для чтения данных из колекции MongoDB:
 
 ``` text
 CREATE TABLE mongo_table
 (
     key UInt64, 
     data String
-) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'test', 'clickhouse');
+) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```
 
 Запрос к таблице:
