@@ -6,7 +6,7 @@
 
 Столбцы:
 
--   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса на вставку кусков данных.
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса `INSERT`, создавшего этот кусок.
 -   `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип события. Столбец может содержать одно из следующих значений:
     -   `NEW_PART` — вставка нового куска.
     -   `MERGE_PARTS` — слияние кусков.
