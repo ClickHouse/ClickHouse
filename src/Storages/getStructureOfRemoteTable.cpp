@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int TIMEOUT_EXCEEDED;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 

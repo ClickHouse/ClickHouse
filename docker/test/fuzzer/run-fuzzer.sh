@@ -91,11 +91,8 @@ function fuzz
 
     server_pid=$!
     kill -0 $server_pid
-    while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
-    ./clickhouse-client --query "select 1"
-    kill -0 $server_pid
-    echo Server started
 
+    # Attach GDB to print stack trace of all threads in case of a segfault.
     echo "
 handle all noprint
 handle SIGSEGV stop print
@@ -105,7 +102,17 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    gdb -batch -command script.gdb -p "$(pidof clickhouse-server)" &
+    gdb -batch -command script.gdb -p "$server_pid" &
+
+    # Wait for GDB to at least start attaching. The server will be unresponsive
+    # while it is attaching. Don't know of a better way to wait.
+    sleep 1
+
+    # Check that the server is up and accepting connections.
+    while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
+    ./clickhouse-client --query "select 1"
+    kill -0 $server_pid
+    echo Server started
 
     fuzzer_exit_code=0
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
