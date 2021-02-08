@@ -205,10 +205,6 @@ void QueryFuzzer::replaceWithTableLike(ASTPtr & ast)
     }
 
     ASTPtr new_ast = table_like[fuzz_rand() % table_like.size()]->clone();
-
-    std::string old_alias = ast->tryGetAlias();
-    new_ast->setAlias(old_alias);
-
     ast = new_ast;
 }
 
@@ -427,7 +423,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * tables_element = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
         fuzz(tables_element->table_join);
-        fuzz(tables_element->table_expression);
+        if (tables_element->table_expression)
+        {
+            if (fuzz_rand() % 10)
+            {
+                replaceWithTableLike(tables_element->table_expression);
+            }
+            fuzz(tables_element->table_expression);
+        }
         fuzz(tables_element->array_join);
     }
     else if (auto * table_expr = typeid_cast<ASTTableExpression *>(ast.get()))

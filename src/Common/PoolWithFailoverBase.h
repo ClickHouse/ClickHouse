@@ -1,17 +1,19 @@
 #pragma once
 
-#include <time.h>
-#include <cstdlib>
 #include <climits>
-#include <random>
+#include <cstdlib>
 #include <functional>
-#include <common/types.h>
-#include <ext/scope_guard.h>
+#include <random>
+#include <time.h>
+
+#include <Common/Exception.h>
+#include <Common/NetException.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
-#include <Common/NetException.h>
-#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
+#include <common/types.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -21,6 +23,7 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 }
 
@@ -110,7 +113,8 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc());
+            const GetPriorityFunc & get_priority,
+            uint64_t total_timeout);
 
 protected:
     struct PoolState;
@@ -119,7 +123,9 @@ protected:
 
     /// Returns a single connection.
     Entry get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-        const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
+        const TryGetEntryFunc & try_get_entry,
+        const GetPriorityFunc & get_priority,
+        uint64_t total_timeout);
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
@@ -145,13 +151,14 @@ protected:
 
 template <typename TNestedPool>
 typename TNestedPool::Entry
-PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-    const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
+PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors,
+    bool fallback_to_stale_replicas, const TryGetEntryFunc & try_get_entry,
+    const GetPriorityFunc & get_priority, uint64_t total_timeout)
 {
     std::vector<TryResult> results = getMany(
         1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
         max_ignored_errors, fallback_to_stale_replicas,
-        try_get_entry, get_priority);
+        try_get_entry, get_priority, total_timeout);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
@@ -166,8 +173,13 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
         const TryGetEntryFunc & try_get_entry,
-        const GetPriorityFunc & get_priority)
+        const GetPriorityFunc & get_priority,
+        uint64_t total_timeout)
 {
+    // This can take arbitrarily long depending on the network latency and errors
+    // and the list of servers. We have to check max_execution_time.
+    Stopwatch stopwatch{CLOCK_MONOTONIC_COARSE};
+
     /// Update random numbers and error counts.
     PoolStates pool_states = updatePoolStates(max_ignored_errors);
     if (get_priority)
@@ -250,8 +262,18 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             }
             else
             {
-                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                LOG_WARNING(log, "Connection failed at try №{}, reason: {} at {}",
+                    (shuffled_pool.error_count + 1), fail_message,
+                    StackTrace().toString());
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+                if (total_timeout && stopwatch.elapsedSeconds() > total_timeout)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Total timeout {} s exceeded ({} s elapsed) at connection try #{}. Log: \n\n{}\n",
+                        total_timeout, stopwatch.elapsedSeconds(),
+                        shuffled_pool.error_count + 1, fail_messages);
+                }
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 

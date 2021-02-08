@@ -91,7 +91,9 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
     bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
 
-    return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
+    return Base::get(max_ignored_errors, fallback_to_stale_replicas,
+        try_get_entry, get_priority,
+        settings ? settings->max_execution_time.totalSeconds() : 0);
 }
 
 Int64 ConnectionPoolWithFailover::getPriority() const
@@ -230,7 +232,8 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 
     return Base::getMany(min_entries, max_entries, max_tries,
         max_ignored_errors, fallback_to_stale_replicas,
-        try_get_entry, get_priority);
+        try_get_entry, get_priority,
+        settings ? settings->max_execution_time.totalSeconds() : 0);
 }
 
 ConnectionPoolWithFailover::TryResult

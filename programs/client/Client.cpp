@@ -1867,9 +1867,20 @@ private:
                         double elapsed = receive_watch.elapsedSeconds();
                         if (elapsed > receive_timeout.totalSeconds())
                         {
-                            std::cout << "Timeout exceeded while receiving data from server."
+                            std::cerr << "Timeout exceeded while receiving data from server."
                                       << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
                                       << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+
+                            // If we're fuzzing and found a query which is slow
+                            // to send the results, this is probably bad. It means
+                            // that the max_execution_time didn't work.
+                            // cancel_query() will also probably fail, so exit
+                            // right away.
+                            if (query_fuzzer_runs > 0)
+                            {
+                                fmt::print(stderr, "This is a server bug, max_execution_time should have worked.\n");
+                                exit(1);
+                            }
 
                             cancel_query();
                         }
