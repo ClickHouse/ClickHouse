@@ -215,7 +215,7 @@ public:
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn &) const override;
-
-    MutableColumnPtr cloneResized(size_t size) const override;
 };
+
+
 }

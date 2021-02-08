@@ -32,9 +32,6 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -48,33 +45,35 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void serializeBinaryBulkStatePrefixImpl(
+    /** Each sub-column in a map is serialized in separate stream.
+      */
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+
+    void serializeBinaryBulkStatePrefix(
            SerializeBinaryBulkSettings & settings,
            SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffixImpl(
+    void serializeBinaryBulkStateSuffix(
            SerializeBinaryBulkSettings & settings,
            SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefixImpl(
+    void deserializeBinaryBulkStatePrefix(
            DeserializeBinaryBulkSettings & settings,
            DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreamsImpl(
+    void serializeBinaryBulkWithMultipleStreams(
            const IColumn & column,
            size_t offset,
            size_t limit,
            SerializeBinaryBulkSettings & settings,
            SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
+    void deserializeBinaryBulkWithMultipleStreams(
            IColumn & column,
            size_t limit,
            DeserializeBinaryBulkSettings & settings,
-           DeserializeBinaryBulkStatePtr & state,
-           SubstreamsCache * cache) const override;
+           DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;

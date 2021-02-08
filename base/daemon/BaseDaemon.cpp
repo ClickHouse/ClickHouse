@@ -112,13 +112,11 @@ static void writeSignalIDtoSignalPipe(int sig)
 /** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
 static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
@@ -127,7 +125,6 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
@@ -230,10 +227,10 @@ public:
             }
             else
             {
-                siginfo_t info{};
-                ucontext_t context{};
+                siginfo_t info;
+                ucontext_t context;
                 StackTrace stack_trace(NoCapture{});
-                UInt32 thread_num{};
+                UInt32 thread_num;
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 

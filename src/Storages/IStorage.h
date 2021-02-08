@@ -50,8 +50,8 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class IStoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
@@ -127,9 +127,6 @@ public:
     /// So, it's impossible for one stream run out of data when there is data in other streams.
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
-
-    /// Returns true if the storage supports reading of subcolumns of complex types.
-    virtual bool supportsSubcolumns() const { return false; }
 
 
     /// Optional size information of each physical column.

@@ -4,12 +4,6 @@
 #include "syscall.h"
 #include "atomic.h"
 
-#if defined(__has_feature)
-#if __has_feature(memory_sanitizer)
-#include <sanitizer/msan_interface.h>
-#endif
-#endif
-
 #ifdef VDSO_GETCPU_SYM
 
 static void *volatile vdso_func;
@@ -31,7 +25,7 @@ static void *volatile vdso_func = (void *)getcpu_init;
 int sched_getcpu(void)
 {
 	int r;
-	unsigned cpu = 0;
+	unsigned cpu;
 
 #ifdef VDSO_GETCPU_SYM
 	getcpu_f f = (getcpu_f)vdso_func;
@@ -43,13 +37,6 @@ int sched_getcpu(void)
 #endif
 
 	r = __syscall(SYS_getcpu, &cpu, 0, 0);
-	if (!r) {
-#if defined(__has_feature)
-#if __has_feature(memory_sanitizer)
-        __msan_unpoison(&cpu, sizeof(cpu));
-#endif
-#endif
-        return cpu;
-    }
+	if (!r) return cpu;
 	return __syscall_ret(r);
 }

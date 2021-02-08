@@ -33,13 +33,13 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
         }
 
         case SHA256_PASSWORD:
-            throw Exception("Cannot get password double SHA1 for user with 'SHA256_PASSWORD' authentication", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Cannot get password double SHA1 for user with 'SHA256_PASSWORD' authentication.", ErrorCodes::BAD_ARGUMENTS);
 
         case DOUBLE_SHA1_PASSWORD:
             return password_hash;
 
         case LDAP_SERVER:
-            throw Exception("Cannot get password double SHA1 for user with 'LDAP_SERVER' authentication", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Cannot get password double SHA1 for user with 'LDAP_SERVER' authentication.", ErrorCodes::BAD_ARGUMENTS);
 
         case MAX_TYPE:
             break;
