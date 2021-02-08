@@ -12,7 +12,7 @@ DelayedPortsProcessor::DelayedPortsProcessor(
     const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
     : IProcessor(InputPorts(num_ports, header),
                  OutputPorts((assert_main_ports_empty ? delayed_ports.size() : num_ports), header))
-    , num_delayed(delayed_ports.size())
+    , num_delayed_ports(delayed_ports.size())
 {
     port_pairs.resize(num_ports);
     output_to_pair.reserve(outputs.size());
@@ -36,21 +36,24 @@ DelayedPortsProcessor::DelayedPortsProcessor(
     }
 }
 
+void DelayedPortsProcessor::finishPair(PortsPair & pair)
+{
+    if (!pair.is_finished)
+    {
+        pair.is_finished = true;
+        ++num_finished_pairs;
+
+        if (pair.output_port)
+            ++num_finished_outputs;
+    }
+}
+
 bool DelayedPortsProcessor::processPair(PortsPair & pair)
 {
-    auto finish = [&]()
-    {
-        if (!pair.is_finished)
-        {
-            pair.is_finished = true;
-            ++num_finished;
-        }
-    };
-
     if (pair.output_port && pair.output_port->isFinished())
     {
         pair.input_port->close();
-        finish();
+        finishPair(pair);
         return false;
     }
 
@@ -58,7 +61,7 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
     {
         if (pair.output_port)
             pair.output_port->finish();
-        finish();
+        finishPair(pair);
         return false;
     }
 
@@ -72,7 +75,7 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Input port for DelayedPortsProcessor is assumed to have no data, but it has one");
 
-        pair.output_port->pushData(pair.input_port->pullData());
+        pair.output_port->pushData(pair.input_port->pullData(true));
     }
 
     return true;
@@ -80,7 +83,7 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
 
 IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
-    bool skip_delayed = (num_finished + num_delayed) < port_pairs.size();
+    bool skip_delayed = (num_finished_pairs + num_delayed_ports) < port_pairs.size();
     bool need_data = false;
 
     if (!are_inputs_initialized && !updated_outputs.empty())
@@ -95,9 +98,27 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
 
     for (const auto & output_number : updated_outputs)
     {
-        auto pair_num = output_to_pair[output_number];
-        if (!skip_delayed || !port_pairs[pair_num].is_delayed)
-            need_data = processPair(port_pairs[pair_num]) || need_data;
+        auto & pair = port_pairs[output_to_pair[output_number]];
+
+        /// Finish pair of ports earlier if possible.
+        if (!pair.is_finished && pair.output_port && pair.output_port->isFinished())
+            finishPair(pair);
+        else if (!skip_delayed || !pair.is_delayed)
+            need_data = processPair(pair) || need_data;
+    }
+
+    /// Do not wait for delayed ports if all output ports are finished.
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & pair : port_pairs)
+        {
+            if (pair.output_port)
+                pair.output_port->finish();
+
+            pair.input_port->close();
+        }
+
+        return Status::Finished;
     }
 
     for (const auto & input_number : updated_inputs)
@@ -107,14 +128,14 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
     }
 
     /// In case if main streams are finished at current iteration, start processing delayed streams.
-    if (skip_delayed && (num_finished + num_delayed) >= port_pairs.size())
+    if (skip_delayed && (num_finished_pairs + num_delayed_ports) >= port_pairs.size())
     {
         for (auto & pair : port_pairs)
             if (pair.is_delayed)
                 need_data = processPair(pair) || need_data;
     }
 
-    if (num_finished == port_pairs.size())
+    if (num_finished_pairs == port_pairs.size())
         return Status::Finished;
 
     if (need_data)
