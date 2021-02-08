@@ -104,7 +104,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool
 {
     ReplicaStatePtr replica = nullptr;
     int index = -1;
-    
+
     if (start_new_connection)
     {
         /// Try to start establishing connection to the new replica.

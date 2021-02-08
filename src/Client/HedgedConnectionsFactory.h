@@ -75,7 +75,7 @@ public:
     std::vector<Connection *> getManyConnections(PoolMode pool_mode);
 
     /// Try to get connection to the new replica. If start_new_connection is true, we start establishing connection
-    /// with the new replica. Process all current events in epoll (connections, timeouts), 
+    /// with the new replica. Process all current events in epoll (connections, timeouts),
     /// if there is no events in epoll and blocking is false, return NOT_READY.
     /// Returned state might be READY, NOT_READY and CANNOT_CHOOSE.
     /// If state is READY, replica connection will be written in connection_out.
