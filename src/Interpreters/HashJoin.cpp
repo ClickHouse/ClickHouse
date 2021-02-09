@@ -1267,6 +1267,9 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::setTotals(const Block & block)
 {
+    if (!block)
+        return;
+
     if (has_totals.exchange(2))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set totals for HashJoin second time");
 

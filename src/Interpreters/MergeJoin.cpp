@@ -487,6 +487,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
 void MergeJoin::setTotals(const Block & totals_block)
 {
+    if (!totals_block)
+        return;
+
     if (has_totals.exchange(2))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set totals for MergeJoin second time");
 
