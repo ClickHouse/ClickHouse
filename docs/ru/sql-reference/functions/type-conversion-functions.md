@@ -497,7 +497,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 accurateCastOrNull(x, T)
 ```
 
-**Parameters**
+**Параметры**
 
 -   `x` — входное значение.
 -   `T` — имя возвращаемого типа данных.
