@@ -90,6 +90,8 @@ ActionsDAGPtr addMissingDefaults(
     if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context))
         actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
     else
+        /// Removes unused columns and reorders result.
+        /// The same is done in evaluateMissingDefaults if not empty dag is returned.
         actions->removeUnusedActions(required_columns.getNames());
 
     return actions;
