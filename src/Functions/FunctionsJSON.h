@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <ext/range.h>
+#include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
 #if !defined(ARCADIA_BUILD)
@@ -507,11 +508,20 @@ public:
         }
         else if (element.isDouble())
         {
-            if (!accurate::convertNumeric(element.getDouble(), value))
+            if constexpr (std::is_floating_point_v<NumberType>)
+            {
+                /// We permit inaccurate conversion of double to float.
+                /// Example: double 0.1 from JSON is not representable in float.
+                /// But it will be more convenient for user to perform conversion.
+                value = element.getDouble();
+            }
+            else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
         else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
+        {
             value = static_cast<NumberType>(element.getBool());
+        }
         else
             return false;
 

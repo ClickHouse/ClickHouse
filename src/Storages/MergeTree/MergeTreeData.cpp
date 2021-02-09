@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
@@ -3620,6 +3621,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     const auto data_parts = getDataParts();
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
+    String backup_path = shadow_path + backup_name + "/";
+
+    for (const auto & disk : getStoragePolicy()->getDisks())
+        disk->onFreeze(backup_path);
 
     PartitionCommandsResultInfo result;
 
@@ -3629,11 +3634,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
         if (!matcher(part))
             continue;
 
-        part->volume->getDisk()->createDirectories(shadow_path);
-
-        String backup_path = shadow_path + backup_name + "/";
-
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
+
+        part->volume->getDisk()->createDirectories(backup_path);
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
         if (auto part_in_memory = asInMemoryPart(part))
@@ -3749,18 +3752,6 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
     }
-}
-
-bool MergeTreeData::selectPartsAndMove()
-{
-    if (parts_mover.moves_blocker.isCancelled())
-        return false;
-
-    auto moving_tagger = selectPartsForMove();
-    if (moving_tagger->parts_to_move.empty())
-        return false;
-
-    return moveParts(std::move(moving_tagger));
 }
 
 std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
@@ -3949,6 +3940,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
     return NamesAndTypesList{
         NameAndTypePair("_part", std::make_shared<DataTypeString>()),
         NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+        NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
     };

@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
 
@@ -3700,7 +3699,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     /// We clear all old parts after stopping all background operations. It's
     /// important, because background operations can produce temporary parts
-    /// which will remove themselves in their descrutors. If so, we may have
+    /// which will remove themselves in their destructors. If so, we may have
     /// race condition between our remove call and background process.
     clearOldPartsFromFilesystem(true);
 }

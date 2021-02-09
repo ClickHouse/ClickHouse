@@ -19,7 +19,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -219,8 +219,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
         }
     }
 
-    ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-    copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    if (!read_buffers_raw_ptr.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    }
 }
 
 
