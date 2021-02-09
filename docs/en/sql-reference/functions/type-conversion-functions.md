@@ -492,8 +492,9 @@ Result:
 
 ## accurateCast(x, T) {#type_conversion_function-accurate-cast}
 
-Converts `x` to the `T` data type. The differente from [cast(x, T)](#type_conversion_function-cast) is that `accurateCast`
-does not allow overflow of numeric types during cast if type value `x` does not fit bounds of type `T`.
+Converts `x` to the `T` data type. 
+
+The difference from [cast(x, T)](#type_conversion_function-cast) is that `accurateCast` does not allow overflow of numeric types during cast if type value `x` does not fit the bounds of type `T`. For example, `accurateCast(-1, 'UInt8')` throws an exception.
 
 **Example**
 
