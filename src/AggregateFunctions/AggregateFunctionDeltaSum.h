@@ -15,8 +15,6 @@
 
 namespace DB
 {
-template <typename T>
-using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
 template <typename T>
 struct AggregationFunctionDeltaSumData
@@ -47,7 +45,7 @@ public:
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        auto value = assert_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData()[row_num];
+        auto value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
 
         if ((this->data(place).last < value) && this->data(place).seen_last)
         {
