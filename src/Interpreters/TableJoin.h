@@ -18,11 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TYPE_MISMATCH;
-}
-
 class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
