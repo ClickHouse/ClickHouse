@@ -49,8 +49,10 @@ private:
     bool finished = false;
     bool commit_in_suffix;
 
+    const Block result_header;
     const Block non_virtual_header;
     const Block virtual_header;
+    bool auto_append_error_column = false;
 };
 
 }

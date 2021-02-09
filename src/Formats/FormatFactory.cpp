@@ -290,6 +290,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
+    params.auto_append_error_column = format_settings.auto_append_error_column;
 
     auto format = input_getter(buf, sample, params, format_settings);
 

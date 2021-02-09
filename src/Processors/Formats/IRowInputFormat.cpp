@@ -50,6 +50,9 @@ Chunk IRowInputFormat::generate()
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
 
+    auto append_error_column = params.auto_append_error_column;
+    auto & err_column = columns.back();
+
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
@@ -98,36 +101,53 @@ Chunk IRowInputFormat::generate()
                 if (!isParseError(e.code()))
                     throw;
 
-                if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
-                    throw;
-
-                ++num_errors;
-                Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
-
-                if (num_errors > params.allow_errors_num
-                    && current_error_ratio > params.allow_errors_ratio)
+                if (!append_error_column)
                 {
-                    e.addMessage("(Already have " + toString(num_errors) + " errors"
-                        " out of " + toString(total_rows) + " rows"
-                        ", which is " + toString(current_error_ratio) + " of all rows)");
-                    throw;
+                    if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
+                        throw;
+
+                    ++num_errors;
+                    Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
+
+                    if (num_errors > params.allow_errors_num
+                            && current_error_ratio > params.allow_errors_ratio)
+                    {
+                        e.addMessage("(Already have " + toString(num_errors) + " errors"
+                                " out of " + toString(total_rows) + " rows"
+                                ", which is " + toString(current_error_ratio) + " of all rows)");
+                        throw;
+                    }
+
+                    if (!allowSyncAfterError())
+                    {
+                        e.addMessage("(Input format doesn't allow to skip errors)");
+                        throw;
+                    }
+
+                    syncAfterError();
+
+                    /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
+
+                    for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                    {
+                        auto & column = columns[column_idx];
+                        if (column->size() > num_rows)
+                            column->popBack(column->size() - num_rows);
+                    }
                 }
-
-                if (!allowSyncAfterError())
+                else
                 {
-                    e.addMessage("(Input format doesn't allow to skip errors)");
-                    throw;
-                }
-
-                syncAfterError();
-
-                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
-
-                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                {
-                    auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
+                    err_column->insert(e.message());
+                    auto current_num_rows = err_column->size();
+                    for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                    {
+                        auto & column = columns[column_idx];
+                        if (column->size() < current_num_rows)
+                        {
+                            column->insertDefault();
+                        }
+                    }
+                    syncAfterError();
                 }
             }
         }
@@ -187,6 +207,7 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
+    num_rows = columns.front()->size();
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;

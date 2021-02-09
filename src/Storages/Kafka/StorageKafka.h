@@ -64,6 +64,8 @@ public:
     const auto & getFormatName() const { return format_name; }
 
     NamesAndTypesList getVirtuals() const override;
+    Names getVirtualColumnNames() const;
+    bool getAutoAppendErrorColumn() const { return kafka_settings->kafka_auto_append_error_column > 0; }
 protected:
     StorageKafka(
         const StorageID & table_id_,

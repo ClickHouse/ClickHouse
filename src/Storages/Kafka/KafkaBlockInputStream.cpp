@@ -7,6 +7,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -18,6 +19,17 @@ namespace ErrorCodes
 // with default poll timeout (500ms) it will give about 5 sec delay for doing 10 retries
 // when selecting from empty topic
 const auto MAX_FAILED_POLL_ATTEMPTS = 10;
+
+Block appendErrorColumn(const bool auto_append_error_column, const Block & result)
+{
+    auto res = result;
+    if (auto_append_error_column)
+    {
+        auto err_column_type = std::make_shared<DataTypeString>();
+        res.insert({err_column_type->createColumn(), err_column_type, "_error"});
+    }
+    return res;
+}
 
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_,
@@ -34,9 +46,10 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-            {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}, storage.getVirtuals(), storage.getStorageID()))
+    , result_header(metadata_snapshot->getSampleBlockNonMaterialized())
+    , non_virtual_header(appendErrorColumn(storage.getAutoAppendErrorColumn(), result_header))
+    , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
+    , auto_append_error_column(storage.getAutoAppendErrorColumn())
 {
 }
 
@@ -82,8 +95,19 @@ Block KafkaBlockInputStream::readImpl()
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
+    size_t error_column_index = -1;
+    size_t error_column_index_in_virtual = -1;
+    if (auto_append_error_column)
+    {
+        error_column_index = result_columns.size() - 1;
+        error_column_index_in_virtual = virtual_columns.size() - 1;
+    }
+
+    FormatSettings settings;
+    settings.auto_append_error_column = auto_append_error_column;
+
     auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
+        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size, settings);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
@@ -119,7 +143,14 @@ Block KafkaBlockInputStream::readImpl()
                     auto columns = chunk.detachColumns();
                     for (size_t i = 0, s = columns.size(); i < s; ++i)
                     {
-                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+                        if (i != error_column_index)
+                        {
+                            result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+                        }
+                        else
+                        {
+                            virtual_columns[error_column_index_in_virtual]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+                        }
                     }
                     break;
                 }
@@ -155,6 +186,7 @@ Block KafkaBlockInputStream::readImpl()
             auto partition     = buffer->currentPartition();
             auto timestamp_raw = buffer->currentTimestamp();
             auto header_list   = buffer->currentHeaderList();
+            auto payload       = buffer->currentPayload();
 
             Array headers_names;
             Array headers_values;
@@ -189,6 +221,7 @@ Block KafkaBlockInputStream::readImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                virtual_columns[8]->insert(payload);
             }
 
             total_rows = total_rows + new_rows;
@@ -223,7 +256,11 @@ Block KafkaBlockInputStream::readImpl()
     // i.e. will not be stored anythere
     // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
-    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
+    if (auto_append_error_column)
+    {
+        result_columns.pop_back();
+    }
+    auto result_block  = result_header.cloneWithColumns(std::move(result_columns));
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
