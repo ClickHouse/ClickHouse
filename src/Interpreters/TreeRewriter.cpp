@@ -425,6 +425,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         if (is_asof)
             data.asofToJoinKeys();
+        else if (!data.new_on_expression_valid)
+            throw Exception("JOIN expects left and right joined keys from two joined table in ON section. Unexpected '" + queryToString(data.new_on_expression) + "'",
+                ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         else if (data.new_where_conditions != nullptr)
         {
             table_join.on_expression = data.new_on_expression;

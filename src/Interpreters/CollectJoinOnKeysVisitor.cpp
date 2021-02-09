@@ -80,6 +80,9 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(left, right, data);
 
+        if (table_numbers.first != table_numbers.second && table_numbers.first > 0 && table_numbers.second > 0)
+            data.new_on_expression_valid = true;
+
         /**
           * if this is an inner join and the expression related to less than 2 tables, then move it to WHERE
           */
@@ -108,6 +111,9 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             ASTPtr right = func.arguments->children.at(1);
             auto table_numbers = getTableNumbers(left, right, data);
 
+            if (table_numbers.first != table_numbers.second && table_numbers.first > 0 && table_numbers.second > 0)
+                data.new_on_expression_valid = true;
+
             if (data.kind == ASTTableJoin::Kind::Inner
                 && (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0))
             {
@@ -116,7 +122,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                 else
                     data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
 
-		return;
+                return;
             }
             else
             {
@@ -127,7 +133,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
         if (data.asof_left_key || data.asof_right_key)
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+                ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
