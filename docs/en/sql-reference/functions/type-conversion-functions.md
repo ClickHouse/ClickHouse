@@ -559,9 +559,9 @@ Query:
 
 ``` sql
 SELECT
-    cast(-1, 'UInt8') as uint8,
-    cast(128, 'Int8') as int8,
-    cast('Test', 'FixedString(2)') as fixed_string;
+    accurateCastOrNull(-1, 'UInt8') as uint8,
+    accurateCastOrNull(128, 'Int8') as int8,
+    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string;
 ```
 
 Result:
