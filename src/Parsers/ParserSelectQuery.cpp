@@ -200,7 +200,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// WITH ROLLUP, CUBE, GROU PING SETS or TOTALS
+    /// WITH ROLLUP, CUBE, GROUPING SETS or TOTALS
     if (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
