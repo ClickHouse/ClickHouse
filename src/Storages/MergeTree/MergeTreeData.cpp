@@ -3754,18 +3754,6 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-bool MergeTreeData::selectPartsAndMove()
-{
-    if (parts_mover.moves_blocker.isCancelled())
-        return false;
-
-    auto moving_tagger = selectPartsForMove();
-    if (moving_tagger->parts_to_move.empty())
-        return false;
-
-    return moveParts(std::move(moving_tagger));
-}
-
 std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
 {
     if (parts_mover.moves_blocker.isCancelled())
