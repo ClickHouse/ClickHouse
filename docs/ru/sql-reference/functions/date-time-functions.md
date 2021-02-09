@@ -686,7 +686,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g');
 
 ## FROM\_UNIXTIME {#fromunixtime}
 
-Функция преобразует метку времени Unix в дату. 
+Функция преобразует Unix timestamp в календарную дату и время. 
 
 **Примеры**
 
