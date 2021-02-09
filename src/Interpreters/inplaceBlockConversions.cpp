@@ -105,12 +105,7 @@ ActionsDAGPtr createExpressions(
 
     if (save_unneeded_columns)
     {
-        Names required_names;
-        required_names.reserve(required_columns.size());
-        for (const auto & column : required_columns)
-            required_names.push_back(column.name);
-
-        dag->removeUnusedActions(required_names);
+        dag->removeUnusedActions(required_columns.getNames());
         dag->addMaterializingOutputActions();
     }
 

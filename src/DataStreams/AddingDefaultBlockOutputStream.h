@@ -25,7 +25,6 @@ public:
     AddingDefaultBlockOutputStream(
         const BlockOutputStreamPtr & output_,
         const Block & header_,
-        const Block & output_block_,
         const ColumnsDescription & columns_,
         const Context & context_);
 
