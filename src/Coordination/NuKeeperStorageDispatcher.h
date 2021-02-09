@@ -14,6 +14,7 @@
 #include <common/logger_useful.h>
 #include <functional>
 #include <Coordination/NuKeeperServer.h>
+#include <Coordination/CoordinationSettings.h>
 
 
 namespace DB
@@ -25,10 +26,9 @@ class NuKeeperStorageDispatcher
 {
 
 private:
-    Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
-
     std::mutex push_request_mutex;
 
+    CoordinationSettingsPtr coordination_settings;
     using RequestsQueue = ConcurrentBoundedQueue<NuKeeperStorage::RequestForSession>;
     RequestsQueue requests_queue{1};
     ResponsesQueue responses_queue;
