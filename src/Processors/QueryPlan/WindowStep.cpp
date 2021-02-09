@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
