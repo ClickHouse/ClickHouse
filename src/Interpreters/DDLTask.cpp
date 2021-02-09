@@ -320,7 +320,7 @@ std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from
     return query_context;
 }
 
-String DatabaseReplicatedTask::getLogEntryName(UInt32 log_entry_number)
+String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
     constexpr size_t seq_node_digits = 10;
     String number = toString(log_entry_number);
@@ -328,7 +328,7 @@ String DatabaseReplicatedTask::getLogEntryName(UInt32 log_entry_number)
     return name;
 }
 
-UInt32 DatabaseReplicatedTask::getLogEntryNumber(const String & log_entry_name)
+UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 {
     constexpr const char * name = "query-";
     assert(startsWith(log_entry_name, name));

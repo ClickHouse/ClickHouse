@@ -86,8 +86,8 @@ private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
-    void onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr);
+    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
 
@@ -95,8 +95,6 @@ private:
     String shard_name;
     String replica_name;
     String replica_path;
-
-    UInt32 log_entry_to_execute;
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 

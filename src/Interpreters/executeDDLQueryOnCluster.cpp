@@ -277,7 +277,6 @@ Block DDLQueryStatusInputStream::readImpl()
                     status.tryDeserializeText(status_data);
             }
 
-            //FIXME
             String host = host_id;
             UInt16 port = 0;
             if (by_hostname)

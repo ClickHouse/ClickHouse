@@ -101,6 +101,8 @@ struct DDLTaskBase
     inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
     inline String getShardNodePath() const { return entry_path + "/shards/" + getShardID(); }
 
+    static String getLogEntryName(UInt32 log_entry_number);
+    static UInt32 getLogEntryNumber(const String & log_entry_name);
 };
 
 struct DDLTask : public DDLTaskBase
@@ -131,9 +133,6 @@ struct DatabaseReplicatedTask : public DDLTaskBase
 
     String getShardID() const override;
     std::unique_ptr<Context> makeQueryContext(Context & from_context) override;
-
-    static String getLogEntryName(UInt32 log_entry_number);
-    static UInt32 getLogEntryNumber(const String & log_entry_name);
 
     DatabaseReplicated * database;
 };

@@ -451,10 +451,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
 
 void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 {
-    DB::ReadBufferFromString in(entry_name);
-    DB::assertString("query-", in);
-    UInt64 id;
-    readText(id, in);
+    UInt64 id = DDLTaskBase::getLogEntryNumber(entry_name);
     auto prev_id = max_id.load(std::memory_order_relaxed);
     while (prev_id < id)
     {
@@ -744,15 +741,12 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 }
 
 
-void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
+void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 {
     LOG_DEBUG(log, "Cleaning queue");
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir);
     filterAndSortQueueNodes(queue_nodes);
-
-    size_t num_outdated_nodes = (queue_nodes.size() > max_tasks_in_queue) ? queue_nodes.size() - max_tasks_in_queue : 0;
-    auto first_non_outdated_node = queue_nodes.begin() + num_outdated_nodes;
 
     for (auto it = queue_nodes.cbegin(); it < queue_nodes.cend(); ++it)
     {
@@ -772,15 +766,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             if (!zookeeper->exists(node_path, &stat))
                 continue;
 
-            /// Delete node if its lifetime is expired (according to task_max_lifetime parameter)
-            constexpr UInt64 zookeeper_time_resolution = 1000;
-            Int64 zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
-            bool node_lifetime_is_expired = zookeeper_time_seconds + task_max_lifetime < current_time_seconds;
-
-            /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
-            bool node_is_outside_max_window = it < first_non_outdated_node;
-
-            if (!node_lifetime_is_expired && !node_is_outside_max_window)
+            if (!canRemoveQueueEntry(node_name, stat))
                 continue;
 
             /// Skip if there are active nodes (it is weak guard)
@@ -799,10 +785,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 continue;
             }
 
-            if (node_lifetime_is_expired)
-                LOG_INFO(log, "Lifetime of task {} is expired, deleting it", node_name);
-            else if (node_is_outside_max_window)
-                LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
+            LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
 
             /// Deleting
             {
@@ -827,6 +810,19 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
     }
 }
 
+bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat)
+{
+    /// Delete node if its lifetime is expired (according to task_max_lifetime parameter)
+    constexpr UInt64 zookeeper_time_resolution = 1000;
+    Int64 zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
+    bool node_lifetime_is_expired = zookeeper_time_seconds + task_max_lifetime < Poco::Timestamp().epochTime();
+
+    /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
+    UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
+    bool node_is_outside_max_window = entry_number < max_id.load(std::memory_order_relaxed) - max_tasks_in_queue;
+
+    return node_lifetime_is_expired || node_is_outside_max_window;
+}
 
 /// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper)
@@ -927,6 +923,7 @@ void DDLWorker::runMainThread()
             worker_pool = std::make_unique<ThreadPool>(pool_size);
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
+        last_skipped_entry_name.reset();
         max_id = 0;
     };
 

@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -105,8 +104,6 @@ DatabaseReplicated::DatabaseReplicated(
             throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
                             "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                             replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
-
-        log_entry_to_execute = parse<UInt32>(current_zookeeper->get(replica_path + "/log_ptr"));
     }
     else
     {
@@ -232,9 +229,6 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
-    /// When creating new replica, use latest snapshot version as initial value of log_pointer
-    //log_entry_to_execute = 0;   //FIXME
-
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
     auto host_id = getHostID(global_context, db_uuid);
 
@@ -264,40 +258,6 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, global_context);
     ddl_worker->startup();
 }
-
-void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper)
-{
-    /// We cannot execute next entry of replication log. Possible reasons:
-    /// 1. Replica is staled, some entries were removed by log cleanup process.
-    ///    In this case we should recover replica from the last snapshot.
-    /// 2. Replication log is broken due to manual operations with ZooKeeper or logical error.
-    ///    In this case we just stop replication without any attempts to recover it automatically,
-    ///    because such attempts may lead to unexpected data removal.
-
-    constexpr const char * name = "query-";
-    if (!startsWith(entry_name, name))
-        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Unexpected entry in replication log: {}", entry_name);
-
-    UInt32 entry_number;
-    if (!tryParse(entry_number, entry_name.substr(strlen(name))))
-        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Cannot parse number of replication log entry {}", entry_name);
-
-    if (entry_number < log_entry_to_execute)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} already executed, current pointer is {}", entry_number, log_entry_to_execute);
-
-    /// Entry name is valid. Let's get min log pointer to check if replica is staled.
-    UInt32 min_snapshot = parse<UInt32>(zookeeper->get(zookeeper_path + "/min_log_ptr"));   // FIXME
-
-    if (log_entry_to_execute < min_snapshot)
-    {
-        recoverLostReplica(zookeeper, 0);   //FIXME log_pointer
-        return;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover replica, probably it's a bug. "
-                                               "Got log entry '{}' when expected entry number {}");
-}
-
 
 BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_context)
 {
@@ -335,22 +295,25 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_
 }
 
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr)
 {
-    //LOG_WARNING(log, "Will recover replica");
+    bool new_replica = our_log_ptr == 0;
+    if (new_replica)
+        LOG_INFO(log, "Will create new replica from log pointer {}", max_log_ptr);
+    else
+        LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
 
-    //FIXME drop old tables
+    if (new_replica && !empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's new replica, but database is not empty");
 
-    String snapshot_metadata_path = zookeeper_path + "/metadata";
-    Strings tables_in_snapshot = current_zookeeper->getChildren(snapshot_metadata_path);
-    snapshot_metadata_path += '/';
-    from_snapshot = parse<UInt32>(current_zookeeper->get(zookeeper_path + "/max_log_ptr"));
+    if (!new_replica)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Automatic replica recovery is not implemented");
 
-    for (const auto & table_name : tables_in_snapshot)
+    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
+
+    for (const auto & name_and_meta : table_name_to_metadata)
     {
-        //FIXME It's not atomic. We need multiget here (available since ZooKeeper 3.6.0).
-        String query_text = current_zookeeper->get(snapshot_metadata_path + table_name);
-        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, query_text);
+        auto query_ast = parseQueryFromMetadataInZooKeeper(name_and_meta.first, name_and_meta.second);
 
         Context query_context = global_context;
         query_context.makeQueryContext();
@@ -358,14 +321,60 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context.setCurrentDatabase(database_name);
         query_context.setCurrentQueryId(""); // generate random query_id
 
-        //FIXME
-        DatabaseCatalog::instance().waitTableFinallyDropped(query_ast->as<ASTCreateQuery>()->uuid);
-
         LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
         InterpreterCreateQuery(query_ast, query_context).execute();
     }
 
-    current_zookeeper->set(replica_path + "/log_ptr", toString(from_snapshot));
+    current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
+}
+
+std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)
+{
+    std::map<String, String> table_name_to_metadata;
+    constexpr int max_retries = 10;
+    int iteration = 0;
+    while (++iteration <= max_retries)
+    {
+        table_name_to_metadata.clear();
+        LOG_DEBUG(log, "Trying to get consistent metadata snapshot for log pointer {}", max_log_ptr);
+        Strings table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
+
+        std::vector<zkutil::ZooKeeper::FutureGet> futures;
+        futures.reserve(table_names.size());
+        for (const auto & table : table_names)
+            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/metadata/" + table));
+
+        for (size_t i = 0; i < table_names.size(); ++i)
+        {
+            auto res = futures[i].get();
+            if (res.error != Coordination::Error::ZOK)
+                break;
+            table_name_to_metadata.emplace(table_names[i], res.data);
+        }
+
+        UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+        if (new_max_log_ptr == max_log_ptr && table_names.size() == table_name_to_metadata.size())
+            break;
+
+        if (max_log_ptr < new_max_log_ptr)
+        {
+            LOG_DEBUG(log, "Log pointer moved from {} to {}, will retry", max_log_ptr, new_max_log_ptr);
+            max_log_ptr = new_max_log_ptr;
+        }
+        else
+        {
+            assert(max_log_ptr == new_max_log_ptr);
+            assert(table_names.size() != table_name_to_metadata.size());
+            LOG_DEBUG(log, "Cannot get metadata of some tables due to ZooKeeper error, will retry");
+        }
+    }
+
+    if (max_retries < iteration)
+        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Cannot get consistent metadata snapshot");
+
+    LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
+
+    return table_name_to_metadata;
 }
 
 ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query)
