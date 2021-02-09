@@ -35,15 +35,6 @@ private:
             match_space = obj.match_space;
         }
         SpanInfo& operator=(const SpanInfo& obj) = default;
-        // {
-        //     if(this == &obj)
-        //     {
-        //         return *this;
-        //     }
-        //     id = obj.id;
-        //     match_space = obj.match_space;
-        //     return (*this);
-        // }
 
         unsigned int id;
         std::pair<unsigned long long, unsigned long long> match_space;  // NOLINT
@@ -172,7 +163,6 @@ private:
                 }
                 case 1:
                 {
-                    // if(!matches->copy_stack.empty() && matches->copy_stack.back().id == 11 && to == matches->copy_stack.back().match_space.second)
                     if (matches->set_semi)
                     {
                         switch (matches->semi_ptr.id)
@@ -201,7 +191,6 @@ private:
                                     }
                                 }
                                 popArea(matches->copy_stack, matches->semi_ptr.match_space.first, to);
-                                // if(matches->copy_stack.empty() || matches->semi_ptr.match_space.first >= matches->copy_stack.back().match_space.second)
                                 matches->copy_stack.push_back(SpanInfo(0, std::make_pair(matches->semi_ptr.match_space.first, to)));
                                 matches->set_semi = false;
                                 break;
@@ -231,7 +220,6 @@ private:
                                     complete_zone.id = matches->semi_ptr.id;
                                     complete_zone.match_space.first = matches->semi_ptr.match_space.first;
                                 }
-                                // if(matches->copy_stack.empty() || complete_zone.match_space.first >= matches->copy_stack.back().match_space.second)
                                 popArea(matches->copy_stack, complete_zone.match_space.first, complete_zone.match_space.second);
                                 matches->copy_stack.push_back(complete_zone);
                                 matches->set_semi = false;
@@ -282,7 +270,6 @@ private:
             else
             {
                 popArea(matches->tag_stack, from, to);
-                // if(matches->tag_stack.empty() || from >= matches->tag_stack.back().match_space.second)
                 matches->tag_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
             }
         }
@@ -329,7 +316,6 @@ private:
                 }
                 case 1:
                 {
-                    // if(!matches->copy_stack.empty() && matches->copy_stack.back().id == 11 && to == matches->copy_stack.back().match_space.second)
                     if (matches->set_semi)
                     {
                         switch (matches->semi_ptr.id)
@@ -358,7 +344,6 @@ private:
                                     }
                                 }
                                 popArea(matches->copy_stack, matches->semi_ptr.match_space.first, to);
-                                // if(matches->copy_stack.empty() || matches->semi_ptr.match_space.first >= matches->copy_stack.back().match_space.second)
                                 matches->copy_stack.push_back(SpanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.match_space.first, to)));
                                 matches->set_semi = false;
                                 break;
@@ -387,7 +372,6 @@ private:
                                     complete_zone.id = matches->semi_ptr.id;
                                     complete_zone.match_space.first = matches->semi_ptr.match_space.first;
                                 }
-                                // if(matches->copy_stack.empty() || complete_zone.match_space.first >= matches->copy_stack.back().match_space.second)
                                 popArea(matches->copy_stack, complete_zone.match_space.first, complete_zone.match_space.second);
                                 matches->copy_stack.push_back(complete_zone);
                                 matches->set_semi = false;
@@ -459,10 +443,6 @@ public:
         for (size_t off = 0; off < src_offsets.size(); ++off)
         {
             hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &match_zoneall);
-            // for (size_t i = 0; i < match_zoneall.tag_stack.size(); ++i)
-            // {
-            //     std::cout << match_zoneall.tag_stack[i].id << " " << match_zoneall.tag_stack[i].match_space.first << " " << match_zoneall.tag_stack[i].match_space.second << std::endl;
-            // }
             if (match_zoneall.is_finding_cdata)
             {
                 dealCommonTag(&match_zoneall);
