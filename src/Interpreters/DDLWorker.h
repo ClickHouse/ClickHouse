@@ -24,6 +24,11 @@ namespace Poco
     namespace Util { class AbstractConfiguration; }
 }
 
+namespace Coordination
+{
+    struct Stat;
+}
+
 namespace DB
 {
 class ASTAlterQuery;
@@ -94,6 +99,7 @@ protected:
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
+    virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
 
     /// Init task node
     static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);

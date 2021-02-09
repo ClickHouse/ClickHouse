@@ -8,7 +8,7 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 main_node = cluster.add_instance('main_node', main_configs=['configs/config.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
-dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 2})
+dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/config.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 2})
 competing_node = cluster.add_instance('competing_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 3})
 snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
 snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
@@ -100,9 +100,12 @@ def test_alters_from_different_replicas(started_cluster):
 
     main_node.query("CREATE TABLE testdb.dist AS testdb.concurrent_test ENGINE = Distributed(cluster, testdb, concurrent_test, CounterID)")
 
-    dummy_node.kill_clickhouse(stop_start_wait_sec=0)
+    dummy_node.stop_clickhouse(kill=True)
 
-    competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;")
+    settings = {"distributed_ddl_task_timeout": 10}
+    assert "There are 1 unfinished hosts (0 of them are currently active)" in \
+        competing_node.query_and_get_error("ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;", settings=settings)
+    dummy_node.start_clickhouse()
     main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;")
     competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;")
     main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;")

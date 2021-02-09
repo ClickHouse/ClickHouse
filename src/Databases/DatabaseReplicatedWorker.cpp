@@ -45,11 +45,14 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
-    UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
+    String log_ptr_str = current_zookeeper->get(database->replica_path + "/log_ptr");
+    UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
     UInt32 max_log_ptr = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-    UInt32 logs_to_keep = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    logs_to_keep = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
     if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
-        database->recoverLostReplica(current_zookeeper, 0);
+        database->recoverLostReplica(current_zookeeper, our_log_ptr, max_log_ptr);
+    else
+        last_skipped_entry_name.emplace(log_ptr_str);
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
@@ -237,6 +240,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     }
 
     return task;
+}
+
+bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
+{
+    UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
+    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(database->zookeeper_path + "/max_log_ptr"));
+    return entry_number + logs_to_keep < max_log_ptr;
 }
 
 }
