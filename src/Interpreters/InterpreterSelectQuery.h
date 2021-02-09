@@ -149,6 +149,7 @@ private:
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
+    void executeGroupingSets(QueryPlan & query_plan);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *

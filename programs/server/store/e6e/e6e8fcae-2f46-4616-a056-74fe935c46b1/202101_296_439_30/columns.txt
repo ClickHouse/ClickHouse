@@ -1,0 +1,7 @@
+columns format version: 1
+5 columns:
+`event_date` Date
+`event_time` DateTime
+`event_time_microseconds` DateTime64(6)
+`name` String
+`value` Float64
