@@ -24,6 +24,8 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     for (size_t i = 0; i != shuffled_pools.size(); ++i)
         connection_establishers.emplace_back(shuffled_pools[i].pool, &timeouts, settings, table_to_check.get(), log);
 
+    replicas_timeouts.resize(shuffled_pools.size());
+
     max_tries
         = (settings ? size_t{settings->connections_with_failover_max_tries} : size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
 
@@ -57,6 +59,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 
     std::vector<Connection *> connections;
     connections.reserve(max_entries);
+    Connection * connection = nullptr;
 
     /// Try to start establishing connections with max_entries replicas.
     int index;
@@ -66,14 +69,13 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         if (index == -1)
             break;
 
-        ReplicaStatePtr replica = startEstablishingConnection(index);
-        if (replica->state == State::READY)
-            connections.push_back(replica->connection);
+        auto state = startEstablishingConnection(index, connection);
+        if (state == State::READY)
+            connections.push_back(connection);
     }
 
     /// Process connections until we get enough READY connections
     /// (work asynchronously with all connections we started).
-    Connection * connection = nullptr;
     while (connections.size() < max_entries)
     {
         auto state = getNextConnection(false, true, connection);
@@ -102,7 +104,6 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool start_new_connection, bool blocking, Connection *& connection_out)
 {
-    ReplicaStatePtr replica = nullptr;
     int index = -1;
 
     if (start_new_connection)
@@ -112,22 +113,14 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool
     {
         if (index != -1)
         {
-            replica = startEstablishingConnection(index);
-            if (replica->state == State::READY)
-            {
-                connection_out = replica->connection;
-                return State::READY;
-            }
+            State state = startEstablishingConnection(index, connection_out);
+            if (state == State::READY)
+                return state;
         }
 
-        if (!processEpollEvents(replica, blocking))
-            return State::NOT_READY;
-
-        if (replica->state == State::READY)
-        {
-            connection_out = replica->connection;
-            return State::READY;
-        }
+        State state = processEpollEvents(blocking, connection_out);
+        if (state != State::EMPTY)
+            return state;
 
         index = getNextIndex();
     }
@@ -139,22 +132,19 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::getNextConnection(bool
     if (!fallback_to_stale_replicas || !canGetNewConnection())
         return State::CANNOT_CHOOSE;
 
-    setBestUsableReplica(replica);
-    connection_out = replica->connection;
-    return replica->state;
+    return setBestUsableReplica(connection_out);
 }
 
 void HedgedConnectionsFactory::stopChoosingReplicas()
 {
-    for (auto & [fd, replica] : fd_to_replica)
+    for (auto & [fd, replica_index] : fd_to_replica_index)
     {
-        removeTimeoutsFromReplica(replica);
+        removeTimeoutsFromReplica(replica_index);
         epoll.remove(fd);
-        connection_establishers[replica->index].reset();
-        replica->reset();
+        connection_establishers[replica_index].reset();
     }
 
-    fd_to_replica.clear();
+    fd_to_replica_index.clear();
 }
 
 int HedgedConnectionsFactory::getNextIndex()
@@ -190,56 +180,54 @@ int HedgedConnectionsFactory::getNextIndex()
     return next_index;
 }
 
-HedgedConnectionsFactory::ReplicaStatePtr HedgedConnectionsFactory::startEstablishingConnection(int index)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::startEstablishingConnection(int replica_index, Connection *& connection_out)
 {
-    ReplicaStatePtr replica = createNewReplica();
-
+    State state;
     do
     {
-        ConnectionEstablisher & connection_establisher = connection_establishers[index];
+        ConnectionEstablisher & connection_establisher = connection_establishers[replica_index];
 
-        replica->state = State::NOT_READY;
-        replica->index = index;
-        indexes_in_process.insert(index);
+        state = State::NOT_READY;
+        indexes_in_process.insert(replica_index);
 
         connection_establisher.reset();
         connection_establisher.run();
 
-        if (connection_establisher.stage != ConnectionEstablisher::Stage::FAILED)
-            replica->connection = &*connection_establisher.result.entry;
+        state = processConnectionEstablisherStage(replica_index);
 
-        processConnectionEstablisherStage(replica);
-
-        if (replica->state == State::NOT_READY)
+        if (state == State::NOT_READY)
         {
             epoll.add(connection_establisher.socket_fd);
-            fd_to_replica[connection_establisher.socket_fd] = replica;
+            fd_to_replica_index[connection_establisher.socket_fd] = replica_index;
             connection_establisher.setActionBeforeDisconnect([&](int fd)
             {
                 epoll.remove(fd);
-                fd_to_replica.erase(fd);
+                fd_to_replica_index.erase(fd);
             });
-            addTimeouts(replica);
+            addTimeouts(replica_index);
         }
     }
-    while (replica->state == State::EMPTY && (index = getNextIndex()) != -1);
+    while (state == State::EMPTY && (replica_index = getNextIndex()) != -1);
 
-    return replica;
+    if (state == State::READY)
+        connection_out = &*connection_establishers[replica_index].result.entry;
+
+    return state;
 }
 
-void HedgedConnectionsFactory::processConnectionEstablisherStage(ReplicaStatePtr replica, bool remove_from_epoll)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::processConnectionEstablisherStage(int replica_index, bool remove_from_epoll)
 {
-    ConnectionEstablisher & connection_establisher = connection_establishers[replica->index];
+    ConnectionEstablisher & connection_establisher = connection_establishers[replica_index];
 
     if (connection_establisher.stage == ConnectionEstablisher::Stage::FINISHED)
     {
-        indexes_in_process.erase(replica->index);
+        indexes_in_process.erase(replica_index);
         ++entries_count;
 
         if (remove_from_epoll)
         {
             epoll.remove(connection_establisher.socket_fd);
-            fd_to_replica.erase(connection_establisher.socket_fd);
+            fd_to_replica_index.erase(connection_establisher.socket_fd);
         }
 
         if (connection_establisher.result.is_usable)
@@ -247,24 +235,28 @@ void HedgedConnectionsFactory::processConnectionEstablisherStage(ReplicaStatePtr
             ++usable_count;
             if (connection_establisher.result.is_up_to_date)
             {
-                replica->state = State::READY;
-                ready_indexes.insert(replica->index);
-                return;
+                ready_indexes.insert(replica_index);
+                return State::READY;
             }
         }
 
         /// This replica is not up to date, we will try to find up to date.
-        replica->reset();
+        return State::EMPTY;
     }
     else if (connection_establisher.stage == ConnectionEstablisher::Stage::FAILED)
-        processFailedConnection(replica);
+    {
+        processFailedConnection(replica_index);
+        return State::EMPTY;
+    }
+
+    return State::NOT_READY;
 }
 
-void HedgedConnectionsFactory::processFailedConnection(ReplicaStatePtr replica)
+void HedgedConnectionsFactory::processFailedConnection(int replica_index)
 {
-    ShuffledPool & shuffled_pool = shuffled_pools[replica->index];
+    ShuffledPool & shuffled_pool = shuffled_pools[replica_index];
     LOG_WARNING(
-        log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), connection_establishers[replica->index].fail_message);
+        log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), connection_establishers[replica_index].fail_message);
     ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
     shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
@@ -275,83 +267,78 @@ void HedgedConnectionsFactory::processFailedConnection(ReplicaStatePtr replica)
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
     }
 
-    std::string & fail_message = connection_establishers[replica->index].fail_message;
+    std::string & fail_message = connection_establishers[replica_index].fail_message;
     if (!fail_message.empty())
         fail_messages += fail_message + "\n";
 
-    indexes_in_process.erase(replica->index);
-    replica->reset();
+    indexes_in_process.erase(replica_index);
 }
 
-void HedgedConnectionsFactory::addTimeouts(ReplicaStatePtr replica)
+void HedgedConnectionsFactory::addTimeouts(int replica_index)
 {
-    addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TIMEOUT, replica);
+    addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TIMEOUT, replica_index);
 
-    auto stage = connection_establishers[replica->index].stage;
+    auto stage = connection_establishers[replica_index].stage;
     if (stage == ConnectionEstablisher::Stage::RECEIVE_HELLO)
-        addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_HELLO_TIMEOUT, replica);
+        addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_HELLO_TIMEOUT, replica_index);
     else if (stage == ConnectionEstablisher::Stage::RECEIVE_TABLES_STATUS)
-        addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TABLES_STATUS_TIMEOUT, replica);
+        addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TABLES_STATUS_TIMEOUT, replica_index);
 }
 
-void HedgedConnectionsFactory::addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica)
+void HedgedConnectionsFactory::addTimeoutToReplica(ConnectionTimeoutType type, int replica_index)
 {
     ConnectionTimeoutDescriptorPtr timeout_descriptor = createConnectionTimeoutDescriptor(type, timeouts);
     epoll.add(timeout_descriptor->timer.getDescriptor());
-    timeout_fd_to_replica[timeout_descriptor->timer.getDescriptor()] = replica;
-    replica->active_timeouts[timeout_descriptor->timer.getDescriptor()] = std::move(timeout_descriptor);
+    timeout_fd_to_replica_index[timeout_descriptor->timer.getDescriptor()] = replica_index;
+    replicas_timeouts[replica_index][timeout_descriptor->timer.getDescriptor()] = std::move(timeout_descriptor);
 }
 
-void HedgedConnectionsFactory::removeTimeoutsFromReplica(ReplicaStatePtr replica)
+void HedgedConnectionsFactory::removeTimeoutsFromReplica(int replica_index)
 {
-    for (auto & [fd, _] : replica->active_timeouts)
+    for (auto & [fd, _] : replicas_timeouts[replica_index])
     {
         epoll.remove(fd);
-        timeout_fd_to_replica.erase(fd);
+        timeout_fd_to_replica_index.erase(fd);
     }
-    replica->active_timeouts.clear();
+    replicas_timeouts[replica_index].clear();
 }
 
-bool HedgedConnectionsFactory::processEpollEvents(ReplicaStatePtr & replica, bool blocking)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(bool blocking, Connection *& connection_out)
 {
     int event_fd;
-    bool finish = false;
-    while (!finish)
+    while (true)
     {
         event_fd = getReadyFileDescriptor(blocking);
 
         /// Check if there is no events.
         if (event_fd == -1)
-            return false;
+            return State::NOT_READY;
 
-        if (fd_to_replica.find(event_fd) != fd_to_replica.end())
+        if (fd_to_replica_index.find(event_fd) != fd_to_replica_index.end())
         {
-            replica = fd_to_replica[event_fd];
-            processReplicaEvent(replica);
-            /// Check if replica is ready or we need to try next replica.
-            if (replica->state == State::READY || replica->state == State::EMPTY)
-                finish = true;
+            int replica_index = fd_to_replica_index[event_fd];
+            State state = processReplicaEvent(replica_index, connection_out);
+            /// Return only if replica is ready or we need to try next replica.
+            if (state != State::NOT_READY)
+                return state;
         }
-        else if (timeout_fd_to_replica.find(event_fd) != timeout_fd_to_replica.end())
+        else if (timeout_fd_to_replica_index.find(event_fd) != timeout_fd_to_replica_index.end())
         {
-            replica = timeout_fd_to_replica[event_fd];
-            processTimeoutEvent(replica, replica->active_timeouts[event_fd]);
-            /// Check if we need to try next replica.
-            if (replica->state == State::EMPTY)
-                finish = true;
+            int replica_index = timeout_fd_to_replica_index[event_fd];
+            /// Process received timeout. If retured values is true, we need to try new replica.
+            if (processTimeoutEvent(replica_index, replicas_timeouts[replica_index][event_fd]))
+                return State::EMPTY;
         }
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
-
-    return true;
 }
 
 int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking)
 {
-    for (auto & [fd, replica] : fd_to_replica)
-        if (replica->connection->hasReadPendingData())
-            return replica->connection->getSocket()->impl()->sockfd();
+    for (auto & [fd, replica_index] : fd_to_replica_index)
+        if (connection_establishers[replica_index].result.entry->hasReadPendingData())
+            return connection_establishers[replica_index].socket_fd;
 
     epoll_event event;
     event.data.fd = -1;
@@ -359,41 +346,44 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking)
     return event.data.fd;
 }
 
-void HedgedConnectionsFactory::processReplicaEvent(ReplicaStatePtr replica)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::processReplicaEvent(int replica_index, Connection *& connection_out)
 {
-    removeTimeoutsFromReplica(replica);
-    connection_establishers[replica->index].run();
-    processConnectionEstablisherStage(replica, true);
-    if (replica->state == State::NOT_READY)
-        addTimeouts(replica);
+    removeTimeoutsFromReplica(replica_index);
+    connection_establishers[replica_index].run();
+    State state = processConnectionEstablisherStage(replica_index, true);
+    if (state == State::NOT_READY)
+        addTimeouts(replica_index);
+    if (state == State::READY)
+        connection_out = &*connection_establishers[replica_index].result.entry;
+    return state;
 }
 
-void HedgedConnectionsFactory::processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor)
+bool HedgedConnectionsFactory::processTimeoutEvent(int replica_index, ConnectionTimeoutDescriptorPtr timeout_descriptor)
 {
     epoll.remove(timeout_descriptor->timer.getDescriptor());
-    replica->active_timeouts.erase(timeout_descriptor->timer.getDescriptor());
-    timeout_fd_to_replica[timeout_descriptor->timer.getDescriptor()];
+    replicas_timeouts[replica_index].erase(timeout_descriptor->timer.getDescriptor());
+    timeout_fd_to_replica_index[timeout_descriptor->timer.getDescriptor()];
 
     if (timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_TIMEOUT)
     {
-        removeTimeoutsFromReplica(replica);
-        int fd = replica->connection->getSocket()->impl()->sockfd();
+        removeTimeoutsFromReplica(replica_index);
+        int fd = connection_establishers[replica_index].socket_fd;
         epoll.remove(fd);
-        fd_to_replica.erase(fd);
+        fd_to_replica_index.erase(fd);
 
-        ConnectionEstablisher & connection_establisher = connection_establishers[replica->index];
+        ConnectionEstablisher & connection_establisher = connection_establishers[replica_index];
         connection_establisher.fail_message = "Receive timeout expired (" + connection_establisher.result.entry->getDescription() + ")";
         connection_establisher.resetResult();
         connection_establisher.stage = ConnectionEstablisher::Stage::FAILED;
-        processFailedConnection(replica);
+        processFailedConnection(replica_index);
+        return true;
     }
-    else if ((timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_HELLO_TIMEOUT
-             || timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_TABLES_STATUS_TIMEOUT)
-             && entries_count + indexes_in_process.size() + failed_pools_count < shuffled_pools.size())
-        replica = createNewReplica();
+
+    /// Return true if we can try to start one more connection.
+    return entries_count + indexes_in_process.size() + failed_pools_count < shuffled_pools.size();
 }
 
-void HedgedConnectionsFactory::setBestUsableReplica(ReplicaStatePtr replica)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(Connection *& connection_out)
 {
     std::vector<int> indexes(connection_establishers.size());
     for (size_t i = 0; i != indexes.size(); ++i)
@@ -412,10 +402,7 @@ void HedgedConnectionsFactory::setBestUsableReplica(ReplicaStatePtr replica)
         indexes.end());
 
     if (indexes.empty())
-    {
-        replica->state = State::CANNOT_CHOOSE;
-        return;
-    }
+        return State::CANNOT_CHOOSE;
 
     /// Sort replicas by staleness.
     std::stable_sort(
@@ -426,10 +413,9 @@ void HedgedConnectionsFactory::setBestUsableReplica(ReplicaStatePtr replica)
             return connection_establishers[lhs].result.staleness < connection_establishers[rhs].result.staleness;
         });
 
-    replica->index = indexes[0];
-    replica->connection = &*connection_establishers[indexes[0]].result.entry;
-    replica->state = State::READY;
-    ready_indexes.insert(replica->index);
+    ready_indexes.insert(indexes[0]);
+    connection_out = &*connection_establishers[indexes[0]].result.entry;
+    return State::READY;
 }
 
 ConnectionTimeoutDescriptorPtr createConnectionTimeoutDescriptor(ConnectionTimeoutType type, const ConnectionTimeouts & timeouts)

@@ -23,34 +23,31 @@ HedgedConnections::HedgedConnections(
     : hedged_connections_factory(pool_, &settings_, timeouts_, table_to_check_)
     , settings(settings_)
     , throttler(throttler_)
-    , log(&Poco::Logger::get("HedgedConnections"))
 {
     std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode);
 
-    ReplicaStatePtr replica = nullptr;
+    ReplicaState replica;
     for (size_t i = 0; i != connections.size(); ++i)
     {
-        replica = std::make_shared<ReplicaState>();
-        replica->connection = connections[i];
-        replica->offset = i;
-        replica->connection->setThrottler(throttler_);
-        int socket_fd = replica->connection->getSocket()->impl()->sockfd();
+        replica.connection = connections[i];
+        replica.connection->setThrottler(throttler_);
+        int socket_fd = replica.connection->getSocket()->impl()->sockfd();
         epoll.add(socket_fd);
-        fd_to_replica[socket_fd] = replica;
-        offset_states.push_back(OffsetState{{std::move(replica)}, 1, false});
+        fd_to_replica_location[socket_fd] = ReplicaLocation{i, 0};
+        offset_states.push_back(OffsetState{{replica}, 1, false});
     }
 
     active_connection_count = connections.size();
     offsets_with_received_first_data_packet = 0;
-    pipeline_for_new_replicas.add([throttler_](ReplicaStatePtr replica_) { replica_->connection->setThrottler(throttler_); });
+    pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
 }
 
-void HedgedConnections::Pipeline::add(std::function<void(ReplicaStatePtr replica)> send_function)
+void HedgedConnections::Pipeline::add(std::function<void(ReplicaState & replica)> send_function)
 {
     pipeline.push_back(send_function);
 }
 
-void HedgedConnections::Pipeline::run(ReplicaStatePtr replica)
+void HedgedConnections::Pipeline::run(ReplicaState & replica)
 {
     for (auto & send_func : pipeline)
         send_func(replica);
@@ -63,11 +60,11 @@ void HedgedConnections::sendScalarsData(Scalars & data)
     if (!sent_query)
         throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
-    auto send_scalars_data = [&data](ReplicaStatePtr replica) { replica->connection->sendScalarsData(data); };
+    auto send_scalars_data = [&data](ReplicaState & replica) { replica.connection->sendScalarsData(data); };
 
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
-            if (replica->connection)
+            if (replica.connection)
                 send_scalars_data(replica);
 
     pipeline_for_new_replicas.add(send_scalars_data);
@@ -83,11 +80,11 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     if (data.size() != size())
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
-    auto send_external_tables_data = [&data](ReplicaStatePtr replica) { replica->connection->sendExternalTablesData(data[0]); };
+    auto send_external_tables_data = [&data](ReplicaState & replica) { replica.connection->sendExternalTablesData(data[0]); };
 
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
-            if (replica->connection)
+            if (replica.connection)
                 send_external_tables_data(replica);
 
     pipeline_for_new_replicas.add(send_external_tables_data);
@@ -100,11 +97,11 @@ void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     if (sent_query)
         throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
 
-    auto send_ignored_part_uuids = [&uuids](ReplicaStatePtr replica) { replica->connection->sendIgnoredPartUUIDs(uuids); };
+    auto send_ignored_part_uuids = [&uuids](ReplicaState & replica) { replica.connection->sendIgnoredPartUUIDs(uuids); };
 
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
-            if (replica->connection)
+            if (replica.connection)
                 send_ignored_part_uuids(replica);
 
     pipeline_for_new_replicas.add(send_ignored_part_uuids);
@@ -127,7 +124,7 @@ void HedgedConnections::sendQuery(
     {
         for (auto & replica : offset_state.replicas)
         {
-            if (replica->connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+            if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
             {
                 disable_two_level_aggregation = true;
                 break;
@@ -137,7 +134,7 @@ void HedgedConnections::sendQuery(
             break;
     }
 
-    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaStatePtr replica)
+    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaState & replica)
     {
         Settings modified_settings = settings;
 
@@ -151,10 +148,10 @@ void HedgedConnections::sendQuery(
         if (offset_states.size() > 1)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
-            modified_settings.parallel_replica_offset = replica->offset;
+            modified_settings.parallel_replica_offset = fd_to_replica_location[replica.connection->getSocket()->impl()->sockfd()].offset;
         }
 
-        replica->connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
+        replica.connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
         addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TIMEOUT, replica);
         addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_DATA_TIMEOUT, replica);
     };
@@ -173,7 +170,7 @@ void HedgedConnections::disconnect()
 
     for (auto & offset_status : offset_states)
         for (auto & replica : offset_status.replicas)
-            if (replica->connection)
+            if (replica.connection)
                 finishProcessReplica(replica, true);
 
     if (hedged_connections_factory.hasEventsInProcess())
@@ -199,9 +196,9 @@ std::string HedgedConnections::dumpAddresses() const
     {
         for (const auto & replica : offset_state.replicas)
         {
-            if (replica->connection)
+            if (replica.connection)
             {
-                addresses += (is_first ? "" : "; ") + replica->connection->getDescription();
+                addresses += (is_first ? "" : "; ") + replica.connection->getDescription();
                 is_first = false;
             }
         }
@@ -219,8 +216,8 @@ void HedgedConnections::sendCancel()
 
     for (auto & offset_status : offset_states)
         for (auto & replica : offset_status.replicas)
-            if (replica->connection)
-                replica->connection->sendCancel();
+            if (replica.connection)
+                replica.connection->sendCancel();
 
     cancelled = true;
 }
@@ -288,15 +285,16 @@ Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
     {
         event_fd = getReadyFileDescriptor(async_callback);
 
-        if (fd_to_replica.contains(event_fd))
+        if (fd_to_replica_location.contains(event_fd))
         {
-            packet = receivePacketFromReplica(fd_to_replica[event_fd], async_callback);
+            ReplicaLocation location = fd_to_replica_location[event_fd];
+            packet = receivePacketFromReplica(location, async_callback);
             finish = true;
         }
-        else if (timeout_fd_to_replica.contains(event_fd))
+        else if (timeout_fd_to_replica_location.contains(event_fd))
         {
-            ReplicaStatePtr replica = timeout_fd_to_replica[event_fd];
-            processTimeoutEvent(replica, replica->active_timeouts[event_fd]);
+            ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
+            processTimeoutEvent(location, offset_states[location.offset].replicas[location.index].active_timeouts[event_fd]);
         }
         else if (event_fd == hedged_connections_factory.getFileDescriptor())
             tryGetNewReplica(false);
@@ -309,10 +307,11 @@ Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    for (auto & [fd, replica] : fd_to_replica)
+    for (auto & [fd, location] : fd_to_replica_location)
     {
-        if (replica->connection->hasReadPendingData())
-            return replica->connection->getSocket()->impl()->sockfd();
+        ReplicaState & replica = offset_states[location.offset].replicas[location.index];
+        if (replica.connection->hasReadPendingData())
+            return replica.connection->getSocket()->impl()->sockfd();
     }
 
     epoll_event event;
@@ -321,15 +320,16 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     return event.data.fd;
 }
 
-Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr replica, AsyncCallback async_callback)
+Packet HedgedConnections::receivePacketFromReplica(ReplicaLocation & replica_location, AsyncCallback async_callback)
 {
+    ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     removeTimeoutFromReplica(ConnectionTimeoutType::RECEIVE_TIMEOUT, replica);
-    Packet packet = replica->connection->receivePacket(std::move(async_callback));
+    Packet packet = replica.connection->receivePacket(std::move(async_callback));
     switch (packet.type)
     {
         case Protocol::Server::Data:
-            if (!offset_states[replica->offset].first_packet_of_data_received)
-                processReceivedFirstDataPacket(replica);
+            if (!offset_states[replica_location.offset].first_packet_of_data_received)
+                processReceivedFirstDataPacket(replica_location);
             addTimeoutToReplica(ConnectionTimeoutType::RECEIVE_TIMEOUT, replica);
             break;
         case Protocol::Server::PartUUIDs:
@@ -354,21 +354,21 @@ Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr replica, Asyn
     return packet;
 }
 
-void HedgedConnections::processReceivedFirstDataPacket(ReplicaStatePtr replica)
+void HedgedConnections::processReceivedFirstDataPacket(ReplicaLocation & replica_location)
 {
     /// When we receive first packet of data from replica, we stop working with replicas, that are
     /// responsible for the same offset.
-    OffsetState & offset_state = offset_states[replica->offset];
-    removeTimeoutFromReplica(ConnectionTimeoutType::RECEIVE_DATA_TIMEOUT, replica);
+    OffsetState & offset_state = offset_states[replica_location.offset];
+    removeTimeoutFromReplica(ConnectionTimeoutType::RECEIVE_DATA_TIMEOUT, offset_state.replicas[replica_location.index]);
     ++offsets_with_received_first_data_packet;
     offset_state.first_packet_of_data_received = true;
 
-    for (auto & other_replica : offset_state.replicas)
+    for (size_t i = 0; i != offset_state.replicas.size(); ++i)
     {
-        if (replica != other_replica && other_replica->connection)
+        if (i != replica_location.index && offset_state.replicas[i].connection)
         {
-            other_replica->connection->sendCancel();
-            finishProcessReplica(other_replica, true);
+            offset_state.replicas[i].connection->sendCancel();
+            finishProcessReplica(offset_state.replicas[i], true);
         }
     }
 
@@ -384,23 +384,24 @@ void HedgedConnections::processReceivedFirstDataPacket(ReplicaStatePtr replica)
     }
 }
 
-void HedgedConnections::processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor)
+void HedgedConnections::processTimeoutEvent(ReplicaLocation & replica_location, ConnectionTimeoutDescriptorPtr timeout_descriptor)
 {
+    ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     epoll.remove(timeout_descriptor->timer.getDescriptor());
-    replica->active_timeouts.erase(timeout_descriptor->timer.getDescriptor());
-    timeout_fd_to_replica.erase(timeout_descriptor->timer.getDescriptor());
+    replica.active_timeouts.erase(timeout_descriptor->timer.getDescriptor());
+    timeout_fd_to_replica_location.erase(timeout_descriptor->timer.getDescriptor());
 
     if (timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_TIMEOUT)
     {
         finishProcessReplica(replica, true);
 
         /// Check if there is no active connections with the same offset and there is no new replica in process.
-        if (offset_states[replica->offset].active_connection_count == 0 && !next_replica_in_process)
+        if (offset_states[replica_location.offset].active_connection_count == 0 && !next_replica_in_process)
             throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
     }
     else if (timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_DATA_TIMEOUT)
     {
-        offsets_queue.push(replica->offset);
+        offsets_queue.push(replica_location.offset);
         tryGetNewReplica(true);
     }
 }
@@ -413,24 +414,24 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
     /// Skip replicas that doesn't support two-level aggregation if we didn't disable it in sendQuery.
     while (state == HedgedConnectionsFactory::State::READY && !disable_two_level_aggregation
            && connection->getServerRevision(hedged_connections_factory.getConnectionTimeouts())
-               < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+              < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         state = hedged_connections_factory.getNextConnection(true, false, connection);
 
     if (state == HedgedConnectionsFactory::State::READY)
     {
         size_t offset = offsets_queue.front();
         offsets_queue.pop();
+        size_t index = offset_states[offset].replicas.size();
 
-        ReplicaStatePtr replica = std::make_shared<ReplicaState>();
-        replica->connection = connection;
-        replica->offset = offset;
-        int socket_fd = replica->connection->getSocket()->impl()->sockfd();
+        ReplicaState replica;
+        replica.connection = connection;
+        int socket_fd = replica.connection->getSocket()->impl()->sockfd();
         epoll.add(socket_fd);
-        fd_to_replica[socket_fd] = replica;
-        offset_states[offset].replicas.push_back(replica);
+        fd_to_replica_location[socket_fd] = ReplicaLocation{offset, index};
         ++offset_states[offset].active_connection_count;
         ++active_connection_count;
         pipeline_for_new_replicas.run(replica);
+        offset_states[offset].replicas.push_back(replica);
     }
     else if (state == HedgedConnectionsFactory::State::NOT_READY && !next_replica_in_process)
     {
@@ -457,50 +458,50 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
     }
 }
 
-void HedgedConnections::finishProcessReplica(ReplicaStatePtr replica, bool disconnect)
+void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool disconnect)
 {
     removeTimeoutsFromReplica(replica);
-    int socket_fd = replica->connection->getSocket()->impl()->sockfd();
+    int socket_fd = replica.connection->getSocket()->impl()->sockfd();
     epoll.remove(socket_fd);
-    --offset_states[replica->offset].active_connection_count;
-    fd_to_replica.erase(socket_fd);
+    --offset_states[fd_to_replica_location[socket_fd].offset].active_connection_count;
+    fd_to_replica_location.erase(socket_fd);
     --active_connection_count;
 
     if (disconnect)
-        replica->connection->disconnect();
-    replica->connection = nullptr;
+        replica.connection->disconnect();
+    replica.connection = nullptr;
 }
 
-void HedgedConnections::addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica)
+void HedgedConnections::addTimeoutToReplica(ConnectionTimeoutType type, ReplicaState & replica)
 {
     ConnectionTimeoutDescriptorPtr timeout_descriptor
         = createConnectionTimeoutDescriptor(type, hedged_connections_factory.getConnectionTimeouts());
     epoll.add(timeout_descriptor->timer.getDescriptor());
-    timeout_fd_to_replica[timeout_descriptor->timer.getDescriptor()]
-        = fd_to_replica[replica->connection->getSocket()->impl()->sockfd()];
-    replica->active_timeouts[timeout_descriptor->timer.getDescriptor()] = std::move(timeout_descriptor);
+    timeout_fd_to_replica_location[timeout_descriptor->timer.getDescriptor()]
+        = fd_to_replica_location[replica.connection->getSocket()->impl()->sockfd()];
+    replica.active_timeouts[timeout_descriptor->timer.getDescriptor()] = std::move(timeout_descriptor);
 }
 
-void HedgedConnections::removeTimeoutsFromReplica(ReplicaStatePtr replica)
+void HedgedConnections::removeTimeoutsFromReplica(ReplicaState & replica)
 {
-    for (auto & [fd, _] : replica->active_timeouts)
+    for (auto & [fd, _] : replica.active_timeouts)
     {
         epoll.remove(fd);
-        timeout_fd_to_replica.erase(fd);
+        timeout_fd_to_replica_location.erase(fd);
     }
-    replica->active_timeouts.clear();
+    replica.active_timeouts.clear();
 }
 
-void HedgedConnections::removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaStatePtr replica)
+void HedgedConnections::removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaState & replica)
 {
     auto it = std::find_if(
-        replica->active_timeouts.begin(), replica->active_timeouts.end(), [type](auto & value) { return value.second->type == type; });
+        replica.active_timeouts.begin(), replica.active_timeouts.end(), [type](auto & value) { return value.second->type == type; });
 
-    if (it != replica->active_timeouts.end())
+    if (it != replica.active_timeouts.end())
     {
         epoll.remove(it->first);
-        timeout_fd_to_replica.erase(it->first);
-        replica->active_timeouts.erase(it);
+        timeout_fd_to_replica_location.erase(it->first);
+        replica.active_timeouts.erase(it);
     }
 }
 
