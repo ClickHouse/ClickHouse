@@ -667,8 +667,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Frame end UNBOUNDED PRECEDING is not implemented");
                 }
-
-                node->frame.end_offset = -node->frame.end_offset;
             }
             else if (keyword_following.ignore(pos, expected))
             {

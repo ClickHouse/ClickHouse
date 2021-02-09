@@ -386,6 +386,7 @@ void WindowTransform::advanceFrameStartRangeOffset()
 #define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
 else if (typeid_cast<const TYPE *>(column)) \
 { \
+    /* NOLINT clang-tidy you're dumb, I can't put FUNCTION in braces here. */ \
     FUNCTION<TYPE>(); \
 }
 
