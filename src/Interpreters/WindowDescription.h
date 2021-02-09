@@ -17,7 +17,7 @@ class ASTFunction;
 struct WindowFunctionDescription
 {
     std::string column_name;
-    const ASTFunction * function_node;
+    const ASTFunction * function_node = nullptr;
     AggregateFunctionPtr aggregate_function;
     Array function_parameters;
     DataTypes argument_types;
