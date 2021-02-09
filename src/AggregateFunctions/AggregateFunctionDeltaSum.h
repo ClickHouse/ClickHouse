@@ -81,7 +81,7 @@ public:
         {
             // In the opposite scenario, the lhs comes after the rhs, e.g. [4, 6] [1, 2]. Since we
             // assume the input interval states are sorted by time, we assume this is a counter
-            // reset, and therefore do *not* add the difference between our first value and the 
+            // reset, and therefore do *not* add the difference between our first value and the
             // rhs last value.
 
             place_data->sum += rhs_data->sum;
@@ -99,7 +99,7 @@ public:
             place_data->sum = rhs_data->sum;
         }
 
-        // Otherwise lhs either has data or is unitialized, so we don't need to modify its values.
+        // Otherwise lhs either has data or is uninitialized, so we don't need to modify its values.
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
