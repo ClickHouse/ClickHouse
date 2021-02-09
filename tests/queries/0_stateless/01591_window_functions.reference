@@ -820,3 +820,19 @@ settings max_block_size = 3;
 8	6	10	5
 9	7	10	4
 10	8	10	3
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 preceding)
+order by x
+settings max_block_size = 4;
+0	2	10	9
+1	3	10	8
+2	4	10	7
+3	5	10	6
+4	6	10	5
+5	7	10	4
+6	8	10	3
+7	9	10	2
+8	10	10	1
+9	0	0	0
+10	0	0	0

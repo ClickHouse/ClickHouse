@@ -260,3 +260,9 @@ select x, min(x) over w, max(x) over w, count(x) over w from (
 window w as (order by x desc range between unbounded preceding and 2 following)
 order by x
 settings max_block_size = 3;
+
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 preceding)
+order by x
+settings max_block_size = 4;
