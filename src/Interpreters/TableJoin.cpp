@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
@@ -368,23 +373,30 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
 
     for (size_t i = 0; i < key_names_left.size(); ++i)
     {
-        auto ltype = left_types[key_names_left[i]];
-        auto rtype = right_types[key_names_right[i]];
+        auto ltype = left_types.find(key_names_left[i]);
+        auto rtype = right_types.find(key_names_right[i]);
+        if (ltype == left_types.end() || rtype == right_types.end())
+        {
+            /// Name mismatch, give up
+            left_type_map.clear();
+            right_type_map.clear();
+            return false;
+        }
 
-        if (JoinCommon::typesEqualUpToNullability(ltype, rtype))
+        if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
             continue;
 
         DataTypePtr supertype;
         try
         {
-            supertype = DB::getLeastSupertype({ltype, rtype});
+            supertype = DB::getLeastSupertype({ltype->second, rtype->second});
         }
         catch (DB::Exception &)
         {
             throw Exception(
                 "Type mismatch of columns to JOIN by: " +
-                    key_names_left[i] + ": " + ltype->getName() + " at left, " +
-                    key_names_right[i] + ": " + rtype->getName() + " at right",
+                    key_names_left[i] + ": " + ltype->second->getName() + " at left, " +
+                    key_names_right[i] + ": " + rtype->second->getName() + " at right",
                 ErrorCodes::TYPE_MISMATCH);
         }
         left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
