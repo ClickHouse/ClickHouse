@@ -425,7 +425,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzz(tables_element->table_join);
         if (tables_element->table_expression)
         {
-            if (fuzz_rand() % 10)
+            if (fuzz_rand() % 50)
             {
                 replaceWithTableLike(tables_element->table_expression);
             }
