@@ -5,9 +5,11 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/join_common.h>
 #include <Interpreters/asof.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <utility>
@@ -15,6 +17,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
 
 class Context;
 class ASTSelectQuery;
@@ -32,6 +39,11 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 class TableJoin
 {
+
+public:
+    using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
+
+private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
       * The join is made by column k.
       * During the JOIN,
@@ -66,10 +78,13 @@ class TableJoin
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
-    /// Columns will be added to block by JOIN. It's a subset of columns_from_joined_table with corrected Nullability
+    /// Columns will be added to block by JOIN.
+    /// It's a subset of columns_from_joined_table with corrected Nullability and type (if type conversion is required)
     NamesAndTypesList columns_added_by_join;
-    /// Columns from right table that requires type conversion
-    NamesAndTypesList converted_right_types;
+
+    /// Target type to convert key columns before join
+    NameToTypeMap left_type_map;
+    NameToTypeMap right_type_map;
 
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
@@ -139,8 +154,16 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-    void addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const;
-    void setConvertedRightType(NamesAndTypesList columns) { converted_right_types = columns; }
+
+    void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
+    void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability = true) const;
+
+    /// Calculates common supertypes for corresponding join key columns.
+    bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
+    bool needConvert() const { return !left_type_map.empty(); }
+    /// Key columns should be converted according to this mapping before join.
+    const NameToTypeMap & getLeftMapping() const { return left_type_map; }
+    const NameToTypeMap & getRightMapping() const { return right_type_map; }
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }

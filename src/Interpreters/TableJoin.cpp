@@ -221,41 +221,48 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    if (rightBecomeNullable(joined_column.type))
-        columns_added_by_join.emplace_back(NameAndTypePair(joined_column.name, makeNullable(joined_column.type)));
-    else
-        columns_added_by_join.push_back(joined_column);
+    DataTypePtr type = joined_column.type;
+
+    if (auto it = right_type_map.find(joined_column.name); it != right_type_map.end())
+        type = it->second;
+
+    if (rightBecomeNullable(type))
+        type = makeNullable(joined_column.type);
+
+    columns_added_by_join.emplace_back(joined_column.name, type);
 }
 
-void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const
+void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
+{
+    ColumnsWithTypeAndName columns;
+    for (auto & pair : names_and_types)
+        columns.emplace_back(nullptr, std::move(pair.type), std::move(pair.name));
+    names_and_types.clear();
+
+    addJoinedColumnsAndCorrectTypes(columns, correct_nullability);
+
+    for (auto & col : columns)
+        names_and_types.emplace_back(std::move(col.name), std::move(col.type));
+}
+
+void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability) const
 {
     for (auto & col : columns)
     {
-        if (leftBecomeNullable(col.type))
+        if (auto it = left_type_map.find(col.name); it != left_type_map.end())
+            col.type = it->second;
+        if (correct_nullability && leftBecomeNullable(col.type))
         {
             /// No need to nullify constants
-            if (!(col.column && isColumnConst(*col.column)))
-            {
+            bool is_column_const = col.column && isColumnConst(*col.column);
+            if (!is_column_const)
                 col.type = makeNullable(col.type);
-            }
         }
     }
 
-    std::unordered_map<String, DataTypePtr> type_map;
-    for (const auto & [name, type] : converted_right_types)
-        type_map[name] = type;
-
+    /// Types in columns_added_by_join already converted and set nullable if needed
     for (const auto & col : columns_added_by_join)
-    {
-        auto res_type = col.type;
-        if (const auto it = type_map.find(col.name); it != type_map.end())
-            res_type = it->second;
-
-        if (rightBecomeNullable(res_type))
-            res_type = makeNullable(res_type);
-
-        columns.emplace_back(nullptr, res_type, col.name);
-    }
+        columns.emplace_back(nullptr, col.type, col.name);
 }
 
 bool TableJoin::sameJoin(const TableJoin * x, const TableJoin * y)
@@ -340,6 +347,50 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     }
 
     return true;
+}
+
+bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right)
+{
+    std::unordered_map<String, DataTypePtr> left_types;
+    for (const auto & pair : left)
+    {
+        left_types[pair.name] = pair.type;
+    }
+
+    std::unordered_map<String, DataTypePtr> right_types;
+    for (const auto & pair : right)
+    {
+        if (auto it = renames.find(pair.name); it != renames.end())
+            right_types[it->second] = pair.type;
+        else
+            right_types[pair.name] = pair.type;
+    }
+
+    for (size_t i = 0; i < key_names_left.size(); ++i)
+    {
+        auto ltype = left_types[key_names_left[i]];
+        auto rtype = right_types[key_names_right[i]];
+
+        if (JoinCommon::typesEqualUpToNullability(ltype, rtype))
+            continue;
+
+        DataTypePtr supertype;
+        try
+        {
+            supertype = DB::getLeastSupertype({ltype, rtype});
+        }
+        catch (DB::Exception &)
+        {
+            throw Exception(
+                "Type mismatch of columns to JOIN by: " +
+                    key_names_left[i] + ": " + ltype->getName() + " at left, " +
+                    key_names_right[i] + ": " + rtype->getName() + " at right",
+                ErrorCodes::TYPE_MISMATCH);
+        }
+        left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
+    }
+
+    return !left_type_map.empty();
 }
 
 }

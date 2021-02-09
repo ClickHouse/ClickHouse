@@ -16,17 +16,6 @@ using ColumnRawPtrs = std::vector<const IColumn *>;
 namespace JoinCommon
 {
 
-struct JoinConvertActions
-{
-    ActionsDAGPtr left_actions;
-    ActionsDAGPtr right_actions;
-
-    NamesAndTypesList left_target_types;
-    NamesAndTypesList right_target_types;
-
-    bool needConvert() const { return left_actions && right_actions; }
-};
-
 void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability = false);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
 void removeColumnNullability(ColumnWithTypeAndName & column);
@@ -49,10 +38,8 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
-/// Return converting actions for left and right tables that need to be performed before join
-JoinConvertActions columnsNeedConvert(const Block & left_block, const Names & left_keys,
-                                      const Block & right_block, const Names & right_keys,
-                                      bool has_using);
+bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
+
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
