@@ -4,17 +4,22 @@ toc_priority: 143
 
 # maxMap {#agg_functions-maxmap}
 
-Syntax: `maxMap(key, value)` or `maxMap(Tuple(key, value))`
+**语法**
 
-Calculates the maximum from `value` array according to the keys specified in the `key` array.
+```sql
+`maxMap(key, value)`
+ 或
+`maxMap(Tuple(key, value))`
+```
 
-Passing a tuple of keys and value arrays is identical to passing two arrays of keys and values.
 
-The number of elements in `key` and `value` must be the same for each row that is totaled.
+根据 `key` 数组中指定的键对 `value` 数组计算最大值。
 
-Returns a tuple of two arrays: keys and values calculated for the corresponding keys.
+传递 `key` 和 `value` 数组的元组与传递 `key` 和 `value` 的两个数组是同义的。
+要总计的每一行的 `key` 和 `value` (数组)元素的数量必须相同。
+返回两个数组组成的元组: `key` 和对应 `key` 的 `value` 计算值(最大值)。
 
-Example:
+示例:
 
 ``` sql
 SELECT maxMap(a, b)
