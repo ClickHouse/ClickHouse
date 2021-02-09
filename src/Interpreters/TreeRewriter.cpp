@@ -417,6 +417,12 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
+
+        /// `USING` semantic allows to have columns with changed types in result table.
+        /// `JOIN ON key1 = key2` should preserve types from original table, so do not perform conversion at all.
+        /// TODO: Conversion for `JOIN ON` can be added with additional maintenance for types and columns.
+        ///  Or maybe it's possible to perform it on ast level? Not implemented yet.
+        analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns);
     }
     else if (table_join.on_expression)
     {

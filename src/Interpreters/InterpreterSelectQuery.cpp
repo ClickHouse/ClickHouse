@@ -992,6 +992,18 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query_plan.addStep(std::move(before_join_step));
             }
 
+            /// Optional step to convert key columns to common supertype.
+            /// Columns with changed types will be returned to user,
+            ///  so its only suitable for `USING` join.
+            if (expressions.converting_join_columns)
+            {
+                QueryPlanStepPtr convert_join_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.converting_join_columns);
+                convert_join_step->setStepDescription("Convert JOIN columns");
+                query_plan.addStep(std::move(convert_join_step));
+            }
+
             if (expressions.hasJoin())
             {
                 JoinPtr join = expressions.join;

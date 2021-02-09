@@ -95,6 +95,23 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
+
+/// Returns converting actions for tables that need to be performed before join
+ActionsDAGPtr createJoinConvertingActions(const ColumnsWithTypeAndName & cols_src, const TableJoin::NameToTypeMap & mapping)
+{
+    ColumnsWithTypeAndName cols_dst = cols_src;
+    for (auto & col : cols_dst)
+    {
+        if (auto it = mapping.find(col.name); it != mapping.end())
+        {
+            col.type = it->second;
+            col.column = nullptr;
+        }
+    }
+    return ActionsDAG::makeConvertingActions(cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true);
+};
+
+
 }
 
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
@@ -207,13 +224,12 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             auto sample_columns = temp_actions->getResultColumns();
-            analyzedJoin().addJoinedColumnsAndCorrectNullability(sample_columns);
+            analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
             temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
 
         columns_after_join = columns_after_array_join;
-        const auto & added_by_join = analyzedJoin().columnsAddedByJoin();
-        columns_after_join.insert(columns_after_join.end(), added_by_join.begin(), added_by_join.end());
+        analyzedJoin().addJoinedColumnsAndCorrectTypes(columns_after_join, false);
     }
 
     has_aggregation = makeAggregateDescriptions(temp_actions);
@@ -713,28 +729,22 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
     return array_join;
 }
 
-bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types, Block & block)
+bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions());
-    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(step.actions());
-    actions->execute(block);
     return true;
 }
 
-JoinPtr
-SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, const Block & sample_block, ActionsDAGPtr & before_join_dag)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & left_actions)
 {
-    JoinCommon::JoinConvertActions converting_actions;
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join, sample_block, converting_actions);
-    if (converting_actions.needConvert())
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
+    if (syntax->analyzed_join->needConvert())
     {
-        syntax->analyzed_join->setConvertedRightType(converting_actions.right_target_types);
-
-        before_join_dag = ActionsDAG::merge(std::move(*before_join_dag->clone()), std::move(*converting_actions.left_actions->clone()));
-
-        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_actions.left_actions));
+        left_actions = createJoinConvertingActions(chain.getLastStep().getResultColumns(),
+                                                   syntax->analyzed_join->getLeftMapping());
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(left_actions));
         chain.addStep();
     }
 
@@ -804,9 +814,7 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join,
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element,
-                                                     const Block & left_sample_block,
-                                                     JoinCommon::JoinConvertActions & converting_actions)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -844,14 +852,12 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
 
-        const Block & right_sample_block = subquery_for_join.sample_block;
-        bool has_using = syntax->analyzed_join->hasUsing();
-        converting_actions = JoinCommon::columnsNeedConvert(
-            left_sample_block, syntax->analyzed_join->keyNamesLeft(),
-            right_sample_block, syntax->analyzed_join->keyNamesRight(),
-            has_using);
-        if (converting_actions.needConvert())
-            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(converting_actions.right_actions));
+        if (syntax->analyzed_join->needConvert())
+        {
+            auto right_actions = createJoinConvertingActions(subquery_for_join.sample_block.getColumnsWithTypeAndName(),
+                                                             syntax->analyzed_join->getRightMapping());
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(right_actions));
+        }
 
         subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
 
@@ -1446,10 +1452,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (query_analyzer.hasTableJoin())
         {
-            Block left_block_sample = source_header;
-            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage, left_block_sample);
+            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
             before_join = chain.getLastActions();
-            join = query_analyzer.appendJoin(chain, left_block_sample, before_join);
+            join = query_analyzer.appendJoin(chain, converting_join_columns);
             chain.addStep();
         }
 

@@ -200,6 +200,7 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ActionsDAGPtr before_join;
+    ActionsDAGPtr converting_join_columns;
     JoinPtr join;
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
@@ -314,8 +315,7 @@ private:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element, const Block & left_sample_block,
-                          JoinCommon::JoinConvertActions & converting_actions);
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -335,8 +335,8 @@ private:
 
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
-    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types, Block & block);
-    JoinPtr appendJoin(ExpressionActionsChain & chain, const Block & sample_block, ActionsDAGPtr & before_join_dag);
+    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_join_dag);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
