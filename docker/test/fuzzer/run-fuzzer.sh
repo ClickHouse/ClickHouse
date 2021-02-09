@@ -115,10 +115,15 @@ continue
     echo Server started
 
     fuzzer_exit_code=0
+    # We'd like to detect stuck queries that ignore max_execution_time,
+    # but for now too many queries fail, because parsing of a complex
+    # query with sanitizers can take longer than the execution timeout of
+    # 10 seconds. So for now set receive_timeout much higher to detect
+    # only very bad queries.
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    ./clickhouse-client --receive_timeout=10 --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
+    ./clickhouse-client --receive_timeout=60 --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
