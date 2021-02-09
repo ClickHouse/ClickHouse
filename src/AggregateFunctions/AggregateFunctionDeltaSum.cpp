@@ -30,13 +30,13 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
 
     DataTypePtr data_type = arguments[0];
 
-    if (!isNumber(data_type))
+    if (isInteger(data_type) || isFloat(data_type))
+        return AggregateFunctionPtr(createWithNumericType<AggregationFunctionDeltaSum>(
+            *data_type, arguments, params));
+    else
         throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return AggregateFunctionPtr(createWithNumericType<AggregationFunctionDeltaSum>(*arguments[0], arguments, params));
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
-
 }
 
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
