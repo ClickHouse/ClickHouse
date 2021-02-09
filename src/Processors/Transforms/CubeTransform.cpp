@@ -45,7 +45,7 @@ Chunk CubeTransform::generate()
         consumed_chunks.clear();
 
         auto num_rows = cube_chunk.getNumRows();
-        mask = (UInt64(1) << keys.size());
+        mask = (UInt64(1) << keys.size()) - 1;
 
         current_columns = cube_chunk.getColumns();
         current_zero_columns.clear();
@@ -55,11 +55,11 @@ Chunk CubeTransform::generate()
             current_zero_columns.emplace_back(current_columns[key]->cloneEmpty()->cloneResized(num_rows));
     }
 
-    // auto gen_chunk = std::move(cube_chunk);
+    auto gen_chunk = std::move(cube_chunk);
 
-    if (mask > 1)
+    if (mask)
     {
-        mask = mask >> 1;
+        --mask;
 
         auto columns = current_columns;
         auto size = keys.size();
@@ -72,7 +72,6 @@ Chunk CubeTransform::generate()
         chunks.emplace_back(std::move(columns), current_columns.front()->size());
         cube_chunk = merge(std::move(chunks), false);
     }
-    auto gen_chunk = std::move(cube_chunk);
 
     finalizeChunk(gen_chunk);
     return gen_chunk;
