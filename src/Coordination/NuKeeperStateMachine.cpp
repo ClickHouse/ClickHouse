@@ -8,8 +8,6 @@
 namespace DB
 {
 
-static constexpr int MAX_SNAPSHOTS = 3;
-
 NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 {
     ReadBufferFromNuraftBuffer buffer(data);
@@ -43,8 +41,9 @@ nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions
 }
 
 
-NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, int64_t tick_time)
-    : storage(tick_time)
+NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, const CoordinationSettingsPtr & coordination_settings_)
+    : coordination_settings(coordination_settings_)
+    , storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("NuRaftStateMachine"))
@@ -129,7 +128,7 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nura
     NuKeeperStorageSerializer serializer;
 
     ReadBufferFromNuraftBuffer reader(in);
-    NuKeeperStorage new_storage(500 /*FIXME*/);
+    NuKeeperStorage new_storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
     serializer.deserialize(new_storage, reader);
     return std::make_shared<StorageSnapshot>(ss, new_storage);
 }
@@ -153,15 +152,19 @@ void NuKeeperStateMachine::create_snapshot(
     {
         std::lock_guard<std::mutex> lock(snapshots_lock);
         snapshots[s.get_last_log_idx()] = snapshot;
-        int num = snapshots.size();
-        auto entry = snapshots.begin();
-
-        for (int i = 0; i < num - MAX_SNAPSHOTS; ++i)
+        size_t num = snapshots.size();
+        if (num > coordination_settings->max_stored_snapshots)
         {
-            if (entry == snapshots.end())
-                break;
-            entry = snapshots.erase(entry);
+            auto entry = snapshots.begin();
+
+            for (size_t i = 0; i < num - coordination_settings->max_stored_snapshots; ++i)
+            {
+                if (entry == snapshots.end())
+                    break;
+                entry = snapshots.erase(entry);
+            }
         }
+
     }
     nuraft::ptr<std::exception> except(nullptr);
     bool ret = true;

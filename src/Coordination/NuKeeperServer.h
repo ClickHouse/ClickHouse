@@ -5,6 +5,7 @@
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/NuKeeperStateMachine.h>
 #include <Coordination/NuKeeperStorage.h>
+#include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
 
 namespace DB
@@ -21,6 +22,8 @@ private:
 
     std::string endpoint;
 
+    CoordinationSettingsPtr coordination_settings;
+
     nuraft::ptr<NuKeeperStateMachine> state_machine;
 
     nuraft::ptr<nuraft::state_mgr> state_manager;
@@ -34,9 +37,12 @@ private:
     ResponsesQueue & responses_queue;
 
 public:
-    NuKeeperServer(int server_id_, const std::string & hostname_, int port_, ResponsesQueue & responses_queue_);
+    NuKeeperServer(
+        int server_id_, const std::string & hostname_, int port_,
+        const CoordinationSettingsPtr & coordination_settings_,
+        ResponsesQueue & responses_queue_);
 
-    void startup(int64_t operation_timeout_ms);
+    void startup();
 
     void putRequest(const NuKeeperStorage::RequestForSession & request);
 
@@ -51,7 +57,7 @@ public:
     bool isLeaderAlive() const;
 
     bool waitForServer(int32_t server_id) const;
-    void waitForServers(const std::vector<int32_t> & ids) const;
+    bool waitForServers(const std::vector<int32_t> & ids) const;
     void waitForCatchUp() const;
 
     void shutdown();

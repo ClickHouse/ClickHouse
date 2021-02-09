@@ -4,6 +4,7 @@
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <common/logger_useful.h>
 #include <Coordination/ThreadSafeQueue.h>
+#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ using ResponsesQueue = ThreadSafeQueue<NuKeeperStorage::ResponseForSession>;
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(ResponsesQueue & responses_queue_, int64_t tick_time = 500);
+    NuKeeperStateMachine(ResponsesQueue & responses_queue_, const CoordinationSettingsPtr & coordination_settings_);
 
     nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
@@ -72,9 +73,11 @@ private:
 
     StorageSnapshotPtr createSnapshotInternal(nuraft::snapshot & s);
 
-    static StorageSnapshotPtr readSnapshot(nuraft::snapshot & s, nuraft::buffer & in);
+    StorageSnapshotPtr readSnapshot(nuraft::snapshot & s, nuraft::buffer & in);
 
     static void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out);
+
+    CoordinationSettingsPtr coordination_settings;
 
     NuKeeperStorage storage;
 

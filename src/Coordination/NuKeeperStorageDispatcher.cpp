@@ -12,7 +12,8 @@ namespace ErrorCodes
 }
 
 NuKeeperStorageDispatcher::NuKeeperStorageDispatcher()
-    : log(&Poco::Logger::get("NuKeeperDispatcher"))
+    : coordination_settings(std::make_shared<CoordinationSettings>())
+    , log(&Poco::Logger::get("NuKeeperDispatcher"))
 {
 }
 
@@ -23,7 +24,7 @@ void NuKeeperStorageDispatcher::requestThread()
     {
         NuKeeperStorage::RequestForSession request;
 
-        UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
+        UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
 
         if (requests_queue.tryPop(request, max_wait))
         {
@@ -49,7 +50,7 @@ void NuKeeperStorageDispatcher::responseThread()
     {
         NuKeeperStorage::ResponseForSession response_for_session;
 
-        UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
+        UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
 
         if (responses_queue.tryPop(response_for_session, max_wait))
         {
@@ -97,7 +98,7 @@ bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestP
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
         requests_queue.push(std::move(request_info));
-    else if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+    else if (!requests_queue.tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     return true;
 }
@@ -134,8 +135,8 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
     std::string myhostname;
     int myport;
     int32_t my_priority = 1;
+    coordination_settings->loadFromConfig("test_keeper_server.coordination_settings", config);
 
-    operation_timeout = Poco::Timespan(0, config.getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000);
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys("test_keeper_server.raft_configuration", keys);
     bool my_can_become_leader = true;
@@ -163,10 +164,10 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         ids.push_back(server_id);
     }
 
-    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, responses_queue);
+    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, coordination_settings, responses_queue);
     try
     {
-        server->startup(operation_timeout.totalMilliseconds());
+        server->startup();
         if (shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs))
         {
             for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
@@ -183,8 +184,8 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         }
         else
         {
-            LOG_DEBUG(log, "Waiting for {} servers to build cluster", ids.size());
-            server->waitForServers(ids);
+            while (!server->waitForServers(ids))
+                LOG_DEBUG(log, "Waiting for {} servers to build cluster", ids.size());
             server->waitForCatchUp();
         }
     }
@@ -283,8 +284,7 @@ void NuKeeperStorageDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        /*FIXME*/
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(coordination_settings->dead_session_check_period_ms.totalMilliseconds()));
     }
 }
 

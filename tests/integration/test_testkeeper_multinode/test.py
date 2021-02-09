@@ -52,6 +52,47 @@ def get_fake_zk(nodename):
     _fake_zk_instance.start()
     return _fake_zk_instance
 
+def test_read_write_multinode(started_cluster):
+    try:
+        node1_zk = get_fake_zk("node1")
+        node2_zk = get_fake_zk("node2")
+        node3_zk = get_fake_zk("node3")
+
+        node1_zk.create("/test_read_write_multinode_node1", b"somedata1")
+        node2_zk.create("/test_read_write_multinode_node2", b"somedata2")
+        node3_zk.create("/test_read_write_multinode_node3", b"somedata3")
+
+        # stale reads are allowed
+        while node1_zk.exists("/test_read_write_multinode_node2") is None:
+            time.sleep(0.1)
+
+        while node1_zk.exists("/test_read_write_multinode_node3") is None:
+            time.sleep(0.1)
+
+        while node2_zk.exists("/test_read_write_multinode_node3") is None:
+            time.sleep(0.1)
+
+        assert node3_zk.get("/test_read_write_multinode_node1")[0] == b"somedata1"
+        assert node2_zk.get("/test_read_write_multinode_node1")[0] == b"somedata1"
+        assert node1_zk.get("/test_read_write_multinode_node1")[0] == b"somedata1"
+
+        assert node3_zk.get("/test_read_write_multinode_node2")[0] == b"somedata2"
+        assert node2_zk.get("/test_read_write_multinode_node2")[0] == b"somedata2"
+        assert node1_zk.get("/test_read_write_multinode_node2")[0] == b"somedata2"
+
+        assert node3_zk.get("/test_read_write_multinode_node3")[0] == b"somedata3"
+        assert node2_zk.get("/test_read_write_multinode_node3")[0] == b"somedata3"
+        assert node1_zk.get("/test_read_write_multinode_node3")[0] == b"somedata3"
+
+    finally:
+        try:
+            for zk_conn in [node1_zk, node2_zk, node3_zk]:
+                zk_conn.stop()
+                zk_conn.close()
+        except:
+            pass
+
+
 def test_watch_on_follower(started_cluster):
     try:
         node1_zk = get_fake_zk("node1")
@@ -103,7 +144,6 @@ def test_watch_on_follower(started_cluster):
                 zk_conn.close()
         except:
             pass
-
 
 
 # in extremely rare case it can take more than 5 minutes in debug build with sanitizer
