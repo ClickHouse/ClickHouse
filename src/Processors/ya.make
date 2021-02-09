@@ -92,7 +92,6 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
-    QueryPlan/AddingConstColumnStep.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp

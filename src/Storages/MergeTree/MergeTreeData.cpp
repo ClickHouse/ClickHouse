@@ -3675,6 +3675,17 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
     return true;
 }
 
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void MergeTreeData::writePartLog(
     PartLogElement::Type type,
     const ExecutionStatus & execution_status,
@@ -3697,7 +3708,12 @@ try
     part_log_elem.error = static_cast<UInt16>(execution_status.code);
     part_log_elem.exception = execution_status.message;
 
-    part_log_elem.event_time = time(nullptr);
+    // construct event_time and event_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    const auto time_now = std::chrono::system_clock::now();
+    part_log_elem.event_time = time_in_seconds(time_now);
+    part_log_elem.event_time_microseconds = time_in_microseconds(time_now);
+
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
     part_log_elem.duration_ms = elapsed_ns / 1000000;
 
@@ -3752,18 +3768,6 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
     }
-}
-
-bool MergeTreeData::selectPartsAndMove()
-{
-    if (parts_mover.moves_blocker.isCancelled())
-        return false;
-
-    auto moving_tagger = selectPartsForMove();
-    if (moving_tagger->parts_to_move.empty())
-        return false;
-
-    return moveParts(std::move(moving_tagger));
 }
 
 std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
