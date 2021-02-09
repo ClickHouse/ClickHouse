@@ -54,7 +54,9 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else if (begin_type == BoundaryType::Unbounded)
     {
-        buf << "UNBOUNDED PRECEDING";
+        buf << "UNBOUNDED";
+        buf << " "
+            << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
     else
     {
@@ -69,7 +71,9 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else if (end_type == BoundaryType::Unbounded)
     {
-        buf << "UNBOUNDED PRECEDING";
+        buf << "UNBOUNDED";
+        buf << " "
+            << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
     else
     {
@@ -119,10 +123,10 @@ void WindowFrame::checkValid() const
     {
         if (!(end_preceding && !begin_preceding))
         {
-            if (begin_offset <= end_offset)
-            {
-                return;
-            }
+            // Should probably check here that starting offset is less than
+            // ending offset, but with regard to ORDER BY direction for RANGE
+            // frames.
+            return;
         }
     }
 
