@@ -25,7 +25,7 @@ protected:
 public:
     explicit ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    bool poll(size_t timeout_microseconds);
+    bool poll(size_t timeout_microseconds) const;
 
     void setAsyncCallback(std::function<void(Poco::Net::Socket &)> async_callback_) { async_callback = std::move(async_callback_); }
 

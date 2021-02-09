@@ -606,30 +606,13 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        /// FIXME: with ReadBufferFromPocoSocket this code should become unnecessary,
-        ///        check this statement with 00834_cancel_http_readonly_queries_on_client_close.sh
-
-        // Poco::Net::StreamSocket & socket = request.socket();
-
-        // append_callback([&context, &socket](const Progress &)
-        // {
-        //     /// Assume that at the point this method is called no one is reading data from the socket any more.
-        //     /// True for read-only queries.
-        //     try
-        //     {
-        //         char b;
-        //         int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
-        //         if (status == 0)
-        //             context.killCurrentQuery();
-        //     }
-        //     catch (Poco::TimeoutException &)
-        //     {
-        //     }
-        //     catch (...)
-        //     {
-        //         context.killCurrentQuery();
-        //     }
-        // });
+        append_callback([&context, &request](const Progress &)
+        {
+            /// Assume that at the point this method is called no one is reading data from the socket any more:
+            /// should be true for read-only queries.
+            if (!request.checkPeerConnected())
+                context.killCurrentQuery();
+        });
     }
 
     customizeContext(request, context);

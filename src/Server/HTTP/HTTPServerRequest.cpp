@@ -32,6 +32,7 @@ HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse
     session.socket().setSendTimeout(send_timeout);
 
     auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket());
+    socket = session.socket().impl();
 
     readRequest(*in);  /// Try parse according to RFC7230
 
@@ -44,6 +45,25 @@ HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse
     else
         /// We have to distinguish empty buffer and nullptr.
         stream = std::make_unique<EmptyReadBuffer>();
+}
+
+bool HTTPServerRequest::checkPeerConnected() const
+{
+    try
+    {
+        char b;
+        if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
+            return false;
+    }
+    catch (Poco::TimeoutException &)
+    {
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)

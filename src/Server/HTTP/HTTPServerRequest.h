@@ -10,6 +10,7 @@ namespace DB
 
 class Context;
 class HTTPServerResponse;
+class ReadBufferFromPocoSocket;
 
 class HTTPServerRequest : public HTTPRequest
 {
@@ -26,6 +27,8 @@ public:
         poco_check_ptr(stream);
         return *stream;
     }
+
+    bool checkPeerConnected() const;
 
     /// Returns the client's address.
     const Poco::Net::SocketAddress & clientAddress() const { return client_address; }
@@ -46,6 +49,7 @@ private:
     };
 
     std::unique_ptr<ReadBuffer> stream;
+    Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 
