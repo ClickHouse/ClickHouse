@@ -38,8 +38,9 @@ struct WindowFrame
 
     FrameType type = FrameType::Range;
 
-    // UNBOUNDED FOLLOWING for the frame end doesn't make much sense, so
-    // Unbounded here means UNBOUNDED PRECEDING.
+    // UNBOUNDED FOLLOWING for the frame end is forbidden by the standard, but for
+    // uniformity the begin_preceding still has to be set to true for UNBOUNDED
+    // frame start.
     // Offset might be both preceding and following, controlled by begin_preceding,
     // but the offset value must be positive.
     BoundaryType begin_type = BoundaryType::Unbounded;
@@ -47,7 +48,8 @@ struct WindowFrame
     int64_t begin_offset = 0;
     bool begin_preceding = true;
 
-    // Here as well, Unbounded is UNBOUNDED FOLLOWING.
+    // Here as well, Unbounded can only be UNBOUNDED FOLLOWING, and end_preceding
+    // must be false.
     BoundaryType end_type = BoundaryType::Current;
     int64_t end_offset = 0;
     bool end_preceding = false;

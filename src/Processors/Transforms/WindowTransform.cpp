@@ -63,38 +63,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
         order_by_indices.push_back(
             input_header.getPositionByName(column.column_name));
     }
-
-// FIXME this is just all wrong. Disabled desc order for now.
-    const auto & frame = window_description.frame;
-    if (frame.type == WindowFrame::FrameType::Range
-        && window_description.order_by.size() == 1
-        && window_description.order_by[0].direction < 0
-        && (frame.begin_type == WindowFrame::BoundaryType::Offset
-            || frame.end_type == WindowFrame::BoundaryType::Offset))
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ORDER BY DESC for RANGE OFFSET frames is not implemented");
-    }
-//     // If we have at least one RANGE OFFSET frame boundary, no UNBOUNDED frame
-//     // boundaries, and the ORDER BY is DESC, we have to swap the frame end
-//     // and frame start. This is tricky and I'm not sure how to explain the
-//     // reason, so I can only suggest to draw various RANGE OFFSET frames with
-//     // ASC and DESC orders to understand...
-//     // swap is a no-op if both frames are CURRENT ROW, so use a simpler condition.
-//     auto & frame = window_description.frame;
-//     if (frame.type == WindowFrame::FrameType::Range
-//         && (frame.end_type != WindowFrame::BoundaryType::Unbounded
-//             && frame.begin_type != WindowFrame::BoundaryType::Unbounded)
-//         && window_description.order_by.size() == 1
-//         && window_description.order_by[0].direction < 0)
-//     {
-//         std::swap(frame.begin_type, frame.end_type);
-//         std::swap(frame.begin_preceding, frame.end_preceding);
-//         std::swap(frame.begin_offset, frame.end_offset);
-//
-//         fmt::print(stderr, "swapped frame boundaries\n");
-//     }
-
 }
 
 WindowTransform::~WindowTransform()
@@ -357,11 +325,12 @@ static int compareValuesWithOffset(const ColumnType * compared_column,
         overflow_to_negative = offset < 0;
     }
 
-    fmt::print(stderr,
-        "compared [{}] = {}, ref [{}] = {}, offset {} overflow {} to negative {}\n",
-        compared_row, toString(compared_value),
-        reference_row, toString(reference_value),
-        toString(offset), is_overflow, overflow_to_negative);
+//    fmt::print(stderr,
+//        "compared [{}] = {}, ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
+//        compared_row, toString(compared_value),
+//        reference_row, toString(reference_value),
+//        toString(offset), offset_is_preceding,
+//        is_overflow, overflow_to_negative);
 
     if (is_overflow)
     {
@@ -387,7 +356,10 @@ static int compareValuesWithOffset(const ColumnType * compared_column,
 template <typename ColumnType>
 void WindowTransform::advanceFrameStartRangeOffset()
 {
+    // See the comment for advanceFrameEndRangeOffset().
     const int direction = window_description.order_by[0].direction;
+    const bool preceding = window_description.frame.begin_preceding
+        == (direction > 0);
     const auto * reference_column = assert_cast<const ColumnType *>(
         inputAt(current_row)[order_by_indices[0]].get());
     for (; frame_start < partition_end; advanceRowNumber(frame_start))
@@ -399,7 +371,7 @@ void WindowTransform::advanceFrameStartRangeOffset()
         if (compareValuesWithOffset(compared_column, frame_start.row,
             reference_column, current_row.row,
             window_description.frame.begin_offset,
-            window_description.frame.begin_preceding)
+            preceding)
                 * direction >= 0)
         {
             frame_started = true;
@@ -410,26 +382,40 @@ void WindowTransform::advanceFrameStartRangeOffset()
     frame_started = partition_ended;
 }
 
+// Helper macros to dispatch on type of the ORDER BY column
+#define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
+else if (typeid_cast<const TYPE *>(column)) \
+{ \
+    FUNCTION<TYPE>(); \
+}
+
+#define APPLY_FOR_TYPES(FUNCTION) \
+if (false) /* NOLINT */ \
+{ \
+    /* Do nothing, a starter condition. */ \
+} \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int8>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt8>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int16>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt16>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int32>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt32>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int64>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt64>) \
+else \
+{ \
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
+        "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", \
+        demangle(typeid(*column).name())); \
+}
+
 void WindowTransform::advanceFrameStartRangeOffsetDispatch()
 {
     // Dispatch on the type of the ORDER BY column.
     assert(order_by_indices.size() == 1);
     const IColumn * column = inputAt(current_row)[order_by_indices[0]].get();
 
-    if (typeid_cast<const ColumnVector<UInt8> *>(column))
-    {
-        advanceFrameStartRangeOffset<ColumnVector<UInt8>>();
-    }
-    else if (typeid_cast<const ColumnVector<Int8> *>(column))
-    {
-        advanceFrameStartRangeOffset<ColumnVector<Int8>>();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "The RANGE OFFSET frame start for '{}' ORDER BY column is not implemented",
-            demangle(typeid(*column).name()));
-    }
+    APPLY_FOR_TYPES(advanceFrameStartRangeOffset)
 }
 
 void WindowTransform::advanceFrameStart()
@@ -647,7 +633,11 @@ void WindowTransform::advanceFrameEndRowsOffset()
 template <typename ColumnType>
 void WindowTransform::advanceFrameEndRangeOffset()
 {
+    // PRECEDING/FOLLOWING change direction for DESC order.
+    // See CD 9075-2:201?(E) 7.14 <window clause> p. 429.
     const int direction = window_description.order_by[0].direction;
+    const bool preceding = window_description.frame.end_preceding
+        == (direction > 0);
     const auto * reference_column = assert_cast<const ColumnType *>(
         inputAt(current_row)[order_by_indices[0]].get());
     for (; frame_end < partition_end; advanceRowNumber(frame_end))
@@ -660,7 +650,7 @@ void WindowTransform::advanceFrameEndRangeOffset()
         if (compareValuesWithOffset(compared_column, frame_end.row,
             reference_column, current_row.row,
             window_description.frame.end_offset,
-            window_description.frame.end_preceding)
+            preceding)
                 * direction > 0)
         {
             frame_ended = true;
@@ -677,20 +667,7 @@ void WindowTransform::advanceFrameEndRangeOffsetDispatch()
     assert(order_by_indices.size() == 1);
     const IColumn * column = inputAt(current_row)[order_by_indices[0]].get();
 
-    if (typeid_cast<const ColumnVector<UInt8> *>(column))
-    {
-        advanceFrameEndRangeOffset<ColumnVector<UInt8>>();
-    }
-    else if (typeid_cast<const ColumnVector<Int8> *>(column))
-    {
-        advanceFrameEndRangeOffset<ColumnVector<Int8>>();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "The RANGE OFFSET frame end for '{}' ORDER BY column is not implemented",
-            demangle(typeid(*column).name()));
-    }
+    APPLY_FOR_TYPES(advanceFrameEndRangeOffset)
 }
 
 void WindowTransform::advanceFrameEnd()
