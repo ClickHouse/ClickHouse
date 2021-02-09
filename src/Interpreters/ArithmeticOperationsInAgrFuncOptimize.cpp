@@ -89,11 +89,11 @@ const String & changeNameIfNeeded(const String & func_name, const String & child
 
 ASTPtr tryExchangeFunctions(const ASTFunction & func)
 {
-    static const std::unordered_map<String, std::unordered_set<String>> supported = {
-        { "sum", { "multiply", "divide" } },
-        { "min", { "multiply", "divide", "plus", "minus" } },
-        { "max", { "multiply", "divide", "plus", "minus" } }
-    };
+    static const std::unordered_map<String, std::unordered_set<String>> supported
+        = {{"sum", {"multiply", "divide"}},
+           {"min", {"multiply", "divide", "plus", "minus"}},
+           {"max", {"multiply", "divide", "plus", "minus"}},
+           {"avg", {"multiply", "divide", "plus", "minus"}}};
 
     const ASTFunction * child_func = getInternalFunction(func);
     if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 ||
