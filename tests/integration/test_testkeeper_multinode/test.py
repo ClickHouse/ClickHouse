@@ -8,9 +8,9 @@ from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_test_keeper1.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'])
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_test_keeper2.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'])
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_test_keeper3.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'])
+node1 = cluster.add_instance('node1', main_configs=['configs/enable_test_keeper1.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/enable_test_keeper2.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/enable_test_keeper3.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
 
 from kazoo.client import KazooClient
 
@@ -159,6 +159,32 @@ def test_session_expiration(started_cluster):
                     pass
         except:
             pass
+
+
+def test_follower_restart(started_cluster):
+    try:
+        node1_zk = get_fake_zk("node1")
+
+        node1_zk.create("/test_restart_node", b"hello")
+
+        node3.restart_clickhouse(kill=True)
+
+        node3_zk = get_fake_zk("node3")
+
+        # got data from log
+        assert node3_zk.get("/test_restart_node")[0] == b"hello"
+
+    finally:
+        try:
+            for zk_conn in [node1_zk, node3_zk]:
+                try:
+                    zk_conn.stop()
+                    zk_conn.close()
+                except:
+                    pass
+        except:
+            pass
+
 
 def test_simple_replicated_table(started_cluster):
     # something may be wrong after partition in other tests
