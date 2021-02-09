@@ -121,11 +121,21 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && begin_type == BoundaryType::Offset)
     {
+        // Frame starting with following rows can't have preceding rows.
         if (!(end_preceding && !begin_preceding))
         {
-            // Should probably check here that starting offset is less than
-            // ending offset, but with regard to ORDER BY direction for RANGE
-            // frames.
+            // Frame start offset must be less or equal that the frame end offset.
+            const bool begin_before_end
+                = begin_offset * (begin_preceding ? -1 : 1)
+                    <= end_offset * (end_preceding ? -1 : 1);
+
+            if (!begin_before_end)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start offset {} {} does not precede the frame end offset {} {}",
+                    begin_offset, begin_preceding ? "PRECEDING" : "FOLLOWING",
+                    end_offset, end_preceding ? "PRECEDING" : "FOLLOWING");
+            }
             return;
         }
     }
@@ -133,6 +143,22 @@ void WindowFrame::checkValid() const
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Window frame '{}' is invalid",
         toString());
+}
+
+void WindowDescription::checkValid() const
+{
+    frame.checkValid();
+
+    // RANGE OFFSET requires exactly one ORDER BY column.
+    if (frame.type == WindowFrame::FrameType::Range
+        && (frame.begin_type == WindowFrame::BoundaryType::Offset
+            || frame.end_type == WindowFrame::BoundaryType::Offset)
+        && order_by.size() != 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The RANGE OFFSET window frame requires exactly one ORDER BY column, {} given",
+           order_by.size());
+    }
 }
 
 }

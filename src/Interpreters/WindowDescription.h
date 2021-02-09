@@ -131,7 +131,10 @@ struct WindowDescription
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
 
+
     std::string dump() const;
+
+    void checkValid() const;
 };
 
 using WindowFunctionDescriptions = std::vector<WindowFunctionDescription>;
