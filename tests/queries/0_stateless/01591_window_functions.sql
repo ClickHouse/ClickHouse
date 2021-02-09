@@ -163,3 +163,52 @@ window
         rows between unbounded preceding and unbounded following)
 settings max_block_size = 2;
 
+-- ROWS offset frame start
+select number, p,
+    count(*) over (partition by p order by number
+        rows between 1 preceding and unbounded following),
+    count(*) over (partition by p order by number
+        rows between current row and unbounded following),
+    count(*) over (partition by p order by number
+        rows between 1 following and unbounded following)
+from (select number, intDiv(number, 5) p from numbers(31))
+order by p, number
+settings max_block_size = 2;
+
+-- ROWS offset frame start and end
+select number, p,
+    count(*) over (partition by p order by number
+        rows between 2 preceding and 2 following)
+from (select number, intDiv(number, 7) p from numbers(71))
+order by p, number
+settings max_block_size = 2;
+
+SELECT count(*) OVER (ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM numbers(4);
+
+-- frame boundaries that runs into the partition end
+select
+    count() over (partition by intDiv(number, 3)
+        rows between 100 following and unbounded following),
+    count() over (partition by intDiv(number, 3)
+        rows between current row and 100 following)
+from numbers(10);
+
+-- seen a use-after-free under MSan in this query once
+SELECT number, max(number) OVER (PARTITION BY intDiv(number, 7) ORDER BY number ASC NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(1024) SETTINGS max_block_size = 2 FORMAT Null;
+
+-- a corner case
+select count() over ();
+
+-- RANGE CURRENT ROW frame start
+select number, p, o,
+    count(*) over (partition by p order by o
+        range between current row and unbounded following)
+from (select number, intDiv(number, 5) p, mod(number, 3) o
+    from numbers(31))
+order by p, o, number
+settings max_block_size = 2;
+
+select
+    count(*) over (rows between  current row and current row),
+    count(*) over (range between  current row and current row)
+from numbers(3);

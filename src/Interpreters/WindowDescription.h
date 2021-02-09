@@ -53,6 +53,13 @@ struct WindowFrame
     int64_t end_offset = 0;
 
 
+    // Throws BAD_ARGUMENTS exception if the frame definition is incorrect, e.g.
+    // the frame start comes later than the frame end.
+    void checkValid() const;
+
+    std::string toString() const;
+    void toString(WriteBuffer & buf) const;
+
     bool operator == (const WindowFrame & other) const
     {
         // We don't compare is_default because it's not a real property of the
