@@ -247,21 +247,15 @@ IPAddressDictionary::IPAddressDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_,
-    bool access_to_key_from_attributes_)
+    bool require_nonempty_)
     : IDictionaryBase(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
-    , access_to_key_from_attributes(access_to_key_from_attributes_)
+    , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
-    if (access_to_key_from_attributes)
-    {
-        dict_struct.attributes.emplace_back(dict_struct.key->front());
-    }
-
     createAttributes();
 
     loadData();
@@ -367,18 +361,23 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
 void IPAddressDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
-
-    for (const auto & attribute : dict_struct.attributes)
+    auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
     {
-        attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.reserve(attributes.size() + dict_attrs.size());
+        for (const auto & attribute : dict_attrs)
+        {
+            attribute_index_by_name.emplace(attribute.name, attributes.size());
+            attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
-        if (attribute.hierarchical)
-            throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-                            ErrorCodes::TYPE_MISMATCH};
-    }
+            if (attribute.hierarchical)
+                throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
+                                ErrorCodes::TYPE_MISMATCH};
+        }
+    };
+
+    create_attributes_from_dictionary_attributes(dict_struct.attributes);
+    if (access_to_key_from_attributes)
+        create_attributes_from_dictionary_attributes(*dict_struct.key);
 }
 
 void IPAddressDictionary::loadData()
@@ -396,19 +395,13 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-
-        size_t attributes_size = dict_struct.attributes.size();
-        if (access_to_key_from_attributes)
-        {
-            /// last attribute contains key and will be filled in code below
-            attributes_size--;
-        }
-        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
+        const auto attribute_column_ptrs = ext::map<Columns>(
+            ext::range(0, dict_struct.attributes.size()),
             [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
 
         for (const auto row : ext::range(0, rows))
         {
-            for (const auto attribute_idx : ext::range(0, attribute_column_ptrs.size()))
+            for (const auto attribute_idx : ext::range(0, dict_struct.attributes.size()))
             {
                 const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
                 auto & attribute = attributes[attribute_idx];
@@ -991,11 +984,8 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
-        const auto & layout_prefix = config_prefix + ".layout.ip_trie";
-        const bool access_to_key_from_attributes = config.getBool(layout_prefix + ".access_to_key_from_attributes", false);
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime,
-                                                     require_nonempty, access_to_key_from_attributes);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

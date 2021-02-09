@@ -246,7 +246,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
