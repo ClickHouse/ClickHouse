@@ -74,17 +74,20 @@ There isn’t a separate query for deleting views. To delete a view, use [DROP T
 CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
 ```
 
-Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance
-for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
+Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
 
 Live views are triggered by insert into the innermost table specified in the query. 
 
 Live views work similarly to how a query in a distributed table works. But instead of combining partial results from different servers they combine partial result from current data with partial result from the new data. When a live view query includes a subquery then the cached partial result is only stored for the innermost subquery.
 
-!!! info "Note"
+!!! info "Limitations"
     - [Table function](../../../sql-reference/table-functions/index.md) is not supported as the innermost table.
-    - Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md) or a [system table](../../../operations/system-tables/index.md) will not trigger a live view. See [WITH REFRESH](#live-view-with-refresh) to enable periodic updates of a live view.
-    - Only queries where one can combine partial result from the old data plus partial result from the new data will work. Live view will not work for queries that require the complete data set to compute the final result.
+    - Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md), [system table](../../../operations/system-tables/index.md), a [normal view](#normal), or a [materialized view](#materialized) will not trigger a live view.
+    - Only queries where one can combine partial result from the old data plus partial result from the new data will work. Live view will not work for queries that require the complete data set to compute the final result or aggregations where the state of the aggregation must be preserved.
+    - Does not work with replicated or distributed tables where inserts are performed on different nodes.
+    - Can't be triggered by multiple tables.
+
+    See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
 You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query
 
@@ -133,6 +136,14 @@ You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND` clause.
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
 ```
+### Usage
+
+Most common uses of live view tables include:
+
+- Providing push notifications for query result changes to avoid polling.
+- Caching results of most frequent queries to provide immediate query results.
+- Watching for table changes and triggering a follow-up select queries.
+- Watching metrics from system tables using periodic refresh.
 
 ### Settings {#live-view-settings}
 
