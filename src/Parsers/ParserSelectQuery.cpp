@@ -207,6 +207,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->group_by_with_rollup = true;
         else if (s_cube.ignore(pos, expected))
             select_query->group_by_with_cube = true;
+        else if (s_grouping_sets.ignore(pos, expected))
+            select_query->group_by_with_grouping_sets = true;
         else if (s_totals.ignore(pos, expected))
             select_query->group_by_with_totals = true;
         else
