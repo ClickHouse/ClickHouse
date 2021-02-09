@@ -15,7 +15,6 @@ public:
     AggregatedArenasChunkInfo(Arenas arenas_)
         : arenas(std::move(arenas_))
     {}
-
 };
 
 class AggregatedChunkInfo : public ChunkInfo
