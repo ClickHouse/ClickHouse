@@ -2594,12 +2594,13 @@ Default value: `16`.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
-Enables a trace for executed queries.
+Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
 
 Possible values:
 
--   0 — The trace for a executed query is disabled.
--   1 — The trace for a executed query is enabled.
+-   0 — The trace for a executed queries is disabled (if no parent trace context is supplied).
+-   (0, 1) — The probability with which the ClickHouse can start a trace for executed queries (if no parent trace context is supplied). For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
+-   1 — The trace for all executed queries is enabled.
 
 Default value: `0`.
 
