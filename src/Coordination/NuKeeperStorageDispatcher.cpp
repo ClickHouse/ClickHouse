@@ -274,7 +274,13 @@ void NuKeeperStorageDispatcher::sessionCleanerTask()
                     LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
                     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-                    putRequest(request, dead_session);
+                    NuKeeperStorage::RequestForSession request_info;
+                    request_info.request = request;
+                    request_info.session_id = dead_session;
+                    {
+                        std::lock_guard lock(push_request_mutex);
+                        requests_queue.push(std::move(request_info));
+                    }
                     finishSession(dead_session);
                 }
             }
