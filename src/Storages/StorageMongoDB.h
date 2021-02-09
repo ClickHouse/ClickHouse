@@ -52,7 +52,7 @@ private:
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
     bool authentified = false;
-    std::mutex connection_mutex;
+    std::mutex connection_mutex; /// Protects the variables `connection` and `authentified`.
 };
 
 }
