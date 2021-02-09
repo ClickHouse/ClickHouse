@@ -100,8 +100,8 @@ private:
 
     bool processTimeoutEvent(int replica_index, ConnectionTimeoutDescriptorPtr timeout_descriptor);
 
-    /// Return false if there is no ready events, return true if replica is ready
-    /// or we need to try next replica.
+    /// Return NOT_READY state if there is no ready events, READY if replica is ready
+    /// and EMPTY if we need to try next replica.
     State processEpollEvents(bool blocking, Connection *& connection_out);
 
     State setBestUsableReplica(Connection *& connection_out);
