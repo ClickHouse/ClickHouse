@@ -48,24 +48,6 @@ public:
         CANNOT_CHOOSE = 3,
     };
 
-    struct ReplicaState
-    {
-        Connection * connection = nullptr;
-        size_t index = -1;
-        State state = State::EMPTY;
-        std::unordered_map<int, ConnectionTimeoutDescriptorPtr> active_timeouts;
-
-        void reset()
-        {
-            connection = nullptr;
-            index = -1;
-            state = State::EMPTY;
-            active_timeouts.clear();
-        }
-    };
-
-    using ReplicaStatePtr = std::shared_ptr<ReplicaState>;
-
     HedgedConnectionsFactory(const ConnectionPoolWithFailoverPtr & pool_,
                         const Settings * settings_,
                         const ConnectionTimeouts & timeouts_,
@@ -96,9 +78,9 @@ public:
     ~HedgedConnectionsFactory();
 
 private:
-    ReplicaStatePtr startEstablishingConnection(int index);
+    State startEstablishingConnection(int index, Connection *& connection_out);
 
-    void processConnectionEstablisherStage(ReplicaStatePtr replica, bool remove_from_epoll = false);
+    State processConnectionEstablisherStage(int replica_index, bool remove_from_epoll = false);
 
     /// Find an index of the next free replica to start connection.
     /// Return -1 if there is no free replica.
@@ -106,27 +88,23 @@ private:
 
     int getReadyFileDescriptor(bool blocking);
 
-    void addTimeouts(ReplicaStatePtr replica);
+    void addTimeouts(int replica_index);
 
-    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica);
+    void addTimeoutToReplica(ConnectionTimeoutType type, int replica_index);
 
-    void removeTimeoutsFromReplica(ReplicaStatePtr replica);
+    void removeTimeoutsFromReplica(int replica_index);
 
-    void processFailedConnection(ReplicaStatePtr replica);
+    void processFailedConnection(int replica_index);
 
-    void processReceiveTimeout(ReplicaStatePtr replica);
+    State processReplicaEvent(int replica_index, Connection *& connection_out);
 
-    void processReplicaEvent(ReplicaStatePtr replica);
-
-    void processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor);
+    bool processTimeoutEvent(int replica_index, ConnectionTimeoutDescriptorPtr timeout_descriptor);
 
     /// Return false if there is no ready events, return true if replica is ready
     /// or we need to try next replica.
-    bool processEpollEvents(ReplicaStatePtr & replica, bool blocking);
+    State processEpollEvents(bool blocking, Connection *& connection_out);
 
-    void setBestUsableReplica(ReplicaStatePtr replica);
-
-    ReplicaStatePtr createNewReplica() { return std::make_shared<ReplicaState>(); }
+    State setBestUsableReplica(Connection *& connection_out);
 
     const ConnectionPoolWithFailoverPtr pool;
     const Settings * settings;
@@ -136,10 +114,12 @@ private:
     std::vector<ConnectionEstablisher> connection_establishers;
     std::vector<ShuffledPool> shuffled_pools;
 
-    /// Map socket file descriptor to replica.
-    std::unordered_map<int, ReplicaStatePtr> fd_to_replica;
-    /// Map timeout file descriptor to replica.
-    std::unordered_map<int, ReplicaStatePtr> timeout_fd_to_replica;
+    std::vector<std::unordered_map<int, ConnectionTimeoutDescriptorPtr>> replicas_timeouts;
+
+    /// Map socket file descriptor to replica index.
+    std::unordered_map<int, int> fd_to_replica_index;
+    /// Map timeout file descriptor to replica index.
+    std::unordered_map<int, int> timeout_fd_to_replica_index;
 
     /// Indexes of replicas, that are in process of connection.
     std::unordered_set<int> indexes_in_process;

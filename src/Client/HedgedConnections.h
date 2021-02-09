@@ -22,14 +22,17 @@ public:
     {
         Connection * connection = nullptr;
         std::unordered_map<int, ConnectionTimeoutDescriptorPtr> active_timeouts;
-        size_t offset = 0;
     };
 
-    using ReplicaStatePtr = std::shared_ptr<ReplicaState>;
+    struct ReplicaLocation
+    {
+        size_t offset;
+        size_t index;
+    };
 
     struct OffsetState
     {
-        std::vector<ReplicaStatePtr> replicas;
+        std::vector<ReplicaState> replicas;
         size_t active_connection_count;
         bool first_packet_of_data_received;
     };
@@ -76,32 +79,32 @@ private:
     class Pipeline
     {
     public:
-        void add(std::function<void(ReplicaStatePtr)> send_function);
+        void add(std::function<void(ReplicaState &)> send_function);
 
-        void run(ReplicaStatePtr replica);
+        void run(ReplicaState & replica);
     private:
-        std::vector<std::function<void(ReplicaStatePtr)>> pipeline;
+        std::vector<std::function<void(ReplicaState &)>> pipeline;
     };
 
-    Packet receivePacketFromReplica(ReplicaStatePtr replica, AsyncCallback async_callback = {});
+    Packet receivePacketFromReplica(ReplicaLocation & replica_location, AsyncCallback async_callback = {});
 
     Packet receivePacketImpl(AsyncCallback async_callback = {});
 
-    void processReceivedFirstDataPacket(ReplicaStatePtr replica);
+    void processReceivedFirstDataPacket(ReplicaLocation & replica_location);
 
-    void processTimeoutEvent(ReplicaStatePtr replica, ConnectionTimeoutDescriptorPtr timeout_descriptor);
+    void processTimeoutEvent(ReplicaLocation & replica_location, ConnectionTimeoutDescriptorPtr timeout_descriptor);
 
     void tryGetNewReplica(bool start_new_connection);
 
-    void finishProcessReplica(ReplicaStatePtr replica, bool disconnect);
+    void finishProcessReplica(ReplicaState & replica, bool disconnect);
 
     int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
-    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaStatePtr replica);
+    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaState & replica);
 
-    void removeTimeoutsFromReplica(ReplicaStatePtr replica);
+    void removeTimeoutsFromReplica(ReplicaState & replica);
 
-    void removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaStatePtr replica);
+    void removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaState & replica);
 
 
     HedgedConnectionsFactory hedged_connections_factory;
@@ -111,10 +114,10 @@ private:
     /// replica_states[offset].replicas.size() = 1 (like in MultiplexedConnections).
     std::vector<OffsetState> offset_states;
 
-    /// Map socket file descriptor to replica.
-    std::unordered_map<int, ReplicaStatePtr> fd_to_replica;
-    /// Map timeout file descriptor to replica.
-    std::unordered_map<int, ReplicaStatePtr> timeout_fd_to_replica;
+    /// Map socket file descriptor to replica location (it's offset and index in OffsetState.replicas).
+    std::unordered_map<int, ReplicaLocation> fd_to_replica_location;
+    /// Map timeout file descriptor to replica location (it's offset and index in OffsetState.replicas).
+    std::unordered_map<int, ReplicaLocation> timeout_fd_to_replica_location;
 
     /// A queue of offsets for new replicas. When we get RECEIVE_DATA_TIMEOUT from
     /// the replica, we push it's offset to this queue and start trying to get
@@ -142,7 +145,6 @@ private:
     Epoll epoll;
     const Settings & settings;
     ThrottlerPtr throttler;
-    Poco::Logger * log;
     bool sent_query = false;
     bool cancelled = false;
 
