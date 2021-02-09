@@ -26,10 +26,6 @@ struct EnabledQuota::Impl
         std::chrono::seconds duration,
         std::chrono::system_clock::time_point end_of_interval)
     {
-        std::function<String(UInt64)> amount_to_string = [](UInt64 amount) { return std::to_string(amount); };
-        if (resource_type == Quota::EXECUTION_TIME)
-            amount_to_string = [&](UInt64 amount) { return ext::to_string(std::chrono::nanoseconds(amount)); };
-
         const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
         throw Exception(
             "Quota for user " + backQuote(user_name) + " for " + ext::to_string(duration) + " has been exceeded: "
