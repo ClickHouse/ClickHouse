@@ -61,7 +61,7 @@ public:
     /** it is desirable in the derived classes to place the next() call in the destructor,
       * so that the last data is written
       */
-    virtual ~WriteBuffer() {}
+    virtual ~WriteBuffer() = default;
 
     inline void nextIfAtEnd()
     {
@@ -75,7 +75,7 @@ public:
         size_t bytes_copied = 0;
 
         /// Produces endless loop
-        assert(working_buffer.size() > 0);
+        assert(!working_buffer.empty());
 
         while (bytes_copied < n)
         {

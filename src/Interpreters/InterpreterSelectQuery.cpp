@@ -69,7 +69,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -295,7 +294,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     // Only propagate WITH elements to subqueries if we're not a subquery
-    if (options.subquery_depth == 0)
+    if (!options.is_subquery)
     {
         if (context->getSettingsRef().enable_global_with_statement)
             ApplyWithAliasVisitor().visit(query_ptr);
@@ -390,13 +389,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
             {
+                /// Extract column compressed sizes.
+                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                for (const auto & [name, sizes] : column_sizes)
+                    column_compressed_sizes[name] = sizes.data_compressed;
+
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, *context, std::move(column_compressed_sizes), metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
 
