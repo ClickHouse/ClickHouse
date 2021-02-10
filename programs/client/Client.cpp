@@ -1386,7 +1386,7 @@ private:
                     {
                         if (i)
                         {
-                            fmt::print(stderr, ",");
+                            fmt::print(stderr, ", ");
                         }
                         fmt::print(stderr, "{} = '{}'", changes[i].name,
                             toString(changes[i].value));
