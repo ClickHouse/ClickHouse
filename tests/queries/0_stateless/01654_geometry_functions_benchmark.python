@@ -1,0 +1,13 @@
+#!/usr/bin/env python3                                                                                                                                                                                              
+import os
+import sys
+import random
+import pandas as pd
+import numpy as np
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+
+from pure_http_client import ClickHouseClient
+
+
