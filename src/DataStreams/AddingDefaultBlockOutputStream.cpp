@@ -14,13 +14,13 @@ AddingDefaultBlockOutputStream::AddingDefaultBlockOutputStream(
     : output(output_), header(header_)
 {
     auto dag = addMissingDefaults(header_, output->getHeader().getNamesAndTypesList(), columns_, context_);
-    actions = std::make_shared<ExpressionActions>(std::move(dag));
+    adding_defaults_actions = std::make_shared<ExpressionActions>(std::move(dag));
 }
 
 void AddingDefaultBlockOutputStream::write(const Block & block)
 {
     auto copy = block;
-    actions->execute(copy);
+    adding_defaults_actions->execute(copy);
     output->write(copy);
 }
 
