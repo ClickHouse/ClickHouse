@@ -112,4 +112,34 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
+## mapContains {#mapcontains}
+
+Determines  whether `map.keys` contains the `key` parameter.
+
+**Syntax**
+
+``` sql
+mapContains(map, key)
+```
+
+**Parameters** 
+
+-   `map` — Map. [Type name](relative/path/to/type/dscr.md#type).
+-   `key` — Key. Type matches the type of `map.keys`.
+
+**Returned value**
+
+-   `1` if `map.keys` contains `key`, `0` if not.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+
+## mapKeys {#mapKeys}
+
+## mapValues {#mapvalues}
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/tuple-map-functions/) <!--hide-->
