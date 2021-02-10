@@ -31,7 +31,7 @@
     </prompt_by_server_display_name>
 
     <!-- 
-        Settings adjustable via command-line parameters (see clickhouse-client --help)
+        Settings adjustable via command-line parameters
         can take their defaults from that config file, see examples:
 
     <host>127.0.0.1</host>
