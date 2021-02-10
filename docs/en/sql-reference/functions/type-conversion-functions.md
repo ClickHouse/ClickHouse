@@ -691,7 +691,7 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
-Same as for [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) except that it returns null when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 **Syntax**
 
