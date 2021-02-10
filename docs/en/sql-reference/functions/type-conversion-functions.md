@@ -427,7 +427,12 @@ Result:
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts input value `x` to the `T` data type. The syntax `CAST(x AS t)` is also supported.
+Converts input value `x` to the `T` data type.
+
+The syntax `CAST(x AS t)` is also supported.
+
+Note, that if value `x` does not fit the bounds of type T, the function overflows. For example, CAST(-1, 'UInt8') returns 255.
+
 
 **Example**
 
