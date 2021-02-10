@@ -2594,7 +2594,7 @@ Default value: `16`.
 
 ## optimize_on_insert {#optimize-on-insert}
 
-Enables or disables data transformation before the insertion, as if merge was done on this block (e.g. replacing, collapsing, aggregating...).
+Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
 
 Possible values:
 
