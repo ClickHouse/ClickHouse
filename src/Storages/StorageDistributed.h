@@ -114,7 +114,7 @@ public:
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
-    void flushClusterNodesAllData();
+    void flushClusterNodesAllData(const Context & context);
 
     ClusterPtr getCluster() const;
 
