@@ -986,7 +986,7 @@ void BaseDaemon::setupWatchdog()
         if (errno == ECHILD)
         {
             logger().information("Child process no longer exists.");
-            _exit(status);
+            _exit(WEXITSTATUS(status));
         }
 
         if (WIFEXITED(status))
@@ -1020,7 +1020,7 @@ void BaseDaemon::setupWatchdog()
 
         /// Automatic restart is not enabled but you can play with it.
 #if 1
-        _exit(status);
+        _exit(WEXITSTATUS(status));
 #else
         logger().information("Will restart.");
         if (argv0)
