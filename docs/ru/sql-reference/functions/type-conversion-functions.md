@@ -423,8 +423,11 @@ SELECT uuid = uuid2;
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Преобразует x в тип данных t.
-Поддерживается также синтаксис CAST(x AS t).
+Преобразует вхожное значение `x` в указананный тип данных `T`.
+
+Поддерживается также синтаксис `CAST(x AS t)`.
+
+Обратите внимание, что если значение `x` не соответствует границам типа `T`, функция переполняется. Например, `CAST(-1, 'UInt8')` возвращает 255.
 
 **Пример**
 
@@ -487,9 +490,44 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 
 -   Настройка [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable)
 
+## accurateCast(x, T) {#type_conversion_function-accurate-cast}
+
+Преобразует входное значение `x` в указанный тип данных `T`.
+
+Отличие от [cast(x, T)](#type_conversion_function-cast) в том, что `accurateCast` не допускает переполнения числовых типов, если значение типа `x` не соответствует границам типа `T`. Например, `accurateCast(-1, 'UInt8')` вернет ошибку.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT cast(-1, 'UInt8') as uint8; 
+```
+
+Результат:
+
+``` text
+┌─uint8─┐
+│   255 │
+└─────
+
+Запрос:
+
+```sql
+SELECT accurateCast(-1, 'UInt8') as uint8;
+```
+
+Результат:
+
+``` text
+Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
+```
+
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Преобразует входное значение `x` в указанный тип данных `T`. Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md), и возвращает [NULL](../../sql-reference/syntax.md#null-literal), если приведенное значение не может быть представлено в целевом типе.
+Преобразует входное значение `x` в указанный тип данных `T`.
+
+Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md), и возвращает [NULL](../../sql-reference/syntax.md#null-literal), если приведенное значение не может быть представлено в целевом типе.
 
 **Синтаксис**
 
@@ -522,9 +560,9 @@ SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
 
 ``` sql
 SELECT
-    cast(-1, 'UInt8') as uint8,
-    cast(128, 'Int8') as int8,
-    cast('Test', 'FixedString(2)') as fixed_string;
+    accurateCastOrNull(-1, 'UInt8') as uint8,
+    accurateCastOrNull(128, 'Int8') as int8,
+    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string;
 ```
 
 Результат:
