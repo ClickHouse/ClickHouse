@@ -835,6 +835,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
             block.output_columns.push_back(ws.window_function.aggregate_function
                 ->getReturnType()->createColumn());
         }
+
+        // Even in case of `count() over ()` we should have a dummy input column.
+        // Not sure how reliable this is...
+        block.rows = block.input_columns[0]->size();
     }
 
     // Start the calculations. First, advance the partition end.
@@ -1037,7 +1041,7 @@ IProcessor::Status WindowTransform::prepare()
             {
                 columns.push_back(ColumnPtr(std::move(res)));
             }
-            output_data.chunk.setColumns(columns, block.numRows());
+            output_data.chunk.setColumns(columns, block.rows);
 
             output.pushData(std::move(output_data));
         }
