@@ -266,3 +266,45 @@ select x, min(x) over w, max(x) over w, count(x) over w from (
 window w as (order by x desc range between unbounded preceding and 2 preceding)
 order by x
 settings max_block_size = 4;
+
+
+-- Check that we put windows in such an order that we can reuse the sort.
+-- First, check that at least the result is correct when we have many windows
+-- with different sort order.
+select
+    number,
+    count(*) over (partition by p order by number),
+    count(*) over (partition by p order by number, o),
+    count(*) over (),
+    count(*) over (order by number),
+    count(*) over (order by o),
+    count(*) over (order by o, number),
+    count(*) over (order by number, o),
+    count(*) over (partition by p order by o, number),
+    count(*) over (partition by p),
+    count(*) over (partition by p order by o),
+    count(*) over (partition by p, o order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+order by number
+;
+
+-- The EXPLAIN for the above query would be difficult to understand, so check some
+-- simple cases instead.
+explain select
+    count(*) over (partition by p),
+    count(*) over (),
+    count(*) over (partition by p order by o)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+
+explain select
+    count(*) over (order by o, number),
+    count(*) over (order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;

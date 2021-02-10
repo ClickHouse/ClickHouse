@@ -1836,12 +1836,8 @@ static bool windowDescriptionComparator(const WindowDescription * _left,
 {
     const auto & left = _left->full_sort_description;
     const auto & right = _right->full_sort_description;
-    if (left.size() != right.size())
-    {
-        return left.size() < right.size();
-    }
 
-    for (size_t i = 0; i < left.size(); ++i)
+    for (size_t i = 0; i < std::min(left.size(), right.size()); ++i)
     {
         if (left[i].column_name < right[i].column_name)
         {
@@ -1863,10 +1859,15 @@ static bool windowDescriptionComparator(const WindowDescription * _left,
             return true;
         }
 
-        assert(left[i] == right[i]);
+        if (left[i] != right[i])
+        {
+            return false;
+        }
     }
 
-    return false;
+    // Note that we check the length last, because we want to put together the
+    // sort orders that have common prefix but different length.
+    return left.size() > right.size();
 }
 
 static bool sortIsPrefix(const WindowDescription & _prefix,
@@ -1893,6 +1894,8 @@ static bool sortIsPrefix(const WindowDescription & _prefix,
 
 void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 {
+    // Try to sort windows in such an order that the window with the longest
+    // sort description goes first, and all window that use its prefixes follow.
     std::vector<const WindowDescription *> windows_sorted;
     for (const auto & [_, w] : query_analyzer->windowDescriptions())
     {
