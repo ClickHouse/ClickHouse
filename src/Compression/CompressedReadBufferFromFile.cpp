@@ -108,7 +108,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         /// If the decompressed block fits entirely where it needs to be copied.
         if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
-            //std::cerr << "readBig " << file_in.getFileName() << "\n";
             decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
             bytes += size_decompressed;
