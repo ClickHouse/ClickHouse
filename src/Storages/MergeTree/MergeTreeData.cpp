@@ -729,16 +729,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (startsWith(it->name(), "tmp"))
                 continue;
 
-            part_names_with_disks.emplace_back(it->name(), disk_ptr);
-
-            /// Create and correctly initialize global WAL object, if it's needed
-            if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME && settings->in_memory_parts_enable_wal)
+            if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+                part_names_with_disks.emplace_back(it->name(), disk_ptr);
+            else if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME && settings->in_memory_parts_enable_wal)
             {
+                /// Create and correctly initialize global WAL object
                 write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
                 for (auto && part : write_ahead_log->restore(metadata_snapshot))
                     parts_from_wal.push_back(std::move(part));
             }
-            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME) && settings->in_memory_parts_enable_wal)
+            else if (settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
                 for (auto && part : wal.restore(metadata_snapshot))
