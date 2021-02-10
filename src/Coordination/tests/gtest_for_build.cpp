@@ -86,7 +86,7 @@ struct SimpliestRaftServer
         params.return_method_ = nuraft::raft_params::blocking;
 
         raft_instance = launcher.init(
-            state_machine, state_manager, nuraft::cs_new<DB::LoggerWrapper>("ToyRaftLogger"), port,
+            state_machine, state_manager, nuraft::cs_new<DB::LoggerWrapper>("ToyRaftLogger", DB::LogsLevel::trace), port,
             nuraft::asio_service::options{}, params);
 
         if (!raft_instance)
