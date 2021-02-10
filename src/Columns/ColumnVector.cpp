@@ -532,6 +532,11 @@ template <typename T>
 LazyColumn ColumnVector<T>::compress() const
 {
     size_t source_size = data.size() * sizeof(T);
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return IColumn::compress();
+
     size_t max_dest_size = LZ4_COMPRESSBOUND(source_size);
 
     if (max_dest_size > std::numeric_limits<int>::max())
