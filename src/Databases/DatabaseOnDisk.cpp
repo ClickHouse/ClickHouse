@@ -311,7 +311,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
 }
 
-void DatabaseOnDisk::detachTablePermanently(const String & table_name)
+void DatabaseOnDisk::detachTablePermanently(const Context &, const String & table_name)
 {
     auto table = detachTable(table_name);
 

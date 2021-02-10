@@ -62,6 +62,7 @@ public:
                           const String & dictionary_name,
                           const ASTPtr & query) override;
     void removeDictionary(const Context & context, const String & dictionary_name) override;
+    void detachTablePermanently(const Context & context, const String & table_name) override;
 
     void drop(const Context & /*context*/) override;
 
@@ -90,6 +91,7 @@ private:
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
+    String readMetadataFile(const String & table_name) const;
 
     String zookeeper_path;
     String shard_name;

@@ -39,6 +39,8 @@ namespace ErrorCodes
 }
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
+static constexpr const char * BROKEN_TABLE_PREFIX = "_broken_";
+
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
@@ -306,13 +308,76 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     if (new_replica && !empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "It's new replica, but database is not empty");
 
-    if (!new_replica)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Automatic replica recovery is not implemented");
-
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
+
+    Strings tables_to_detach;
+    size_t total_tables = 0;
+    auto existing_tables_it = getTablesIterator(global_context, [&](const String & name) { return !startsWith(name, BROKEN_TABLE_PREFIX); });
+    while (existing_tables_it->isValid())
+    {
+        String name = existing_tables_it->name();
+        auto in_zk = table_name_to_metadata.find(name);
+        String local_metadata = readMetadataFile(name);
+        if (in_zk == table_name_to_metadata.end() || in_zk->second != local_metadata)
+        {
+            bool should_detach = true;
+            bool looks_like_replicated = in_zk->second.find("ReplicatedMergeTree") != std::string::npos;
+
+            if (looks_like_replicated)
+            {
+                ParserCreateQuery parser;
+                auto size = global_context.getSettingsRef().max_query_size;
+                auto depth = global_context.getSettingsRef().max_parser_depth;
+                ASTPtr local_create = parseQuery(parser, local_metadata, size, depth);
+                ASTPtr zk_create = parseQuery(parser, in_zk->second, size, depth);
+                if (local_create->as<ASTCreateQuery>()->uuid == zk_create->as<ASTCreateQuery>()->uuid)
+                {
+                    /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's tha same table.
+                    /// Metadata can be different, it's handled on table replication level.
+                    /// TODO maybe we should also compare MergeTree SETTINGS?
+                    should_detach = false;
+                }
+            }
+
+            if (should_detach)
+                tables_to_detach.emplace_back(std::move(name));
+        }
+        existing_tables_it->next();
+        ++total_tables;
+    }
+
+    if (total_tables < tables_to_detach.size() * 2)
+        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to detach: {} of {}", tables_to_detach.size(), total_tables);
+    else if (!tables_to_detach.empty())
+        LOG_WARNING(log, "Will DETACH PERMANENTLY {} broken tables to recover replica", tables_to_detach.size());
+
+    auto db_guard = DatabaseCatalog::instance().getDDLGuard(getDatabaseName(), "");
+    for (const auto & table_name : tables_to_detach)
+    {
+        String to_name = fmt::format("{}_{}_{}_{}", BROKEN_TABLE_PREFIX, table_name, max_log_ptr, thread_local_rng() % 1000);
+        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(getDatabaseName(), std::min(table_name, to_name));
+        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(getDatabaseName(), std::max(table_name, to_name));
+
+        if (isDictionaryExist(table_name))
+        {
+            /// TODO implement DETACH DICTIONARY PERMANENTLY
+            DatabaseAtomic::removeDictionary(global_context, table_name);
+        }
+        else
+        {
+            DatabaseAtomic::renameTable(global_context, table_name, *this, to_name, false, false);
+            DatabaseAtomic::detachTablePermanently(global_context, to_name);
+        }
+    }
 
     for (const auto & name_and_meta : table_name_to_metadata)
     {
+        if (isTableExist(name_and_meta.first, global_context))
+        {
+            assert(name_and_meta.second == readMetadataFile(name_and_meta.first));
+            continue;
+        }
+
         auto query_ast = parseQueryFromMetadataInZooKeeper(name_and_meta.first, name_and_meta.second);
 
         Context query_context = global_context;
@@ -349,7 +414,7 @@ std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(co
             auto res = futures[i].get();
             if (res.error != Coordination::Error::ZOK)
                 break;
-            table_name_to_metadata.emplace(table_names[i], res.data);
+            table_name_to_metadata.emplace(unescapeForFileName(table_names[i]), res.data);
         }
 
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
@@ -451,18 +516,8 @@ void DatabaseReplicated::renameTable(const Context & context, const String & tab
         if (exchange && !to_database.isTableExist(to_table_name, context))
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
-        String statement;
-        String statement_to;
-        {
-            /// NOTE It's not atomic (however, we have only one thread)
-            ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
-            readStringUntilEOF(statement, in);
-            if (exchange)
-            {
-                ReadBufferFromFile in_to(to_database.getObjectMetadataPath(to_table_name), 4096);
-                readStringUntilEOF(statement_to, in_to);
-            }
-        }
+        String statement = readMetadataFile(table_name);
+        String statement_to = readMetadataFile(to_table_name);
         String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = txn->zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
         txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
@@ -481,6 +536,8 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                        const Context & query_context)
 {
+    if (startsWith(query.table, BROKEN_TABLE_PREFIX))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not allowed to attach broken tables");
     auto txn = query_context.getMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->is_initial_query)
@@ -531,6 +588,26 @@ void DatabaseReplicated::removeDictionary(const Context & context, const String 
         txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
     DatabaseAtomic::removeDictionary(context, dictionary_name);
+}
+
+void DatabaseReplicated::detachTablePermanently(const Context & context, const String & table_name)
+{
+    auto txn = context.getMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->is_initial_query)
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+    }
+    DatabaseAtomic::detachTablePermanently(context, table_name);
+}
+
+String DatabaseReplicated::readMetadataFile(const String & table_name) const
+{
+    String statement;
+    ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
+    readStringUntilEOF(statement, in);
+    return statement;
 }
 
 }
