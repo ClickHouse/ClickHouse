@@ -876,8 +876,8 @@ order by number
 -- The EXPLAIN for the above query would be difficult to understand, so check some
 -- simple cases instead.
 explain select
-    count(*) over (),
     count(*) over (partition by p),
+    count(*) over (),
     count(*) over (partition by p order by o)
 from
     (select number, intDiv(number, 3) p, mod(number, 5) o
