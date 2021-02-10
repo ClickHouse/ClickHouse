@@ -188,8 +188,7 @@ void MaterializeMySQLSyncThread::synchronization()
     {
         client.disconnect();
         tryLogCurrentException(log);
-        auto db = DatabaseCatalog::instance().getDatabase(database_name);
-        setSynchronizationThreadException(db, std::current_exception());
+        setSynchronizationThreadException(std::current_exception());
     }
 }
 
@@ -205,30 +204,27 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
+    background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this]() { synchronization(); });
+}
+
+void MaterializeMySQLSyncThread::assertMySQLAvailable()
+{
     try
     {
         checkMySQLVariables(pool.get());
-        background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this]() { synchronization(); });
     }
-    catch (...)
+    catch (const mysqlxx::ConnectionFailed & e)
     {
-        try
-        {
+        if (e.errnum() == ER_ACCESS_DENIED_ERROR
+            || e.errnum() == ER_DBACCESS_DENIED_ERROR)
+            throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
+                            "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                            "and SELECT PRIVILEGE on Database " + mysql_database_name
+                            , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
+        else if (e.errnum() == ER_BAD_DB_ERROR)
+            throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
+        else
             throw;
-        }
-        catch (mysqlxx::ConnectionFailed & e)
-        {
-            if (e.errnum() == ER_ACCESS_DENIED_ERROR
-                || e.errnum() == ER_DBACCESS_DENIED_ERROR)
-                throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
-                                "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
-                                "and SELECT PRIVILEGE on Database " + mysql_database_name
-                    , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
-            else if (e.errnum() == ER_BAD_DB_ERROR)
-                throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
-            else
-                throw;
-        }
     }
 }
 
@@ -341,6 +337,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             connection = pool.get();
             opened_transaction = false;
 
+            checkMySQLVariables(connection);
             MaterializeMetadata metadata(
                 connection, DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", mysql_database_name, opened_transaction);
 
@@ -369,6 +366,8 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
             client.connect();
             client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set, metadata.binlog_checksum);
+
+            setSynchronizationThreadException(nullptr);
             return metadata;
         }
         catch (...)
@@ -384,6 +383,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             }
             catch (const mysqlxx::ConnectionFailed &)
             {
+                setSynchronizationThreadException(std::current_exception());
                 /// Avoid busy loop when MySQL is not available.
                 sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
             }
@@ -703,6 +703,12 @@ void MaterializeMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event
 bool MaterializeMySQLSyncThread::isMySQLSyncThread()
 {
     return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
+}
+
+void MaterializeMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
+{
+    auto db = DatabaseCatalog::instance().getDatabase(database_name);
+    DB::setSynchronizationThreadException(db, exception);
 }
 
 void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
