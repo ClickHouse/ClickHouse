@@ -33,12 +33,14 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
+        QueryProcessingStage::Enum processed_stage,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+
 
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageMetadataPtr & metadata_snapshot_base,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,

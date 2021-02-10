@@ -4,6 +4,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/ProjectionKeyActions.h>
+
 #include <memory>
 
 namespace DB
@@ -140,6 +143,11 @@ struct SelectQueryInfo
     PreparedSets sets;
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+
+    const ProjectionDescription * aggregate_projection{};
+    ProjectionKeyActions key_actions;
+    Names projection_names;
+    Block projection_block;
 };
 
 }

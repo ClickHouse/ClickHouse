@@ -62,6 +62,8 @@ struct TreeRewriterResult
     /// instead of actual retrieving columns and counting rows.
     bool optimize_trivial_count = false;
 
+    bool can_use_projection = false;
+
     /// Cache isRemote() call for storage, because it may be too heavy.
     bool is_remote_storage = false;
 
@@ -115,7 +117,7 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings);
 };
 
 }

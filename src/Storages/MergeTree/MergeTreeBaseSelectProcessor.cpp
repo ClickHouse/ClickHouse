@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
@@ -24,6 +26,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    const ProjectionDescription * aggregate_projection_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
@@ -34,6 +37,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
+    , aggregate_projection(aggregate_projection_)
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -62,6 +66,13 @@ Chunk MergeTreeBaseSelectProcessor::generate()
         if (res.hasRows())
         {
             injectVirtualColumns(res, task.get(), partition_value_type, virt_column_names);
+            if (aggregate_projection)
+            {
+                auto info = std::make_shared<AggregatedChunkInfo>();
+                info->bucket_num = -1;
+                info->is_overflows = false;
+                res.setChunkInfo(std::move(info));
+            }
             return res;
         }
     }
@@ -205,6 +216,7 @@ namespace
     {
         virtual ~VirtualColumnsInserter() = default;
 
+        virtual void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
@@ -229,17 +241,42 @@ static void injectVirtualColumnsImpl(
             throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
                             ErrorCodes::LOGICAL_ERROR);
 
+        const IMergeTreeDataPart * part = nullptr;
+        if (rows)
+        {
+            part = task->data_part.get();
+            if (part->isProjectionPart())
+                part = part->getParentPart();
+        }
         for (const auto & virtual_column_name : virtual_columns)
         {
             if (virtual_column_name == "_part")
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst();
+                    column = DataTypeString().createColumnConst(rows, part->name)->convertToFullColumnIfConst();
                 else
                     column = DataTypeString().createColumn();
 
                 inserter.insertStringColumn(column, virtual_column_name);
+            }
+            else if (virtual_column_name == "_projections")
+            {
+                ColumnPtr column;
+                if (rows)
+                {
+                    Array projections;
+                    for (const auto & [name, _] : part->getProjectionParts())
+                        projections.push_back(name);
+
+                    column = DataTypeArray(std::make_shared<DataTypeString>())
+                                 .createColumnConst(rows, projections)
+                                 ->convertToFullColumnIfConst();
+                }
+                else
+                    column = DataTypeArray(std::make_shared<DataTypeString>()).createColumn();
+
+                inserter.insertArrayOfStringsColumn(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_index")
             {
@@ -265,7 +302,7 @@ static void injectVirtualColumnsImpl(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, task->data_part->info.partition_id)->convertToFullColumnIfConst();
+                    column = DataTypeString().createColumnConst(rows, part->info.partition_id)->convertToFullColumnIfConst();
                 else
                     column = DataTypeString().createColumn();
 
@@ -287,6 +324,11 @@ namespace
     struct VirtualColumnsInserterIntoBlock : public VirtualColumnsInserter
     {
         explicit VirtualColumnsInserterIntoBlock(Block & block_) : block(block_) {}
+
+        void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), name});
+        }
 
         void insertStringColumn(const ColumnPtr & column, const String & name) final
         {
@@ -322,6 +364,11 @@ namespace
     struct VirtualColumnsInserterIntoColumns : public VirtualColumnsInserter
     {
         explicit VirtualColumnsInserterIntoColumns(Columns & columns_) : columns(columns_) {}
+
+        void insertArrayOfStringsColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
 
         void insertStringColumn(const ColumnPtr & column, const String &) final
         {
