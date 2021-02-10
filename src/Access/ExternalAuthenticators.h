@@ -8,6 +8,7 @@
 #include <chrono>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 
@@ -54,7 +55,7 @@ private:
     mutable std::recursive_mutex mutex;
     LDAPParams ldap_client_params_blueprint;
     mutable LDAPCaches ldap_caches;
-    GSSAcceptorContext::Params kerberos_params;
+    std::optional<GSSAcceptorContext::Params> kerberos_params;
 };
 
 }

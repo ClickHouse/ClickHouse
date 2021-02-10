@@ -167,7 +167,7 @@ void ExternalAuthenticators::reset()
     std::scoped_lock lock(mutex);
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
-    kerberos_params = GSSAcceptorContext::Params();
+    kerberos_params.reset();
 }
 
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
@@ -191,7 +191,13 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     try
     {
-        if (config.has("kerberos"))
+        Poco::Util::AbstractConfiguration::Keys kerberos;
+        config.keys("kerberos", kerberos);
+
+        if (kerberos.size() > 1)
+            throw Exception("Multiple kerberos sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
+        if (kerberos.size() == 1)
             kerberos_params = parseKerberosParams(config);
     }
     catch (...)
@@ -341,6 +347,9 @@ bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, cons
 {
     std::scoped_lock lock(mutex);
 
+    if (!kerberos_params.has_value())
+        throw Exception("Kerberos is not enabled", ErrorCodes::BAD_ARGUMENTS);
+
     if (!credentials.isReady())
         return false;
 
@@ -356,7 +365,11 @@ bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, cons
 GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
 {
     std::scoped_lock lock(mutex);
-    return kerberos_params;
+
+    if (!kerberos_params.has_value())
+        throw Exception("Kerberos is not enabled", ErrorCodes::BAD_ARGUMENTS);
+
+    return kerberos_params.value();
 }
 
 }
