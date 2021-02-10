@@ -115,8 +115,19 @@ LIMIT 10
 
 ## IPv6StringToNum(s) {#ipv6stringtonums}
 
-The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
+The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes. 
+If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
 HEX can be uppercase or lowercase.
+
+``` sql
+SELECT cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0);
+```
+
+``` text
+┌─cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0)─┐
+│ ::ffff:127.0.0.1                            │
+└─────────────────────────────────────────────┘
+```
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
@@ -214,6 +225,7 @@ SELECT
 ## toIPv6(string) {#toipv6string}
 
 An alias to `IPv6StringToNum()` that takes a string form of IPv6 address and returns value of [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, which is binary equal to value returned by `IPv6StringToNum()`.
+If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
 
 ``` sql
 WITH
@@ -243,6 +255,15 @@ SELECT
 └───────────────────────────────────┴──────────────────────────────────┘
 ```
 
+``` sql
+SELECT toIPv6('127.0.0.1')
+```
+
+``` text
+┌─toIPv6('127.0.0.1')─┐
+│ ::ffff:127.0.0.1    │
+└─────────────────────┘
+```
 
 ## isIPv4String
 
