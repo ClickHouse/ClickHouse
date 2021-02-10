@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TIMEOUT_EXCEEDED;
     extern const int RAFT_ERROR;
 }
 
