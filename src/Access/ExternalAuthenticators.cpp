@@ -151,11 +151,23 @@ auto parseKerberosParams(const Poco::Util::AbstractConfiguration & config)
 {
     GSSAcceptorContext::Params params;
 
+    Poco::Util::AbstractConfiguration::Keys realm_keys;
+    config.keys("kerberos.realm", realm_keys);
+
+    Poco::Util::AbstractConfiguration::Keys principal_keys;
+    config.keys("kerberos.principal", principal_keys);
+
+    if (!realm_keys.empty() && !principal_keys.empty())
+        throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
+
+    if (realm_keys.size() > 1)
+        throw Exception("Multiple realm sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
+    if (principal_keys.size() > 1)
+        throw Exception("Multiple principal sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
     params.realm = config.getString("kerberos.realm", "");
     params.principal = config.getString("kerberos.principal", "");
-
-    if (!params.realm.empty() && !params.principal.empty())
-        throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
 
     return params;
 }
@@ -191,13 +203,13 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     try
     {
-        Poco::Util::AbstractConfiguration::Keys kerberos;
-        config.keys("kerberos", kerberos);
+        Poco::Util::AbstractConfiguration::Keys kerberos_keys;
+        config.keys("kerberos", kerberos_keys);
 
-        if (kerberos.size() > 1)
+        if (kerberos_keys.size() > 1)
             throw Exception("Multiple kerberos sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
 
-        if (kerberos.size() == 1)
+        if (kerberos_keys.size() == 1)
             kerberos_params = parseKerberosParams(config);
     }
     catch (...)
