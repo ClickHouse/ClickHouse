@@ -162,8 +162,6 @@ private:
     void runMainThread();
     void runCleanupThread();
 
-    void attachToThreadGroup();
-
 private:
     Context context;
     Poco::Logger * log;
@@ -195,8 +193,6 @@ private:
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
-
-    ThreadGroupStatusPtr thread_group;
 
     std::atomic<UInt64> max_id = 0;
 

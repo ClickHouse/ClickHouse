@@ -39,7 +39,17 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
     for (const auto & input : inputs_)
     {
         if (input.column && isColumnConst(*input.column))
+        {
             addInput(input, true);
+
+            /// Here we also add column.
+            /// It will allow to remove input which is actually constant (after projection).
+            /// Also, some transforms from query pipeline may randomly materialize constants,
+            ///   without any respect to header structure. So, it is a way to drop materialized column and use
+            ///   constant value from header.
+            /// We cannot remove such input right now cause inputs positions are important in some cases.
+            addColumn(input, true);
+        }
         else
             addInput(input.name, input.type, true);
     }
@@ -116,7 +126,6 @@ ActionsDAG::Node & ActionsDAG::addAlias(Node & child, std::string alias, bool ca
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
-    node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
     return addNode(std::move(node), can_replace);
@@ -184,7 +193,6 @@ ActionsDAG::Node & ActionsDAG::addFunction(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         auto & child = *node.children[i];
-        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
         argument.column = child.column;
@@ -349,10 +357,15 @@ void ActionsDAG::removeUnusedActions()
         stack.push(node);
     }
 
-    /// We cannot remove arrayJoin because it changes the number of rows.
     for (auto & node : nodes)
     {
-        if (node.type == ActionType::ARRAY_JOIN && visited_nodes.count(&node) == 0)
+        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
+        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        bool is_array_join = node.type == ActionType::ARRAY_JOIN;
+
+        bool must_keep_node = is_array_join || prevent_constant_folding;
+        if (must_keep_node && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -410,7 +423,6 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *
             node.result_type = child->result_type;
             node.result_name = std::move(item.second);
             node.column = child->column;
-            node.allow_constant_folding = child->allow_constant_folding;
             node.children.emplace_back(child);
 
             auto & alias = addNode(std::move(node), true);
@@ -732,6 +744,23 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     actions_dag->projectInput();
 
     return actions_dag;
+}
+
+ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
+{
+    auto adding_column_action = std::make_shared<ActionsDAG>();
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    auto column_name = column.name;
+    const auto & column_node = adding_column_action->addColumn(std::move(column));
+    Inputs inputs = {const_cast<Node *>(&column_node)};
+    auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {}, true);
+    adding_column_action->addAlias(function_node, std::move(column_name), true);
+
+    return adding_column_action;
 }
 
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
