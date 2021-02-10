@@ -118,7 +118,7 @@ private:
 private:
     const String name;
     const String disk_path;
-    UInt64 keep_free_space_bytes;
+    std::atomic<UInt64> keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
