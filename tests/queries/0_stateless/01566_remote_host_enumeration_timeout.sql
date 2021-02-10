@@ -5,5 +5,5 @@
 -- select * from remote('badhost{0..200}.test', system, one) settings max_execution_time = 1; -- { serverError 159 }
 
 -- addresses from TEST-NET-1,2
-select * from remote('{192.0.2,198.51.100.0}.{0..255}', system, one)
+select * from remote('{192.0.2,198.51.100.0}.{0..255}', default, nonexistent01566)
 settings max_execution_time = 1, table_function_remote_max_addresses = 100000; -- { serverError 159 }
