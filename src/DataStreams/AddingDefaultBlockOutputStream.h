@@ -39,7 +39,7 @@ public:
 private:
     BlockOutputStreamPtr output;
     const Block header;
-    ExpressionActionsPtr actions;
+    ExpressionActionsPtr adding_defaults_actions;
 };
 
 
