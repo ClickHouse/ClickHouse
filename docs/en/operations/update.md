@@ -20,11 +20,14 @@ ClickHouse does not support a distributed update. The operation should be perfor
 The upgrade of older version of ClickHouse to specific version:
 
 As an example: 
+xx.yy.a.b is a current stable version. The latest stable version could be found [here](https://github.com/ClickHouse/ClickHouse/releases)
 
 ```bash
 $ sudo apt-get update
-$ sudo apt-get install clickhouse-server=20.12.4.5 clickhouse-client=20.12.4.5 clickhouse-common-static=20.12.4.5
+$ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b clickhouse-common-static=xx.yy.a.b
 $ sudo service clickhouse-server restart
 ```
 
-Note: It's always recommended to backup all databases before initiating the upgrade process. Please make sure the new version is compatible with new changes so on.
+
+
+
