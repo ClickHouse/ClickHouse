@@ -277,7 +277,7 @@ public:
     // frame_start and the frame_end may jump forward by an unknown amount of
     // blocks, e.g. if we use a RANGE frame. This means that sometimes we don't
     // know neither frame_end nor frame_start.
-    // We update the states of the window functions as we track the frame
+    // We update the states of the window functions after we find the final frame
     // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
     // output the result for the current row, w/o waiting for more data.

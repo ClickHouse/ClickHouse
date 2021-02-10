@@ -386,8 +386,8 @@ void WindowTransform::advanceFrameStartRangeOffset()
 #define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
 else if (typeid_cast<const TYPE *>(column)) \
 { \
-    /* NOLINT clang-tidy you're dumb, I can't put FUNCTION in braces here. */ \
-    FUNCTION<TYPE>(); \
+    /* clang-tidy you're dumb, I can't put FUNCTION in braces here. */ \
+    FUNCTION<TYPE>(); /* NOLINT */ \
 }
 
 #define APPLY_FOR_TYPES(FUNCTION) \
@@ -949,9 +949,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         partition_start = partition_end;
         advanceRowNumber(partition_end);
         partition_ended = false;
-        // We have to reset the frame when the new partition starts. This is not a
-        // generally correct way to do so, but we don't really support moving frame
-        // for now.
+        // We have to reset the frame and other pointers when the new partition
+        // starts.
         frame_start = partition_start;
         frame_end = partition_start;
         prev_frame_start = partition_start;
