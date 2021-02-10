@@ -162,7 +162,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             if (query.permanently)
             {
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
-                database->detachTablePermanently(table_id.table_name);
+                database->detachTablePermanently(context, table_id.table_name);
             }
             else
             {

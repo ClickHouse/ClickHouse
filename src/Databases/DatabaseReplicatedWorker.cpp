@@ -24,13 +24,14 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 void DatabaseReplicatedDDLWorker::initializeMainThread()
 {
-    while (!initialized && !stop_flag)
+    while (!stop_flag)
     {
         try
         {
             auto zookeeper = getAndSetZooKeeper();
             initializeReplication();
             initialized = true;
+            return;
         }
         catch (...)
         {

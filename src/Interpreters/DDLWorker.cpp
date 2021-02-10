@@ -315,11 +315,10 @@ void DDLWorker::scheduleTasks()
     {
         /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
         /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
-        bool status_written = task->ops.empty();
         bool task_still_exists = zookeeper->exists(task->entry_path);
+        bool status_written = zookeeper->exists(task->getFinishedNodePath());
         if (task->was_executed && !status_written && task_still_exists)
         {
-            assert(!zookeeper->exists(task->getFinishedNodePath()));
             processTask(*task);
         }
     }
@@ -472,9 +471,16 @@ void DDLWorker::processTask(DDLTaskBase & task)
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
 
-    String dummy;
-    zookeeper->createAncestors(active_node_path);
-    auto active_node = zkutil::EphemeralNodeHolder::create(active_node_path, *zookeeper, "");
+    auto create_active_res = zookeeper->tryCreate(active_node_path, {}, zkutil::CreateMode::Ephemeral);
+    if (create_active_res != Coordination::Error::ZOK)
+    {
+        if (create_active_res == Coordination::Error::ZNONODE)
+            throw Coordination::Exception(create_active_res, active_node_path);
+        createStatusDirs(task.entry_path, zookeeper);
+        zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);
+
+    }
+    auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper);
 
     if (!task.was_executed)
     {
@@ -755,7 +761,6 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
         String node_name = *it;
         String node_path = fs::path(queue_dir) / node_name;
-        String lock_path = fs::path(node_path) / "lock";
 
         Coordination::Stat stat;
         String dummy;
@@ -769,39 +774,29 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             if (!canRemoveQueueEntry(node_name, stat))
                 continue;
 
-            /// Skip if there are active nodes (it is weak guard)
-            if (zookeeper->exists(fs::path(node_path) / "active", &stat) && stat.numChildren > 0)
+            /// At first we remove entry/active node to prevent staled hosts from executing entry concurrently
+            auto rm_active_res = zookeeper->tryRemove(fs::path(node_path) / "active");
+            if (rm_active_res != Coordination::Error::ZOK && rm_active_res != Coordination::Error::ZNONODE)
             {
-                LOG_INFO(log, "Task {} should be deleted, but there are active workers. Skipping it.", node_name);
+                if (rm_active_res == Coordination::Error::ZNOTEMPTY)
+                    LOG_DEBUG(log, "Task {} should be deleted, but there are active workers. Skipping it.", node_name);
+                else
+                    LOG_WARNING(log, "Unexpected status code {} on attempt to remove {}/active", rm_active_res, node_name);
                 continue;
             }
 
-            /// Usage of the lock is not necessary now (tryRemoveRecursive correctly removes node in a presence of concurrent cleaners)
-            /// But the lock will be required to implement system.distributed_ddl_queue table
-            auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
-            if (!lock->tryLock())
-            {
-                LOG_INFO(log, "Task {} should be deleted, but it is locked. Skipping it.", node_name);
-                continue;
-            }
-
+            /// Now we can safely delete entry
             LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
 
-            /// Deleting
-            {
-                Strings children = zookeeper->getChildren(node_path);
-                for (const String & child : children)
-                {
-                    if (child != "lock")
-                        zookeeper->tryRemoveRecursive(fs::path(node_path) / child);
-                }
+            /// We recursively delete all nodes except entry/finished to prevent staled hosts from
+            /// creating entry/active node (see createStatusDirs(...))
+            zookeeper->tryRemoveChildrenRecursive(node_path, "finished");
 
-                /// Remove the lock node and its parent atomically
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
-                ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
-                zookeeper->multi(ops);
-            }
+            /// And then we remove entry and entry/finished in a single transaction
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeRemoveRequest(fs::path(node_path) / "finished", -1));
+            ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
+            zookeeper->multi(ops);
         }
         catch (...)
         {
@@ -819,7 +814,7 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 
     /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    bool node_is_outside_max_window = entry_number < max_id.load(std::memory_order_relaxed) - max_tasks_in_queue;
+    bool node_is_outside_max_window = entry_number + max_tasks_in_queue < max_id.load(std::memory_order_relaxed);
 
     return node_lifetime_is_expired || node_is_outside_max_window;
 }
@@ -828,21 +823,17 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper)
 {
     Coordination::Requests ops;
-    {
-        Coordination::CreateRequest request;
-        request.path = fs::path(node_path) / "active";
-        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
-    }
-    {
-        Coordination::CreateRequest request;
-        request.path = fs::path(node_path) / "finished";
-        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
-    }
+    ops.emplace_back(zkutil::makeCreateRequest(fs::path(node_path) / "active", {}, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(fs::path(node_path) / "finished", {}, zkutil::CreateMode::Persistent));
+
     Coordination::Responses responses;
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
-    if (code != Coordination::Error::ZOK
-        && code != Coordination::Error::ZNODEEXISTS)
-        throw Coordination::Exception(code);
+    bool both_created = code == Coordination::Error::ZOK;
+    bool both_already_exists = responses.size() == 2 && responses[0]->error == Coordination::Error::ZNODEEXISTS
+                                                     && responses[1]->error == Coordination::Error::ZNODEEXISTS;
+    if (both_created || both_already_exists)
+        return;
+    throw Coordination::Exception(code);
 }
 
 
@@ -877,8 +868,6 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 void DDLWorker::initializeMainThread()
 {
     assert(!initialized);
-    assert(max_id == 0);
-    assert(current_tasks.empty());
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
 
@@ -896,7 +885,7 @@ void DDLWorker::initializeMainThread()
             if (!Coordination::isHardwareError(e.code))
             {
                 /// A logical error.
-                LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.",getCurrentExceptionMessage(true));
+                LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.", getCurrentExceptionMessage(true));
                 assert(false);  /// Catch such failures in tests with debug build
             }
 
