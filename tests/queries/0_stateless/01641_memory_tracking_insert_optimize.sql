@@ -5,7 +5,7 @@ create table data_01641 (key Int, value String) engine=MergeTree order by (key, 
 -- peak memory usage is 170MiB
 set max_memory_usage='200Mi';
 system stop merges data_01641;
-insert into data_01641 select number, toString(number) from numbers(toUInt64(120e6));
+insert into data_01641 select number, toString(number) from numbers(120e6);
 
 -- peak:
 -- - is 21MiB if background merges already scheduled
