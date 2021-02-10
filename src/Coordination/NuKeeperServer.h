@@ -36,13 +36,19 @@ private:
 
     ResponsesQueue & responses_queue;
 
+    std::mutex initialized_mutex;
+    bool initialized_flag = false;
+    std::condition_variable initialized_cv;
+
+    nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
+
 public:
     NuKeeperServer(
         int server_id_, const std::string & hostname_, int port_,
         const CoordinationSettingsPtr & coordination_settings_,
         ResponsesQueue & responses_queue_);
 
-    void startup();
+    void startup(bool should_build_quorum);
 
     void putRequest(const NuKeeperStorage::RequestForSession & request);
 
@@ -57,8 +63,8 @@ public:
     bool isLeaderAlive() const;
 
     bool waitForServer(int32_t server_id) const;
-    bool waitForServers(const std::vector<int32_t> & ids) const;
-    void waitForCatchUp() const;
+
+    void waitInit();
 
     void shutdown();
 };

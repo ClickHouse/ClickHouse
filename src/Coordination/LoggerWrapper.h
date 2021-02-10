@@ -2,6 +2,7 @@
 
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <common/logger_useful.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -9,9 +10,9 @@ namespace DB
 class LoggerWrapper : public nuraft::logger
 {
 public:
-    LoggerWrapper(const std::string & name)
+    LoggerWrapper(const std::string & name, LogsLevel level_)
         : log(&Poco::Logger::get(name))
-        , level(6)
+        , level(static_cast<int>(level_))
     {
         log->setLevel(level);
     }

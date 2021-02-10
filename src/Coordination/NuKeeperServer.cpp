@@ -47,7 +47,7 @@ void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, 
 }
 
 
-void NuKeeperServer::startup()
+void NuKeeperServer::startup(bool should_build_quorum)
 {
     nuraft::raft_params params;
     params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
@@ -62,25 +62,19 @@ void NuKeeperServer::startup()
     params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
+    nuraft::raft_server::init_options init_options;
+    init_options.skip_initial_election_timeout_ = !should_build_quorum;
+    init_options.raft_callback_ = [this] (nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
+    {
+        return callbackFunc(type, param);
+    };
 
     raft_instance = launcher.init(
-        state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance"), port,
-        asio_opts, params);
+        state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level), port,
+        asio_opts, params, init_options);
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
-
-    /// FIXME
-    static constexpr auto MAX_RETRY = 100;
-    for (size_t i = 0; i < MAX_RETRY; ++i)
-    {
-        if (raft_instance->is_initialized())
-            return;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot start RAFT server within startup timeout");
 }
 
 void NuKeeperServer::shutdown()
@@ -177,10 +171,22 @@ bool NuKeeperServer::isLeaderAlive() const
     return raft_instance->is_leader_alive();
 }
 
+
+nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
+{
+    if (type == nuraft::cb_func::Type::BecomeFresh || type == nuraft::cb_func::Type::BecomeLeader)
+    {
+        std::unique_lock lock(initialized_mutex);
+        initialized_flag = true;
+        initialized_cv.notify_all();
+    }
+    return nuraft::cb_func::ReturnCode::Ok;
+}
+
 bool NuKeeperServer::waitForServer(int32_t id) const
 {
     /// FIXME
-    for (size_t i = 0; i < 50; ++i)
+    for (size_t i = 0; i < 30; ++i)
     {
         if (raft_instance->get_srv_config(id) != nullptr)
             return true;
@@ -192,22 +198,12 @@ bool NuKeeperServer::waitForServer(int32_t id) const
     return false;
 }
 
-bool NuKeeperServer::waitForServers(const std::vector<int32_t> & ids) const
+void NuKeeperServer::waitInit()
 {
-    for (int32_t id : ids)
-        if (!waitForServer(id))
-            return false;
-    return true;
-}
-
-void NuKeeperServer::waitForCatchUp() const
-{
-    /// FIXME
-    while (raft_instance->is_catching_up() || raft_instance->is_receiving_snapshot() || raft_instance->is_leader())
-    {
-        LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Waiting current RAFT instance to catch up");
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    std::unique_lock lock(initialized_mutex);
+    int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
+    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag; }))
+        throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
 }
 
 std::unordered_set<int64_t> NuKeeperServer::getDeadSessions()
