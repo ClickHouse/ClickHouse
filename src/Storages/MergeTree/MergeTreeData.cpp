@@ -22,6 +22,8 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -39,6 +41,8 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/MergeTree/ProjectionCondition.h>
+#include <Storages/MergeTree/ProjectionKeyActions.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageMergeTree.h>
@@ -395,6 +399,23 @@ void MergeTreeData::checkProperties(
                         ErrorCodes::LOGICAL_ERROR);
 
             indices_names.insert(index.name);
+        }
+    }
+
+    if (!new_metadata.projections.empty())
+    {
+        std::unordered_set<String> projections_names;
+
+        for (const auto & projection : new_metadata.projections)
+        {
+            MergeTreeProjectionFactory::instance().validate(projection);
+
+            if (projections_names.find(projection.name) != projections_names.end())
+                throw Exception(
+                        "Projection with name " + backQuote(projection.name) + " already exists",
+                        ErrorCodes::LOGICAL_ERROR);
+
+            projections_names.insert(projection.name);
         }
     }
 
@@ -772,7 +793,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     size_t res = 0;
     for (const auto & part : parts)
     {
-        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(part))
+        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(*part))
             res += part->rows_count;
     }
     return res;
@@ -1692,6 +1713,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "ALTER ADD INDEX is not supported for tables with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
+        if (command.type == AlterCommand::ADD_PROJECTION && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER ADD PROJECTION is not supported for tables with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
             if (columns_in_keys.count(command.column_name))
@@ -1865,14 +1892,14 @@ MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompres
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path) const
+    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
     if (type == MergeTreeDataPartType::COMPACT)
-        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path);
+        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path, parent_part);
     else if (type == MergeTreeDataPartType::WIDE)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path);
+        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path, parent_part);
     else if (type == MergeTreeDataPartType::IN_MEMORY)
-        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path);
+        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path, parent_part);
     else
         throw Exception("Unknown type of part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -1890,17 +1917,17 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const VolumePtr & volume, const String & relative_path) const
+    const String & name, const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
-    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path);
+    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path, parent_part);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path) const
+    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
     MergeTreeDataPartType type;
-    auto full_path = relative_data_path + relative_path + "/";
+    auto full_path = relative_data_path + (parent_part ? parent_part->relative_path + "/" : "") + relative_path + "/";
     auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(volume->getDisk(), full_path);
 
     if (mrk_ext)
@@ -1911,7 +1938,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
         type = choosePartTypeOnDisk(0, 0);
     }
 
-    return createPart(name, type, part_info, volume, relative_path);
+    return createPart(name, type, part_info, volume, relative_path, parent_part);
 }
 
 void MergeTreeData::changeSettings(
@@ -3174,7 +3201,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     return partition_id;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
+    const DataPartStates & affordable_states, DataPartStateVector * out_states, bool require_projection_parts) const
 {
     DataPartsVector res;
     DataPartsVector buf;
@@ -3183,27 +3211,64 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
 
         for (auto state : affordable_states)
         {
-            std::swap(buf, res);
-            res.clear();
-
             auto range = getDataPartsStateRange(state);
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+
+            if (require_projection_parts)
+            {
+                for (const auto & part : range)
+                {
+                    for (const auto & [p_name, projection_part] : part->getProjectionParts())
+                        res.push_back(projection_part);
+                }
+            }
+            else
+            {
+                std::swap(buf, res);
+                res.clear();
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+            }
         }
 
         if (out_states != nullptr)
         {
             out_states->resize(res.size());
-            for (size_t i = 0; i < res.size(); ++i)
-                (*out_states)[i] = res[i]->getState();
+            if (require_projection_parts)
+            {
+                for (size_t i = 0; i < res.size(); ++i)
+                    (*out_states)[i] = res[i]->getParentPart()->getState();
+            }
+            else
+            {
+                for (size_t i = 0; i < res.size(); ++i)
+                    (*out_states)[i] = res[i]->getState();
+            }
         }
     }
 
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector
+MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, bool require_projection_parts) const
 {
     DataPartsVector res;
+    if (require_projection_parts)
+    {
+        auto lock = lockParts();
+        for (const auto & part : data_parts_by_info)
+        {
+            for (const auto & [p_name, projection_part] : part->getProjectionParts())
+                res.push_back(projection_part);
+        }
+
+        if (out_states != nullptr)
+        {
+            out_states->resize(res.size());
+            for (size_t i = 0; i < res.size(); ++i)
+                (*out_states)[i] = res[i]->getParentPart()->getState();
+        }
+    }
+    else
     {
         auto lock = lockParts();
         res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
@@ -3710,9 +3775,17 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
+            if (metadata_snapshot->selected_projection
+                && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                return true;
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
-        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
+        if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot))
+            return true;
+        if (metadata_snapshot->selected_projection
+            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+            return true;
+        return false;
     }
     else
     {
@@ -3720,9 +3793,119 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
+        if (metadata_snapshot->selected_projection
+            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+            return true;
+
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
+
+
+bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
+    ContextPtr query_context,
+    const SelectQueryOptions & option,
+    const ASTPtr & query_ptr,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info) const
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings.allow_experimental_projection_optimization || option.ignore_projections)
+        return false;
+
+    InterpreterSelectQuery select(
+        query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
+    auto query_block = select.getSampleBlock();
+    auto required_query = select.getQuery();
+
+    // The ownership of ProjectionDescription is hold in metadata_snapshot which lives with InterpreterSelect
+    std::vector<std::pair<const ProjectionDescription *, ProjectionKeyActions>> candidates;
+    ParserFunction parse_function;
+    for (const auto & projection : metadata_snapshot->projections)
+    {
+        bool covered = true;
+        ASTs expr_names;
+        Strings maybe_dimension_column_exprs;
+        Block key_block = projection.metadata->primary_key.sample_block;
+
+        /// First check if all columns in current query are provided by current projection.
+        /// Collect missing columns and remove matching columns in key blocks so they aren't used twice.
+        for (const auto & column_with_type_name : query_block)
+        {
+            if (!projection.sample_block.has(column_with_type_name.name))
+                maybe_dimension_column_exprs.push_back(column_with_type_name.name);
+            else
+            {
+                if (key_block.has(column_with_type_name.name))
+                    key_block.erase(column_with_type_name.name);
+            }
+        }
+
+        ProjectionKeyActions key_actions;
+        /// Check if the missing columns can be produced by key columns in projection.
+        for (const auto & expr_name : maybe_dimension_column_exprs)
+        {
+            Tokens tokens_number(expr_name.data(), expr_name.data() + expr_name.size());
+            IParser::Pos pos(tokens_number, settings.max_parser_depth);
+            Expected expected;
+            ASTPtr ast;
+            // It should be a function call.
+            if (!parse_function.parse(pos, ast, expected))
+            {
+                covered = false;
+                break;
+            }
+            // It should be a function call that only requires unused key columns.
+            if (!key_actions.add(ast, expr_name, key_block))
+            {
+                covered = false;
+                break;
+            }
+        }
+
+        if (covered)
+        {
+            Names required_column_names = query_block.getNames();
+            // Calculate the correct required projection columns
+            for (auto & name : required_column_names)
+            {
+                auto it = key_actions.name_map.find(name);
+                if (it != key_actions.name_map.end())
+                    name = it->second;
+            }
+
+            ProjectionCondition projection_condition(projection.column_names, required_column_names);
+            const auto & where = query_ptr->as<const ASTSelectQuery &>().where();
+            if (where && !projection_condition.check(where))
+                continue;
+            candidates.push_back({&projection, std::move(key_actions)});
+            // A candidate is found, setup needed info but only once.
+            if (query_info.projection_names.empty())
+            {
+                query_info.projection_names = projection_condition.getRequiredColumns();
+                query_info.projection_block = query_block;
+            }
+        }
+    }
+
+    if (!candidates.empty())
+    {
+        size_t min_key_size = std::numeric_limits<size_t>::max();
+        for (auto & [candidate, key_actions] : candidates)
+        {
+            // TODO We choose the projection with least key_size. Perhaps we can do better? (key rollups)
+            if (candidate->key_size < min_key_size)
+            {
+                query_info.aggregate_projection = candidate;
+                query_info.key_actions = std::move(key_actions);
+                min_key_size = candidate->key_size;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
@@ -4267,6 +4450,18 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
     return true;
 }
 
+bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right)
+{
+    if (left->getProjectionParts().size() != right->getProjectionParts().size())
+        return false;
+    for (const auto & [name, _] : left->getProjectionParts())
+    {
+        if (!right->hasProjection(name))
+            return false;
+    }
+    return true;
+}
+
 bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const
 {
     if (!canUseAdaptiveGranularity())
@@ -4327,6 +4522,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_projections", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())),
     };
 }
 

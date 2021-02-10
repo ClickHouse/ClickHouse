@@ -75,6 +75,7 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
+    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp
@@ -92,6 +93,8 @@ SRCS(
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
     MergeTree/PartitionPruner.cpp
+    MergeTree/ProjectionCondition.cpp
+    MergeTree/ProjectionKeyActions.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
@@ -112,6 +115,7 @@ SRCS(
     MergeTree/registerStorageMergeTree.cpp
     MutationCommands.cpp
     PartitionCommands.cpp
+    ProjectionsDescription.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
@@ -135,6 +139,7 @@ SRCS(
     StorageMongoDB.cpp
     StorageMySQL.cpp
     StorageNull.cpp
+    StorageProjection.cpp
     StorageReplicatedMergeTree.cpp
     StorageSet.cpp
     StorageStripeLog.cpp

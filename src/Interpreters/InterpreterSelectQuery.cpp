@@ -393,7 +393,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
+        bool use_projection = false;
+        if (storage && !options.only_analyze)
+        {
+            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            {
+                if (syntax_analyzer_result->can_use_projection)
+                    use_projection = merge_tree->getQueryProcessingStageWithAggregateProjection(
+                        context, options, query_ptr, metadata_snapshot, query_info);
+            }
+        }
+
+        if (!use_projection && try_move_to_prewhere && storage && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -416,6 +427,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     log};
             }
         }
+
+        if (use_projection)
+            // ugly but works
+            metadata_snapshot->selected_projection = query_info.aggregate_projection;
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, context, metadata_snapshot,
@@ -580,7 +595,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     query_info.query = query_ptr;
 
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(context, options.to_stage, query_info);
+    {
+        if (query_info.aggregate_projection)
+            from_stage = QueryProcessingStage::WithMergeableState;
+        else
+            from_stage = storage->getQueryProcessingStage(context, options.to_stage, query_info);
+    }
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1393,9 +1413,25 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     return limits;
 }
 
-void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info)
+void InterpreterSelectQuery::addEmptySourceToQueryPlan(
+    QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_)
 {
     Pipe pipe(std::make_shared<NullSource>(source_header));
+
+    if (!query_info.key_actions.func_map.empty())
+    {
+        ASTPtr expr = std::make_shared<ASTExpressionList>();
+        NamesAndTypesList columns;
+        for (const auto & [nt, func] : query_info.key_actions.func_map)
+        {
+            expr->children.push_back(func);
+            columns.push_back(nt);
+        }
+
+        auto syntax_result = TreeRewriter(context_).analyze(expr, columns);
+        auto expression = ExpressionAnalyzer(expr, syntax_result, context_).getActions(false);
+        pipe.addSimpleTransform([&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+    }
 
     if (query_info.prewhere_info)
     {
@@ -1834,7 +1870,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         {
             auto local_storage_id = storage->getStorageID();
             context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName(), required_columns);
+                backQuoteIfNeed(local_storage_id.getDatabaseName()),
+                local_storage_id.getFullTableName(),
+                required_columns,
+                query_info.aggregate_projection ? query_info.aggregate_projection->name : "");
         }
 
         /// Create step which reads from empty source if storage has no data.
@@ -1842,7 +1881,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         {
             auto header = metadata_snapshot->getSampleBlockForColumns(
                     required_columns, storage->getVirtuals(), storage->getStorageID());
-            addEmptySourceToQueryPlan(query_plan, header, query_info);
+            addEmptySourceToQueryPlan(query_plan, header, query_info, context);
         }
 
         /// Extend lifetime of context, table lock, storage. Set limits and quota.

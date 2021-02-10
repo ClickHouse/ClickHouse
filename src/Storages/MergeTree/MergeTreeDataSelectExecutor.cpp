@@ -38,8 +38,17 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <Interpreters/InterpreterSelectQuery.h>
+
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ProjectionPartTransform.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/ProjectionCondition.h>
+#include <IO/WriteBufferFromOStream.h>
 
 namespace ProfileEvents
 {
@@ -64,6 +73,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int PROJECTION_NOT_USED;
 }
 
 
@@ -128,24 +138,175 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
+    QueryProcessingStage::Enum processed_stage,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
-    return readFromParts(
-        data.getDataPartsVector(), column_names_to_return, metadata_snapshot,
-        query_info, context, max_block_size, num_streams,
-        max_block_numbers_to_read);
+    const auto & settings = context->getSettingsRef();
+    if (query_info.aggregate_projection == nullptr)
+    {
+        if (settings.allow_experimental_projection_optimization && settings.force_optimize_projection
+            && !metadata_snapshot->projections.empty())
+            throw Exception("No projection is used when allow_experimental_projection_optimization = 1", ErrorCodes::PROJECTION_NOT_USED);
+
+        return readFromParts(
+            data.getDataPartsVector(),
+            column_names_to_return,
+            metadata_snapshot,
+            query_info,
+            context,
+            max_block_size,
+            num_streams,
+            max_block_numbers_to_read);
+    }
+
+    LOG_DEBUG(log, "Choose projection {}", query_info.aggregate_projection->name);
+
+    Pipes pipes;
+    auto parts = data.getDataPartsVector();
+    MergeTreeData::DataPartsVector projection_parts;
+    MergeTreeData::DataPartsVector parent_parts;
+    MergeTreeData::DataPartsVector normal_parts;
+    for (auto & part : parts)
+    {
+        const auto & projections = part->getProjectionParts();
+        auto it = projections.find(query_info.aggregate_projection->name);
+        if (it != projections.end())
+        {
+            projection_parts.push_back(it->second);
+            parent_parts.push_back(part);
+        }
+        else
+            normal_parts.push_back(part);
+    }
+
+    size_t rows_with_projection = 0;
+    size_t rows_without_projection = 0;
+
+    for (auto & part : projection_parts)
+        rows_with_projection += part->getParentPart()->rows_count;
+
+    for (auto & part : normal_parts)
+        rows_without_projection += part->rows_count;
+
+    if (rows_with_projection < rows_without_projection)
+        throw Exception(
+            ErrorCodes::PROJECTION_NOT_USED,
+            "No projection is used because there are more than 50% rows don't have projection {}. {} normal rows, {} projection rows",
+            query_info.aggregate_projection->name,
+            rows_without_projection,
+            rows_with_projection);
+
+    const auto & given_select = query_info.query->as<const ASTSelectQuery &>();
+    if (!projection_parts.empty())
+    {
+        auto plan = readFromParts(
+            std::move(projection_parts),
+            query_info.projection_names, // raw columns without key transformation
+            query_info.aggregate_projection->metadata,
+            query_info,
+            context,
+            max_block_size,
+            num_streams,
+            max_block_numbers_to_read);
+
+        auto pipe = plan
+            ? plan->convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))
+            : Pipe();
+        if (!pipe.empty())
+        {
+            // If `key_actions` is not empty, transform input blocks by adding needed columns
+            // originated from key columns. We already project the block at the end, using
+            // projection_block, so we can just add more colunms here without worrying
+            if (!query_info.key_actions.func_map.empty())
+            {
+                ASTPtr expr = std::make_shared<ASTExpressionList>();
+                NamesAndTypesList columns;
+                for (const auto & [nt, func] : query_info.key_actions.func_map)
+                {
+                    expr->children.push_back(func);
+                    columns.push_back(nt);
+                }
+
+                auto syntax_result = TreeRewriter(context).analyze(expr, columns);
+                auto expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+                pipe.addSimpleTransform([&expression](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, expression);
+                });
+            }
+
+            /// In sample block we use just key columns
+            if (given_select.where())
+            {
+                Block filter_block = pipe.getHeader(); // we can use the previous pipeline's sample block here
+
+                ASTPtr where = given_select.where()->clone();
+                ProjectionCondition projection_condition(filter_block.getNames(), {});
+                projection_condition.rewrite(where);
+                auto where_column_name = where->getColumnName();
+                auto syntax_result = TreeRewriter(context).analyze(where, filter_block.getNamesAndTypesList());
+                const auto actions = ExpressionAnalyzer(where, syntax_result, context).getActions(false);
+
+                pipe.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType)
+                {
+                    return std::make_shared<FilterTransform>(header, actions, where_column_name, true);
+                });
+            }
+
+            // Project columns and set bucket number to -1
+            // optionally holds the reference of parent parts
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block, std::move(parent_parts));
+            });
+
+            pipes.push_back(std::move(pipe));
+        }
+    }
+
+    if (!normal_parts.empty())
+    {
+        auto storage_from_source_part = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
+        auto ast = query_info.aggregate_projection->query_ast->clone();
+        auto & select = ast->as<ASTSelectQuery &>();
+        if (given_select.where())
+            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
+        // After overriding the group by clause, we finish the possible aggregations directly
+        if (given_select.groupBy())
+            select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
+        auto interpreter = InterpreterSelectQuery(ast, context, storage_from_source_part, nullptr, {processed_stage});
+        auto pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+
+        if (!pipe.empty())
+        {
+            // projection and set bucket number to -1
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block);
+            });
+            pipes.push_back(std::move(pipe));
+        }
+    }
+
+    auto step = std::make_unique<ReadFromStorageStep>(Pipe::unitePipes(std::move(pipes)), "MergeTree(with projection)");
+    auto plan = std::make_unique<QueryPlan>();
+    plan->addStep(std::move(step));
+    return plan;
 }
 
 QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageMetadataPtr & metadata_snapshot_base,
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
+    const StorageMetadataPtr & metadata_snapshot
+        = query_info.aggregate_projection ? query_info.aggregate_projection->metadata : metadata_snapshot_base;
+
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
     Names virt_column_names;
@@ -240,14 +401,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     std::optional<KeyCondition> minmax_idx_condition;
     std::optional<PartitionPruner> partition_pruner;
     DataTypes minmax_columns_types;
-    if (metadata_snapshot->hasPartitionKey())
+    if (metadata_snapshot_base->hasPartitionKey())
     {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        const auto & partition_key = metadata_snapshot_base->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
-        minmax_idx_condition.emplace(query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
-        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
+        minmax_idx_condition.emplace(
+            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+        partition_pruner.emplace(metadata_snapshot_base->getPartitionKey(), query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
@@ -634,6 +796,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             }
         }
     }
+
+    // TODO We can use normal projections with better primary keys
 
     RangesInDataParts parts_with_ranges(parts.size());
     size_t sum_marks = 0;
@@ -1085,9 +1249,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
     auto plan = std::make_unique<QueryPlan>();
     auto step = std::make_unique<ReadFromMergeTree>(
-        data, metadata_snapshot, query_id,
-        column_names, std::move(parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-        step_settings, num_streams, ReadFromMergeTree::ReadType::Default);
+        data,
+        metadata_snapshot,
+        query_id,
+        column_names,
+        std::move(parts),
+        std::move(index_stats),
+        query_info.prewhere_info,
+        query_info.aggregate_projection,
+        virt_columns,
+        step_settings,
+        num_streams,
+        ReadFromMergeTree::ReadType::Default);
 
     plan->addStep(std::move(step));
     return plan;
@@ -1286,9 +1459,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
         auto plan = std::make_unique<QueryPlan>();
         auto step = std::make_unique<ReadFromMergeTree>(
-            data, metadata_snapshot, query_id,
-            column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-            step_settings, num_streams, read_type);
+            data,
+            metadata_snapshot,
+            query_id,
+            column_names,
+            std::move(new_parts),
+            std::move(index_stats),
+            query_info.prewhere_info,
+            query_info.aggregate_projection,
+            virt_columns,
+            step_settings,
+            num_streams,
+            read_type);
 
         plan->addStep(std::move(step));
         plans.emplace_back(std::move(plan));
@@ -1461,9 +1643,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
             plan = std::make_unique<QueryPlan>();
             auto step = std::make_unique<ReadFromMergeTree>(
-                data, metadata_snapshot, query_id,
-                column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-                step_settings, num_streams, ReadFromMergeTree::ReadType::InOrder);
+                data,
+                metadata_snapshot,
+                query_id,
+                column_names,
+                std::move(new_parts),
+                std::move(index_stats),
+                query_info.prewhere_info,
+                query_info.aggregate_projection,
+                virt_columns,
+                step_settings,
+                num_streams,
+                ReadFromMergeTree::ReadType::InOrder);
 
             plan->addStep(std::move(step));
 
@@ -1544,9 +1735,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
         auto plan = std::make_unique<QueryPlan>();
         auto step = std::make_unique<ReadFromMergeTree>(
-            data, metadata_snapshot, query_id,
-            column_names, std::move(lonely_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-            step_settings, num_streams_for_lonely_parts, ReadFromMergeTree::ReadType::Default);
+            data,
+            metadata_snapshot,
+            query_id,
+            column_names,
+            std::move(lonely_parts),
+            std::move(index_stats),
+            query_info.prewhere_info,
+            query_info.aggregate_projection,
+            virt_columns,
+            step_settings,
+            num_streams_for_lonely_parts,
+            ReadFromMergeTree::ReadType::Default);
 
         plan->addStep(std::move(step));
 
@@ -1856,11 +2056,11 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters)
 {
-    auto prev_parts = parts;
-    parts.clear();
-
-    for (const auto & part : prev_parts)
+    MergeTreeData::DataPartsVector prev_parts;
+    std::swap(prev_parts, parts);
+    for (const auto & part_or_projection : prev_parts)
     {
+        const auto part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (!part_values.empty() && part_values.find(part->name) == part_values.end())
             continue;
 
@@ -1890,14 +2090,14 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
         if (partition_pruner)
         {
-            if (partition_pruner->canBePruned(part))
+            if (partition_pruner->canBePruned(*part))
                 continue;
         }
 
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        parts.push_back(part);
+        parts.push_back(part_or_projection);
     }
 }
 
@@ -1918,11 +2118,11 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
-        auto prev_parts = selected_parts;
-        selected_parts.clear();
-
-        for (const auto & part : prev_parts)
+        MergeTreeData::DataPartsVector prev_parts;
+        std::swap(prev_parts, selected_parts);
+        for (const auto & part_or_projection : prev_parts)
         {
+            const auto part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
             if (!part_values.empty() && part_values.find(part->name) == part_values.end())
                 continue;
 
@@ -1957,7 +2157,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
             if (partition_pruner)
             {
-                if (partition_pruner->canBePruned(part))
+                if (partition_pruner->canBePruned(*part))
                     continue;
             }
 
@@ -1972,7 +2172,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
                     throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
             }
 
-            selected_parts.push_back(part);
+            selected_parts.push_back(part_or_projection);
         }
 
         if (!temp_part_uuids.empty())

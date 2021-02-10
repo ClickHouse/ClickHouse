@@ -24,6 +24,7 @@ public:
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ProjectionDescription * aggregate_projection_,
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
@@ -61,6 +62,7 @@ protected:
     StorageMetadataPtr metadata_snapshot;
 
     PrewhereInfoPtr prewhere_info;
+    const ProjectionDescription * aggregate_projection;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;
