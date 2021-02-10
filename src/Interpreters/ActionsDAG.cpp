@@ -6,6 +6,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsConversion.h>
 #include <Functions/materialize.h>
+#include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <IO/WriteBufferFromString.h>
@@ -338,7 +339,7 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
     removeUnusedActions();
 }
 
-void ActionsDAG::removeUnusedActions()
+void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
@@ -357,6 +358,9 @@ void ActionsDAG::removeUnusedActions()
             visited_nodes.insert(&node);
             stack.push(&node);
         }
+
+        if (node.type == ActionType::INPUT && !allow_remove_inputs)
+            visited_nodes.insert(&node);
     }
 
     while (!stack.empty())
@@ -1151,6 +1155,194 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
 
     std::unordered_set<const Node *> split_nodes = {*it};
     return split(split_nodes);
+}
+
+ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, const Names & available_inputs)
+{
+    std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
+    for (const auto & input : inputs)
+        inputs_map[input->result_name].emplace_back(input);
+
+    std::unordered_set<const Node *> allowed_nodes;
+    for (const auto & name : available_inputs)
+    {
+        auto & inputs_list = inputs_map[name];
+        if (inputs_list.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find input {} in ActionsDAG. DAG:\n{}", name, dumpDAG());
+
+        allowed_nodes.emplace(inputs_list.front());
+        inputs_list.pop_front();
+    }
+
+    auto it = index.begin();
+    for (; it != index.end(); ++it)
+        if ((*it)->result_name == filter_name)
+            break;
+
+    if (it == index.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
+                        filter_name, dumpDAG());
+
+    std::unordered_set<Node *> selected_predicates;
+
+    {
+        struct Frame
+        {
+            const Node * node;
+            bool is_predicate = false;
+            size_t next_child_to_visit = 0;
+            size_t num_allowed_children = 0;
+        };
+
+        std::stack<Frame> stack;
+        std::unordered_set<const Node *> visited_nodes;
+
+        stack.push(Frame{.node = *it, .is_predicate = true});
+        visited_nodes.insert(*it);
+        while (!stack.empty())
+        {
+            auto & cur = stack.top();
+            bool is_conjunction = cur.is_predicate
+                                  && cur.node->type == ActionType::FUNCTION
+                                  && cur.node->function_base->getName() == "and";
+
+            /// At first, visit all children.
+            while (cur.next_child_to_visit < cur.node->children.size())
+            {
+                auto * child = cur.node->children[cur.next_child_to_visit];
+
+                if (visited_nodes.count(child) == 0)
+                {
+                    visited_nodes.insert(child);
+                    stack.push({.node = child, .is_predicate = is_conjunction});
+                    break;
+                }
+
+                if (allowed_nodes.contains(child))
+                    ++cur.num_allowed_children;
+                ++cur.next_child_to_visit;
+            }
+
+            if (cur.next_child_to_visit == cur.node->children.size())
+            {
+                if (cur.num_allowed_children == cur.node->children.size())
+                {
+                    if (cur.node->type != ActionType::ARRAY_JOIN && cur.node->type != ActionType::INPUT)
+                        allowed_nodes.emplace(cur.node);
+                }
+                else if (is_conjunction)
+                {
+                    for (auto * child : cur.node->children)
+                        if (allowed_nodes.count(child))
+                            selected_predicates.insert(child);
+                }
+
+                stack.pop();
+            }
+        }
+    }
+
+    if (selected_predicates.empty())
+    {
+        if (allowed_nodes.count(*it))
+            selected_predicates.insert(*it);
+        else
+            return nullptr;
+    }
+
+    auto actions = cloneEmpty();
+    actions->settings.project_input = false;
+
+    std::unordered_map<const Node *, Node *> nodes_mapping;
+
+    {
+        struct Frame
+        {
+            const Node * node;
+            size_t next_child_to_visit = 0;
+        };
+
+        std::stack<Frame> stack;
+
+        for (const auto * predicate : selected_predicates)
+        {
+            if (nodes_mapping.count(predicate))
+                continue;
+
+            stack.push({.node = predicate});
+            while (!stack.empty())
+            {
+                auto & cur = stack.top();
+                /// At first, visit all children.
+                while (cur.next_child_to_visit < cur.node->children.size())
+                {
+                    auto * child = cur.node->children[cur.next_child_to_visit];
+
+                    if (nodes_mapping.count(child) == 0)
+                    {
+                        stack.push({.node = child});
+                        break;
+                    }
+
+                    ++cur.next_child_to_visit;
+                }
+
+                if (cur.next_child_to_visit == cur.node->children.size())
+                {
+                    auto & node = actions->nodes.emplace_back(*cur.node);
+                    nodes_mapping[cur.node] = &node;
+
+                    for (auto & child : node.children)
+                        child = nodes_mapping[child];
+
+                    if (node.type == ActionType::INPUT)
+                    {
+                        actions->inputs.emplace_back(&node);
+                        actions->index.insert(&node);
+                    }
+                }
+            }
+        }
+
+        Node * result_predicate = nodes_mapping[*selected_predicates.begin()];
+
+        if (selected_predicates.size() > 1)
+        {
+            FunctionOverloadResolverPtr func_builder_and =
+                    std::make_shared<FunctionOverloadResolverAdaptor>(
+                            std::make_unique<DefaultOverloadResolver>(
+                                    std::make_shared<FunctionAnd>()));
+
+            std::vector<Node *> args;
+            args.reserve(selected_predicates.size());
+            for (const auto * predicate : selected_predicates)
+                args.emplace_back(nodes_mapping[predicate]);
+
+            result_predicate = &actions->addFunction(func_builder_and, args, {}, true);
+        }
+
+        actions->index.insert(result_predicate);
+    }
+
+
+
+    /// Replace all predicates which are copied to constants.
+    /// Note: This also keeps valid const propagation. AND is constant only if all elements are.
+    ///       But if all elements are constant, AND should is moved to split actions and replaced itself.
+    for (const auto & predicate : selected_predicates)
+    {
+        Node node;
+        node.type = ActionType::COLUMN;
+        node.result_name = std::move(predicate->result_name);
+        node.result_type = std::move(predicate->result_type);
+        node.column = node.result_type->createColumnConst(0, 1);
+        *predicate = std::move(node);
+    }
+
+    removeUnusedActions(false);
+
+    return actions;
 }
 
 }
