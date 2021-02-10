@@ -33,9 +33,7 @@ struct WindowTransformBlock
     Columns input_columns;
     MutableColumns output_columns;
 
-    // Even in case of `count() over ()` we should have a dummy input column.
-    // Not sure how reliable this is...
-    size_t numRows() const { return input_columns[0]->size(); }
+    size_t rows = 0;
 };
 
 struct RowNumber
@@ -136,9 +134,19 @@ private:
     const Columns & inputAt(const RowNumber & x) const
     { return const_cast<WindowTransform *>(this)->inputAt(x); }
 
+    auto & blockAt(const RowNumber & x)
+    {
+        assert(x.block >= first_block_number);
+        assert(x.block - first_block_number < blocks.size());
+        return blocks[x.block - first_block_number];
+    }
+
+    const auto & blockAt(const RowNumber & x) const
+    { return const_cast<WindowTransform *>(this)->blockAt(x); }
+
     size_t blockRowsNumber(const RowNumber & x) const
     {
-        return inputAt(x)[0]->size();
+        return blockAt(x).rows;
     }
 
     MutableColumns & outputAt(const RowNumber & x)
@@ -153,7 +161,7 @@ private:
         assert(x.block >= first_block_number);
         assert(x.block - first_block_number < blocks.size());
 
-        const auto block_rows = inputAt(x)[0]->size();
+        const auto block_rows = blockAt(x).rows;
         assert(x.row < block_rows);
 
         x.row++;
@@ -177,8 +185,8 @@ private:
         --x.block;
         assert(x.block >= first_block_number);
         assert(x.block < first_block_number + blocks.size());
-        assert(inputAt(x)[0]->size() > 0);
-        x.row = inputAt(x)[0]->size() - 1;
+        assert(blockAt(x).rows > 0);
+        x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto xx = x;
