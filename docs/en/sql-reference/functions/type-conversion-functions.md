@@ -544,6 +544,10 @@ accurateCastOrNull(x, T)
 -   `x` — Input value.
 -   `T` — The name of the returned data type.
 
+**Returned value**
+
+-   The value in specified data type `T`.
+
 **Example**
 
 Query:
