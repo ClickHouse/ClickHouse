@@ -882,8 +882,11 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::flushClusterNodesAllData()
+void StorageDistributed::flushClusterNodesAllData(const Context & context)
 {
+    /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
+    auto table_lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
     std::vector<std::shared_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
 
     {
