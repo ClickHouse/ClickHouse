@@ -49,6 +49,8 @@ public:
 
     void startSynchronization();
 
+    void assertMySQLAvailable();
+
     static bool isMySQLSyncThread();
 
 private:
@@ -107,6 +109,8 @@ private:
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
     void executeDDLAtomic(const QueryEvent & query_event);
+
+    void setSynchronizationThreadException(const std::exception_ptr & exception);
 };
 
 }
