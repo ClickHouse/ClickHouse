@@ -32,6 +32,8 @@ struct SelectQueryOptions
     bool remove_duplicates = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
+    bool ignore_projections = false;
+    bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
 
@@ -80,6 +82,18 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreLimits(bool value = true)
     {
         ignore_limits = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreProjections(bool value = true)
+    {
+        ignore_projections = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreAlias(bool value = true)
+    {
+        ignore_alias = value;
         return *this;
     }
 

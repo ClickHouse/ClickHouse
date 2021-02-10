@@ -1997,7 +1997,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         return false;
     }
 
-    return true;
+    return MergeTreeData::partsContainSameProjections(left, right);
 }
 
 bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(

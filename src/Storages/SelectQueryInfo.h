@@ -4,6 +4,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/ProjectionKeyActions.h>
+
 #include <memory>
 
 namespace DB
@@ -134,6 +137,11 @@ struct SelectQueryInfo
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
+
+    const ProjectionDescription * aggregate_projection{};
+    ProjectionKeyActions key_actions;
+    Names projection_names;
+    Block projection_block;
 };
 
 }

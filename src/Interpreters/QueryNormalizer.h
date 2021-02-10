@@ -43,11 +43,13 @@ public:
         MapOfASTs finished_asts;    /// already processed vertices (and by what they replaced)
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
+        bool ignore_alias;
 
-        Data(const Aliases & aliases_, ExtractedSettings && settings_)
+        Data(const Aliases & aliases_, ExtractedSettings && settings_, bool ignore_alias_)
             : aliases(aliases_)
             , settings(settings_)
             , level(0)
+            , ignore_alias(ignore_alias_)
         {}
     };
 

@@ -5,6 +5,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Common/ThreadPool.h>
 #include <Access/AccessRightsElement.h>
 
@@ -36,6 +37,7 @@ public:
 
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
+    static ASTPtr formatProjections(const ProjectionsDescription & projections);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -67,6 +69,7 @@ private:
         ColumnsDescription columns;
         IndicesDescription indices;
         ConstraintsDescription constraints;
+        ProjectionsDescription projections;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);

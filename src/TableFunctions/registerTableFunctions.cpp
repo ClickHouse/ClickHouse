@@ -18,6 +18,7 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionProjection(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);

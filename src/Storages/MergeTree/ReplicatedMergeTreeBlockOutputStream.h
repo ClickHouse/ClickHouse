@@ -30,7 +30,8 @@ public:
         size_t max_parts_per_block_,
         bool quorum_parallel_,
         bool deduplicate_,
-        bool optimize_on_insert);
+        bool optimize_on_insert,
+        const Context & context_);
 
     Block getHeader() const override;
     void writePrefix() override;
@@ -74,6 +75,7 @@ private:
     Poco::Logger * log;
 
     bool optimize_on_insert;
+    const Context context;
 };
 
 }

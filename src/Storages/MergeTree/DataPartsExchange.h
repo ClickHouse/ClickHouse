@@ -36,8 +36,17 @@ public:
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
-    void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
-    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version);
+    void sendPartFromMemory(
+        const MergeTreeData::DataPartPtr & part,
+        WriteBuffer & out,
+        const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
+
+    MergeTreeData::DataPart::Checksums sendPartFromDisk(
+        const MergeTreeData::DataPartPtr & part,
+        WriteBuffer & out,
+        int client_protocol_version,
+        const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
+
     void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -80,15 +89,19 @@ private:
             bool to_detached,
             const String & tmp_prefix_,
             bool sync,
-            ReservationPtr reservation,
-            PooledReadWriteBufferFromHTTP & in);
+            DiskPtr disk,
+            PooledReadWriteBufferFromHTTP & in,
+            size_t projections,
+            MergeTreeData::DataPart::Checksums & checksums,
+            const String & path = {});
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
             const UUID & part_uuid,
             const StorageMetadataPtr & metadata_snapshot,
             ReservationPtr reservation,
-            PooledReadWriteBufferFromHTTP & in);
+            PooledReadWriteBufferFromHTTP & in,
+            size_t projections);
 
     MergeTreeData::MutableDataPartPtr downloadPartToS3(
             const String & part_name,
