@@ -19,7 +19,8 @@ ClickHouse does not support a distributed update. The operation should be perfor
 
 The upgrade of older version of ClickHouse to specific version:
 
-As an example: 
+As an example:
+ 
 xx.yy.a.b is a current stable version. The latest stable version could be found [here](https://github.com/ClickHouse/ClickHouse/releases)
 
 ```bash
