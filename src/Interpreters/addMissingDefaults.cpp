@@ -9,7 +9,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/replicate.h>
 #include <Functions/materialize.h>
 
 
@@ -44,15 +43,7 @@ ActionsDAGPtr addMissingDefaults(
 
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
 
-    FunctionOverloadResolverPtr func_builder_replicate =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionReplicate>()));
-
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_replicate = FunctionFactory::instance().get("replicate", context);
 
     /// We take given columns from input block and missed columns without default value
     /// (default and materialized will be computed later).
