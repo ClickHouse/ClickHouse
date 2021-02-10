@@ -1188,7 +1188,7 @@ bool TCPHandler::receiveData(bool scalar)
         {
             /// If there is an insert request, then the data should be written directly to `state.io.out`.
             /// Otherwise, we write the blocks in the temporary `external_table_name` table.
-            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input && !state.io.out)
             {
                 auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
                 StoragePtr storage;
@@ -1206,6 +1206,7 @@ bool TCPHandler::receiveData(bool scalar)
                 /// The data will be written directly to the table.
                 state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
             }
+
             if (state.need_receive_data_for_input)
                 state.block_for_input = block;
             else
