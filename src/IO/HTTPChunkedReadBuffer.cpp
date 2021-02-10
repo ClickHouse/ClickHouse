@@ -54,6 +54,9 @@ void HTTPChunkedReadBuffer::readChunkFooter()
 
 bool HTTPChunkedReadBuffer::nextImpl()
 {
+    if (!in)
+        return false;
+
     /// The footer of previous chunk.
     if (count())
         readChunkFooter();
@@ -62,6 +65,7 @@ bool HTTPChunkedReadBuffer::nextImpl()
     if (0 == chunk_size)
     {
         readChunkFooter();
+        in.reset();  // prevent double-eof situation.
         return false;
     }
 
