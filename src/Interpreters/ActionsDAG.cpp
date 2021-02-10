@@ -1157,7 +1157,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
     return split(split_nodes);
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, const Names & available_inputs)
+ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs)
 {
     std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
     for (const auto & input : inputs)
@@ -1185,6 +1185,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
                         filter_name, dumpDAG());
 
     std::unordered_set<Node *> selected_predicates;
+    std::unordered_set<Node *> other_predicates;
 
     {
         struct Frame
@@ -1234,8 +1235,12 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
                 else if (is_conjunction)
                 {
                     for (auto * child : cur.node->children)
+                    {
                         if (allowed_nodes.count(child))
                             selected_predicates.insert(child);
+                        else
+                            other_predicates.insert(child);
+                    }
                 }
 
                 stack.pop();
@@ -1253,6 +1258,11 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
 
     auto actions = cloneEmpty();
     actions->settings.project_input = false;
+
+    FunctionOverloadResolverPtr func_builder_and =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionAnd>()));
 
     std::unordered_map<const Node *, Node *> nodes_mapping;
 
@@ -1309,11 +1319,6 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
 
         if (selected_predicates.size() > 1)
         {
-            FunctionOverloadResolverPtr func_builder_and =
-                    std::make_shared<FunctionOverloadResolverAdaptor>(
-                            std::make_unique<DefaultOverloadResolver>(
-                                    std::make_shared<FunctionAnd>()));
-
             std::vector<Node *> args;
             args.reserve(selected_predicates.size());
             for (const auto * predicate : selected_predicates)
@@ -1325,22 +1330,94 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
         actions->index.insert(result_predicate);
     }
 
-
-
-    /// Replace all predicates which are copied to constants.
-    /// Note: This also keeps valid const propagation. AND is constant only if all elements are.
-    ///       But if all elements are constant, AND should is moved to split actions and replaced itself.
-    for (const auto & predicate : selected_predicates)
+    if (selected_predicates.count(*it))
     {
-        Node node;
-        node.type = ActionType::COLUMN;
-        node.result_name = std::move(predicate->result_name);
-        node.result_type = std::move(predicate->result_type);
-        node.column = node.result_type->createColumnConst(0, 1);
-        *predicate = std::move(node);
-    }
+        /// The whole predicate was split.
+        if (can_remove_filter)
+        {
+            for (auto i = index.begin(); i != index.end(); ++i)
+            {
+                if (*i == *it)
+                {
+                    index.remove(i);
+                    break;
+                }
+            }
+        }
+        else
+        {
+            Node node;
+            node.type = ActionType::COLUMN;
+            node.result_name = std::move((*it)->result_name);
+            node.result_type = std::move((*it)->result_type);
+            node.column = node.result_type->createColumnConst(0, 1);
+            *(*it) = std::move(node);
+        }
 
-    removeUnusedActions(false);
+        removeUnusedActions(false);
+    }
+    else if ((*it)->type == ActionType::FUNCTION && (*it)->function_base->getName() == "and")
+    {
+        std::vector<Node *> new_children(other_predicates.begin(), other_predicates.end());
+
+        if (new_children.size() == 1)
+        {
+            if (new_children.front()->result_type->equals(*((*it)->result_type)))
+            {
+                Node node;
+                node.type = ActionType::ALIAS;
+                node.result_name = (*it)->result_name;
+                node.result_type = (*it)->result_type;
+                node.children.swap(new_children);
+                *(*it) = std::move(node);
+            }
+            else
+            {
+                (*it)->children.swap(new_children);
+                ColumnsWithTypeAndName arguments;
+                arguments.reserve((*it)->children.size());
+
+                for (const auto * child : (*it)->children)
+                {
+                    ColumnWithTypeAndName argument;
+                    argument.column = child->column;
+                    argument.type = child->result_type;
+                    argument.name = child->result_name;
+
+                    arguments.emplace_back(std::move(argument));
+                }
+
+                FunctionOverloadResolverPtr func_builder_cast =
+                        std::make_shared<FunctionOverloadResolverAdaptor>(
+                                CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+
+                (*it)->function_builder = func_builder_cast;
+                (*it)->function_base = (*it)->function_builder->build(arguments);
+                (*it)->function = (*it)->function_base->prepare(arguments);
+            }
+        }
+        else
+        {
+            (*it)->children.swap(new_children);
+            ColumnsWithTypeAndName arguments;
+            arguments.reserve((*it)->children.size());
+
+            for (const auto * child : (*it)->children)
+            {
+                ColumnWithTypeAndName argument;
+                argument.column = child->column;
+                argument.type = child->result_type;
+                argument.name = child->result_name;
+
+                arguments.emplace_back(std::move(argument));
+            }
+
+            (*it)->function_base = (*it)->function_builder->build(arguments);
+            (*it)->function = (*it)->function_base->prepare(arguments);
+        }
+
+        removeUnusedActions(false);
+    }
 
     return actions;
 }
