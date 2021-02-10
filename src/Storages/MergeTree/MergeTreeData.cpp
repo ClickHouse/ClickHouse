@@ -2346,7 +2346,7 @@ size_t MergeTreeData::getPartsCount() const
 }
 
 
-size_t MergeTreeData::getMaxPartsCountForPartition(size_t * inactive) const
+size_t MergeTreeData::getMaxPartsCountForPartitionWithState(DataPartState state) const
 {
     auto lock = lockParts();
 
@@ -2354,7 +2354,7 @@ size_t MergeTreeData::getMaxPartsCountForPartition(size_t * inactive) const
     size_t cur_count = 0;
     const String * cur_partition_id = nullptr;
 
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(state))
     {
         if (cur_partition_id && part->info.partition_id == *cur_partition_id)
         {
@@ -2369,27 +2369,19 @@ size_t MergeTreeData::getMaxPartsCountForPartition(size_t * inactive) const
         res = std::max(res, cur_count);
     }
 
-    if (inactive)
-    {
-        *inactive = 0;
-        cur_count = 0;
-        for (const auto & part : getDataPartsStateRange(DataPartState::Outdated))
-        {
-            if (cur_partition_id && part->info.partition_id == *cur_partition_id)
-            {
-                ++cur_count;
-            }
-            else
-            {
-                cur_partition_id = &part->info.partition_id;
-                cur_count = 1;
-            }
-
-            *inactive = std::max(*inactive, cur_count);
-        }
-    }
-
     return res;
+}
+
+
+size_t MergeTreeData::getMaxPartsCountForPartition() const
+{
+    return getMaxPartsCountForPartitionWithState(DataPartState::Committed);
+}
+
+
+size_t MergeTreeData::getMaxInactivePartsCountForPartition() const
+{
+    return getMaxPartsCountForPartitionWithState(DataPartState::Outdated);
 }
 
 
@@ -2418,31 +2410,29 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
     }
 
-    size_t parts_count_in_partition;
+    size_t parts_count_in_partition = getMaxPartsCountForPartition();
     ssize_t k_inactive = -1;
     if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
     {
-        size_t inactive_parts;
-        parts_count_in_partition = getMaxPartsCountForPartition(&inactive_parts);
-        if (inactive_parts >= settings->inactive_parts_to_throw_insert)
+        size_t inactive_parts_count_in_partition = getMaxInactivePartsCountForPartition();
+        if (inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
-                "Too many inactive parts (" + toString(parts_count_in_partition)
-                    + "). Parts cleaning are processing significantly slower than inserts.",
-                ErrorCodes::TOO_MANY_PARTS);
+                ErrorCodes::TOO_MANY_PARTS,
+                "Too many inactive parts ({}). Parts cleaning are processing significantly slower than inserts",
+                inactive_parts_count_in_partition);
         }
-        k_inactive = ssize_t(inactive_parts) - ssize_t(settings->inactive_parts_to_delay_insert);
+        k_inactive = ssize_t(inactive_parts_count_in_partition) - ssize_t(settings->inactive_parts_to_delay_insert);
     }
-    else
-        parts_count_in_partition = getMaxPartsCountForPartition();
 
     if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
-            "Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.",
-            ErrorCodes::TOO_MANY_PARTS);
+            ErrorCodes::TOO_MANY_PARTS,
+            "Too many parts ({}). Parts cleaning are processing significantly slower than inserts",
+            parts_count_in_partition);
     }
 
     if (k_inactive < 0 && parts_count_in_partition < settings->parts_to_delay_insert)
