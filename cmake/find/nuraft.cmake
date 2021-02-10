@@ -1,6 +1,6 @@
 option(ENABLE_NURAFT "Enable NuRaft" ${ENABLE_LIBRARIES})
 
- if (NOT ENABLE_NURAFT)
+if (NOT ENABLE_NURAFT)
     return()
 endif()
 
