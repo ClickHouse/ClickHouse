@@ -97,6 +97,17 @@ struct NuKeeperStorageHeartbeatRequest final : public NuKeeperStorageRequest
     }
 };
 
+struct NuKeeperStorageSyncRequest final : public NuKeeperStorageRequest
+{
+    using NuKeeperStorageRequest::NuKeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & /* container */, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
+    {
+        auto response = zk_request->makeResponse();
+        dynamic_cast<Coordination::ZooKeeperSyncResponse *>(response.get())->path = dynamic_cast<Coordination::ZooKeeperSyncRequest *>(zk_request.get())->path;
+        return {response, {}};
+    }
+};
+
 struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
 {
     using NuKeeperStorageRequest::NuKeeperStorageRequest;
@@ -575,6 +586,7 @@ void registerNuKeeperRequestWrapper(NuKeeperWrapperFactory & factory)
 NuKeeperWrapperFactory::NuKeeperWrapperFactory()
 {
     registerNuKeeperRequestWrapper<Coordination::OpNum::Heartbeat, NuKeeperStorageHeartbeatRequest>(*this);
+    registerNuKeeperRequestWrapper<Coordination::OpNum::Sync, NuKeeperStorageSyncRequest>(*this);
     //registerNuKeeperRequestWrapper<Coordination::OpNum::Auth, NuKeeperStorageAuthRequest>(*this);
     registerNuKeeperRequestWrapper<Coordination::OpNum::Close, NuKeeperStorageCloseRequest>(*this);
     registerNuKeeperRequestWrapper<Coordination::OpNum::Create, NuKeeperStorageCreateRequest>(*this);

@@ -75,6 +75,25 @@ struct ZooKeeperHeartbeatRequest final : ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 };
 
+struct ZooKeeperSyncRequest final : ZooKeeperRequest
+{
+    String path;
+    String getPath() const override { return path; }
+    OpNum getOpNum() const override { return OpNum::Sync; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
+};
+
+struct ZooKeeperSyncResponse final : ZooKeeperResponse
+{
+    String path;
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    OpNum getOpNum() const override { return OpNum::Sync; }
+};
+
 struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}

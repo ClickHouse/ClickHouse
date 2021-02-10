@@ -37,6 +37,26 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
     out.next();
 }
 
+void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+}
+
+void ZooKeeperSyncRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+}
+
+void ZooKeeperSyncResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+}
+
+void ZooKeeperSyncResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+}
+
 void ZooKeeperWatchResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(type, in);
@@ -423,6 +443,7 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 }
 
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }
+ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return std::make_shared<ZooKeeperSyncResponse>(); }
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_shared<ZooKeeperAuthResponse>(); }
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return std::make_shared<ZooKeeperCreateResponse>(); }
 ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return std::make_shared<ZooKeeperRemoveResponse>(); }
@@ -478,6 +499,7 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
 ZooKeeperRequestFactory::ZooKeeperRequestFactory()
 {
     registerZooKeeperRequest<OpNum::Heartbeat, ZooKeeperHeartbeatRequest>(*this);
+    registerZooKeeperRequest<OpNum::Sync, ZooKeeperSyncRequest>(*this);
     registerZooKeeperRequest<OpNum::Auth, ZooKeeperAuthRequest>(*this);
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
