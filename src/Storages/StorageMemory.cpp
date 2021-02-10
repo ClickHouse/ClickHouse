@@ -104,12 +104,13 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit MemoryBlockOutputStream(
+    MemoryBlockOutputStream(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {}
+    {
+    }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
