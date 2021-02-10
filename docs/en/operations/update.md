@@ -21,7 +21,7 @@ The upgrade of older version of ClickHouse to specific version:
 
 As an example:
  
-xx.yy.a.b is a current stable version. The latest stable version could be found [here](https://github.com/ClickHouse/ClickHouse/releases)
+`xx.yy.a.b` is a current stable version. The latest stable version could be found [here](https://github.com/ClickHouse/ClickHouse/releases)
 
 ```bash
 $ sudo apt-get update
