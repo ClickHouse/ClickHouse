@@ -10,6 +10,9 @@ void registerFunctionBase64Decode(FunctionFactory & factory)
 {
     tb64ini(0, 1);
     factory.registerFunction<FunctionBase64Conversion<Base64Decode>>();
+
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionBase64Conversion<Base64Decode>>("FROM_BASE64", FunctionFactory::CaseInsensitive);
 }
 }
 #endif

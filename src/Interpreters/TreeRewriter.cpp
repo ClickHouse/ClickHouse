@@ -40,13 +40,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EMPTY_NESTED_TABLE;
-    extern const int LOGICAL_ERROR;
-    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
-    extern const int NOT_IMPLEMENTED;
-    extern const int UNKNOWN_IDENTIFIER;
+    extern const int EMPTY_NESTED_TABLE;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace
@@ -327,6 +328,9 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
         /// to get the correct number of rows.
         if (result.array_join_result_to_source.empty())
         {
+            if (select_query->arrayJoinExpressionList()->children.empty())
+                throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
             ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
             String source_name = expr->getColumnName();
             String result_name = expr->getAliasOrColumnName();
@@ -466,6 +470,8 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
         assertNoWindows(select_query.prewhere(), "in PREWHERE");
+    if (select_query.window())
+        assertNoWindows(select_query.window(), "in WINDOW");
 
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
@@ -483,20 +489,9 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
             }
         }
 
-        if (node->window_partition_by)
+        if (node->window_definition)
         {
-            for (auto & arg : node->window_partition_by->children)
-            {
-                assertNoWindows(arg, "inside PARTITION BY of a window");
-            }
-        }
-
-        if (node->window_order_by)
-        {
-            for (auto & arg : node->window_order_by->children)
-            {
-                assertNoWindows(arg, "inside ORDER BY of a window");
-            }
+            assertNoWindows(node->window_definition, "inside window definition");
         }
     }
 
@@ -702,12 +697,18 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            ss << ", maybe you meant: ";
+            String hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
                 if (!hints.empty())
-                    ss << " '" << toString(hints) << "'";
+                    hint_name = hint_name + " '" + toString(hints) + "'";
+            }
+
+            if (!hint_name.empty())
+            {
+                ss << ", maybe you meant: ";
+                ss << hint_name;
             }
         }
         else

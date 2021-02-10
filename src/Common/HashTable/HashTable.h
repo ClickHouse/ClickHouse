@@ -69,11 +69,16 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == 0; }
+inline bool check(const T x) { return x == 0; }
 
 template <typename T>
-void set(T & x) { x = 0; }
+inline void set(T & x) { x = 0; }
 
+template <>
+inline bool check(const char * x) { return x == nullptr; }
+
+template <>
+inline void set(const char *& x){ x = nullptr; }
 }
 
 
@@ -204,6 +209,13 @@ struct HashTableCell
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
+
+    /// When cell pointer is moved during erase, reinsert or resize operations
+
+    static constexpr bool need_to_notify_cell_during_move = false;
+
+    static void move(HashTableCell * /* old_location */, HashTableCell * /* new_location */) {}
+
 };
 
 /**
@@ -334,6 +346,32 @@ struct ZeroValueStorage<false, Cell>
 };
 
 
+template <bool enable, typename Allocator, typename Cell>
+struct AllocatorBufferDeleter;
+
+template <typename Allocator, typename Cell>
+struct AllocatorBufferDeleter<false, Allocator, Cell>
+{
+    AllocatorBufferDeleter(Allocator &, size_t) {}
+
+    void operator()(Cell *) const {}
+
+};
+
+template <typename Allocator, typename Cell>
+struct AllocatorBufferDeleter<true, Allocator, Cell>
+{
+    AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
+        : allocator(allocator_)
+        , size(size_) {}
+
+    void operator()(Cell * buffer) const { allocator.free(buffer, size); }
+
+    Allocator & allocator;
+    size_t size;
+};
+
+
 // The HashTable
 template
 <
@@ -427,7 +465,6 @@ protected:
         }
     }
 
-
     /// Increase the size of the buffer.
     void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
@@ -460,7 +497,24 @@ protected:
             new_grower.increaseSize();
 
         /// Expand the space.
-        buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, getBufferSizeInBytes(), new_grower.bufSize() * sizeof(Cell)));
+
+        size_t old_buffer_size = getBufferSizeInBytes();
+
+        /** If cell required to be notified during move we need to temporary keep old buffer
+         * because realloc does not quarantee for reallocated buffer to have same base address
+         */
+        using Deleter = AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move, Allocator, Cell>;
+        Deleter buffer_deleter(*this, old_buffer_size);
+        std::unique_ptr<Cell, Deleter> old_buffer(buf, buffer_deleter);
+
+        if constexpr (Cell::need_to_notify_cell_during_move)
+        {
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
+            memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
+        }
+        else
+            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, new_grower.bufSize() * sizeof(Cell)));
+
         grower = new_grower;
 
         /** Now some items may need to be moved to a new location.
@@ -470,7 +524,12 @@ protected:
         size_t i = 0;
         for (; i < old_size; ++i)
             if (!buf[i].isZero(*this))
-                reinsert(buf[i], buf[i].getHash(*this));
+            {
+                size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
+
+                if constexpr (Cell::need_to_notify_cell_during_move)
+                    Cell::move(&(old_buffer.get())[i], &buf[updated_place_value]);
+            }
 
         /** There is also a special case:
           *    if the element was to be at the end of the old buffer,                  [        x]
@@ -481,7 +540,13 @@ protected:
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
         for (; !buf[i].isZero(*this); ++i)
-            reinsert(buf[i], buf[i].getHash(*this));
+        {
+            size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
+
+            if constexpr (Cell::need_to_notify_cell_during_move)
+                if (&buf[i] != &buf[updated_place_value])
+                    Cell::move(&buf[i], &buf[updated_place_value]);
+        }
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -495,20 +560,20 @@ protected:
     /** Paste into the new buffer the value that was in the old buffer.
       * Used when increasing the buffer size.
       */
-    void reinsert(Cell & x, size_t hash_value)
+    size_t reinsert(Cell & x, size_t hash_value)
     {
         size_t place_value = grower.place(hash_value);
 
         /// If the element is in its place.
         if (&x == &buf[place_value])
-            return;
+            return place_value;
 
         /// Compute a new location, taking into account the collision resolution chain.
         place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
 
         /// If the item remains in its place in the old collision resolution chain.
         if (!buf[place_value].isZero(*this))
-            return;
+            return place_value;
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
@@ -516,6 +581,7 @@ protected:
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
+        return place_value;
     }
 
 
@@ -881,7 +947,11 @@ public:
     /// Reinsert node pointed to by iterator
     void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
     {
-        reinsert(*it.getPtr(), hash_value);
+        size_t place_value = reinsert(*it.getPtr(), hash_value);
+
+        if constexpr (Cell::need_to_notify_cell_during_move)
+            if (it.getPtr() != &buf[place_value])
+                Cell::move(it.getPtr(), &buf[place_value]);
     }
 
 
@@ -958,8 +1028,14 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
-    std::enable_if_t<Grower::performs_linear_probing_with_single_step, void>
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
     ALWAYS_INLINE erase(const Key & x)
+    {
+        return erase(x, hash(x));
+    }
+
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
+    ALWAYS_INLINE erase(const Key & x, size_t hash_value)
     {
         /** Deletion from open addressing hash table without tombstones
           *
@@ -977,21 +1053,19 @@ public:
             {
                 --m_size;
                 this->clearHasZero();
+                return true;
             }
             else
             {
-                return;
+                return false;
             }
         }
 
-        size_t hash_value = hash(x);
         size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
 
         /// Key is not found
         if (buf[erased_key_position].isZero(*this))
-        {
-            return;
-        }
+            return false;
 
         /// We need to guarantee loop termination because there will be empty position
         assert(m_size < grower.bufSize());
@@ -1056,12 +1130,18 @@ public:
 
             /// Move the element to the freed place
             memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+
+            if constexpr (Cell::need_to_notify_cell_during_move)
+                Cell::move(&buf[next_position], &buf[erased_key_position]);
+
             /// Now we have another freed place
             erased_key_position = next_position;
         }
 
         buf[erased_key_position].setZero();
         --m_size;
+
+        return true;
     }
 
     bool ALWAYS_INLINE has(const Key & x) const
