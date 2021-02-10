@@ -167,9 +167,12 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
     server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, coordination_settings, responses_queue);
     try
     {
-        server->startup();
-        if (shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs))
+        bool should_build_quorum = shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs);
+        server->startup(should_build_quorum);
+        if (should_build_quorum)
         {
+
+            server->waitInit();
             for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
             {
                 LOG_DEBUG(log, "Adding server with id {} ({}:{})", id, hostname, port);
@@ -181,12 +184,15 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
 
                 LOG_DEBUG(log, "Server with id {} ({}:{}) added to cluster", id, hostname, port);
             }
+
+            if (server_configs.size() > 1)
+                LOG_DEBUG(log, "All servers were added to quorum");
         }
         else
         {
-            while (!server->waitForServers(ids))
-                LOG_DEBUG(log, "Waiting for {} servers to build cluster", ids.size());
-            server->waitForCatchUp();
+            LOG_DEBUG(log, "Waiting as follower");
+            server->waitInit();
+            LOG_DEBUG(log, "Follower became fresh");
         }
     }
     catch (...)
@@ -282,6 +288,7 @@ void NuKeeperStorageDispatcher::sessionCleanerTask()
                         requests_queue.push(std::move(request_info));
                     }
                     finishSession(dead_session);
+                    LOG_INFO(log, "Dead session close request pushed");
                 }
             }
         }
