@@ -358,11 +358,18 @@ public:
     }
 
     /// Compress column in memory to some representation that allows to decompress it back.
-    using Lazy = std::function<Ptr()>;
-    virtual Lazy compress() const
+    /// Return itself if compression is not applicable for this column type.
+    virtual ColumnPtr compress() const
     {
-        /// No compression by default, just wrap the object.
-        return [column = getPtr()] { return column; };
+        /// No compression by default.
+        return getPtr();
+    }
+
+    /// If it's CompressedColumn, decompress it and return.
+    /// Otherwise return itself.
+    virtual ColumnPtr decompress() const
+    {
+        return getPtr();
     }
 
 
@@ -468,10 +475,7 @@ using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
-//using MutableColumnRawPtrs = std::vector<IColumn *>;
 
-using LazyColumn = IColumn::Lazy;
-using LazyColumns = std::vector<LazyColumn>;
 
 template <typename ... Args>
 struct IsMutableColumns;
