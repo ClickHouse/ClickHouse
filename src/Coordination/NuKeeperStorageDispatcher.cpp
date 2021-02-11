@@ -103,97 +103,21 @@ bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestP
     return true;
 }
 
-namespace
-{
-    bool shouldBuildQuorum(int32_t myid, int32_t my_priority, bool my_can_become_leader, const std::vector<std::tuple<int, std::string, int, bool, int32_t>> & server_configs)
-    {
-        if (!my_can_become_leader)
-            return false;
-
-        int32_t minid = myid;
-        bool has_equal_priority = false;
-        for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
-        {
-            if (my_priority < priority)
-                return false;
-            else if (my_priority == priority)
-                has_equal_priority = true;
-            minid = std::min(minid, id);
-        }
-
-        if (has_equal_priority)
-            return minid == myid;
-        else
-            return true;
-    }
-}
-
 void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("test_keeper_server.server_id");
-    std::string myhostname;
-    int myport;
-    int32_t my_priority = 1;
+
     coordination_settings->loadFromConfig("test_keeper_server.coordination_settings", config);
 
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys("test_keeper_server.raft_configuration", keys);
-    bool my_can_become_leader = true;
-
-    std::vector<std::tuple<int, std::string, int, bool, int32_t>> server_configs;
-    std::vector<int32_t> ids;
-    for (const auto & server_key : keys)
-    {
-        int server_id = config.getInt("test_keeper_server.raft_configuration." + server_key + ".id");
-        std::string hostname = config.getString("test_keeper_server.raft_configuration." + server_key + ".hostname");
-        int port = config.getInt("test_keeper_server.raft_configuration." + server_key + ".port");
-        bool can_become_leader = config.getBool("test_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
-        int32_t priority = config.getInt("test_keeper_server.raft_configuration." + server_key + ".priority", 1);
-        if (server_id == myid)
-        {
-            myhostname = hostname;
-            myport = port;
-            my_can_become_leader = can_become_leader;
-            my_priority = priority;
-        }
-        else
-        {
-            server_configs.emplace_back(server_id, hostname, port, can_become_leader, priority);
-        }
-        ids.push_back(server_id);
-    }
-
-    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, coordination_settings, responses_queue);
+    server = std::make_unique<NuKeeperServer>(myid, coordination_settings, config, responses_queue);
     try
     {
-        bool should_build_quorum = shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs);
-        server->startup(should_build_quorum);
-        if (should_build_quorum)
-        {
-
-            server->waitInit();
-            for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
-            {
-                LOG_DEBUG(log, "Adding server with id {} ({}:{})", id, hostname, port);
-                do
-                {
-                    server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader, priority);
-                }
-                while (!server->waitForServer(id));
-
-                LOG_DEBUG(log, "Server with id {} ({}:{}) added to cluster", id, hostname, port);
-            }
-
-            if (server_configs.size() > 1)
-                LOG_DEBUG(log, "All servers were added to quorum");
-        }
-        else
-        {
-            LOG_DEBUG(log, "Waiting as follower");
-            server->waitInit();
-            LOG_DEBUG(log, "Follower became fresh");
-        }
+        LOG_DEBUG(log, "Waiting server to initialize");
+        server->startup(true);
+        LOG_DEBUG(log, "Server intialized, waiting for quorum");
+        server->waitInit();
+        LOG_DEBUG(log, "Quorum initialized");
     }
     catch (...)
     {

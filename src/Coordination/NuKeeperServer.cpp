@@ -19,32 +19,17 @@ namespace ErrorCodes
 }
 
 NuKeeperServer::NuKeeperServer(
-    int server_id_, const std::string & hostname_, int port_,
+    int server_id_,
     const CoordinationSettingsPtr & coordination_settings_,
+    const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_)
     : server_id(server_id_)
-    , hostname(hostname_)
-    , port(port_)
-    , endpoint(hostname + ":" + std::to_string(port))
     , coordination_settings(coordination_settings_)
     , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
-    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, endpoint))
+    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, "test_keeper_server.raft_configuration", config))
     , responses_queue(responses_queue_)
 {
 }
-
-void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_, int32_t priority)
-{
-    nuraft::srv_config config(server_id_, 0, server_uri_, "", /* learner = */ !can_become_leader_, priority);
-    auto ret1 = raft_instance->add_srv(config);
-    auto code = ret1->get_result_code();
-    if (code == nuraft::cmd_result_code::TIMEOUT
-        || code == nuraft::cmd_result_code::BAD_REQUEST
-        || code == nuraft::cmd_result_code::NOT_LEADER
-        || code == nuraft::cmd_result_code::FAILED)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot add server to RAFT quorum with code {}, message '{}'", ret1->get_result_code(), ret1->get_result_str());
-}
-
 
 void NuKeeperServer::startup(bool should_build_quorum)
 {
@@ -69,7 +54,7 @@ void NuKeeperServer::startup(bool should_build_quorum)
     };
 
     raft_instance = launcher.init(
-        state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level), port,
+        state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level), state_manager->getPort(),
         asio_opts, params, init_options);
 
     if (!raft_instance)
@@ -170,7 +155,6 @@ bool NuKeeperServer::isLeaderAlive() const
     return raft_instance->is_leader_alive();
 }
 
-
 nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
     if (type == nuraft::cb_func::Type::BecomeFresh || type == nuraft::cb_func::Type::BecomeLeader)
@@ -180,21 +164,6 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
         initialized_cv.notify_all();
     }
     return nuraft::cb_func::ReturnCode::Ok;
-}
-
-bool NuKeeperServer::waitForServer(int32_t id) const
-{
-    /// FIXME
-    for (size_t i = 0; i < 30; ++i)
-    {
-        if (raft_instance->get_srv_config(id) != nullptr)
-            return true;
-        LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Waiting for server {} to join the cluster", id);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Cannot wait for server {}", id);
-    return false;
 }
 
 void NuKeeperServer::waitInit()

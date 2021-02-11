@@ -16,17 +16,11 @@ class NuKeeperServer
 private:
     int server_id;
 
-    std::string hostname;
-
-    int port;
-
-    std::string endpoint;
-
     CoordinationSettingsPtr coordination_settings;
 
     nuraft::ptr<NuKeeperStateMachine> state_machine;
 
-    nuraft::ptr<nuraft::state_mgr> state_manager;
+    nuraft::ptr<InMemoryStateManager> state_manager;
 
     nuraft::raft_launcher launcher;
 
@@ -44,8 +38,9 @@ private:
 
 public:
     NuKeeperServer(
-        int server_id_, const std::string & hostname_, int port_,
+        int server_id_,
         const CoordinationSettingsPtr & coordination_settings_,
+        const Poco::Util::AbstractConfiguration & config,
         ResponsesQueue & responses_queue_);
 
     void startup(bool should_build_quorum);
@@ -56,13 +51,9 @@ public:
 
     std::unordered_set<int64_t> getDeadSessions();
 
-    void addServer(int server_id_, const std::string & server_uri, bool can_become_leader_, int32_t priority);
-
     bool isLeader() const;
 
     bool isLeaderAlive() const;
-
-    bool waitForServer(int32_t server_id) const;
 
     void waitInit();
 

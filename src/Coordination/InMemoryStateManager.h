@@ -4,6 +4,7 @@
 #include <string>
 #include <Coordination/InMemoryLogStore.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -11,7 +12,10 @@ namespace DB
 class InMemoryStateManager : public nuraft::state_mgr
 {
 public:
-    InMemoryStateManager(int server_id_, const std::string & endpoint_);
+    InMemoryStateManager(
+        int server_id_,
+        const std::string & config_prefix,
+        const Poco::Util::AbstractConfiguration & config);
 
     nuraft::ptr<nuraft::cluster_config> load_config() override { return cluster_config; }
 
@@ -25,15 +29,17 @@ public:
 
     Int32 server_id() override { return my_server_id; }
 
-    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return server_config; }
+    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return my_server_config; }
 
     void system_exit(const int /* exit_code */) override {}
 
+    int getPort() const { return my_port; }
+
 private:
     int my_server_id;
-    std::string endpoint;
+    int my_port;
     nuraft::ptr<InMemoryLogStore> log_store;
-    nuraft::ptr<nuraft::srv_config> server_config;
+    nuraft::ptr<nuraft::srv_config> my_server_config;
     nuraft::ptr<nuraft::cluster_config> cluster_config;
     nuraft::ptr<nuraft::srv_state> server_state;
 };
