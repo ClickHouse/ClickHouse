@@ -1375,7 +1375,17 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
             }
             else
             {
-                (*it)->children.swap(new_children);
+                Node node;
+                node.type = ActionType::COLUMN;
+                node.result_name = (*it)->result_type->getName();
+                node.column = DataTypeString().createColumnConst(0, node.result_name);
+                node.result_type = std::make_shared<DataTypeString>();
+
+                auto * right_arg = &nodes.emplace_back(std::move(node));
+                auto * left_arg = new_children.front();
+
+
+                (*it)->children = {left_arg, right_arg};
                 ColumnsWithTypeAndName arguments;
                 arguments.reserve((*it)->children.size());
 
