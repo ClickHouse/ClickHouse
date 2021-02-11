@@ -21,7 +21,8 @@ namespace ErrorCodes
 // true window functions, and the fact that the WindowTransform internals are
 // pretty much well defined in domain terms (e.g. frame boundaries), this is
 // somewhat acceptable.
-class IWindowFunction {
+class IWindowFunction
+{
 public:
     virtual ~IWindowFunction() {}
 
