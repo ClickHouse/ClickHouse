@@ -31,7 +31,7 @@ NuKeeperServer::NuKeeperServer(
 {
 }
 
-void NuKeeperServer::startup(bool should_build_quorum)
+void NuKeeperServer::startup()
 {
     nuraft::raft_params params;
     params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
@@ -47,7 +47,7 @@ void NuKeeperServer::startup(bool should_build_quorum)
 
     nuraft::asio_service::options asio_opts{};
     nuraft::raft_server::init_options init_options;
-    init_options.skip_initial_election_timeout_ = !should_build_quorum;
+    init_options.skip_initial_election_timeout_ = state_manager->shouldStartAsFollower();
     init_options.raft_callback_ = [this] (nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
     {
         return callbackFunc(type, param);
