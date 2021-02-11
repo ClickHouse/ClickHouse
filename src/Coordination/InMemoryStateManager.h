@@ -17,6 +17,11 @@ public:
         const std::string & config_prefix,
         const Poco::Util::AbstractConfiguration & config);
 
+    InMemoryStateManager(
+        int server_id_,
+        const std::string & host,
+        int port);
+
     nuraft::ptr<nuraft::cluster_config> load_config() override { return cluster_config; }
 
     void save_config(const nuraft::cluster_config & config) override;
