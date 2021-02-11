@@ -61,7 +61,7 @@ template <typename PointType>
 class PointFromColumnParser
 {
 public:
-    PointFromColumnParser(ColumnPtr col_) : col(col_)
+    explicit PointFromColumnParser(ColumnPtr col_) : col(col_)
     {
         const auto & tuple = dynamic_cast<const ColumnTuple &>(*col_);
         const auto & tuple_columns = tuple.getColumns();
@@ -129,7 +129,7 @@ template<class Point>
 class RingFromColumnParser
 {
 public:
-    RingFromColumnParser(ColumnPtr col_)
+    explicit RingFromColumnParser(ColumnPtr col_)
         : col(col_)
         , offsets(dynamic_cast<const ColumnArray &>(*col_).getOffsets())
         , point_parser(dynamic_cast<const ColumnArray &>(*col_).getDataPtr())
@@ -179,7 +179,7 @@ template<class Point>
 class PolygonFromColumnParser
 {
 public:
-    PolygonFromColumnParser(ColumnPtr col_)
+    explicit PolygonFromColumnParser(ColumnPtr col_)
         : col(col_)
         , offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
         , ring_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
@@ -220,7 +220,7 @@ template<class Point>
 class MultiPolygonFromColumnParser
 {
 public:
-    MultiPolygonFromColumnParser(ColumnPtr col_)
+    explicit MultiPolygonFromColumnParser(ColumnPtr col_)
         : col(col_)
         , offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
         , polygon_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
@@ -287,7 +287,7 @@ public:
         , second(ColumnFloat64::create())
     {}
 
-    PointSerializerVisitor(size_t n)
+    explicit PointSerializerVisitor(size_t n)
         : first(ColumnFloat64::create(n))
         , second(ColumnFloat64::create(n))
     {}
@@ -344,7 +344,7 @@ public:
         : offsets(ColumnUInt64::create())
     {}
 
-    RingSerializerVisitor(size_t n)
+    explicit RingSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
@@ -384,12 +384,12 @@ public:
 
     ColumnPtr finalize()
     {
-        return ColumnArray::create(pointSerializer.finalize(), std::move(offsets));
+        return ColumnArray::create(point_serializer.finalize(), std::move(offsets));
     }
 
 private:
     size_t size = 0;
-    PointSerializerVisitor<Point> pointSerializer;
+    PointSerializerVisitor<Point> point_serializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
@@ -401,7 +401,7 @@ public:
         : offsets(ColumnUInt64::create())
     {}
 
-    PolygonSerializerVisitor(size_t n)
+    explicit PolygonSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
@@ -440,12 +440,12 @@ public:
 
     ColumnPtr finalize()
     {
-        return ColumnArray::create(ringSerializer.finalize(), std::move(offsets));
+        return ColumnArray::create(ring_serializer.finalize(), std::move(offsets));
     }
 
 private:
     size_t size = 0;
-    RingSerializerVisitor<Point> ringSerializer;
+    RingSerializerVisitor<Point> ring_serializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
@@ -457,7 +457,7 @@ public:
         : offsets(ColumnUInt64::create())
     {}
 
-    MultiPolygonSerializerVisitor(size_t n)
+    explicit MultiPolygonSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
@@ -494,12 +494,12 @@ public:
 
     ColumnPtr finalize()
     {
-        return ColumnArray::create(polygonSerializer.finalize(), std::move(offsets));
+        return ColumnArray::create(polygon_serializer.finalize(), std::move(offsets));
     }
 
 private:
     size_t size = 0;
-    PolygonSerializerVisitor<Point> polygonSerializer;
+    PolygonSerializerVisitor<Point> polygon_serializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
