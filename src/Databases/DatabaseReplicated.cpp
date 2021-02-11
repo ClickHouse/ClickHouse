@@ -351,7 +351,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     else if (!tables_to_detach.empty())
         LOG_WARNING(log, "Will DETACH PERMANENTLY {} broken tables to recover replica", tables_to_detach.size());
 
-    auto db_guard = DatabaseCatalog::instance().getDDLGuard(getDatabaseName(), "");
     for (const auto & table_name : tables_to_detach)
     {
         String to_name = fmt::format("{}_{}_{}_{}", BROKEN_TABLE_PREFIX, table_name, max_log_ptr, thread_local_rng() % 1000);
@@ -517,12 +516,12 @@ void DatabaseReplicated::renameTable(const Context & context, const String & tab
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
         String statement = readMetadataFile(table_name);
-        String statement_to = readMetadataFile(to_table_name);
         String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = txn->zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
         txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
         if (exchange)
         {
+            String statement_to = readMetadataFile(to_table_name);
             txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
             txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
         }
