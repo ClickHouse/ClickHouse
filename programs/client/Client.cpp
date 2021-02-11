@@ -1374,7 +1374,30 @@ private:
             {
                 // Probably the server is dead because we found an assertion
                 // failure. Fail fast.
-                fmt::print(stderr, "Lost connection to the server\n");
+                fmt::print(stderr, "Lost connection to the server.\n");
+
+                // Print the changed settings because they might be needed to
+                // reproduce the error.
+                const auto & changes = context.getSettingsRef().changes();
+                if (!changes.empty())
+                {
+                    fmt::print(stderr, "Changed settings: ");
+                    for (size_t i = 0; i < changes.size(); ++i)
+                    {
+                        if (i)
+                        {
+                            fmt::print(stderr, ", ");
+                        }
+                        fmt::print(stderr, "{} = '{}'", changes[i].name,
+                            toString(changes[i].value));
+                    }
+                    fmt::print(stderr, "\n");
+                }
+                else
+                {
+                    fmt::print(stderr, "No changed settings.\n");
+                }
+
                 return false;
             }
 
