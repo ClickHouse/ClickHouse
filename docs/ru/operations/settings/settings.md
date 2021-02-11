@@ -1941,7 +1941,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Задает количество потоков для вывода потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+Задает количество потоков для фонового потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
 
 Допустимые значения:
 
