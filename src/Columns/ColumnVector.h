@@ -345,7 +345,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     return res;
 }
 
-/// Prevent template instantiation of ColumnVector for common types
+/// Prevent implicit template instantiation of ColumnVector for common types
 
 extern template class ColumnVector<UInt8>;
 extern template class ColumnVector<UInt16>;
