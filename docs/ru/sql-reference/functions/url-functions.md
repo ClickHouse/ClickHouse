@@ -117,7 +117,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
 
-Возвращает часть домена, включающую поддомены верхнего уровня до первого существенного поддомена. Принимает имя пользовательского списка доменов верхнего уровня.
+Возвращает часть домена, включающую поддомены верхнего уровня до первого существенного поддомена. Принимает имя пользовательского [списка доменов верхнего уровня](https://ru.wikipedia.org/wiki/Список_доменов_верхнего_уровня).
 
 Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
 
@@ -154,7 +154,7 @@ cutToFirstSignificantSubdomain(URL, TLD)
 Запрос:
 
 ```sql
-SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')
+SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
 ```
 
 Результат:
@@ -167,7 +167,7 @@ SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', '
 
 **Смотрите также**
 
-[firstSignificantSubdomain](#firstsignificantsubdomain).
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
 
@@ -221,7 +221,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 
 **Смотрите также**
 
-[firstSignificantSubdomain](#firstsignificantsubdomain).
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
 
@@ -275,7 +275,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 **Смотрите также**
 
-[firstSignificantSubdomain](#firstsignificantsubdomain).
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### port(URL[, default_port = 0]) {#port}
 

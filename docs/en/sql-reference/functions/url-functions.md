@@ -133,7 +133,7 @@ For example:
 
 ### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom TLD list name.
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
 
 Can be useful if you need fresh TLD list or you have custom.
 
@@ -170,7 +170,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ```sql
-SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')
+SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
 ```
 
 Result:
@@ -183,7 +183,7 @@ Result:
 
 **See Also**
 
-[firstSignificantSubdomain](#firstsignificantsubdomain).
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
 
@@ -237,7 +237,7 @@ Result:
 
 **See Also**
 
-[firstSignificantSubdomain](#firstsignificantsubdomain).
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
 
@@ -291,7 +291,7 @@ Result:
 
 **See Also**
 
-[firstSignificantSubdomain](#firstsignificantsubdomain).
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### port(URL\[, default_port = 0\]) {#port}
 
