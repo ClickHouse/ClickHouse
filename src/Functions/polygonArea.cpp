@@ -19,6 +19,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 template <typename Point>
 class FunctionPolygonArea : public IFunction
 {
@@ -52,9 +58,28 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    void checkInputType(const ColumnsWithTypeAndName & arguments) const
+    {
+        /// Array(Array(Array(Tuple(Float64, Float64))))
+        auto desired = std::make_shared<const DataTypeArray>(
+            std::make_shared<const DataTypeArray>(
+                std::make_shared<const DataTypeArray>(
+                    std::make_shared<const DataTypeTuple>(
+                        DataTypes{std::make_shared<const DataTypeFloat64>(), std::make_shared<const DataTypeFloat64>()}
+                    )
+                )
+            )
+        );
+        if (!desired->equals(*arguments[0].type))
+            throw Exception(fmt::format("The type of first argument of function {} must be Array(Array(Array(Tuple(Float64, Float64))))", name), ErrorCodes::BAD_ARGUMENTS);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        checkInputType(arguments);
         auto parser = makeGeometryFromColumnParser<Point>(arguments[0]);
+
+        std::cout << arguments[0].type->getName() << std::endl;
         auto container = createContainer(parser);
 
         auto res_column = ColumnFloat64::create();
