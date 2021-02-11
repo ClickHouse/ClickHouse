@@ -4,6 +4,7 @@
 #include <Disks/IDisk.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
@@ -82,6 +83,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
+    extern const int INVALID_SHARD_ID;
 }
 
 namespace ActionLocks
@@ -345,6 +347,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
             NameAndTypePair("_table", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+            NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
             NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
             NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
             NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
@@ -540,22 +543,29 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
+    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
     {
         throw Exception("Storage " + getName() + " must have own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
+    auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
+
     /// If sharding key is not specified, then you can only write to a shard containing only one shard
-    if (!settings.insert_distributed_one_random_shard && !has_sharding_key
-        && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    if (!settings.insert_shard_id && !settings.insert_distributed_one_random_shard && !has_sharding_key && shard_num >= 2)
     {
-        throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
-                        ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+        throw Exception(
+            "Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
+            ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+    }
+
+    if (settings.insert_shard_id && settings.insert_shard_id > shard_num)
+    {
+        throw Exception("Shard id should be range from 1 to shard number", ErrorCodes::INVALID_SHARD_ID);
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings.insert_distributed_sync || owned_cluster;
+    bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
