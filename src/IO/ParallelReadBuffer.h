@@ -35,6 +35,7 @@ public:
     class ReadBufferFactory
     {
     public:
+        using ReadBufferPtr = std::unique_ptr<ReadBuffer>;
         virtual ReadBufferPtr getReader() = 0;
         virtual ~ReadBufferFactory() = default;
     };
@@ -46,10 +47,12 @@ public:
         , reader_factory(std::move(reader_factory_))
     {
         processing_units.reserve(max_working_readers);
-        std::lock_guard<std::mutex> lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         for (size_t i = 0; i < max_working_readers; ++i)
             processing_units.emplace_back(buffer_size);
-        pool.scheduleOrThrow([this]() { readerThreadFunction(); });
+
+        for (size_t i = 0; i < max_working_readers; ++i)
+            pool.scheduleOrThrow([this, i] { readerUnitThreadFunction(i); });
     }
 
     ~ParallelReadBuffer() override { finishAndWait(); }
@@ -84,10 +87,8 @@ private:
 
         ProcessingUnitStatus status;
         Memory<> segment;
-        ReadBufferPtr reader;
     };
 
-    void readerThreadFunction();
     void readerUnitThreadFunction(size_t unit_number);
 
     void onBackgroundException();
@@ -98,8 +99,6 @@ private:
     Memory<> segment;
     std::unique_ptr<ReadBufferFactory> reader_factory;
 
-    /// Number of unit that used to write data to
-    std::atomic<size_t> current_write_unit{0};
     /// Number of unit data from which data should be read
     std::atomic<size_t> current_read_unit{0};
     std::vector<ProcessingUnit> processing_units;
@@ -113,7 +112,6 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    std::atomic_bool no_more_readers{false};
     bool all_done{false};
 };
 

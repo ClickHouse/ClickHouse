@@ -122,12 +122,12 @@ void ReadBufferFromS3::setRange(size_t begin, size_t end)
     read_end = static_cast<off_t>(end);
 }
 
-ReadBufferPtr ReadBufferS3Factory::getReader()
+ReadBufferS3Factory::ReadBufferPtr ReadBufferS3Factory::getReader()
 {
     if (from_range >= object_size)
         return nullptr;
 
-    auto reader = std::make_shared<ReadBufferFromS3>(client_ptr, bucket, key);
+    auto reader = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, key);
 
     /// if length of tail less than half of step, grab it to current range
     size_t to_range = from_range + range_step - 1;

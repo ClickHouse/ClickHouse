@@ -32,7 +32,7 @@ bool ParallelReadBuffer::nextImpl()
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Emergency stop");
     }
 
-    if (no_more_readers && unit.status == ProcessingUnitStatus::STOPPED)
+    if (unit.status == ProcessingUnitStatus::STOPPED)
     {
         all_done = true;
         return false;
@@ -44,7 +44,6 @@ bool ParallelReadBuffer::nextImpl()
     memcpy(segment.data(), unit.segment.data(), unit.segment.size());
     working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
 
-
     {
         std::unique_lock<std::mutex> lock(mutex);
         unit.status = ProcessingUnitStatus::READY_TO_INSERT;
@@ -54,71 +53,50 @@ bool ParallelReadBuffer::nextImpl()
     return true;
 }
 
-void ParallelReadBuffer::readerThreadFunction()
-{
-    try
-    {
-        while (!emergency_stop && !no_more_readers)
-        {
-            size_t unit_num = current_write_unit++ % processing_units.size();
-
-            auto & unit = processing_units[unit_num];
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                reader_condvar.wait(lock, [this, &unit] { return emergency_stop || unit.status == ProcessingUnitStatus::READY_TO_INSERT; });
-                if (!emergency_stop)
-                {
-                    unit.reader = reader_factory->getReader();
-                    unit.status = ProcessingUnitStatus::READING;
-                }
-            }
-
-            if (emergency_stop)
-                return;
-
-            if (unit.reader)
-            {
-                pool.scheduleOrThrow([this, unit_num] { readerUnitThreadFunction(unit_num); });
-            }
-            else
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                no_more_readers = true;
-                unit.status = ProcessingUnitStatus::STOPPED;
-                next_condvar.notify_all();
-            }
-        }
-    }
-    catch (...)
-    {
-        onBackgroundException();
-    }
-}
-
 void ParallelReadBuffer::readerUnitThreadFunction(size_t unit_number)
 {
     try
     {
         auto & unit = processing_units[unit_number];
-        size_t read_at_once = unit.segment.size();
-        size_t n = unit.reader->read(unit.segment.data(), read_at_once);
-
-        /// It's expected to have small readers
-        while (unlikely(!emergency_stop && !unit.reader->eof()))
+        while (!emergency_stop)
         {
-            unit.segment.resize(n + read_at_once);
-            n += unit.reader->read(unit.segment.data() + n, read_at_once);
-        }
-        if (emergency_stop)
-            return;
+            ReadBufferFactory::ReadBufferPtr reader = nullptr;
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                reader_condvar.wait(lock, [this, &unit] { return emergency_stop || unit.status == ProcessingUnitStatus::READY_TO_INSERT; });
+                if (emergency_stop)
+                    return;
 
-        /// Trim suffix
-        unit.segment.resize(n);
-        /// New data can be read in nextImpl
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            unit.status = ProcessingUnitStatus::READY_TO_READ;
-            next_condvar.notify_all();
+                reader = reader_factory->getReader();
+                if (!reader)
+                {
+                    unit.status = ProcessingUnitStatus::STOPPED;
+                    next_condvar.notify_all();
+                    return;
+                }
+                unit.status = ProcessingUnitStatus::READING;
+            }
+
+            size_t read_at_once = unit.segment.size();
+            size_t n = reader->read(unit.segment.data(), read_at_once);
+
+            /// It's expected to have small readers
+            while (unlikely(!emergency_stop && !reader->eof()))
+            {
+                unit.segment.resize(n + read_at_once);
+                n += reader->read(unit.segment.data() + n, read_at_once);
+            }
+            if (emergency_stop)
+                return;
+
+            /// Trim suffix
+            unit.segment.resize(n);
+            /// New data can be read in nextImpl
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                unit.status = ProcessingUnitStatus::READY_TO_READ;
+                next_condvar.notify_all();
+            }
         }
     }
     catch (...)
