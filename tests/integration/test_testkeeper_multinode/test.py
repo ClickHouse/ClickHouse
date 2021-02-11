@@ -307,6 +307,19 @@ def test_blocade_leader(started_cluster):
     assert node3.query("SELECT COUNT() FROM t1") == "310\n"
 
 
+def dump_zk(node, zk_path, replica_path):
+    print(node.query("SELECT * FROM system.replication_queue FORMAT Vertical"))
+    print("Replicas")
+    print(node.query("SELECT * FROM system.replicas FORMAT Vertical"))
+    print("Replica 2 info")
+    print(node.query("SELECT * FROM system.zookeeper WHERE path = '{}' FORMAT Vertical".format(zk_path)))
+    print("Queue")
+    print(node.query("SELECT * FROM system.zookeeper WHERE path = '{}/queue' FORMAT Vertical".format(replica_path)))
+    print("Log")
+    print(node.query("SELECT * FROM system.zookeeper WHERE path = '{}/log' FORMAT Vertical".format(zk_path)))
+    print("Parts")
+    print(node.query("SELECT name FROM system.zookeeper WHERE path = '{}/parts' FORMAT Vertical".format(replica_path)))
+
 # in extremely rare case it can take more than 5 minutes in debug build with sanitizer
 @pytest.mark.timeout(600)
 def test_blocade_leader_twice(started_cluster):
@@ -339,6 +352,8 @@ def test_blocade_leader_twice(started_cluster):
                 print("Got exception node2", smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node2"
 
         for i in range(100):
@@ -354,6 +369,8 @@ def test_blocade_leader_twice(started_cluster):
                 print("Got exception node3", smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node3"
 
 
@@ -389,6 +406,8 @@ def test_blocade_leader_twice(started_cluster):
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
     for n, node in enumerate([node1, node2, node3]):
@@ -400,12 +419,14 @@ def test_blocade_leader_twice(started_cluster):
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("SYSTEM RESTART REPLICA t2", timeout=10)
+                node.query("SYSTEM RESTART REPLICA t2")
                 node.query("SYSTEM SYNC REPLICA t2", timeout=10)
                 break
             except Exception as ex:
@@ -417,18 +438,14 @@ def test_blocade_leader_twice(started_cluster):
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
     assert node1.query("SELECT COUNT() FROM t2") == "510\n"
     if node2.query("SELECT COUNT() FROM t2") != "510\n":
-        print(node2.query("SELECT * FROM system.replication_queue FORMAT Vertical"))
-        print("Replicas")
-        print(node2.query("SELECT * FROM system.replicas FORMAT Vertical"))
-        print("Replica 2 info")
-        print(node2.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/t2/replicas/2' FORMAT Vertical"))
-        print("Queue")
-        print(node2.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/t2/replicas/2/queue' FORMAT Vertical"))
-        print("Log")
-        print(node2.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/t2/log' FORMAT Vertical"))
+        for num, node in enumerate([node1, node2, node3]):
+            dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
+
     assert node2.query("SELECT COUNT() FROM t2") == "510\n"
     assert node3.query("SELECT COUNT() FROM t2") == "510\n"
