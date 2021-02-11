@@ -1,10 +1,11 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,7 +18,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Core/Settings.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -83,9 +83,9 @@ Pipe StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    auto tx = std::make_unique<pqxx::work>(*connection->conn());
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(std::move(tx), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size_)));
 }
 
 

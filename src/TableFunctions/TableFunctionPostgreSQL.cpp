@@ -1,6 +1,9 @@
 #include <TableFunctions/TableFunctionPostgreSQL.h>
 
 #if USE_LIBPQXX
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/StoragePostgreSQL.h>
+
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -9,8 +12,6 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 
 
 namespace DB
@@ -39,7 +40,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Context & context) const
 {
     const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
-    auto columns = fetchPostgreSQLTableStructure(connection->conn(), remote_table_name, use_nulls);
+    auto columns = fetchPostgreSQLTableStructure(connection->conn(), remote_table_name, use_nulls).columns;
 
     return ColumnsDescription{*columns};
 }

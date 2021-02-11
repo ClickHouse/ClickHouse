@@ -22,32 +22,55 @@
 namespace DB
 {
 
-PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    std::unique_ptr<pqxx::work> tx_,
+
+template<>
+PostgreSQLBlockInputStream<pqxx::read_transaction>::PostgreSQLBlockInputStream(
+    std::shared_ptr<pqxx::read_transaction> tx_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_)
+    const UInt64 max_block_size_,
+    bool auto_commit_)
     : query_str(query_str_)
     , max_block_size(max_block_size_)
-    , tx(std::move(tx_))
+    , auto_commit(auto_commit_)
+    , tx(tx_)
 {
     description.init(sample_block);
+}
+
+
+template<>
+PostgreSQLBlockInputStream<pqxx::work>::PostgreSQLBlockInputStream(
+    std::shared_ptr<pqxx::work> tx_,
+    const std::string & query_str_,
+    const Block & sample_block,
+    const UInt64 max_block_size_,
+    bool auto_commit_)
+    : query_str(query_str_)
+    , max_block_size(max_block_size_)
+    , auto_commit(auto_commit_)
+    , tx(tx_)
+{
+    description.init(sample_block);
+}
+
+
+template<typename T>
+void PostgreSQLBlockInputStream<T>::readPrefix()
+{
     for (const auto idx : ext::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
             preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
     /// pqxx::stream_from uses COPY command, will get error if ';' is present
     if (query_str.ends_with(';'))
         query_str.resize(query_str.size() - 1);
-}
 
-
-void PostgreSQLBlockInputStream::readPrefix()
-{
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
 
-Block PostgreSQLBlockInputStream::readImpl()
+template<typename T>
+Block PostgreSQLBlockInputStream<T>::readImpl()
 {
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
@@ -103,12 +126,15 @@ Block PostgreSQLBlockInputStream::readImpl()
 }
 
 
-void PostgreSQLBlockInputStream::readSuffix()
+template<typename T>
+void PostgreSQLBlockInputStream<T>::readSuffix()
 {
     if (stream)
     {
         stream->complete();
-        tx->commit();
+
+        if (auto_commit)
+            tx->commit();
     }
 }
 

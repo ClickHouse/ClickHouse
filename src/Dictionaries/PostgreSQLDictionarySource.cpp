@@ -68,9 +68,8 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 BlockInputStreamPtr PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
-    auto tx = std::make_unique<pqxx::work>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream>(
-            std::move(tx), load_all_query, sample_block, max_block_size);
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, load_all_query, sample_block, max_block_size);
 }
 
 
@@ -78,23 +77,23 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
-    auto tx = std::make_unique<pqxx::work>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream>(std::move(tx), load_update_query, sample_block, max_block_size);
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, load_update_query, sample_block, max_block_size);
 }
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    auto tx = std::make_unique<pqxx::work>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream>(std::move(tx), query, sample_block, max_block_size);
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size);
 }
 
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    auto tx = std::make_unique<pqxx::work>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream>(std::move(tx), query, sample_block, max_block_size);
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size);
 }
 
 
@@ -116,8 +115,9 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    auto tx = std::make_unique<pqxx::work>(*connection->conn());
-    PostgreSQLBlockInputStream block_input_stream(std::move(tx), request, invalidate_sample_block, 1);
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    PostgreSQLBlockInputStream<pqxx::read_transaction> block_input_stream(tx, request, invalidate_sample_block, 1);
+
     return readInvalidateQuery(block_input_stream);
 }
 

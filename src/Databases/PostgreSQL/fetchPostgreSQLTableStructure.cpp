@@ -14,6 +14,8 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <pqxx/pqxx>
 
+#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -25,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(ConnectionPtr connection)
+std::unordered_set<std::string> fetchPostgreSQLTablesList(PostgreSQLConnection::ConnectionPtr connection)
 {
     std::unordered_set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
@@ -39,7 +41,7 @@ std::unordered_set<std::string> fetchPostgreSQLTablesList(ConnectionPtr connecti
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
+static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
 
@@ -94,16 +96,66 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
 }
 
 
-std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
-    std::shared_ptr<pqxx::connection> connection, const String & postgres_table_name, bool use_nulls)
+template<typename T>
+std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
+        std::shared_ptr<T> tx, const String & postgres_table_name, const String & query, bool use_nulls, bool only_names_and_types)
 {
     auto columns = NamesAndTypesList();
+
+    try
+    {
+        pqxx::stream_from stream(*tx, pqxx::from_query, std::string_view(query));
+
+        if (only_names_and_types)
+        {
+            std::tuple<std::string, std::string> row;
+            while (stream >> row)
+                columns.push_back(NameAndTypePair(std::get<0>(row), convertPostgreSQLDataType(std::get<1>(row))));
+        }
+        else
+        {
+            std::tuple<std::string, std::string, std::string, uint16_t> row;
+            while (stream >> row)
+            {
+                columns.push_back(NameAndTypePair(
+                        std::get<0>(row),                           /// column name
+                        convertPostgreSQLDataType(
+                            std::get<1>(row),                       /// data type
+                            use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false
+                            std::get<3>(row))));                    /// number of dimensions if data type is array
+            }
+        }
+
+        stream.complete();
+    }
+    catch (const pqxx::undefined_table &)
+    {
+        throw Exception(fmt::format(
+                    "PostgreSQL table {} does not exist", postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while fetching postgresql table structure");
+        throw;
+    }
+
+    return !columns.empty() ? std::make_shared<NamesAndTypesList>(columns) : nullptr;
+}
+
+
+template<typename T>
+PostgreSQLTableStructure fetchPostgreSQLTableStructureImpl(
+        std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+{
+    PostgreSQLTableStructure table;
 
     if (postgres_table_name.find('\'') != std::string::npos
         || postgres_table_name.find('\\') != std::string::npos)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL table name cannot contain single quote or backslash characters, passed {}",
-            postgres_table_name);
+        throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "PostgreSQL table name cannot contain single quote or backslash characters, passed {}",
+                postgres_table_name);
     }
 
     std::string query = fmt::format(
@@ -112,41 +164,51 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
            "FROM pg_attribute "
            "WHERE attrelid = '{}'::regclass "
            "AND NOT attisdropped AND attnum > 0", postgres_table_name);
-    try
-    {
-        pqxx::read_transaction tx(*connection);
-        pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
 
-        std::tuple<std::string, std::string, std::string, uint16_t> row;
-        while (stream >> row)
-        {
-            columns.push_back(NameAndTypePair(
-                    std::get<0>(row),
-                    convertPostgreSQLDataType(
-                        std::get<1>(row),
-                        use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false, i.e. value is nullable
-                        std::get<3>(row))));
-        }
-        stream.complete();
-        tx.commit();
-    }
-    catch (const pqxx::undefined_table &)
-    {
-        throw Exception(fmt::format(
-                    "PostgreSQL table {}.{} does not exist",
-                    connection->dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while fetching postgresql table structure");
-        throw;
-    }
+    table.columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, false);
 
-    if (columns.empty())
-        return nullptr;
+    if (!with_primary_key)
+        return table;
 
-    return std::make_shared<NamesAndTypesList>(columns);
+    /// wiki.postgresql.org/wiki/Retrieve_primary_key_columns
+    query = fmt::format(
+            "SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS data_type "
+            "FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid "
+            "AND a.attnum = ANY(i.indkey) "
+            "WHERE  i.indrelid = '{}'::regclass AND i.indisprimary", postgres_table_name);
+
+    table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
+
+    return table;
 }
+
+
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(
+        std::shared_ptr<pqxx::read_transaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+{
+    return fetchPostgreSQLTableStructureImpl<pqxx::read_transaction>(tx, postgres_table_name, use_nulls, with_primary_key);
+}
+
+
+/// For the case when several operations are made on the transaction object before it can be used (like export snapshot and isolation level)
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(
+        std::shared_ptr<pqxx::work> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+{
+    return fetchPostgreSQLTableStructureImpl<pqxx::work>(tx, postgres_table_name, use_nulls, with_primary_key);
+}
+
+
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(
+        PostgreSQLConnection::ConnectionPtr connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+{
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection);
+    auto table = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, with_primary_key);
+    tx->commit();
+
+    return table;
+}
+
 
 }
 
