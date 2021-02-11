@@ -836,3 +836,79 @@ settings max_block_size = 4;
 8	10	10	1
 9	0	0	0
 10	0	0	0
+-- Check that we put windows in such an order that we can reuse the sort.
+-- First, check that at least the result is correct when we have many windows
+-- with different sort order.
+select
+    number,
+    count(*) over (partition by p order by number),
+    count(*) over (partition by p order by number, o),
+    count(*) over (),
+    count(*) over (order by number),
+    count(*) over (order by o),
+    count(*) over (order by o, number),
+    count(*) over (order by number, o),
+    count(*) over (partition by p order by o, number),
+    count(*) over (partition by p),
+    count(*) over (partition by p order by o),
+    count(*) over (partition by p, o order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+order by number
+;
+0	1	1	16	1	4	1	1	1	3	1	1
+1	2	2	16	2	7	5	2	2	3	2	1
+2	3	3	16	3	10	8	3	3	3	3	1
+3	1	1	16	4	13	11	4	2	3	2	1
+4	2	2	16	5	16	14	5	3	3	3	1
+5	3	3	16	6	4	2	6	1	3	1	1
+6	1	1	16	7	7	6	7	1	3	1	1
+7	2	2	16	8	10	9	8	2	3	2	1
+8	3	3	16	9	13	12	9	3	3	3	1
+9	1	1	16	10	16	15	10	3	3	3	1
+10	2	2	16	11	4	3	11	1	3	1	1
+11	3	3	16	12	7	7	12	2	3	2	1
+12	1	1	16	13	10	10	13	1	3	1	1
+13	2	2	16	14	13	13	14	2	3	2	1
+14	3	3	16	15	16	16	15	3	3	3	1
+15	1	1	16	16	4	4	16	1	1	1	1
+-- The EXPLAIN for the above query would be difficult to understand, so check some
+-- simple cases instead.
+explain select
+    count(*) over (partition by p),
+    count(*) over (),
+    count(*) over (partition by p order by o)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+Expression ((Projection + Before ORDER BY))
+  Window (Window step for window \'\')
+    Window (Window step for window \'PARTITION BY p\')
+      Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
+        MergingSorted (Merge sorted streams for window \'PARTITION BY p ORDER BY o ASC\')
+          MergeSorting (Merge sorted blocks for window \'PARTITION BY p ORDER BY o ASC\')
+            PartialSorting (Sort each block for window \'PARTITION BY p ORDER BY o ASC\')
+              Expression ((Before window functions + (Projection + Before ORDER BY)))
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+explain select
+    count(*) over (order by o, number),
+    count(*) over (order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+Expression ((Projection + Before ORDER BY))
+  Window (Window step for window \'ORDER BY o ASC, number ASC\')
+    MergingSorted (Merge sorted streams for window \'ORDER BY o ASC, number ASC\')
+      MergeSorting (Merge sorted blocks for window \'ORDER BY o ASC, number ASC\')
+        PartialSorting (Sort each block for window \'ORDER BY o ASC, number ASC\')
+          Window (Window step for window \'ORDER BY number ASC\')
+            MergingSorted (Merge sorted streams for window \'ORDER BY number ASC\')
+              MergeSorting (Merge sorted blocks for window \'ORDER BY number ASC\')
+                PartialSorting (Sort each block for window \'ORDER BY number ASC\')
+                  Expression ((Before window functions + (Projection + Before ORDER BY)))
+                    SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                      ReadFromStorage (SystemNumbers)
