@@ -474,7 +474,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
     auto create_active_res = zookeeper->tryCreate(active_node_path, {}, zkutil::CreateMode::Ephemeral);
     if (create_active_res != Coordination::Error::ZOK)
     {
-        if (create_active_res == Coordination::Error::ZNONODE)
+        if (create_active_res != Coordination::Error::ZNONODE)
             throw Coordination::Exception(create_active_res, active_node_path);
         createStatusDirs(task.entry_path, zookeeper);
         zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);

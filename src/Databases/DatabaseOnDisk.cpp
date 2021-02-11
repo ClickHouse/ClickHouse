@@ -407,6 +407,8 @@ void DatabaseOnDisk::renameTable(
             from_ordinary_to_atomic = true;
         else if (typeid_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database))
             from_atomic_to_ordinary = true;
+        else if (dynamic_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database) && getEngineName() == "Replicated")
+            from_atomic_to_ordinary = true;
         else
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -418,6 +420,7 @@ void DatabaseOnDisk::renameTable(
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, global_context);
     detachTable(table_name);
+    UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
         table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
@@ -430,7 +433,7 @@ void DatabaseOnDisk::renameTable(
         if (from_ordinary_to_atomic)
             create.uuid = UUIDHelpers::generateV4();
         if (from_atomic_to_ordinary)
-            create.uuid = UUIDHelpers::Nil;
+            std::swap(create.uuid, prev_uuid);
 
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
@@ -455,12 +458,16 @@ void DatabaseOnDisk::renameTable(
 
     Poco::File(table_metadata_path).remove();
 
-    /// Special case: usually no actions with symlinks are required when detaching/attaching table,
-    /// but not when moving from Atomic database to Ordinary
-    if (from_atomic_to_ordinary && table->storesDataOnDisk())
+    if (from_atomic_to_ordinary)
     {
         auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
-        atomic_db.tryRemoveSymlink(table_name);
+        /// Special case: usually no actions with symlinks are required when detaching/attaching table,
+        /// but not when moving from Atomic database to Ordinary
+        if (table->storesDataOnDisk())
+            atomic_db.tryRemoveSymlink(table_name);
+        /// Forget about UUID, now it's possible to reuse it for new table
+        DatabaseCatalog::instance().removeUUIDMappingFinally(prev_uuid);
+        atomic_db.setDetachedTableNotInUseForce(prev_uuid);
     }
 }
 
