@@ -38,14 +38,19 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 
+/// Move FilterStep down if possible.
+/// May split FilterStep and push down only part of it.
+size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 4> optimizations =
+    static const std::array<Optimization, 5> optimizations =
     {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin"},
         {tryPushDownLimit, "pushDownLimit"},
         {trySplitFilter, "splitFilter"},
         {tryMergeExpressions, "mergeExpressions"},
+        {tryPushDownLimit, "pushDownFilter"},
      }};
 
     return optimizations;
