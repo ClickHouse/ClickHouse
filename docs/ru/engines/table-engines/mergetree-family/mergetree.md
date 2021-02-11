@@ -804,6 +804,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <cache_enabled>true</cache_enabled>
             <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
+            <multipart_write_thread_pool_size>1</multipart_write_thread_pool_size>
         </s3>
     </disks>
     ...
@@ -831,6 +832,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `cache_enabled` — признак, разрешено ли хранение кэша засечек и файлов индекса в локальной файловой системе. Значение по умолчанию: `true`.
 -   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
+-   `multipart_write_thread_pool_size` — максимальное количество параллельных потоков при многокомпонентной загрузке. Значение по умолчанию: `1`.
 
 Диск S3 может быть сконфигурирован как `main` или `cold`:
 

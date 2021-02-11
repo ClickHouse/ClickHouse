@@ -19,6 +19,13 @@
                 <type>local</type>
                 <path>/</path>
             </hdd>
+            <s3_parallel_writes>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <multipart_write_thread_pool_size>16</multipart_write_thread_pool_size>
+            </s3_parallel_writes>
         </disks>
         <policies>
             <s3>
@@ -38,6 +45,16 @@
                     </main>
                 </volumes>
             </unstable_s3>
+            <s3_parallel_writes>
+                <volumes>
+                    <main>
+                        <disk>s3_parallel_writes</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </s3_parallel_writes>
         </policies>
     </storage_configuration>
 

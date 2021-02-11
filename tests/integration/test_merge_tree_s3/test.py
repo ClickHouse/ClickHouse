@@ -49,6 +49,7 @@ def cluster():
         cluster.add_instance("node",
                              main_configs=["configs/config.d/storage_conf.xml",
                                            "configs/config.d/bg_processing_pool_conf.xml"],
+                             user_configs=["configs/users.d/s3_min_upload_part_size.xml"],
                              with_minio=True)
         cluster.add_instance("node_async_read",
                              main_configs=["configs/config.d/storage_conf.xml",
@@ -82,9 +83,9 @@ def generate_values(date_str, count, sign=1):
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
-def create_table(node, table_name, **additional_settings):
+def create_table(node, table_name, policy, **additional_settings):
     settings = {
-        "storage_policy": "s3",
+        "storage_policy": policy,
         "old_parts_lifetime": 0,
         "index_granularity": 512
     }
@@ -162,30 +163,35 @@ def drop_table(cluster, node_name):
 
 
 @pytest.mark.parametrize(
-    "min_rows_for_wide_part,files_per_part,node_name",
+    "min_rows_for_wide_part,n,policy,files_per_part,node_name",
     [
-        (0, FILES_OVERHEAD_PER_PART_WIDE, "node"),
-        (8192, FILES_OVERHEAD_PER_PART_COMPACT, "node"),
-        (0, FILES_OVERHEAD_PER_PART_WIDE, "node_async_read"),
-        (8192, FILES_OVERHEAD_PER_PART_COMPACT, "node_async_read")
+        (0, 4096, "s3", FILES_OVERHEAD_PER_PART_WIDE, "node"),
+        (8192, 4096, "s3", FILES_OVERHEAD_PER_PART_COMPACT, "node"),
+        (0, 4096, "s3", FILES_OVERHEAD_PER_PART_WIDE, "node_async_read"),
+        (8192, 4096, "s3", FILES_OVERHEAD_PER_PART_COMPACT, "node_async_read"),
+        (0, 2**20, "s3", FILES_OVERHEAD_PER_PART_WIDE, "node"),
+        (2**21, 2**20, "s3", FILES_OVERHEAD_PER_PART_COMPACT, "node"),
+        (0, 2**20, "s3_parallel_writes", FILES_OVERHEAD_PER_PART_WIDE, "node"),
+        (2**21, 2**20, "s3_parallel_writes", FILES_OVERHEAD_PER_PART_COMPACT, "node")
     ]
 )
-def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part, node_name):
+def test_simple_insert_select(cluster, min_rows_for_wide_part, n, policy, files_per_part, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test", min_rows_for_wide_part=min_rows_for_wide_part)
     minio = cluster.minio_client
+    create_table(node, "s3_test", "s3", min_rows_for_wide_part=min_rows_for_wide_part)
 
-    values1 = generate_values('2020-01-03', 4096)
-    node.query("INSERT INTO s3_test VALUES {}".format(values1))
+    values1 = generate_values('2020-01-03', n)
+    node.query("INSERT INTO s3_test VALUES {}".format(values1), settings={'max_insert_block_size': n*100})
     assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values") == values1
+    print([o.object_name for o in minio.list_objects(cluster.minio_bucket, 'data/')])
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + files_per_part
 
-    values2 = generate_values('2020-01-04', 4096)
-    node.query("INSERT INTO s3_test VALUES {}".format(values2))
+    values2 = generate_values('2020-01-04', n)
+    node.query("INSERT INTO s3_test VALUES {}".format(values2), settings={'max_insert_block_size': n*100})
     assert node.query("SELECT * FROM s3_test ORDER BY dt, id FORMAT Values") == values1 + "," + values2
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + files_per_part * 2
 
-    assert node.query("SELECT count(*) FROM s3_test where id = 1 FORMAT Values") == "(2)"
+    assert node.query("SELECT count(*) FROM s3_test WHERE id = 1 FORMAT Values") == "(2)"
 
 
 @pytest.mark.parametrize(
@@ -202,7 +208,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
         settings['vertical_merge_algorithm_min_columns_to_activate'] = 0
 
     node = cluster.instances[node_name]
-    create_table(node, "s3_test", **settings)
+    create_table(node, "s3_test", "s3", **settings)
     minio = cluster.minio_client
 
     node.query("SYSTEM STOP MERGES s3_test")
@@ -238,7 +244,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
 @pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_alter_table_columns(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -267,7 +273,7 @@ def test_alter_table_columns(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_attach_detach_partition(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -299,7 +305,7 @@ def test_attach_detach_partition(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_move_partition_to_another_disk(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -321,7 +327,7 @@ def test_move_partition_to_another_disk(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_table_manipulations(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -349,7 +355,7 @@ def test_table_manipulations(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_move_replace_partition_to_another_table(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -361,7 +367,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     assert len(
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
-    create_table(node, "s3_clone")
+    create_table(node, "s3_clone", "s3")
 
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-03' TO TABLE s3_clone")
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-05' TO TABLE s3_clone")
@@ -415,7 +421,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_freeze_unfreeze(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -440,7 +446,7 @@ def test_freeze_unfreeze(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_disk_apply_new_settings(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
 
     def get_s3_requests():
         node.query("SYSTEM FLUSH LOGS")
@@ -466,7 +472,7 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_disk_restart_during_load(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+    create_table(node, "s3_test", "s3")
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 1024 * 1024)))
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-05', 1024 * 1024, -1)))
@@ -501,7 +507,7 @@ def test_s3_disk_restart_during_load(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test", storage_policy='unstable_s3')
+    create_table(node, "s3_test", "s3", storage_policy='unstable_s3')
     node.query("INSERT INTO s3_test SELECT today(), *, toString(*) FROM system.numbers LIMIT 9000000")
     for i in range(30):
         print(f"Read sequence {i}")

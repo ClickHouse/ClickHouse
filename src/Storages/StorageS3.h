@@ -165,6 +165,7 @@ private:
     UInt64 max_single_read_retries;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
+    size_t multipart_write_thread_pool_size;
     String compression_method;
     String name;
     const bool distributed_processing;

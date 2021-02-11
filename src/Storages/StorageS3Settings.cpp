@@ -42,6 +42,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             {
                 use_insecure_imds_request = config.getBool(config_elem + "." + key + ".use_insecure_imds_request");
             }
+            size_t multipart_write_thread_pool_size = config.getUInt64(config_elem + "." + key + ".multipart_write_thread_pool_size", 1);
 
             HeaderCollection headers;
             Poco::Util::AbstractConfiguration::Keys subconfig_keys;
@@ -64,7 +65,8 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
                     std::move(server_side_encryption_customer_key_base64),
                     std::move(headers),
                     use_environment_credentials,
-                    use_insecure_imds_request
+                    use_insecure_imds_request,
+                    multipart_write_thread_pool_size
                 });
         }
     }

@@ -818,6 +818,7 @@ Configuration markup:
             <cache_enabled>true</cache_enabled>
             <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
+            <multipart_write_thread_pool_size>1</multipart_write_thread_pool_size>
         </s3>
     </disks>
     ...
@@ -846,6 +847,7 @@ Optional parameters:
 -   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 -   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+-   `multipart_write_thread_pool_size` — Sets number of parallel multipart upload jobs to S3. Default value is 1.
 
 S3 disk can be configured as `main` or `cold` storage:
 ``` xml

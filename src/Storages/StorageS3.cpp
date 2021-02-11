@@ -26,6 +26,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/WriteBufferFromS3Executor.h>
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
@@ -306,13 +307,21 @@ public:
         const String & bucket,
         const String & key,
         size_t min_upload_part_size,
-        size_t max_single_part_upload_size)
+        size_t max_single_part_upload_size,
+        size_t multipart_write_thread_pool_size)
         : SinkToStorage(sample_block_)
         , sample_block(sample_block_)
         , format_settings(format_settings_)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
+            std::make_unique<WriteBufferFromS3>(
+                client,
+                bucket,
+                key,
+                min_upload_part_size,
+                max_single_part_upload_size,
+                std::make_unique<WriteBufferFromS3Executor>(multipart_write_thread_pool_size)
+            ), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
@@ -367,7 +376,8 @@ public:
         const String & bucket_,
         const String & key_,
         size_t min_upload_part_size_,
-        size_t max_single_part_upload_size_)
+        size_t max_single_part_upload_size_,
+        size_t multipart_write_thread_pool_size_)
         : SinkToStorage(sample_block_)
         , format(format_)
         , sample_block(sample_block_)
@@ -378,6 +388,7 @@ public:
         , key(key_)
         , min_upload_part_size(min_upload_part_size_)
         , max_single_part_upload_size(max_single_part_upload_size_)
+        , multipart_write_thread_pool_size(multipart_write_thread_pool_size_)
         , format_settings(format_settings_)
     {
         std::vector<ASTPtr> arguments(1, partition_by);
@@ -453,6 +464,7 @@ private:
     const String key;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
+    size_t multipart_write_thread_pool_size;
     std::optional<FormatSettings> format_settings;
 
     ExpressionActionsPtr partition_by_expr;
@@ -486,7 +498,8 @@ private:
                 partition_bucket,
                 partition_key,
                 min_upload_part_size,
-                max_single_part_upload_size
+                max_single_part_upload_size,
+                multipart_write_thread_pool_size
             ));
         }
 
@@ -570,8 +583,10 @@ StorageS3::StorageS3(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     updateClientAndAuthSettings(context_, client_auth);
-}
 
+    auto settings = context_->getStorageS3Settings().getSettings(uri_.uri.toString());
+    multipart_write_thread_pool_size = settings.multipart_write_thread_pool_size;
+}
 
 Pipe StorageS3::read(
     const Names & column_names,
@@ -661,7 +676,8 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             client_auth.uri.bucket,
             client_auth.uri.key,
             min_upload_part_size,
-            max_single_part_upload_size);
+            max_single_part_upload_size,
+            multipart_write_thread_pool_size);
     }
     else
     {
@@ -675,7 +691,8 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             client_auth.uri.bucket,
             client_auth.uri.key,
             min_upload_part_size,
-            max_single_part_upload_size);
+            max_single_part_upload_size,
+            multipart_write_thread_pool_size);
     }
 }
 

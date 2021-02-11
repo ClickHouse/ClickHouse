@@ -42,6 +42,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & key_,
     size_t minimum_upload_part_size_,
     size_t max_single_part_upload_size_,
+    std::unique_ptr<IExecutor> executor_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
@@ -51,6 +52,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size(minimum_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
+    , executor(std::move(executor_))
 {
     allocateBuffer();
 }
@@ -135,8 +137,6 @@ void WriteBufferFromS3::writePart()
 {
     auto size = temporary_buffer->tellp();
 
-    LOG_DEBUG(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, size);
-
     if (size < 0)
         throw Exception("Failed to write part. Buffer in invalid state.", ErrorCodes::S3_ERROR);
 
@@ -152,33 +152,64 @@ void WriteBufferFromS3::writePart()
         LOG_WARNING(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
     }
 
+    auto part_data = std::make_shared<Aws::StringStream>();
+    temporary_buffer.swap(part_data);
+
+    size_t part_number = part_tags.size() + 1;
+    auto part_tag = std::make_shared<String>();
+    part_tags.emplace_back(part_tag);
+    auto write_job = [&, part_number, part_tag, part_data]
+    {
+        doWritePart(part_data, part_number, part_tag);
+    };
+
+    executor->scheduleOrThrowOnError(std::move(write_job));
+}
+
+void WriteBufferFromS3::doWritePart(std::shared_ptr<Aws::StringStream> part_data, size_t part_number, std::shared_ptr<String> output_tag)
+{
+    LOG_DEBUG(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, part_data->tellp());
+
     Aws::S3::Model::UploadPartRequest req;
 
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetPartNumber(part_tags.size() + 1);
+    req.SetPartNumber(part_number);
     req.SetUploadId(multipart_upload_id);
-    req.SetContentLength(size);
-    req.SetBody(temporary_buffer);
+    req.SetContentLength(part_data->tellp());
+    req.SetBody(part_data);
 
     auto outcome = client_ptr->UploadPart(req);
 
     if (outcome.IsSuccess())
     {
         auto etag = outcome.GetResult().GetETag();
-        part_tags.push_back(etag);
-        LOG_DEBUG(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, etag, part_tags.size());
+        output_tag->assign(std::move(etag));
+        LOG_DEBUG(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Part: {}", bucket, key, multipart_upload_id, *output_tag, part_number);
     }
     else
+    {
+        LOG_DEBUG(log, "Writing part failed with error: \"{}\". Bucket: {}, Key: {}, Upload_id: {}, Part: {}",
+                outcome.GetError().GetMessage(), bucket, key, multipart_upload_id, part_number);
+
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+    }
 }
 
 void WriteBufferFromS3::completeMultipartUpload()
 {
-    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
-
     if (part_tags.empty())
         throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
+
+    if (executor->active() > 0)
+    {
+        LOG_TRACE(log, "Waiting {} threads to upload data. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}",
+                executor->active(), bucket, key, multipart_upload_id, part_tags.size());
+    }
+
+    executor->wait();
+
+    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
@@ -189,7 +220,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < part_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
+        multipart_upload.AddParts(part.WithETag(*part_tags[i]).WithPartNumber(i + 1));
     }
 
     req.SetMultipartUpload(multipart_upload);

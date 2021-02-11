@@ -30,6 +30,7 @@ struct DiskS3Settings
         size_t s3_max_single_read_retries_,
         size_t s3_min_upload_part_size_,
         size_t s3_max_single_part_upload_size_,
+        size_t multipart_write_thread_pool_size_,
         size_t min_bytes_for_seek_,
         bool send_metadata_,
         int thread_pool_size_,
@@ -40,6 +41,7 @@ struct DiskS3Settings
     size_t s3_max_single_read_retries;
     size_t s3_min_upload_part_size;
     size_t s3_max_single_part_upload_size;
+    size_t multipart_write_thread_pool_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
     int thread_pool_size;

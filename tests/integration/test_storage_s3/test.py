@@ -6,6 +6,7 @@ import io
 import random
 import threading
 import time
+import traceback
 
 import helpers.client
 import pytest
@@ -385,47 +386,56 @@ def test_put_get_with_globs(started_cluster):
 
 
 # Test multipart put.
-@pytest.mark.parametrize("maybe_auth,positive", [
-    pytest.param("", True, id="positive"),
-    pytest.param("'wrongid','wrongkey'", False, id="negative"),
-    # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
+@pytest.mark.parametrize("override_host,override_port,maybe_auth,threaded,positive", [
+    pytest.param(None, None, "", False, True, id="positive"),
+    pytest.param("resolver", 8083, "", False, True, id="positive_with_retries"),
+    pytest.param(None, None, "", True, True, id="positive_threaded"),
+    pytest.param("resolver", 8083, "", True, True, id="positive_threaded_with_retries"),
+    # pytest.param(None, None, "'minio','minio123',", False, True, id="positive_with_auth"), Redirect with credentials not working with nginx.
+    pytest.param(None, None, "'wrongid','wrongkey',", False, False, id="negative"),
 ])
-def test_multipart_put(started_cluster, maybe_auth, positive):
+def test_multipart_put(started_cluster, override_host, override_port, maybe_auth, threaded, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = started_cluster.minio_bucket if not maybe_auth else started_cluster.minio_restricted_bucket
+    filename = "test_multipart.csv"
+    host = override_host or started_cluster.minio_redirect_host
+    port = override_port or started_cluster.minio_redirect_port
+    if threaded:
+        bucket = started_cluster.minio_bucket
+        filename = "threaded/test_multipart.csv"
+
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
     # Minimum size of part is 5 Mb for Minio.
     # See: https://github.com/minio/minio/blob/master/docs/minio-limits.md
     min_part_size_bytes = 5 * 1024 * 1024
-    csv_size_bytes = int(min_part_size_bytes * 1.5)  # To have 2 parts.
+    csv_size_bytes = int(min_part_size_bytes * 9.5) # To have up to 10 parts.
 
     one_line_length = 6  # 3 digits, 2 commas, 1 line separator.
 
     # Generate data having size more than one part
-    int_data = [[1, 2, 3] for i in range(csv_size_bytes // one_line_length)]
+    int_data = [[random.randint(0, 9), random.randint(0, 9), random.randint(0, 9)] for i in range(csv_size_bytes // one_line_length)]
     csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
 
     assert len(csv_data) > min_part_size_bytes
 
-    filename = "test_multipart.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV".format(
-        started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, filename, maybe_auth, table_format)
+    put_query = f"insert into table function s3('http://{host}:{port}/{bucket}/{filename}', {maybe_auth}'CSV', '{table_format}') format CSV"
 
     try:
         run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes,
                                                                  's3_max_single_part_upload_size': 0})
     except helpers.client.QueryRuntimeException:
-        if positive:
-            raise
+        assert not positive, traceback.format_exc()
+
     else:
         assert positive
 
-        # Use proxy access logs to count number of parts uploaded to Minio.
-        proxy_logs = started_cluster.get_container_logs("proxy1")  # type: str
-        assert proxy_logs.count("PUT /{}/{}".format(bucket, filename)) >= 2
+        if not override_port and not override_host:
+            # Use proxy access logs to count number of parts uploaded to Minio.
+            proxy_logs = started_cluster.get_container_logs("proxy1")  # type: str
+            assert 5 < proxy_logs.count("PUT /{}/{}".format(bucket, filename)) <= 10
 
         assert csv_data == get_s3_file_content(started_cluster, bucket, filename)
 
@@ -484,13 +494,13 @@ def test_s3_glob_scheherazade(started_cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
-
 def run_s3_mocks(started_cluster):
     logging.info("Starting s3 mocks")
     mocks = (
         ("mock_s3.py", "resolver", "8080"),
         ("unstable_server.py", "resolver", "8081"),
         ("echo.py", "resolver", "8082"),
+        ("unstable_writes_proxy.py", "resolver", "8083"),
     )
     for mock_filename, container, port in mocks:
         container_id = started_cluster.get_container_id(container)
