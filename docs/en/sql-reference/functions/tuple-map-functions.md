@@ -137,9 +137,104 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
 
-## mapKeys {#mapKeys}
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContains(a, 'name') FROM test;
+
+```
+
+Result:
+
+```text
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
+```
+
+## mapKeys {#mapkeys}
+
+Returns all the keys from `map` parameter.
+
+**Syntax**
+
+```sql
+mapKeys(map)
+```
+
+**Parameters**
+
+-   `map`- Map.
+
+**Returned value**
+
+-   Array containing all the keys from `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapKeys(a) FROM test;
+```
+
+Result:
+
+```text
+┌─mapKeys(a)────────────┐
+│ ['name','age']        │
+│ ['number','position'] │
+└───────────────────────┘
+```
 
 ## mapValues {#mapvalues}
+
+Returns all the values from `map` parameter.
+
+**Syntax**
+
+```sql
+mapKeys(map)
+```
+
+**Parameters**
+
+-   `map`- Map.
+
+**Returned value**
+
+-   Array containing all the values from `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapValues(a) FROM test;
+```
+
+Result:
+
+```text
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/tuple-map-functions/) <!--hide-->
