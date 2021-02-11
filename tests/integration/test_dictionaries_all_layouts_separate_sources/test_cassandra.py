@@ -15,7 +15,7 @@ node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
-
+test_name = "cassandra"
 
 def setup_module(module):
     global cluster
@@ -24,10 +24,9 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    for f in os.listdir(DICT_CONFIG_PATH):
-        os.remove(os.path.join(DICT_CONFIG_PATH, f))
 
     simple_tester = SimpleLayoutTester()
+    simple_tester.cleanup()
     simple_tester.create_dictionaries(SOURCE)
 
     complex_tester = ComplexLayoutTester()
@@ -37,24 +36,19 @@ def setup_module(module):
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
-    cluster = ClickHouseCluster(__file__)
+    cluster = ClickHouseCluster(__file__, name=test_name)
 
-    dictionaries = []
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
     main_configs.append(os.path.join('configs', 'log_conf.xml'))
 
-    for fname in os.listdir(DICT_CONFIG_PATH):
-        dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))
+    dictionaries = simple_tester.list_dictionaries()
 
     node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_cassandra=True)
 
 
 def teardown_module(module):
-    global DICT_CONFIG_PATH
-    for fname in os.listdir(DICT_CONFIG_PATH):
-        os.remove(os.path.join(DICT_CONFIG_PATH, fname))
-
+    simple_tester.cleanup()
 
 @pytest.fixture(scope="module")
 def started_cluster():
