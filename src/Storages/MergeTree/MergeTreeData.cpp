@@ -729,16 +729,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (startsWith(it->name(), "tmp"))
                 continue;
 
-            part_names_with_disks.emplace_back(it->name(), disk_ptr);
-
-            /// Create and correctly initialize global WAL object, if it's needed
-            if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME && settings->in_memory_parts_enable_wal)
+            if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+                part_names_with_disks.emplace_back(it->name(), disk_ptr);
+            else if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME && settings->in_memory_parts_enable_wal)
             {
+                /// Create and correctly initialize global WAL object
                 write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
                 for (auto && part : write_ahead_log->restore(metadata_snapshot))
                     parts_from_wal.push_back(std::move(part));
             }
-            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME) && settings->in_memory_parts_enable_wal)
+            else if (settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
                 for (auto && part : wal.restore(metadata_snapshot))
@@ -1490,16 +1490,31 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             getPartitionIDFromQuery(command.partition, global_context);
         }
 
-        /// Some type changes for version column is allowed despite it's a part of sorting key
-        if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
+        if (command.column_name == merging_params.version_column)
         {
-            const IDataType * new_type = command.data_type.get();
-            const IDataType * old_type = old_types[command.column_name];
+            /// Some type changes for version column is allowed despite it's a part of sorting key
+            if (command.type == AlterCommand::MODIFY_COLUMN)
+            {
+                const IDataType * new_type = command.data_type.get();
+                const IDataType * old_type = old_types[command.column_name];
 
-            checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
-            /// No other checks required
-            continue;
+                /// No other checks required
+                continue;
+            }
+            else if (command.type == AlterCommand::DROP_COLUMN)
+            {
+                throw Exception(
+                    "Trying to ALTER DROP version " + backQuoteIfNeed(command.column_name) + " column",
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+            else if (command.type == AlterCommand::RENAME_COLUMN)
+            {
+                throw Exception(
+                    "Trying to ALTER RENAME version " + backQuoteIfNeed(command.column_name) + " column",
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
         }
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
@@ -3675,6 +3690,17 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
     return true;
 }
 
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void MergeTreeData::writePartLog(
     PartLogElement::Type type,
     const ExecutionStatus & execution_status,
@@ -3697,7 +3723,12 @@ try
     part_log_elem.error = static_cast<UInt16>(execution_status.code);
     part_log_elem.exception = execution_status.message;
 
-    part_log_elem.event_time = time(nullptr);
+    // construct event_time and event_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    const auto time_now = std::chrono::system_clock::now();
+    part_log_elem.event_time = time_in_seconds(time_now);
+    part_log_elem.event_time_microseconds = time_in_microseconds(time_now);
+
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
     part_log_elem.duration_ms = elapsed_ns / 1000000;
 
@@ -3752,18 +3783,6 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
     }
-}
-
-bool MergeTreeData::selectPartsAndMove()
-{
-    if (parts_mover.moves_blocker.isCancelled())
-        return false;
-
-    auto moving_tagger = selectPartsForMove();
-    if (moving_tagger->parts_to_move.empty())
-        return false;
-
-    return moveParts(std::move(moving_tagger));
 }
 
 std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
