@@ -27,7 +27,6 @@
 TEST(CoordinationTest, BuildTest)
 {
     DB::InMemoryLogStore store;
-    DB::InMemoryStateManager state_manager(1, "localhost:12345");
     DB::SummingStateMachine machine;
     EXPECT_EQ(1, 1);
 }
@@ -74,7 +73,7 @@ struct SimpliestRaftServer
         , port(port_)
         , endpoint(hostname + ":" + std::to_string(port))
         , state_machine(nuraft::cs_new<StateMachine>())
-        , state_manager(nuraft::cs_new<DB::InMemoryStateManager>(server_id, endpoint))
+        , state_manager(nuraft::cs_new<DB::InMemoryStateManager>(server_id, hostname, port))
     {
         nuraft::raft_params params;
         params.heart_beat_interval_ = 100;

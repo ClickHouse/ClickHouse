@@ -9,6 +9,16 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
+InMemoryStateManager::InMemoryStateManager(int server_id_, const std::string & host, int port)
+    : my_server_id(server_id_)
+    , my_port(port)
+    , log_store(nuraft::cs_new<InMemoryLogStore>())
+    , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
+{
+    auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
+    cluster_config->get_servers().push_back(peer_config);
+}
+
 InMemoryStateManager::InMemoryStateManager(
     int my_server_id_,
     const std::string & config_prefix,
