@@ -524,6 +524,21 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
+void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices) const
+{
+    for (size_t i = 0;  i < offsets.size(); ++i)
+        if (offsets[i] - offsets[i - 1] > 1)
+            indices.push_back(i);
+}
+
+size_t ColumnString::getNumberOfNonDefaultValues() const
+{
+    size_t res = 0;
+    for (size_t i = 0; i < offsets.size(); ++i)
+        res += (offsets[i] - offsets[i - 1] > 1);
+        
+    return res;
+}
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {

@@ -184,6 +184,9 @@ void MergeTreeReaderWide::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     IDataType::SubstreamsCache & cache)
 {
+    std::cerr << "reading data for: " << name_and_type.name << "\n";
+    std::cerr << "reading data column: " << column->dumpStructure() << "\n";
+
     auto get_stream_getter = [&](bool stream_for_prefix) -> ISerialization::InputStreamGetter
     {
         return [&, stream_for_prefix](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *

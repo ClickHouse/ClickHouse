@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
@@ -36,77 +37,32 @@ public:
 
 
 template <typename Type>
-class DataTypeEnum final : public IDataTypeEnum
+class DataTypeEnum final : public IDataTypeEnum, public EnumValues<Type>
 {
 public:
     using FieldType = Type;
     using ColumnType = ColumnVector<FieldType>;
-    using Value = std::pair<std::string, FieldType>;
-    using Values = std::vector<Value>;
-    using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
-    using ValueToNameMap = std::unordered_map<FieldType, StringRef>;
+    using typename EnumValues<Type>::Values;
 
     static constexpr bool is_parametric = true;
 
 private:
-    Values values;
-    NameToValueMap name_to_value_map;
-    ValueToNameMap value_to_name_map;
     std::string type_name;
-
     static std::string generateName(const Values & values);
-    void fillMaps();
 
 public:
     explicit DataTypeEnum(const Values & values_);
 
-    const Values & getValues() const { return values; }
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
 
     TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }
 
-    auto findByValue(const FieldType & value) const
-    {
-        const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
-            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
-
-        return it;
-    }
-
-    const StringRef & getNameForValue(const FieldType & value) const
-    {
-        return findByValue(value)->second;
-    }
-
-    FieldType getValue(StringRef field_name, bool try_treat_as_id = false) const
-    {
-        const auto it = name_to_value_map.find(field_name);
-        if (!it)
-        {
-            /// It is used in CSV and TSV input formats. If we fail to find given string in
-            /// enum names, we will try to treat it as enum id.
-            if (try_treat_as_id)
-            {
-                FieldType x;
-                ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
-                readText(x, tmp_buf);
-                /// Check if we reached end of the tmp_buf (otherwise field_name is not a number)
-                /// and try to find it in enum ids
-                if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
-                    return x;
-            }
-            throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
-        }
-        return it->getMapped();
-    }
-
     FieldType readValue(ReadBuffer & istr) const
     {
         FieldType x;
         readText(x, istr);
-        return findByValue(x)->first;
+        return this->findByValue(x)->first;
     }
 
     Field castToName(const Field & value_or_name) const override;

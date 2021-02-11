@@ -265,6 +265,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    std::cerr << "column: "  << column->dumpStructure() << "\n";
+
     auto mutable_column = column->assumeMutable();
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
     settings.path.push_back(Substream::ArraySizes);

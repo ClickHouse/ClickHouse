@@ -67,41 +67,10 @@ std::string DataTypeEnum<Type>::generateName(const Values & values)
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::fillMaps()
+DataTypeEnum<Type>::DataTypeEnum(const Values & values_) 
+    : EnumValues<Type>(values_)
+    , type_name(generateName(this->getValues()))
 {
-    for (const auto & name_and_value : values)
-    {
-        const auto inserted_value = name_to_value_map.insert(
-            { StringRef{name_and_value.first}, name_and_value.second });
-
-        if (!inserted_value.second)
-            throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and " + toString(inserted_value.first->getMapped()),
-                ErrorCodes::SYNTAX_ERROR};
-
-        const auto inserted_name = value_to_name_map.insert(
-            { name_and_value.second, StringRef{name_and_value.first} });
-
-        if (!inserted_name.second)
-            throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + toString((*inserted_name.first).first) + "'",
-                ErrorCodes::SYNTAX_ERROR};
-    }
-}
-
-template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
-{
-    if (values.empty())
-        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
-
-    std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
-    {
-        return left.second < right.second;
-    });
-
-    fillMaps();
-    type_name = generateName(values);
 }
 
 template <typename Type>
@@ -136,13 +105,13 @@ void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 template <typename Type>
 void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -155,14 +124,14 @@ void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & i
         /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
         std::string field_name;
         readEscapedString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
+        assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name), true));
     }
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeQuotedString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeQuotedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -170,7 +139,7 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 {
     std::string field_name;
     readQuotedStringWithSQLStyle(field_name, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
+    assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name)));
 }
 
 template <typename Type>
@@ -182,20 +151,20 @@ void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & ist
     {
         std::string field_name;
         readString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
+        assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name), true));
     }
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
+    writeJSONString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeXMLStringForTextElement(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -207,14 +176,14 @@ void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     {
         std::string field_name;
         readJSONString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name)));
     }
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeCSVString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeCSVString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -226,7 +195,7 @@ void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     {
         std::string field_name;
         readCSVString(field_name, istr, settings.csv);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
+        assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name), true));
     }
 }
 
@@ -259,14 +228,14 @@ void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_nu
 {
     if (value_index)
         return;
-    protobuf.prepareEnumMapping(values);
+    protobuf.prepareEnumMapping(this->getValues());
     value_index = static_cast<bool>(protobuf.writeEnum(assert_cast<const ColumnType &>(column).getData()[row_num]));
 }
 
 template<typename Type>
 void DataTypeEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
-    protobuf.prepareEnumMapping(values);
+    protobuf.prepareEnumMapping(this->getValues());
     row_added = false;
     Type value;
     if (!protobuf.readEnum(value))
@@ -285,13 +254,13 @@ void DataTypeEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & 
 template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
-    return values.front().second;
+    return this->getValues().front().second;
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
-    assert_cast<ColumnType &>(column).getData().push_back(values.front().second);
+    assert_cast<ColumnType &>(column).getData().push_back(this->getValues().front().second);
 }
 
 template <typename Type>
@@ -304,7 +273,7 @@ bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
 template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
 {
-    for (const auto & elem : values)
+    for (const auto & elem : this->getValues())
     {
         const char * pos = elem.first.data();
         const char * end = pos + elem.first.size();
@@ -335,14 +304,14 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        getValue(value_or_name.get<String>()); /// Check correctness
+        this->getValue(value_or_name.get<String>()); /// Check correctness
         return value_or_name.get<String>();
     }
     else if (value_or_name.getType() == Field::Types::Int64)
     {
         Int64 value = value_or_name.get<Int64>();
         checkOverflow<Type>(value);
-        return getNameForValue(static_cast<Type>(value)).toString();
+        return this->getNameForValue(static_cast<Type>(value)).toString();
     }
     else
         throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -353,14 +322,14 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        return getValue(value_or_name.get<String>());
+        return this->getValue(value_or_name.get<String>());
     }
     else if (value_or_name.getType() == Field::Types::Int64
           || value_or_name.getType() == Field::Types::UInt64)
     {
         Int64 value = value_or_name.get<Int64>();
         checkOverflow<Type>(value);
-        getNameForValue(static_cast<Type>(value)); /// Check correctness
+        this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
     else
@@ -371,22 +340,10 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 template <typename Type>
 bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 {
-    auto check = [&](const auto & value)
-    {
-        auto it = name_to_value_map.find(value.first);
-        /// If we don't have this name, than we have to be sure,
-        /// that this value exists in enum
-        if (it == name_to_value_map.end())
-            return value_to_name_map.count(value.second) > 0;
-
-        /// If we have this name, than it should have the same value
-        return it->value.second == value.second;
-    };
-
     if (const auto * rhs_enum8 = typeid_cast<const DataTypeEnum8 *>(&rhs))
-        return std::all_of(rhs_enum8->getValues().begin(), rhs_enum8->getValues().end(), check);
+        return this->containsAll(rhs_enum8->getValues());
     if (const auto * rhs_enum16 = typeid_cast<const DataTypeEnum16 *>(&rhs))
-        return std::all_of(rhs_enum16->getValues().begin(), rhs_enum16->getValues().end(), check);
+        return this->containsAll(rhs_enum16->getValues());
     return false;
 }
 

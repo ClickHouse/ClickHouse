@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeOneElementTuple.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationTupleElement.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Parsers/IAST.h>
 
@@ -628,17 +630,30 @@ ColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, const I
     return ColumnArray::create(subcolumn, column_array.getOffsetsPtr());
 }
 
+SerializationPtr DataTypeArray::getSubcolumnSerialization(
+    const String & subcolumn_name, const SerializationPtr & base_serialization) const
+{
+    return getSubcolumnSerializationImpl(subcolumn_name, base_serialization, 0);
+}
+
+SerializationPtr DataTypeArray::getSubcolumnSerializationImpl(
+    const String & subcolumn_name, const SerializationPtr & base_serialization, size_t level) const
+{
+    if (subcolumn_name == "size" + std::to_string(level))
+        return std::make_shared<SerializationTupleElement>(base_serialization, subcolumn_name, false);
+
+    SerializationPtr subcolumn;
+    if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
+        subcolumn = nested_array->getSubcolumnSerializationImpl(subcolumn_name, base_serialization, level + 1);
+    else
+        subcolumn = nested->getSubcolumnSerialization(subcolumn_name, base_serialization);
+
+    return base_serialization;
+}
+
 SerializationPtr DataTypeArray::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationArray>(nested->getDefaultSerialization());
-}
-
-DataTypePtr DataTypeArray::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const
-{
-    if (!substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes)
-        return std::make_shared<DataTypeUInt64>();
-    
-    return nested->getTypeForSubstream(substream_path);
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const

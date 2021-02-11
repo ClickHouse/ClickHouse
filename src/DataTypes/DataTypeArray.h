@@ -115,9 +115,10 @@ public:
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+    SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const SerializationPtr & base_serialization) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
-    DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
@@ -127,6 +128,8 @@ public:
 private:
     ColumnPtr getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const;
     DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
+    SerializationPtr getSubcolumnSerializationImpl(
+        const String & subcolumn_name, const SerializationPtr & base_serialization, size_t level) const;
 };
 
 }

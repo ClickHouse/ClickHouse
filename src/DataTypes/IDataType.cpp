@@ -505,6 +505,9 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
 {
+    std::cerr << "type: " << getName() << ", number_of_rows: " << settings.num_rows
+        << "non-default: " << settings.num_non_default_rows << ", ratio: " << settings.min_ratio_for_dense_serialization; 
+
     if (settings.num_non_default_rows * settings.min_ratio_for_dense_serialization < settings.num_rows)
         return getSparseSerialization();
     
@@ -530,8 +533,12 @@ SerializationPtr IDataType::getSerialization(const String & column_name, const S
     return getDefaultSerialization();
 }
 
-DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath &) const
+DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const
 {
+    auto type = tryGetSubcolumnType(ISerialization::getSubcolumnNameForStream(substream_path));
+    if (type)
+        return type;
+    
     return shared_from_this();
 }
 

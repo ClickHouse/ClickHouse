@@ -254,6 +254,8 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_)
 
 void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
+    std::cerr << "total_rows_per_granule: " <<  total_rows_per_granule
+        << "num_read_rows: " << num_read_rows << "\n";
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())

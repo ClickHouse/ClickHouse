@@ -646,7 +646,7 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
     auto on_continue = [&](size_t pos, const String & next_subcolumn)
     {
         auto next_type = elems[pos]->tryGetSubcolumnType(next_subcolumn);
-        return createOneElementTuple(next_type, names[pos]);
+        return next_type ? createOneElementTuple(next_type, names[pos]) : nullptr;
     };
     
     return getSubcolumnEntity(subcolumn_name, on_success, on_continue);

@@ -133,11 +133,12 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
     auto mutable_column = column->assumeMutable();
     size_t size = values->size();
-    IColumn::Offset prev_offset = 0;
+    ssize_t prev_offset = -1;
 
     for (size_t i = 0; i < size; ++i)
     {
-        size_t offsets_diff = offsets_data[i] - prev_offset;
+        size_t offsets_diff = static_cast<ssize_t>(offsets_data[i]) - prev_offset;
+    
         if (offsets_diff > 1)
             mutable_column->insertManyDefaults(offsets_diff - 1);
 
@@ -146,8 +147,8 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     }
 
     size_t offsets_diff = offsets_data[size] - prev_offset;
-    if (offsets_diff > 0)
-        mutable_column->insertManyDefaults(offsets_diff);
+    if (offsets_diff > 1)
+        mutable_column->insertManyDefaults(offsets_diff - 1);
 
     settings.path.pop_back();
 }

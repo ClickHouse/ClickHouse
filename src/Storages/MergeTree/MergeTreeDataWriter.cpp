@@ -390,6 +390,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->ttl_infos.update(move_ttl_infos);
     new_data_part->serialization_info.add(block);
 
+    std::cerr << "serialization_info: rows: " << new_data_part->serialization_info.getNumberOfRows() << "\n";
+    for (const auto & name : block.getNames())
+        std::cerr << "name: " << name << "non-default: " << new_data_part->serialization_info.getNumberOfNonDefaultValues(name) << "\n";
+
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);

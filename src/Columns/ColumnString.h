@@ -273,6 +273,8 @@ public:
         return typeid(rhs) == typeid(ColumnString);
     }
 
+    void getIndicesOfNonDefaultValues(Offsets & indices) const override;
+    size_t getNumberOfNonDefaultValues() const override;
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

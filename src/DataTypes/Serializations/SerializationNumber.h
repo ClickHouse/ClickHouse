@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <Columns/ColumnVector.h>
 
 namespace DB
 {
@@ -12,6 +13,7 @@ class SerializationNumber : public SimpleTextSerialization
 
 public:
     using FieldType = T;
+    using ColumnType = ColumnVector<T>;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -29,7 +31,6 @@ public:
 
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
-
 };
 
 }
