@@ -96,7 +96,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
         ASTPtr subquery_select = subquery.children.at(0);
 
-        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1);
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
         options.analyze(data.only_analyze);
 
         auto interpreter = InterpreterSelectWithUnionQuery(subquery_select, subquery_context, options);

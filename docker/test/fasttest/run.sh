@@ -120,7 +120,7 @@ function clone_root
                 git checkout FETCH_HEAD
                 echo 'Clonned merge head'
             else
-                git fetch
+                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
                 git checkout "$COMMIT_SHA"
                 echo 'Checked out to commit'
             fi
