@@ -15,21 +15,21 @@
                 <hostname>node1</hostname>
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
-                <priority>3</priority>
+                <priority>100</priority>
             </server>
             <server>
                 <id>2</id>
                 <hostname>node2</hostname>
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
-                <priority>2</priority>
+                <priority>20</priority>
             </server>
             <server>
                 <id>3</id>
                 <hostname>node3</hostname>
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
-                <priority>1</priority>
+                <priority>10</priority>
             </server>
         </raft_configuration>
     </test_keeper_server>
