@@ -28,12 +28,6 @@ class StoragePostgreSQLReplica final : public ext::shared_ptr_helper<StoragePost
 public:
     StoragePostgreSQLReplica(
         const StorageID & table_id_,
-        const String & metadata_path_,
-        const StorageInMemoryMetadata & storage_metadata,
-        const Context & context_);
-
-    StoragePostgreSQLReplica(
-        const StorageID & table_id_,
         StoragePtr nested_storage_,
         const Context & context_);
 
@@ -56,15 +50,16 @@ public:
     /// Called right after shutdown() in case of drop query
     void shutdownFinal();
 
-    void createNestedIfNeeded() const;
+    void createNestedIfNeeded(const std::function<PostgreSQLTableStructure()> & fetch_table_structure);
 
     /// Can be nullptr
-    StoragePtr tryGetNested() const;
+    StoragePtr tryGetNested();
 
     /// Throw if impossible to get
-    StoragePtr getNested() const;
+    StoragePtr getNested();
 
-    void setNestedLoaded() const { nested_loaded.store(true); }
+    void setNestedLoaded() { nested_loaded.store(true); }
+    bool isNestedLoaded() { return nested_loaded.load(); }
 
 protected:
     StoragePostgreSQLReplica(
@@ -80,11 +75,9 @@ private:
     std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
             const String name, const String type, UInt64 default_value) const;
 
-    std::shared_ptr<ASTColumns> getColumnsListFromStorage() const;
-
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 
-    ASTPtr getCreateNestedTableQuery() const;
+    ASTPtr getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure);
 
     std::string getNestedTableName() const;
 
@@ -98,10 +91,10 @@ private:
     std::unique_ptr<PostgreSQLReplicaSettings> replication_settings;
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
 
-    bool is_postgresql_replica_database = false;
+    std::atomic<bool> nested_loaded = false;
+    StoragePtr nested_storage;
 
-    mutable std::atomic<bool> nested_loaded = false;
-    mutable StoragePtr nested_storage;
+    bool is_postgresql_replica_database = false;
 };
 
 }

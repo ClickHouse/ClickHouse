@@ -51,7 +51,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 }
 
 
-void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, const StoragePostgreSQLReplica * storage)
+void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, StoragePostgreSQLReplica * storage)
 {
     storages[table_name] = storage;
 }
@@ -81,6 +81,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     }
     catch (...)
     {
+        /// TODO: throw
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
@@ -211,26 +212,24 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
 {
     LOG_DEBUG(log, "Creating transaction snapshot");
 
-    for (const auto & [table_name, storage] : storages)
+    for (const auto & storage_data : storages)
     {
-        storage->createNestedIfNeeded();
-        auto nested_storage = storage->tryGetNested();
-
-        if (!nested_storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to create nested storage");
-
         try
         {
-            auto stx = std::make_unique<pqxx::work>(*connection->conn());
+            auto tx = std::make_shared<pqxx::work>(*connection->conn());
 
             /// Specific isolation level is required to read from snapshot.
-            stx->set_variable("transaction_isolation", "'repeatable read'");
+            tx->set_variable("transaction_isolation", "'repeatable read'");
 
             std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
-            stx->exec(query_str);
+            tx->exec(query_str);
+
+            storage_data.second->createNestedIfNeeded([&]() { return fetchTableStructure(tx, storage_data.first); });
+            auto nested_storage = storage_data.second->getNested();
 
             /// Load from snapshot, which will show table state before creation of replication slot.
-            query_str = fmt::format("SELECT * FROM {}", table_name);
+            /// Already connected to needed database, no need to add it to query.
+            query_str = fmt::format("SELECT * FROM {}", storage_data.first);
 
             Context insert_context(*context);
             insert_context.makeQueryContext();
@@ -245,16 +244,17 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
             const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
             auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
-            PostgreSQLBlockInputStream input(std::move(stx), query_str, sample_block, DEFAULT_BLOCK_SIZE);
+            PostgreSQLBlockInputStream<pqxx::work> input(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
 
             copyData(input, *block_io.out);
 
-            storage->setNestedLoaded();
-            nested_storages[table_name] = nested_storage;
+            storage_data.second->setNestedLoaded();
+            nested_storages[storage_data.first] = nested_storage;
         }
         catch (Exception & e)
         {
-            e.addMessage("while initial data synchronization");
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            e.addMessage("while initial data synchronization for table {}", storage_data.first);
             throw;
         }
     }
@@ -367,6 +367,14 @@ std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchTablesFromPub
         tables.insert(std::get<0>(table_name));
 
     return tables;
+}
+
+
+PostgreSQLTableStructure PostgreSQLReplicationHandler::fetchTableStructure(
+        std::shared_ptr<pqxx::work> tx, const std::string & table_name)
+{
+    auto use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
+    return fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true);
 }
 
 }

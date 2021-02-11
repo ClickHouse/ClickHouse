@@ -3,6 +3,7 @@
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicaConsumer.h"
 #include "PostgreSQLReplicaMetadata.h"
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 
 namespace DB
@@ -29,9 +30,11 @@ public:
 
     void shutdownFinal();
 
-    void addStorage(const std::string & table_name, const StoragePostgreSQLReplica * storage);
+    void addStorage(const std::string & table_name, StoragePostgreSQLReplica * storage);
 
     std::unordered_set<std::string> fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
+
+    PostgreSQLTableStructure fetchTableStructure(std::shared_ptr<pqxx::work> tx, const std::string & table_name);
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
@@ -65,7 +68,7 @@ private:
     BackgroundSchedulePool::TaskHolder startup_task;
     std::atomic<bool> tables_loaded = false;
 
-    std::unordered_map<String, const StoragePostgreSQLReplica *> storages;
+    std::unordered_map<String, StoragePostgreSQLReplica *> storages;
     std::unordered_map<String, StoragePtr> nested_storages;
 };
 

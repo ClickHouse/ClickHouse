@@ -13,7 +13,7 @@ instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
-    key Integer NOT NULL, value Integer)
+    key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
 
 def get_postgres_conn(database=False):
@@ -66,7 +66,7 @@ def started_cluster():
 
 
 @pytest.fixture(autouse=True)
-def rabbitmq_setup_teardown():
+def postgresql_setup_teardown():
     yield  # run test
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
 
@@ -107,7 +107,7 @@ def test_replicating_dml(started_cluster):
         "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
 
     for i in range(NUM_TABLES):
-        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {} from numbers(50, 50)".format(i, i))
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 50 + number, {} from numbers(1000)".format(i, i))
 
     for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));

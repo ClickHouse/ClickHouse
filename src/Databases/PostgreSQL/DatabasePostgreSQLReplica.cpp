@@ -130,18 +130,7 @@ StoragePtr DatabasePostgreSQLReplica<Base>::getStorage(const String & name)
     if (storage)
         return storage;
 
-    auto use_nulls = global_context.getSettingsRef().external_table_functions_use_nulls;
-    auto columns = fetchPostgreSQLTableStructure(connection->conn(), name, use_nulls);
-
-    if (!columns)
-        return StoragePtr{};
-
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(ColumnsDescription(*columns));
-
-    storage = StoragePostgreSQLReplica::create(StorageID(database_name, name), metadata_path, metadata, global_context);
-
-    return storage;
+    return StoragePostgreSQLReplica::create(StorageID(database_name, name), StoragePtr{}, global_context);
 }
 
 
@@ -176,7 +165,7 @@ StoragePtr DatabasePostgreSQLReplica<Base>::tryGetTable(const String & name, con
     }
 
     auto table = tables.find(name);
-    if (table != tables.end())
+    if (table != tables.end() && table->second->as<StoragePostgreSQLReplica>()->isNestedLoaded())
         return table->second;
 
     return StoragePtr{};
