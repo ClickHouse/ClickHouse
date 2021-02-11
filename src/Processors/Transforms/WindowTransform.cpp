@@ -156,6 +156,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
             workspace.argument_column_indices.push_back(
                 input_header.getPositionByName(argument_name));
         }
+        workspace.argument_columns.assign(f.argument_names.size(), nullptr);
 
         workspace.window_function_impl = aggregate_function->asWindowFunction();
         if (!workspace.window_function_impl)
@@ -809,12 +810,15 @@ void WindowTransform::updateAggregationState()
         {
             auto & block = blockAt(block_number);
 
-            ws.argument_columns.clear();
-            for (const auto i : ws.argument_column_indices)
+            if (ws.cached_block_number != block_number)
             {
-                ws.argument_columns.push_back(block.input_columns[i].get());
+                for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
+                {
+                    ws.argument_columns[i] = block.input_columns[
+                        ws.argument_column_indices[i]].get();
+                }
+                ws.cached_block_number = block_number;
             }
-            ws.cached_block_number = block_number;
 
             // First and last blocks may be processed partially, and other blocks
             // are processed in full.
