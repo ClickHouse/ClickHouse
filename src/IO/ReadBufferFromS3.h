@@ -9,7 +9,7 @@
 #    include <IO/HTTPCommon.h>
 #    include <IO/ReadBuffer.h>
 #    include <aws/s3/model/GetObjectResult.h>
-#    include "ReadBufferFanIn.h"
+#    include "ParallelReadBuffer.h"
 #    include "SeekableReadBuffer.h"
 
 namespace Aws::S3
@@ -61,7 +61,7 @@ private:
 
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public ReadBufferFanIn::ReadBufferFactory
+class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory
 {
 public:
     explicit ReadBufferS3Factory(

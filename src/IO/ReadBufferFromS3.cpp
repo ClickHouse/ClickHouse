@@ -130,7 +130,7 @@ ReadBufferPtr ReadBufferS3Factory::getReader()
     auto reader = std::make_shared<ReadBufferFromS3>(client_ptr, bucket, key);
 
     /// if length of tail less than half of step, grab it to current range
-    size_t to_range = from_range + range_step;
+    size_t to_range = from_range + range_step - 1;
     if (to_range > object_size - range_step / 2)
         to_range = object_size - 1;
 

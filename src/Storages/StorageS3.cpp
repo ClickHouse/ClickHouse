@@ -11,8 +11,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBufferFromS3.h>
-#include <IO/ReadBufferFanIn.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -99,7 +99,7 @@ namespace
                           "Downloading from S3 in {} threads. Object size: {}, Range size: {}",
                           max_read_threads, object_size, buffer_size);
                 auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, buffer_size, object_size);
-                s3_read_buf = std::make_unique<ReadBufferFanIn>(std::move(factory), max_read_threads);
+                s3_read_buf = std::make_unique<ParallelReadBuffer>(std::move(factory), max_read_threads, buffer_size);
             }
 
             read_buf = wrapReadBufferWithCompressionMethod(std::move(s3_read_buf), compression_method);
