@@ -883,6 +883,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
         auto & block = blocks.back();
         block.input_columns = chunk.detachColumns();
 
+        // Even in case of `count() over ()` we should have a dummy input column.
+        // Not sure how reliable this is...
+        block.rows = block.input_columns[0]->size();
+
         for (auto & ws : workspaces)
         {
             // Aggregate functions can't work with constant columns, so we have to
@@ -896,11 +900,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
             block.output_columns.push_back(ws.aggregate_function->getReturnType()
                 ->createColumn());
+            block.output_columns.back()->reserve(block.rows);
         }
-
-        // Even in case of `count() over ()` we should have a dummy input column.
-        // Not sure how reliable this is...
-        block.rows = block.input_columns[0]->size();
     }
 
     // Start the calculations. First, advance the partition end.
