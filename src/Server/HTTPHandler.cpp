@@ -219,8 +219,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
         }
     }
 
-    ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-    copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    if (!read_buffers_raw_ptr.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    }
 }
 
 
@@ -797,7 +800,6 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
 
 std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
-
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
