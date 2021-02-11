@@ -33,9 +33,7 @@ struct WindowTransformBlock
     Columns input_columns;
     MutableColumns output_columns;
 
-    // Even in case of `count() over ()` we should have a dummy input column.
-    // Not sure how reliable this is...
-    size_t numRows() const { return input_columns[0]->size(); }
+    size_t rows = 0;
 };
 
 struct RowNumber
@@ -106,14 +104,19 @@ public:
 
 private:
     void advancePartitionEnd();
-    void advanceFrameStart();
-    void advanceFrameStartChoose();
+
+    bool arePeers(const RowNumber & x, const RowNumber & y) const;
+
     void advanceFrameStartRowsOffset();
+    void advanceFrameStartRangeOffset();
+    void advanceFrameStart();
+
+    void advanceFrameEndRowsOffset();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
-    void advanceFrameEndRowsOffset();
     void advanceFrameEnd();
-    bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    void advanceFrameEndRangeOffset();
+
     void updateAggregationState();
     void writeOutCurrentRow();
 
@@ -127,9 +130,25 @@ private:
     const Columns & inputAt(const RowNumber & x) const
     { return const_cast<WindowTransform *>(this)->inputAt(x); }
 
+    auto & blockAt(const uint64_t block_number)
+    {
+        assert(block_number >= first_block_number);
+        assert(block_number - first_block_number < blocks.size());
+        return blocks[block_number - first_block_number];
+    }
+
+    const auto & blockAt(const uint64_t block_number) const
+    { return const_cast<WindowTransform *>(this)->blockAt(block_number); }
+
+    auto & blockAt(const RowNumber & x)
+    { return blockAt(x.block); }
+
+    const auto & blockAt(const RowNumber & x) const
+    { return const_cast<WindowTransform *>(this)->blockAt(x); }
+
     size_t blockRowsNumber(const RowNumber & x) const
     {
-        return inputAt(x)[0]->size();
+        return blockAt(x).rows;
     }
 
     MutableColumns & outputAt(const RowNumber & x)
@@ -144,7 +163,7 @@ private:
         assert(x.block >= first_block_number);
         assert(x.block - first_block_number < blocks.size());
 
-        const auto block_rows = inputAt(x)[0]->size();
+        const auto block_rows = blockAt(x).rows;
         assert(x.row < block_rows);
 
         x.row++;
@@ -168,8 +187,8 @@ private:
         --x.block;
         assert(x.block >= first_block_number);
         assert(x.block < first_block_number + blocks.size());
-        assert(inputAt(x)[0]->size() > 0);
-        x.row = inputAt(x)[0]->size() - 1;
+        assert(blockAt(x).rows > 0);
+        x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto xx = x;
@@ -268,7 +287,7 @@ public:
     // frame_start and the frame_end may jump forward by an unknown amount of
     // blocks, e.g. if we use a RANGE frame. This means that sometimes we don't
     // know neither frame_end nor frame_start.
-    // We update the states of the window functions as we track the frame
+    // We update the states of the window functions after we find the final frame
     // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
     // output the result for the current row, w/o waiting for more data.
@@ -282,6 +301,18 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
+
+    // Comparison function for RANGE OFFSET frames. We choose the appropriate
+    // overload once, based on the type of the ORDER BY column. Choosing it for
+    // each row would be slow.
+    int (* compare_values_with_offset) (
+        const IColumn * compared_column, size_t compared_row,
+        const IColumn * reference_column, size_t reference_row,
+        // We can make it a Field later if we need the Decimals. Now we only
+        // have ints and datetime, and the underlying Field type for them is
+        // uint64_t anyway.
+        uint64_t offset,
+        bool offset_is_preceding);
 };
 
 }
