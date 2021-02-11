@@ -18,15 +18,19 @@ Columns:
 
 -   `finish_date` ([Date](../../sql-reference/data-types/date.md)) — The finish date of the `trace span`.
 
--   `attribute.names` ([Array(String)](../../sql-reference/data-types/array.md)) — [Attribute](https://opentelemetry.io/docs/go/instrumentation/#attributes) names depending on the `trace span`. They are filled in according to the recommendations in the [OpenTelemetry](https://opentelemetry.io/) standard.
+-   `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — [Attribute](https://opentelemetry.io/docs/go/instrumentation/#attributes) names depending on the `trace span`. They are filled in according to the recommendations in the [OpenTelemetry](https://opentelemetry.io/) standard.
 
--   `attribute.values` ([Array(String)](../../sql-reference/data-types/array.md)) — Attribute values depending on the `trace span`. They are filled in according to the recommendations in the `OpenTelemetry` standard.
+-   `attribute.values` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Attribute values depending on the `trace span`. They are filled in according to the recommendations in the `OpenTelemetry` standard.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT * FROM system.opentelemetry_span_log LIMIT 1 FORMAT Vertical;
 ```
+
+Result:
 
 ``` text
 Row 1:

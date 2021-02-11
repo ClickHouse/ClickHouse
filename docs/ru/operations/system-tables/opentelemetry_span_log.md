@@ -18,15 +18,19 @@
 
 -   `finish_date` ([Date](../../sql-reference/data-types/date.md)) — дата окончания `trace span`.
 
--   `attribute.names` ([Array(String)](../../sql-reference/data-types/array.md)) — имена [атрибутов](https://opentelemetry.io/docs/go/instrumentation/#attributes) в зависимости от `trace span`. Заполняются согласно рекомендациям в стандарте [OpenTelemetry](https://opentelemetry.io/).
+-   `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — имена [атрибутов](https://opentelemetry.io/docs/go/instrumentation/#attributes) в зависимости от `trace span`. Заполняются согласно рекомендациям в стандарте [OpenTelemetry](https://opentelemetry.io/).
 
--   `attribute.values` ([Array(String)](../../sql-reference/data-types/array.md)) — значения атрибутов в зависимости от `trace span`. Заполняются согласно рекомендациям в стандарте `OpenTelemetry`.
+-   `attribute.values` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — значения атрибутов в зависимости от `trace span`. Заполняются согласно рекомендациям в стандарте `OpenTelemetry`.
 
 **Пример**
+
+Запрос:
 
 ``` sql
 SELECT * FROM system.opentelemetry_span_log LIMIT 1 FORMAT Vertical;
 ```
+
+Результат:
 
 ``` text
 Row 1:
