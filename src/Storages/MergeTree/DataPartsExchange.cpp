@@ -185,7 +185,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         }
         else if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
         {
-            auto & projections = part->getProjectionParts();
+            const auto & projections = part->getProjectionParts();
             writeBinary(projections.size(), out);
             if (isInMemoryPart(part))
                 sendPartFromMemory(part, out, projections);
@@ -223,7 +223,7 @@ void Service::sendPartFromMemory(
     const MergeTreeData::DataPartPtr & part, WriteBuffer & out, const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
-    for (auto & [name, projection] : projections)
+    for (const auto & [name, projection] : projections)
     {
         auto projection_sample_block = metadata_snapshot->projections.get(name).sample_block;
         auto part_in_memory = asInMemoryPart(projection);
@@ -265,7 +265,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
     auto disk = part->volume->getDisk();
     MergeTreeData::DataPart::Checksums data_checksums;
-    for (auto & [name, projection] : part->getProjectionParts())
+    for (const auto & [name, projection] : part->getProjectionParts())
     {
         // Get rid of projection files
         checksums.files.erase(name);
@@ -642,7 +642,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & path)
 {
 
-    String part_relative_path = "";
+    String part_relative_path;
     String part_download_path = path;
 
     if (path.empty())

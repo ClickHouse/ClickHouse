@@ -14,7 +14,7 @@ namespace
         ASTPtr & node, const Block & key_block, String & out_key_column_name, DataTypePtr & out_key_column_type)
     {
         String name = node->getColumnNameWithoutAlias();
-        auto it = key_block.findByName(name);
+        const auto * it = key_block.findByName(name);
         if (it)
         {
             out_key_column_name = it->name;

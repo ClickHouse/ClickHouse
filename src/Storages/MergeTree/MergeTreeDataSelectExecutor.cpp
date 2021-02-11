@@ -248,10 +248,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read);
 
-        if (plan)
-        {
-            auto pipe = plan->convertToPipe();
-
+        auto pipe = plan ? plan->convertToPipe() : Pipe();
+        if (!pipe.empty()) {
             // We already project the block at the end, using projection_block, so we can just add
             // more colunms here without worrying
             if (!query_info.key_actions.func_map.empty())

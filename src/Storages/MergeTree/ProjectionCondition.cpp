@@ -10,16 +10,11 @@ namespace DB
 
 ProjectionCondition::ProjectionCondition(const Names & key_column_names, const Names & required_column_names)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
-    {
-        std::string name = key_column_names[i];
+    for (const auto & name : key_column_names)
         key_columns[name] = 0;
-    }
-    for (size_t i = 0, size = required_column_names.size(); i < size; ++i)
-    {
-        std::string name = required_column_names[i];
+
+    for (const auto & name : required_column_names)
         key_columns[name] = 1;
-    }
 }
 
 bool ProjectionCondition::check(const ASTPtr & node)

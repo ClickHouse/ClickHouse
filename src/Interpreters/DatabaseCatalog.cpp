@@ -135,13 +135,15 @@ StoragePtr TemporaryTableHolder::getTable() const
 }
 
 
+void DatabaseCatalog::loadTemporaryDatabase()
+{
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, global_context);
+    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
+}
+
 void DatabaseCatalog::loadDatabases()
 {
     drop_delay_sec = global_context.getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
-
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, global_context);
-    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
-
     loadMarkedAsDroppedTables();
     auto task_holder = global_context.getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));

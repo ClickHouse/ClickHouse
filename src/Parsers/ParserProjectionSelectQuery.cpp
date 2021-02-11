@@ -92,7 +92,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
-    select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
+    // select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));
     return true;

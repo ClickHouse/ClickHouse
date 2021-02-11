@@ -1132,7 +1132,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         return;
     }
 
-    for (auto & [p_name, projection_part] : projection_parts)
+    for (const auto & [p_name, projection_part] : projection_parts)
         projection_part->projectionRemove(to);
 
 

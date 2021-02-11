@@ -114,7 +114,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                     return;
             }
 
-            auto & projection = pit->second;
+            const auto & projection = pit->second;
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
             const NamesAndTypesList & projection_columns_list = projection->getColumns();
