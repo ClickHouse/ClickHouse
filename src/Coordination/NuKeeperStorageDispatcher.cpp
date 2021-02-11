@@ -116,6 +116,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         LOG_DEBUG(log, "Waiting server to initialize");
         server->startup(true);
         LOG_DEBUG(log, "Server intialized, waiting for quorum");
+
         server->waitInit();
         LOG_DEBUG(log, "Quorum initialized");
     }
