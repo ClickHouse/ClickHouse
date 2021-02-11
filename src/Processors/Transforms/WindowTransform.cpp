@@ -1367,7 +1367,7 @@ struct WindowFunctionLagLead final : public WindowFunction
         // or track a separate frame for these functions, which would  make the
         // window transform completely impenetrable to human mind. Our best bet
         // is probably rewriting, say, `lag(value, offset)` to
-        // `any(value) over rows between offset preceding and offset preceding`,
+        // `any(value) over (rows between offset preceding and offset preceding)`,
         // at the query planning stage. We can keep this class as a stub for
         // parsing, anyway.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

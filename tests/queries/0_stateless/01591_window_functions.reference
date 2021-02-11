@@ -968,3 +968,21 @@ select
     lead(2)(number) over (),
     lag(number) over ()
 from numbers(2); -- { serverError 48 }
+select
+    number,
+    fIrSt_VaLue(number) over w,
+    lAsT_vAlUe(number) over w
+from numbers(10)
+window w as (order by number range between 1 preceding and 1 following)
+order by number
+;
+0	0	1
+1	0	2
+2	1	3
+3	2	4
+4	3	5
+5	4	6
+6	5	7
+7	6	8
+8	7	9
+9	8	9
