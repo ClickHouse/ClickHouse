@@ -962,3 +962,9 @@ settings max_block_size = 2;
 26	5	2	5	4	3	4
 29	5	2	5	4	3	5
 30	6	0	1	1	1	1
+-- very bad functions, not implemented yet
+select
+    lag(1, 5)(number) over (),
+    lead(2)(number) over (),
+    lag(number) over ()
+from numbers(2); -- { serverError 48 }

@@ -327,3 +327,10 @@ from (select number, intDiv(number, 5) p, mod(number, 3) o
 window w as (partition by p order by o)
 order by p, o, number
 settings max_block_size = 2;
+
+-- very bad functions, not implemented yet
+select
+    lag(1, 5)(number) over (),
+    lead(2)(number) over (),
+    lag(number) over ()
+from numbers(2); -- { serverError 48 }

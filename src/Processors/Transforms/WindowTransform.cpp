@@ -1,17 +1,18 @@
 #include <Processors/Transforms/WindowTransform.h>
 
-#include <Interpreters/ExpressionActions.h>
-
-#include <Common/Arena.h>
-
-#include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/Arena.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -19,11 +20,12 @@ namespace ErrorCodes
 // accept the guts of WindowTransform and do 'something'. Given a small number of
 // true window functions, and the fact that the WindowTransform internals are
 // pretty much well defined in domain terms (e.g. frame boundaries), this is
-// somewhat acceptable. 
+// somewhat acceptable.
 class IWindowFunction {
 public:
     virtual ~IWindowFunction() {}
 
+    // Must insert the result for current_row.
     virtual void windowInsertResultInto(IColumn & to, const WindowTransform * transform) = 0;
 };
 
@@ -140,18 +142,15 @@ WindowTransform::WindowTransform(const Block & input_header_,
     for (const auto & f : functions)
     {
         WindowFunctionWorkspace workspace;
-        workspace.window_function = f;
-
-        const auto & aggregate_function
-            = workspace.window_function.aggregate_function;
+        workspace.aggregate_function = f.aggregate_function;
+        const auto & aggregate_function = workspace.aggregate_function;
         if (!arena && aggregate_function->allocatesMemoryInArena())
         {
             arena = std::make_unique<Arena>();
         }
 
-        workspace.argument_column_indices.reserve(
-            workspace.window_function.argument_names.size());
-        for (const auto & argument_name : workspace.window_function.argument_names)
+        workspace.argument_column_indices.reserve(f.argument_names.size());
+        for (const auto & argument_name : f.argument_names)
         {
             workspace.argument_column_indices.push_back(
                 input_header.getPositionByName(argument_name));
@@ -205,7 +204,7 @@ WindowTransform::~WindowTransform()
     {
         if (!ws.window_function_impl)
         {
-            ws.window_function.aggregate_function->destroy(
+            ws.aggregate_function->destroy(
                 ws.aggregate_function_state.data());
         }
     }
@@ -785,7 +784,7 @@ void WindowTransform::updateAggregationState()
             continue;
         }
 
-        const auto * a = ws.window_function.aggregate_function.get();
+        const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
         if (reset_aggregation)
@@ -856,8 +855,7 @@ void WindowTransform::writeOutCurrentRow()
         }
         else
         {
-            const auto & f = ws.window_function;
-            const auto * a = f.aggregate_function.get();
+            const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
             // FIXME does it also allocate the result on the arena?
             // We'll have to pass it out with blocks then...
@@ -891,8 +889,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
                         ->convertToFullColumnIfConst();
             }
 
-            block.output_columns.push_back(ws.window_function.aggregate_function
-                ->getReturnType()->createColumn());
+            block.output_columns.push_back(ws.aggregate_function->getReturnType()
+                ->createColumn());
         }
 
         // Even in case of `count() over ()` we should have a dummy input column.
@@ -1038,8 +1036,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 continue;
             }
 
-            const auto & f = ws.window_function;
-            const auto * a = f.aggregate_function.get();
+            const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
 
             a->destroy(buf);
@@ -1060,8 +1057,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 continue;
             }
 
-            const auto & f = ws.window_function;
-            const auto * a = f.aggregate_function.get();
+            const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
 
             a->create(buf);
@@ -1314,6 +1310,71 @@ struct WindowFunctionRowNumber final : public WindowFunction
     }
 };
 
+struct WindowFunctionLagLead final : public WindowFunction
+{
+    bool is_lag = false;
+    // Always positive.
+    uint64_t offset_rows = 1;
+    Field default_value;
+
+    WindowFunctionLagLead(const std::string & name_,
+        const DataTypes & argument_types_, const Array & parameters_,
+            bool is_lag_)
+        : WindowFunction(name_, argument_types_, parameters_)
+        , is_lag(is_lag_)
+    {
+        // offset and default are in parameters
+        if (argument_types.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The window function {} must have exactly one argument -- the value column. The offset and the default value must be specified as parameters, i.e. `{}(offset, default)(column)`",
+                getName(), getName());
+        }
+
+        if (parameters.size() > 2)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The window function {} accepts at most two parameters, {} given",
+                getName(), parameters.size());
+        }
+
+        if (parameters.size() >= 1)
+        {
+            if (!isInt64FieldType(parameters[0].getType())
+                || parameters[0].get<Int64>() < 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The first parameter of the window function {} must be a nonnegative integer specifying the number of offset rows. Got '{}' instead",
+                    getName(), toString(parameters[0]));
+            }
+
+            offset_rows = parameters[0].get<UInt64>();
+        }
+
+        if (parameters.size() >= 2)
+        {
+            default_value = convertFieldToTypeOrThrow(parameters[1],
+                *argument_types[0]);
+        }
+    }
+
+    DataTypePtr getReturnType() const override { return argument_types[0]; }
+
+    void windowInsertResultInto(IColumn &, const WindowTransform *) override
+    {
+        // These functions are a mess... they ignore the frame, so we need to
+        // either materialize the whole partition (not practical if it's big),
+        // or track a separate frame for these functions, which would  make the
+        // window transform completely impenetrable to human mind. Our best bet
+        // is probably rewriting, say, `lag(value, offset)` to
+        // `any(value) over rows between offset preceding and offset preceding`,
+        // at the query planning stage. We can keep this class as a stub for
+        // parsing, anyway.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The window function {} is not implemented",
+            getName());
+    }
+};
 
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
@@ -1336,6 +1397,20 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
+        });
+
+    factory.registerFunction("lag", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionLagLead>(name, argument_types,
+                parameters, true /* is_lag */);
+        });
+
+    factory.registerFunction("lead", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionLagLead>(name, argument_types,
+                parameters, false /* is_lag */);
         });
 }
 
