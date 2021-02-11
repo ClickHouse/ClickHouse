@@ -39,7 +39,17 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
     for (const auto & input : inputs_)
     {
         if (input.column && isColumnConst(*input.column))
+        {
             addInput(input, true);
+
+            /// Here we also add column.
+            /// It will allow to remove input which is actually constant (after projection).
+            /// Also, some transforms from query pipeline may randomly materialize constants,
+            ///   without any respect to header structure. So, it is a way to drop materialized column and use
+            ///   constant value from header.
+            /// We cannot remove such input right now cause inputs positions are important in some cases.
+            addColumn(input, true);
+        }
         else
             addInput(input.name, input.type, true);
     }
@@ -116,7 +126,6 @@ ActionsDAG::Node & ActionsDAG::addAlias(Node & child, std::string alias, bool ca
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
-    node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
     return addNode(std::move(node), can_replace);
@@ -184,7 +193,6 @@ ActionsDAG::Node & ActionsDAG::addFunction(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         auto & child = *node.children[i];
-        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
         argument.column = child.column;
@@ -349,10 +357,15 @@ void ActionsDAG::removeUnusedActions()
         stack.push(node);
     }
 
-    /// We cannot remove arrayJoin because it changes the number of rows.
     for (auto & node : nodes)
     {
-        if (node.type == ActionType::ARRAY_JOIN && visited_nodes.count(&node) == 0)
+        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
+        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        bool is_array_join = node.type == ActionType::ARRAY_JOIN;
+
+        bool must_keep_node = is_array_join || prevent_constant_folding;
+        if (must_keep_node && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -410,7 +423,6 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *
             node.result_type = child->result_type;
             node.result_name = std::move(item.second);
             node.column = child->column;
-            node.allow_constant_folding = child->allow_constant_folding;
             node.children.emplace_back(child);
 
             auto & alias = addNode(std::move(node), true);
@@ -454,36 +466,42 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
     return false;
 }
 
-void ActionsDAG::removeUnusedInput(const std::string & column_name)
+bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
+    /// Find column in index and remove.
+    const Node * col;
+    {
+        auto it = index.begin();
+        for (; it != index.end(); ++it)
+            if ((*it)->result_name == column_name)
+                break;
+
+        if (it == index.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+        col = *it;
+        index.remove(it);
+    }
+
+    /// Check if column is in input.
     auto it = inputs.begin();
     for (; it != inputs.end(); ++it)
-        if ((*it)->result_name == column_name)
+        if (*it == col)
             break;
 
     if (it == inputs.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found input {} in ActionsDAG\n{}", column_name, dumpDAG());
+        return false;
 
-    auto * input = *it;
+    /// Check column has no dependent.
     for (const auto & node : nodes)
         for (const auto * child : node.children)
-            if (input == child)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Cannot remove input {} because it has dependent nodes in ActionsDAG\n{}",
-                                column_name, dumpDAG());
+            if (col == child)
+                return false;
 
-    for (auto jt = index.begin(); jt != index.end(); ++jt)
-    {
-        if (*jt == input)
-        {
-            index.remove(jt);
-            break;
-        }
-    }
-
+    /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
     {
-        if (&(*jt) == input)
+        if (&(*jt) == *it)
         {
             nodes.erase(jt);
             break;
@@ -491,6 +509,7 @@ void ActionsDAG::removeUnusedInput(const std::string & column_name)
     }
 
     inputs.erase(it);
+    return true;
 }
 
 ActionsDAGPtr ActionsDAG::clone() const
@@ -727,6 +746,23 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     return actions_dag;
 }
 
+ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
+{
+    auto adding_column_action = std::make_shared<ActionsDAG>();
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    auto column_name = column.name;
+    const auto & column_node = adding_column_action->addColumn(std::move(column));
+    Inputs inputs = {const_cast<Node *>(&column_node)};
+    auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {}, true);
+    adding_column_action->addAlias(function_node, std::move(column_name), true);
+
+    return adding_column_action;
+}
+
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     /// first: x (1), x (2), y ==> x (2), z, x (3)
@@ -844,7 +880,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     return std::make_shared<ActionsDAG>(std::move(first));
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_index) is a part which will have split_list in result.
@@ -1045,7 +1081,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
     return {std::move(first_actions), std::move(second_actions)};
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
 {
 
     struct Frame
@@ -1113,7 +1149,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin
     return res;
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::splitActionsForFilter(const std::string & column_name) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
     auto it = index.begin();
     for (; it != index.end(); ++it)

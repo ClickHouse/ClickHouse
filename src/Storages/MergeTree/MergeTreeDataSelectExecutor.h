@@ -4,6 +4,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 
 
 namespace DB
@@ -113,6 +114,24 @@ private:
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log);
+
+    /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
+    ///  as well as `max_block_number_to_read`.
+    void selectPartsToRead(
+        MergeTreeData::DataPartsVector & parts,
+        const std::unordered_set<String> & part_values,
+        const std::optional<KeyCondition> & minmax_idx_condition,
+        std::optional<PartitionPruner> & partition_pruner,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read) const;
+
+    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
+    void selectPartsToReadWithUUIDFilter(
+        MergeTreeData::DataPartsVector & parts,
+        const std::unordered_set<String> & part_values,
+        const std::optional<KeyCondition> & minmax_idx_condition,
+        std::optional<PartitionPruner> & partition_pruner,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        const Context & query_context) const;
 };
 
 }

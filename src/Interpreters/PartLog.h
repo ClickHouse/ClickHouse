@@ -23,6 +23,7 @@ struct PartLogElement
     Type event_type = NEW_PART;
 
     time_t event_time = 0;
+    Decimal64 event_time_microseconds = 0;
     UInt64 duration_ms = 0;
 
     String database_name;

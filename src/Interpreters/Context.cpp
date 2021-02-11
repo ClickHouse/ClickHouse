@@ -64,6 +64,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 
 namespace ProfileEvents
@@ -1134,12 +1135,6 @@ String Context::getCurrentDatabase() const
 {
     auto lock = getLock();
     return current_database;
-}
-
-
-String Context::getCurrentQueryId() const
-{
-    return client_info.current_query_id;
 }
 
 
@@ -2508,6 +2503,24 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
+}
+
+PartUUIDsPtr Context::getPartUUIDs()
+{
+    auto lock = getLock();
+    if (!part_uuids)
+        part_uuids = std::make_shared<PartUUIDs>();
+
+    return part_uuids;
+}
+
+PartUUIDsPtr Context::getIgnoredPartUUIDs()
+{
+    auto lock = getLock();
+    if (!ignored_part_uuids)
+        ignored_part_uuids = std::make_shared<PartUUIDs>();
+
+    return ignored_part_uuids;
 }
 
 }
