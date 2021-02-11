@@ -152,7 +152,9 @@ void registerDiskS3(DiskFactory & factory)
             context.getSettingsRef().s3_min_upload_part_size,
             context.getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-            config.getBool(config_prefix + ".send_object_metadata", false));
+            config.getBool(config_prefix + ".send_metadata", false),
+            config.getInt(config_prefix + ".thread_pool_size", 16),
+            config.getInt(config_prefix + ".list_object_keys_size", 1000));
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))
@@ -161,6 +163,9 @@ void registerDiskS3(DiskFactory & factory)
             checkReadAccess(name, *s3disk);
             checkRemoveAccess(*s3disk);
         }
+
+        s3disk->restore();
+        s3disk->startup();
 
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
