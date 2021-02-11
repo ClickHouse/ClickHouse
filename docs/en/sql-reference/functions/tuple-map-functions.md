@@ -124,7 +124,7 @@ mapContains(map, key)
 
 **Parameters** 
 
--   `map` — Map. [Type name](relative/path/to/type/dscr.md#type).
+-   `map` — Map. 
 -   `key` — Key. Type matches the type of `map.keys`.
 
 **Returned value**
@@ -237,4 +237,4 @@ Result:
 └──────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/tuple-map-functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->
