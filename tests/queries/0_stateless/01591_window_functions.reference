@@ -709,3 +709,130 @@ from numbers(3);
 1	3
 1	3
 1	3
+-- RANGE OFFSET
+-- a basic RANGE OFFSET frame
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11))
+window w as (order by x asc range between 1 preceding and 2 following)
+order by x;
+0	0	2	3
+1	0	3	4
+2	1	4	4
+3	2	5	4
+4	3	6	4
+5	4	7	4
+6	5	8	4
+7	6	9	4
+8	7	10	4
+9	8	10	3
+10	9	10	2
+-- overflow conditions
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+0	0	2	3
+1	0	3	4
+2	1	4	4
+3	2	4	3
+4	3	4	2
+251	251	253	3
+252	251	254	4
+253	252	255	4
+254	253	255	3
+255	254	255	2
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toInt8(multiIf(
+        mod(number, 3) == 0, toInt64(intDiv(number, 3)),
+        mod(number, 3) == 1, toInt64(127 - intDiv(number, 3)),
+        toInt64(-128 + intDiv(number, 3)))) x
+    from numbers(15)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+-128	-128	-126	3
+-127	-128	-125	4
+-126	-127	-124	4
+-125	-126	-124	3
+-124	-125	-124	2
+0	0	2	3
+1	0	3	4
+2	1	4	4
+3	2	4	3
+4	3	4	2
+123	123	125	3
+124	123	126	4
+125	124	127	4
+126	125	127	3
+127	126	127	2
+-- RANGE OFFSET ORDER BY DESC
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between 1 preceding and 2 following)
+order by x
+settings max_block_size = 1;
+0	0	1	2
+1	0	2	3
+2	0	3	4
+3	1	4	4
+4	2	5	4
+5	3	6	4
+6	4	7	4
+7	5	8	4
+8	6	9	4
+9	7	10	4
+10	8	10	3
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between 1 preceding and unbounded following)
+order by x
+settings max_block_size = 2;
+0	0	1	2
+1	0	2	3
+2	0	3	4
+3	0	4	5
+4	0	5	6
+5	0	6	7
+6	0	7	8
+7	0	8	9
+8	0	9	10
+9	0	10	11
+10	0	10	11
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 following)
+order by x
+settings max_block_size = 3;
+0	0	10	11
+1	0	10	11
+2	0	10	11
+3	1	10	10
+4	2	10	9
+5	3	10	8
+6	4	10	7
+7	5	10	6
+8	6	10	5
+9	7	10	4
+10	8	10	3
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 preceding)
+order by x
+settings max_block_size = 4;
+0	2	10	9
+1	3	10	8
+2	4	10	7
+3	5	10	6
+4	6	10	5
+5	7	10	4
+6	8	10	3
+7	9	10	2
+8	10	10	1
+9	0	0	0
+10	0	0	0
