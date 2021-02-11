@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS mv SYNC;
 CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a PARTITION BY a%20 SETTINGS fsync_after_insert=1;
 CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT a FROM tab_00738;" | ${CLICKHOUSE_CLIENT} -n
 
-${CLICKHOUSE_CLIENT} --query_id test_00738 --query "INSERT INTO tab_00738 SELECT number FROM numbers(10000000)" &
+${CLICKHOUSE_CLIENT} --query_id insert_$CLICKHOUSE_DATABASE --query "INSERT INTO tab_00738 SELECT number FROM numbers(10000000)" &
 
 function drop()
 {
@@ -25,7 +25,7 @@ function drop()
 
 function wait_for_query_to_start()
 {
-    while [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = 'test_00738'") == 0 ]]; do sleep 0.001; done
+    while [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = 'insert_$CLICKHOUSE_DATABASE'") == 0 ]]; do sleep 0.001; done
 
     # The query is already started, but there is no guarantee that it locks the underlying table already.
     # Wait until PushingToViewsBlockOutputStream will acquire the lock of the underlying table for the INSERT query.
@@ -33,7 +33,7 @@ function wait_for_query_to_start()
     sleep 0.5
 
     # query already finished, fail
-    if [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = 'test_00738'") == 0 ]]; then
+    if [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = 'insert_$CLICKHOUSE_DATABASE'") == 0 ]]; then
         exit 2
     fi
 }
