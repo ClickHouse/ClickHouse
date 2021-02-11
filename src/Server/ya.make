@@ -11,6 +11,14 @@ PEERDIR(
 
 SRCS(
     GRPCServer.cpp
+    HTTP/HTMLForm.cpp
+    HTTP/HTTPServer.cpp
+    HTTP/HTTPServerConnection.cpp
+    HTTP/HTTPServerConnectionFactory.cpp
+    HTTP/HTTPServerRequest.cpp
+    HTTP/HTTPServerResponse.cpp
+    HTTP/ReadHeaders.cpp
+    HTTP/WriteBufferFromHTTPServerResponse.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     InterserverIOHTTPHandler.cpp
