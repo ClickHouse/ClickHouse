@@ -22,7 +22,6 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
@@ -1181,33 +1180,44 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
+        {
+            /// Scalar value
             query_context->addScalar(temporary_id.table_name, block);
+        }
+        else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+        {
+            /// Data for external tables
+
+            auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+            StoragePtr storage;
+            /// If such a table does not exist, create it.
+            if (resolved)
+            {
+                storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+            }
+            else
+            {
+                NamesAndTypesList columns = block.getNamesAndTypesList();
+                auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                storage = temporary_table.getTable();
+                query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+            }
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+            /// The data will be written directly to the table.
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+            temporary_table_out->write(block);
+            temporary_table_out->writeSuffix();
+
+        }
+        else if (state.need_receive_data_for_input)
+        {
+            /// 'input' table function.
+            state.block_for_input = block;
+        }
         else
         {
-            /// If there is an insert request, then the data should be written directly to `state.io.out`.
-            /// Otherwise, we write the blocks in the temporary `external_table_name` table.
-            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
-            {
-                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-                StoragePtr storage;
-                /// If such a table does not exist, create it.
-                if (resolved)
-                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
-                else
-                {
-                    NamesAndTypesList columns = block.getNamesAndTypesList();
-                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
-                    storage = temporary_table.getTable();
-                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-                }
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                /// The data will be written directly to the table.
-                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
-            }
-            if (state.need_receive_data_for_input)
-                state.block_for_input = block;
-            else
-                state.io.out->write(block);
+            /// INSERT query.
+            state.io.out->write(block);
         }
         return true;
     }

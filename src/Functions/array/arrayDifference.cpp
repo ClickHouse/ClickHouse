@@ -83,8 +83,8 @@ struct ArrayDifferenceImpl
         }
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
-
     }
+
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
@@ -107,7 +107,6 @@ struct ArrayDifferenceImpl
         else
             throw Exception("Unexpected column for arrayDifference: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
-
 };
 
 struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };
