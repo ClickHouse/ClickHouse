@@ -39,7 +39,7 @@ namespace ErrorCodes
 }
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
-static constexpr const char * BROKEN_TABLE_PREFIX = "_broken_";
+static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
@@ -312,7 +312,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     Strings tables_to_detach;
     size_t total_tables = 0;
-    auto existing_tables_it = getTablesIterator(global_context, [&](const String & name) { return !startsWith(name, BROKEN_TABLE_PREFIX); });
+    auto existing_tables_it = getTablesIterator(global_context, {});
     while (existing_tables_it->isValid())
     {
         String name = existing_tables_it->name();
@@ -345,29 +345,63 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         existing_tables_it->next();
         ++total_tables;
     }
+    existing_tables_it.reset();
 
+    String db_name = getDatabaseName();
+    String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     if (total_tables < tables_to_detach.size() * 2)
-        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to detach: {} of {}", tables_to_detach.size(), total_tables);
+        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
     else if (!tables_to_detach.empty())
-        LOG_WARNING(log, "Will DETACH PERMANENTLY {} broken tables to recover replica", tables_to_detach.size());
+    {
+        LOG_WARNING(log, "Will recreate {} broken tables to recover replica", tables_to_detach.size());
+        /// It's too dangerous to automatically drop tables, so we will move them to special database.
+        /// We use Ordinary engine for destination database, because it's the only way to discard table UUID
+        /// and make possible creation of new table with the same UUID.
+        String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
+        Context query_context = global_context;
+        executeQuery(query, query_context, true);
+    }
 
+    size_t dropped_dicts = 0;
+    size_t moved_tables = 0;
+    std::vector<UUID> dropped_tables;
     for (const auto & table_name : tables_to_detach)
     {
-        String to_name = fmt::format("{}_{}_{}_{}", BROKEN_TABLE_PREFIX, table_name, max_log_ptr, thread_local_rng() % 1000);
-        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(getDatabaseName(), std::min(table_name, to_name));
-        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(getDatabaseName(), std::max(table_name, to_name));
+        String to_name = fmt::format("{}_{}_{}", table_name, max_log_ptr, thread_local_rng() % 1000);
+        assert(db_name < to_db_name);
+        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, table_name);
+        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_db_name, to_name);
+        if (getDatabaseName() != db_name)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
         if (isDictionaryExist(table_name))
         {
-            /// TODO implement DETACH DICTIONARY PERMANENTLY
+            LOG_DEBUG(log, "Will DROP DICTIONARY {}", backQuoteIfNeed(table_name));
             DatabaseAtomic::removeDictionary(global_context, table_name);
+            ++dropped_dicts;
+        }
+        else if (!tryGetTable(table_name, global_context)->storesDataOnDisk())
+        {
+            LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
+            dropped_tables.push_back(tryGetTableUUID(table_name));
+            tryGetTable(table_name, global_context)->shutdown();
+            DatabaseAtomic::dropTable(global_context, table_name, true);
         }
         else
         {
-            DatabaseAtomic::renameTable(global_context, table_name, *this, to_name, false, false);
-            DatabaseAtomic::detachTablePermanently(global_context, to_name);
+            LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(table_name), backQuoteIfNeed(to_db_name), backQuoteIfNeed(to_name));
+            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_db_name);
+            DatabaseAtomic::renameTable(global_context, table_name, *to_db_ptr, to_name, false, false);
+            ++moved_tables;
         }
     }
+
+    if (!tables_to_detach.empty())
+        LOG_WARNING(log, "Cleaned {} outdated objects: dropped {} dictionaries and {} tables, moved {} tables",
+                    tables_to_detach.size(), dropped_dicts, dropped_tables.size(), moved_tables);
+
+    for (const auto & id : dropped_tables)
+        DatabaseCatalog::instance().waitTableFinallyDropped(id);
 
     for (const auto & name_and_meta : table_name_to_metadata)
     {
@@ -535,8 +569,6 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                        const Context & query_context)
 {
-    if (startsWith(query.table, BROKEN_TABLE_PREFIX))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not allowed to attach broken tables");
     auto txn = query_context.getMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->is_initial_query)

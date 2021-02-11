@@ -362,6 +362,12 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
               ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
+void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
+{
+    std::unique_lock lock{mutex};
+    detached_tables.erase(uuid);
+}
+
 DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;

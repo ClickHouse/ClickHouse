@@ -3,7 +3,8 @@ import re
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
@@ -162,7 +163,7 @@ def test_alters_from_different_replicas(started_cluster):
     assert main_node.query("SELECT shard_num, replica_num, host_name FROM system.clusters WHERE cluster='testdb'") == expected
 
     # test_drop_and_create_replica
-    main_node.query("DROP DATABASE testdb")
+    main_node.query("DROP DATABASE testdb SYNC")
     main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
 
     expected = "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n" \
@@ -182,4 +183,65 @@ def test_alters_from_different_replicas(started_cluster):
                "9\t2021-02-11\t1241149650\n"
 
     assert_eq_with_retry(dummy_node, "SELECT CounterID, StartDate, UserID FROM testdb.dist ORDER BY CounterID", expected)
+
+def test_recover_staled_replica(started_cluster):
+    main_node.query("CREATE DATABASE recover ENGINE = Replicated('/clickhouse/databases/recover', 'shard1', 'replica1');")
+    started_cluster.get_kazoo_client('zoo1').set('/clickhouse/databases/recover/logs_to_keep', b'10')
+    dummy_node.query("CREATE DATABASE recover ENGINE = Replicated('/clickhouse/databases/recover', 'shard1', 'replica2');")
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query("CREATE TABLE recover.t1 (n int) ENGINE=Memory", settings=settings)
+    dummy_node.query("CREATE TABLE recover.t2 (s String) ENGINE=Memory", settings=settings)
+    main_node.query("CREATE TABLE recover.mt1 (n int) ENGINE=MergeTree order by n", settings=settings)
+    dummy_node.query("CREATE TABLE recover.mt2 (n int) ENGINE=MergeTree order by n", settings=settings)
+    main_node.query("CREATE TABLE recover.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
+    dummy_node.query("CREATE TABLE recover.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
+    main_node.query("CREATE DICTIONARY recover.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
+    dummy_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
+
+    for table in ['t1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2']:
+        main_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
+    for table in ['t1', 't2', 'mt1', 'mt2']:
+        dummy_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
+    for table in ['rmt1', 'rmt2']:
+        main_node.query("SYSTEM SYNC REPLICA recover.{}".format(table))
+
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(dummy_node)
+        dummy_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
+        main_node.query("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
+        main_node.query("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
+        main_node.query("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
+        main_node.query("DROP DICTIONARY recover.d2", settings=settings)
+        main_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());", settings=settings)
+
+        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query("DROP TABLE recover.tmp", settings=settings)
+        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query("DROP TABLE recover.tmp", settings=settings)
+        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query("DROP TABLE recover.tmp", settings=settings)
+        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+
+    assert main_node.query("SELECT name FROM system.tables WHERE database='recover' ORDER BY name") == "d1\nd2\nm1\nmt1\nmt2\nrmt1\nrmt2\nt2\ntmp\n"
+    query = "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover' ORDER BY name"
+    expected = main_node.query(query)
+    assert_eq_with_retry(dummy_node, query, expected)
+
+    for table in ['m1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'd1', 'd2']:
+        assert main_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
+    for table in ['t2', 'rmt1', 'rmt2', 'd1', 'd2', 'mt2']:
+        assert dummy_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
+    for table in ['m1', 'mt1']:
+        assert dummy_node.query("SELECT count() FROM recover.{}".format(table)) == "0\n"
+
+    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == "1\n"
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables").strip()
+    assert "mt1_22_" in table
+    assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
+
+    expected = "Cleaned 3 outdated objects: dropped 1 dictionaries and 1 tables, moved 1 tables"
+    assert_logs_contain(dummy_node, expected)
+
+    dummy_node.query("DROP TABLE recover.tmp")
 
