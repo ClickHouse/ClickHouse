@@ -1956,8 +1956,8 @@ Default value: 16.
 
 **See Also**
 
--   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine
--   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine.
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine.
 
 ## validate_polygons {#validate_polygons}
 
