@@ -44,6 +44,7 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated l
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
+parser.add_argument('--max-query-seconds', type=int, default=10, help='For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.')
 parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
@@ -323,7 +324,7 @@ for query_index in queries_to_run:
             server_seconds += elapsed
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
 
-            if elapsed > 10:
+            if elapsed > args.max_query_seconds:
                 # Stop processing pathologically slow queries, to avoid timing out
                 # the entire test task. This shouldn't really happen, so we don't
                 # need much handling for this case and can just exit.
