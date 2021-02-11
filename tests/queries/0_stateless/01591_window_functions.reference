@@ -912,3 +912,11 @@ Expression ((Projection + Before ORDER BY))
                   Expression ((Before window functions + (Projection + Before ORDER BY)))
                     SettingQuotaAndLimits (Set limits and quota after reading from storage)
                       ReadFromStorage (SystemNumbers)
+-- A test case for the sort comparator found by fuzzer.
+SELECT
+    max(number) OVER (ORDER BY number DESC NULLS FIRST),
+    max(number) OVER (ORDER BY number ASC NULLS FIRST)
+FROM numbers(2)
+;
+1	0
+1	1
