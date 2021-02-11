@@ -1,62 +1,45 @@
 #include "Server.h"
 
 #include <memory>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <Poco/Version.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Net/HTTPServer.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/Util/HelpFormatter.h>
-#include <ext/scope_guard.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/ErrorHandlers.h>
-#include <common/getMemoryAmount.h>
-#include <common/errnoToString.h>
-#include <common/coverage.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/DNSResolver.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Macros.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <common/getFQDNOrHostName.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/getExecutablePath.h>
-#include <Common/ThreadProfileEvents.h>
-#include <Common/ThreadStatus.h>
-#include <Common/getMappedArea.h>
-#include <Common/remapExecutable.h>
-#include <Common/TLDListsHolder.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
+#include <Formats/registerFormats.h>
+#include <Functions/registerFunctions.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Access/AccessControlManager.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/MySQLHandlerFactory.h>
+#include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
+#include <Server/TCPHandlerFactory.h>
+#include <Server/TestKeeperTCPHandlerFactory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/registerFunctions.h>
-#include <TableFunctions/registerTableFunctions.h>
-#include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <Dictionaries/registerDictionaries.h>
-#include <Disks/registerDisks.h>
+#include <TableFunctions/registerTableFunctions.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Net/HTTPServer.h>
+#include <Poco/Net/NetException.h>
+#include <Poco/UUIDGenerator.h>
+#include <Poco/Util/HelpFormatter.h>
+#include <Poco/Version.h>
+#include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -64,20 +47,35 @@
 #include <Common/ServerUUIDFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/StatusFile.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/TLDListsHolder.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/Elf.h>
-#include <Server/MySQLHandlerFactory.h>
-#include <Server/PostgreSQLHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
-
+#include <Common/getMappedArea.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/remapExecutable.h>
+#include <common/ErrorHandlers.h>
+#include <common/coverage.h>
+#include <common/errnoToString.h>
+#include <common/getFQDNOrHostName.h>
+#include <common/getMemoryAmount.h>
+#include <common/logger_useful.h>
+#include <common/phdr_cache.h>
+#include <ext/scope_guard.h>
+#include "MetricsTransmitter.h"
 
 #if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h" // Y_IGNORE
-#   endif
+#    include "Common/config_version.h"
+#    include "config_core.h"
+#    if USE_OPENCL
+#        include "Common/BitonicSort.h" // Y_IGNORE
+#    endif
 #endif
 
 #if defined(OS_LINUX)
@@ -105,6 +103,7 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
 }
 
+namespace fs = std::filesystem;
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
@@ -564,7 +563,35 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setPath(path);
 
     StatusFile status{path + "status", StatusFile::write_full_info};
-    ServerUUIDFile uuid{path + "uuid", ServerUUIDFile::write_server_uuid};
+
+
+    /// Write a uuid file containing a unique uuid if the file doesn't already exist during server start.
+    {
+        fs::path server_uuid_file(path + "uuid");
+
+        if (!fs::exists(server_uuid_file))
+        {
+            try
+            {
+                /// Note: Poco::UUIDGenerator().createRandom() uses /dev/random and can be expensive. But since
+                /// it's only going to be generated once (i.e if the uuid file doesn't exist), it's probably fine.
+                auto uuid_str = Poco::UUIDGenerator().createRandom().toString();
+                WriteBufferFromFile out(server_uuid_file.string());
+                out.write(uuid_str.data(), uuid_str.size());
+                out.sync();
+                out.finalize();
+            }
+            catch (...)
+            {
+                throw Poco::Exception("Caught Exception while writing to write UUID file {}.\n", server_uuid_file.string());
+            }
+            LOG_INFO(log, "Server UUID file {} containing a unique UUID has been written.\n", server_uuid_file.string());
+        }
+        else
+        {
+            LOG_WARNING(log, "Server UUID file {} already exists, will keep it.\n", server_uuid_file.string());
+        }
+    }
 
     /// Try to increase limit on number of open files.
     {
