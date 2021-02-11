@@ -151,19 +151,24 @@ auto parseKerberosParams(const Poco::Util::AbstractConfiguration & config)
 {
     GSSAcceptorContext::Params params;
 
-    Poco::Util::AbstractConfiguration::Keys realm_keys;
-    config.keys("kerberos.realm", realm_keys);
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys("kerberos", keys);
 
-    Poco::Util::AbstractConfiguration::Keys principal_keys;
-    config.keys("kerberos.principal", principal_keys);
+    std::size_t reealm_key_count = 0;
+    std::size_t principal_keys_count = 0;
 
-    if (!realm_keys.empty() && !principal_keys.empty())
+    for (const auto& key : keys) {
+        reealm_key_count += (key == "realm");
+        principal_keys_count += (key == "principal");
+    }
+
+    if (reealm_key_count > 0 && principal_keys_count > 0)
         throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
 
-    if (realm_keys.size() > 1)
+    if (reealm_key_count > 1)
         throw Exception("Multiple realm sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
 
-    if (principal_keys.size() > 1)
+    if (principal_keys_count > 1)
         throw Exception("Multiple principal sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
 
     params.realm = config.getString("kerberos.realm", "");
@@ -187,6 +192,23 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::scoped_lock lock(mutex);
     reset();
 
+    Poco::Util::AbstractConfiguration::Keys all_keys;
+    config.keys("", all_keys);
+
+    std::size_t ldap_servers_key_count = 0;
+    std::size_t kerberos_keys_count = 0;
+
+    for (const auto& key : all_keys) {
+        ldap_servers_key_count += (key == "ldap_servers");
+        kerberos_keys_count += (key == "kerberos");
+    }
+
+    if (ldap_servers_key_count > 1)
+        throw Exception("Multiple ldap_servers sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
+    if (kerberos_keys_count > 1)
+        throw Exception("Multiple kerberos sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
     for (const auto & ldap_server_name : ldap_server_names)
@@ -203,13 +225,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     try
     {
-        Poco::Util::AbstractConfiguration::Keys kerberos_keys;
-        config.keys("kerberos", kerberos_keys);
-
-        if (kerberos_keys.size() > 1)
-            throw Exception("Multiple kerberos sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
-
-        if (kerberos_keys.size() == 1)
+        if (kerberos_keys_count > 0)
             kerberos_params = parseKerberosParams(config);
     }
     catch (...)
