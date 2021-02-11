@@ -610,12 +610,14 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     ReadBufferFromString istr(query_to_execute);
     String dummy_string;
     WriteBufferFromString ostr(dummy_string);
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     try
     {
         auto current_context = std::make_unique<Context>(context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
+        query_scope.emplace(*current_context);
         executeQuery(istr, ostr, false, *current_context, {});
     }
     catch (...)
@@ -630,20 +632,6 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     LOG_DEBUG(log, "Executed query: {}", query);
 
     return true;
-}
-
-void DDLWorker::attachToThreadGroup()
-{
-    if (thread_group)
-    {
-        /// Put all threads to one thread pool
-        CurrentThread::attachToIfDetached(thread_group);
-    }
-    else
-    {
-        CurrentThread::initializeQuery();
-        thread_group = CurrentThread::getGroup();
-    }
 }
 
 
@@ -1148,8 +1136,6 @@ void DDLWorker::runMainThread()
     {
         try
         {
-            attachToThreadGroup();
-
             cleanup_event->set();
             scheduleTasks();
 
@@ -1217,7 +1203,7 @@ void DDLWorker::runCleanupThread()
 }
 
 
-class DDLQueryStatusInputStream : public IBlockInputStream
+class DDLQueryStatusInputStream final : public IBlockInputStream
 {
 public:
 

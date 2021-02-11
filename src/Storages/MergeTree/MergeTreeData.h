@@ -465,9 +465,6 @@ public:
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
                                                      bool skip_intersecting_parts, DataPartsLock & lock);
 
-    /// Renames the part to detached/<prefix>_<part> and removes it from working set.
-    void removePartsFromWorkingSetAndCloneToDetached(const DataPartsVector & parts, bool clear_without_timeout, const String & prefix = "");
-
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
@@ -915,9 +912,6 @@ protected:
     virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
-
-    /// Selects parts for move and moves them, used in background process
-    bool selectPartsAndMove();
 
 
 private:
