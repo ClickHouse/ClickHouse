@@ -242,6 +242,8 @@ def test_blocade_leader(started_cluster):
                 print("Got exception node2", smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
             assert False, "Cannot insert anything node2"
 
         for i in range(100):
@@ -257,6 +259,8 @@ def test_blocade_leader(started_cluster):
                 print("Got exception node3", smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
             assert False, "Cannot insert anything node3"
 
     for n, node in enumerate([node1, node2, node3]):
@@ -283,12 +287,14 @@ def test_blocade_leader(started_cluster):
             print("Got exception node1", smaller_exception(ex))
             time.sleep(0.5)
     else:
+        for num, node in enumerate([node1, node2, node3]):
+            dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
         assert False, "Cannot insert anything node1"
 
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("SYSTEM RESTART REPLICA t1", timeout=10)
+                node.query("SYSTEM RESTART REPLICA t1")
                 node.query("SYSTEM SYNC REPLICA t1", timeout=10)
                 break
             except Exception as ex:
@@ -300,7 +306,13 @@ def test_blocade_leader(started_cluster):
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
+            for num, node in enumerate([node1, node2, node3]):
+                dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
             assert False, "Cannot sync replica node{}".format(n+1)
+
+    if node1.query("SELECT COUNT() FROM t1") != "310\n":
+        for num, node in enumerate([node1, node2, node3]):
+            dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
 
     assert node1.query("SELECT COUNT() FROM t1") == "310\n"
     assert node2.query("SELECT COUNT() FROM t1") == "310\n"
