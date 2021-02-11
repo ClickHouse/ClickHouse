@@ -5,7 +5,7 @@ toc_title: Map(key, value)
 
 # Map(key, value) {#data_type-map}
 
-`Map(key, value)` data type stores `key:value` pairs in structures like JSON. 
+`Map(key, value)` data type stores `key:value` pairs. 
 
 **Parameters** 
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
@@ -14,24 +14,50 @@ toc_title: Map(key, value)
 !!! warning "Warning"
     Currently `Map` data type is an experimental feature. To work with it you must set `allow_experimental_map_type = 1`.
 
-To get the value from an `a Map('key', 'value')` column, use `a['key']` syntax.
+To get the value from an `a Map('key', 'value')` column, use `a['key']` syntax. This lookup works now with a linear complexity.
 
-**Example**
+**Examples**
 
-Query:
+Consider the table:
 
 ``` sql
 CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory;
-INSERT INTO table_map VALUES ({'key1':1, 'key2':100}), ({'key1':2,'key2':200}), ({'key1':3,'key2':300});
+INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
+```
+
+Select all `key2` values: 
+
+```sql
 SELECT a['key2'] FROM table_map;
 ```
 Result:
 
 ```text
 ┌─arrayElement(a, 'key2')─┐
+│                      10 │
+│                      20 │
+│                      30 │
+└─────────────────────────┘
+```
+
+If there's no such `key` in the `Map()` column, the query returns zeros for numerical values, empty strings or empty arrays. 
+
+```sql
+INSERT INTO table_map VALUES ({'key3':100}), ({});
+SELECT a['key3'] FROM table_map;
+```
+
+Result:
+
+```text
+┌─arrayElement(a, 'key3')─┐
 │                     100 │
-│                     200 │
-│                     300 │
+│                       0 │
+└─────────────────────────┘
+┌─arrayElement(a, 'key3')─┐
+│                       0 │
+│                       0 │
+│                       0 │
 └─────────────────────────┘
 ```
 

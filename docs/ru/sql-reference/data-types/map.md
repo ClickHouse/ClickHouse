@@ -5,7 +5,7 @@ toc_title: Map(key, value)
 
 # Map(key, value) {#data_type-map}
 
-Тип данных `Map(key, value)` хранит пары `ключ:значение` в структурах типа JSON. 
+Тип данных `Map(key, value)` хранит пары `ключ:значение`. 
 
 **Параметры** 
 -   `key` — ключ. [String](../../sql-reference/data-types/string.md) или [Integer](../../sql-reference/data-types/int-uint.md).
@@ -14,39 +14,51 @@ toc_title: Map(key, value)
 !!! warning "Предупреждение"
     Сейчас использование типа данных `Map` является экспериментальной возможностью. Чтобы использовать этот тип данных, включите настройку `allow_experimental_map_type = 1`.
 
-Чтобы получить значение из колонки `a Map('key', 'value')`, используйте синтаксис `a['key']`.
+Чтобы получить значение из колонки `a Map('key', 'value')`, используйте синтаксис `a['key']`. В настоящее время такая подстановка работает по алгоритму с линейной сложностью.
 
-**Пример**
+**Примеры**
 
-Запрос:
+Рассмотрим таблицу:
 
 ``` sql
 CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory;
-INSERT INTO table_map VALUES ({'key1':1, 'key2':100}), ({'key1':2,'key2':200}), ({'key1':3,'key2':300});
+INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
+```
+
+Выборка всем значений ключа `key2`: 
+
+```sql
 SELECT a['key2'] FROM table_map;
 ```
 Результат:
 
 ```text
 ┌─arrayElement(a, 'key2')─┐
-│                     100 │
-│                     200 │
-│                     300 │
+│                      10 │
+│                      20 │
+│                      30 │
 └─────────────────────────┘
 ```
 
-## Преобразование типа данных Tuple в Map {#map-and-tuple}
+Если для какого-то ключа `key` в колонке с типом `Map()` нет значения, запрос возвращает нули для числовых колонок, пустые строки или пустые массивы. 
 
-Для преобразования данных с типом `Tuple()` в тип `Map()` можно использовать функцию [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast):
-
-``` sql
-SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
+```sql
+INSERT INTO table_map VALUES ({'key3':100}), ({});
+SELECT a['key3'] FROM table_map;
 ```
 
-``` text
-┌─map───────────────────────────┐
-│ {1:'Ready',2:'Steady',3:'Go'} │
-└───────────────────────────────┘
+Результат:
+
+```text
+┌─arrayElement(a, 'key3')─┐
+│                     100 │
+│                       0 │
+└─────────────────────────┘
+┌─arrayElement(a, 'key3')─┐
+│                       0 │
+│                       0 │
+│                       0 │
+└─────────────────────────┘
 ```
 
 **См. также**

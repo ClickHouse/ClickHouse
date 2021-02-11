@@ -7,7 +7,7 @@ toc_title: Working with maps
 
 ## map {#function-map}
 
-Arranges `key:value` pairs into a JSON data structure.
+Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types/map.md) data type.
 
 **Syntax** 
 
@@ -22,7 +22,7 @@ map(key1, value1[, key2, value2, ...])
 
 **Returned value**
 
--   JSON with `key:value` pairs.
+-  Data structure as `key:value` pairs.
 
 Type: [Map(key, value)](../../sql-reference/data-types/map.md).
 
