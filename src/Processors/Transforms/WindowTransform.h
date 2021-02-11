@@ -22,6 +22,10 @@ struct WindowFunctionWorkspace
     WindowFunctionDescription window_function;
     AlignedBuffer aggregate_function_state;
     std::vector<size_t> argument_column_indices;
+    // This field is set for pure window functions. When set, we ignore the
+    // window_function.aggregate_function, and work through this interface
+    // instead.
+    IWindowFunction * window_function_impl = nullptr;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
@@ -281,6 +285,11 @@ public:
     // For ROWS frame, always equal to the current row, and for RANGE and GROUP
     // frames may be earlier.
     RowNumber peer_group_start;
+
+    // Row and group numbers in partition for calculating rank() and friends.
+    uint64_t current_row_number = 1;
+    uint64_t peer_group_start_row_number = 1;
+    uint64_t peer_group_number = 1;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the

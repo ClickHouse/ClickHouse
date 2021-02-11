@@ -315,3 +315,15 @@ SELECT
     max(number) OVER (ORDER BY number ASC NULLS FIRST)
 FROM numbers(2)
 ;
+
+-- some true window functions -- rank and friends
+select number, p, o,
+    count(*) over w,
+    rank() over w,
+    dense_rank() over w,
+    row_number() over w
+from (select number, intDiv(number, 5) p, mod(number, 3) o
+    from numbers(31) order by o, number) t
+window w as (partition by p order by o)
+order by p, o, number
+settings max_block_size = 2;
