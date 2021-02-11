@@ -12,7 +12,7 @@ node1 = cluster.add_instance('node1', main_configs=['configs/enable_test_keeper1
 node2 = cluster.add_instance('node2', main_configs=['configs/enable_test_keeper2.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/enable_test_keeper3.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
 
-from kazoo.client import KazooClient
+from kazoo.client import KazooClient, KazooState
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -29,11 +29,13 @@ def smaller_exception(ex):
 
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
-    def reset_last_zxid_listener(state):
+    def reset_listener(state):
+        nonlocal _fake_zk_instance
         print("Fake zk callback called for state", state)
-        _fake_zk_instance.last_zxid = 0
+        if state != KazooState.CONNECTED:
+            _fake_zk_instance._reset()
 
-        _fake_zk_instance.add_listener(reset_last_zxid_listener)
+    _fake_zk_instance.add_listener(reset_listener)
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -135,7 +137,7 @@ def test_session_expiration(started_cluster):
     try:
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
-        node3_zk = get_fake_zk("node3", timeout=3.0)
+        node3_zk = get_fake_zk("node3", timeout=5.0)
 
         node3_zk.create("/test_ephemeral_node", b"world", ephemeral=True)
 
