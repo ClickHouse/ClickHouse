@@ -1,7 +1,7 @@
 drop table if exists data_01513;
 create table data_01513 (key String) engine=MergeTree() order by key;
 -- 10e3 groups, 1e3 keys each
-insert into data_01513 select number%10e3 from numbers(toUInt64(2e6));
+insert into data_01513 select number%10e3 from numbers(2e6);
 -- reduce number of parts to 1
 optimize table data_01513 final;
 
