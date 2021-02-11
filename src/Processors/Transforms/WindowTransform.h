@@ -19,13 +19,17 @@ class Arena;
 // Runtime data for computing one window function.
 struct WindowFunctionWorkspace
 {
-    WindowFunctionDescription window_function;
-    AlignedBuffer aggregate_function_state;
-    std::vector<size_t> argument_column_indices;
+    AggregateFunctionPtr aggregate_function;
+
     // This field is set for pure window functions. When set, we ignore the
     // window_function.aggregate_function, and work through this interface
     // instead.
     IWindowFunction * window_function_impl = nullptr;
+
+    std::vector<size_t> argument_column_indices;
+
+    // Will not be initialized for a pure window function.
+    AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
