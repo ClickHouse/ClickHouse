@@ -24,6 +24,7 @@ The following actions are supported:
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 
 These actions are described in detail below.
 
@@ -165,6 +166,22 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ## See Also
 
 - [REMOVE TTL](ttl.md).
+
+## RENAME COLUMN {#alter_rename-column}
+
+Renames an existing column.
+
+Syntax:
+
+```sql
+ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name;
+```
+
+**Example**
+
+```sql
+ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
+```
 
 ## Limitations {#alter-query-limitations}
 
