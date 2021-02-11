@@ -584,6 +584,9 @@ include (cmake/sanitize_target_link_libraries.cmake)
 # Various build speed optimizations.
 
 # Combine files in contrib/ into single translation units to accelerate builds. No-op when UNBUNDLED set or ENABLE_LIBRARIES unset. Requires CMake 3.16 or later.
+# Unity builds get enabled for all LLVM targets except LLVMCodeGen, LLVMSelectionDAG, LLVMVectorize, LLVMBitReader, LLVMObject, and LLVMScalarOpts.
+# Unity builds also get enabled for all abseil, poco, cassandra, and grpc related targets, except _poco_foundation, absl_synchronization, and grpc itself.
+# arrow_static, aws_s3, cxxabi, gpr, rocksdb, and antlr4-runtime get unity builds turned on separately by this option, with related targets left alone.
 option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder." ON)
 
 # Combine files in src/Functions into single translation units to accelerate builds. Requires CMake 3.16 or later.
@@ -689,9 +692,13 @@ if (FASTBUILD_CONTRIB_UNITY)
     # Packages that support and benefit a lot from unity builds.
     set_target_properties(arrow_static PROPERTIES UNITY_BUILD ON)
     set_target_properties(aws_s3 PROPERTIES UNITY_BUILD ON)
-    set_target_properties(cxxabi PROPERTIES UNITY_BUILD ON)
     set_target_properties(gpr PROPERTIES UNITY_BUILD ON)
     set_target_properties(rocksdb PROPERTIES UNITY_BUILD ON)
+
+    # libcxxabi only supports unity builds when sanitizers are off.
+    if (NOT SANITIZE)
+        set_target_properties(cxxabi PROPERTIES UNITY_BUILD ON)
+    endif()
 
     # Package that supports unity builds, but only at a low batch size because of ODR violations.
     set_target_properties(antlr4-runtime PROPERTIES
