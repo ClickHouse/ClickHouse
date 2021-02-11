@@ -35,9 +35,15 @@ public:
 
     int getPort() const { return my_port; }
 
+    bool shouldStartAsFollower() const
+    {
+        return start_as_follower_servers.count(my_server_id);
+    }
+
 private:
     int my_server_id;
     int my_port;
+    std::unordered_set<int> start_as_follower_servers;
     nuraft::ptr<InMemoryLogStore> log_store;
     nuraft::ptr<nuraft::srv_config> my_server_config;
     nuraft::ptr<nuraft::cluster_config> cluster_config;

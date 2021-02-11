@@ -28,6 +28,9 @@ InMemoryStateManager::InMemoryStateManager(
         int port = config.getInt(full_prefix + ".port");
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
+        bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
+        if (start_as_follower)
+            start_as_follower_servers.insert(server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
         auto peer_config = nuraft::cs_new<nuraft::srv_config>(server_id, 0, endpoint, "", !can_become_leader, priority);
@@ -41,6 +44,9 @@ InMemoryStateManager::InMemoryStateManager(
     }
     if (!my_server_config)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section");
+
+    if (start_as_follower_servers.size() == cluster_config->get_servers().size())
+        throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
 void InMemoryStateManager::save_config(const nuraft::cluster_config & config)

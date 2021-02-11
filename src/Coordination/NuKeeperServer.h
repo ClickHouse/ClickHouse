@@ -43,7 +43,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         ResponsesQueue & responses_queue_);
 
-    void startup(bool should_build_quorum);
+    void startup();
 
     void putRequest(const NuKeeperStorage::RequestForSession & request);
 
