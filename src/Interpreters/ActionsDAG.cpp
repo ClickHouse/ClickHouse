@@ -1311,6 +1311,8 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
                         actions->inputs.emplace_back(&node);
                         actions->index.insert(&node);
                     }
+
+                    stack.pop();
                 }
             }
         }
