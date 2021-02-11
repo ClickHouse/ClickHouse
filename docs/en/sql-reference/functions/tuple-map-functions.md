@@ -167,7 +167,7 @@ mapKeys(map)
 
 **Parameters**
 
--   `map`- Map.
+-   `map` — Map.
 
 **Returned value**
 
@@ -208,7 +208,7 @@ mapKeys(map)
 
 **Parameters**
 
--   `map`- Map.
+-   `map` — Map.
 
 **Returned value**
 
