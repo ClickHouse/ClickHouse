@@ -2,6 +2,7 @@
 
 #include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -16,9 +17,6 @@
 #include <common/unaligned.h>
 #include <ext/bit_cast.h>
 #include <ext/scope_guard.h>
-#include <lz4.h>
-#include <Compression/LZ4_decompress_faster.h>
-#include <IO/BufferWithOwnMemory.h>
 
 #include <cmath>
 #include <cstring>
@@ -529,51 +527,27 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 
 template <typename T>
-LazyColumn ColumnVector<T>::compress() const
+ColumnPtr ColumnVector<T>::compress() const
 {
     size_t source_size = data.size() * sizeof(T);
 
     /// Don't compress small blocks.
     if (source_size < 4096) /// A wild guess.
-        return IColumn::compress();
+        return ColumnCompressed::wrap(this->getPtr());
 
-    size_t max_dest_size = LZ4_COMPRESSBOUND(source_size);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size);
 
-    if (max_dest_size > std::numeric_limits<int>::max())
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source_size));
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = std::make_shared<Memory<>>(max_dest_size);
-
-    auto compressed_size = LZ4_compress_default(
-        reinterpret_cast<const char *>(data.data()),
-        compressed->data(),
-        source_size,
-        max_dest_size);
-
-    if (compressed_size <= 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column");
-
-    /// If compression is inefficient.
-    if (static_cast<size_t>(compressed_size) * 2 > source_size)
-        return IColumn::compress();
-
-    /// Shrink to fit.
-    auto shrank = std::make_shared<Memory<>>(compressed_size);
-    memcpy(shrank->data(), compressed->data(), compressed_size);
-
-    return [compressed = std::move(shrank), column_size = data.size()]
-    {
-        auto res = ColumnVector<T>::create(column_size);
-        auto processed_size = LZ4_decompress_fast(
-            compressed->data(),
-            reinterpret_cast<char *>(res->getData().data()),
-            column_size * sizeof(T));
-
-        if (processed_size <= 0)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress column");
-
-        return res;
-    };
+    return ColumnCompressed::create(data.size(), compressed->size(),
+        [compressed = std::move(compressed), column_size = data.size()]
+        {
+            auto res = ColumnVector<T>::create(column_size);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+            return res;
+        });
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.
