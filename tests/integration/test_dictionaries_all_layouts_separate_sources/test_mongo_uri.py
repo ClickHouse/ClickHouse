@@ -26,7 +26,7 @@ def setup_module(module):
 
     cluster = ClickHouseCluster(__file__, name=test_name)
 
-    SOURCE = SourceMongo("MongoDB", "localhost", cluster.mongo_port, cluster.mongo_host, "27017", "root", "clickhouse")
+    SOURCE = SourceMongoURI("MongoDB", "localhost", cluster.mongo_port, cluster.mongo_host, "27017", "root", "clickhouse")
 
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
