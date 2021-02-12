@@ -29,22 +29,19 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & conn_str,
     const std::string & metadata_path_,
     std::shared_ptr<Context> context_,
-    const std::string & publication_name_,
-    const std::string & replication_slot_name_,
-    const size_t max_block_size_)
+    const size_t max_block_size_,
+    const String tables_list_)
     : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
     , context(context_)
     , database_name(database_name_)
     , connection_str(conn_str)
     , metadata_path(metadata_path_)
-    , publication_name(publication_name_)
-    , replication_slot(replication_slot_name_)
     , max_block_size(max_block_size_)
+    , tables_list(tables_list_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
-    , replication_connection(std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection->conn_str())))
 {
-    if (replication_slot.empty())
-        replication_slot = fmt::format("{}_ch_replication_slot", database_name);
+    replication_slot = fmt::format("{}_ch_replication_slot", database_name);
+    publication_name = fmt::format("{}_ch_publication", database_name);
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
     startup_task->deactivate();
@@ -93,71 +90,12 @@ void PostgreSQLReplicationHandler::shutdown()
 }
 
 
-bool PostgreSQLReplicationHandler::isPublicationExist(std::shared_ptr<pqxx::work> tx)
-{
-    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
-    pqxx::result result{tx->exec(query_str)};
-    assert(!result.empty());
-    bool publication_exists = (result[0][0].as<std::string>() == "t");
-
-    if (publication_exists)
-        LOG_TRACE(log, "Publication {} already exists. Using existing version", publication_name);
-
-    return publication_exists;
-}
-
-
-void PostgreSQLReplicationHandler::createPublication(std::shared_ptr<pqxx::work> tx)
-{
-    String table_names;
-    for (const auto & storage_data : storages)
-    {
-        if (!table_names.empty())
-            table_names += ", ";
-        table_names += storage_data.first;
-    }
-
-    /// 'ONLY' means just a table, without descendants.
-    std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, table_names);
-    try
-    {
-        tx->exec(query_str);
-        LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, table_names);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while creating pg_publication");
-        throw;
-    }
-}
-
-
 void PostgreSQLReplicationHandler::startSynchronization()
 {
-    /// Used commands require a specific transaction isolation mode.
+    createPublicationIfNeeded(connection->conn());
+
+    auto replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection->conn_str()));
     replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
-
-    auto tx = std::make_shared<pqxx::work>(*replication_connection->conn());
-    bool new_publication = false;
-
-    if (publication_name.empty())
-    {
-        publication_name = fmt::format("{}_ch_publication", database_name);
-
-        if (!isPublicationExist(tx))
-        {
-            createPublication(tx);
-            new_publication = true;
-        }
-    }
-    else if (!isPublicationExist(tx))
-    {
-        throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Publication name '{}' is spesified in table arguments, but it does not exist", publication_name);
-    }
-    tx->commit();
-
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
 
     std::string snapshot_name, start_lsn;
@@ -173,7 +111,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
     {
         initial_sync();
     }
-    else if (!Poco::File(metadata_path).exists() || new_publication)
+    else if (!Poco::File(metadata_path).exists() || new_publication_created)
     {
         /// In case of some failure, the following cases are possible (since publication and replication slot are reused):
         /// 1. If replication slot exists and metadata file (where last synced version is written) does not exist, it is not ok.
@@ -258,6 +196,59 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
 }
 
 
+bool PostgreSQLReplicationHandler::isPublicationExist(std::shared_ptr<pqxx::work> tx)
+{
+    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
+    pqxx::result result{tx->exec(query_str)};
+    assert(!result.empty());
+    bool publication_exists = (result[0][0].as<std::string>() == "t");
+
+    if (publication_exists)
+        LOG_INFO(log, "Publication {} already exists. Using existing version", publication_name);
+
+    return publication_exists;
+}
+
+
+void PostgreSQLReplicationHandler::createPublicationIfNeeded(
+        PostgreSQLConnection::ConnectionPtr connection_)
+{
+    if (new_publication_created)
+        return;
+
+    auto tx = std::make_shared<pqxx::work>(*connection_);
+
+    if (!isPublicationExist(tx))
+    {
+        if (tables_list.empty())
+        {
+            for (const auto & storage_data : storages)
+            {
+                if (!tables_list.empty())
+                    tables_list += ", ";
+                tables_list += storage_data.first;
+            }
+        }
+
+        /// 'ONLY' means just a table, without descendants.
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, tables_list);
+        try
+        {
+            tx->exec(query_str);
+            new_publication_created = true;
+            LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, tables_list);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while creating pg_publication");
+            throw;
+        }
+    }
+
+    tx->commit();
+}
+
+
 bool PostgreSQLReplicationHandler::isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name)
 {
     std::string query_str = fmt::format("SELECT active, restart_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
@@ -304,9 +295,6 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, st
 
 void PostgreSQLReplicationHandler::dropPublication(NontransactionPtr ntx)
 {
-    if (publication_name.empty())
-        return;
-
     std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
     ntx->exec(query_str);
 }
@@ -328,7 +316,6 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 }
 
 
-/// TODO: publication can be created with option `whole_database`. Check this case.
 std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_)
 {
     auto publication_exist = [&]()
@@ -339,14 +326,17 @@ std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchRequiredTable
         return exist;
     };
 
-    if (publication_name.empty() || !publication_exist())
+    if (publication_exist())
     {
-        /// Replicate the whole database and create our own pg_publication
+        return fetchTablesFromPublication(connection_);
+    }
+    else if (tables_list.empty())
+    {
         return fetchPostgreSQLTablesList(connection_);
     }
     else
     {
-        /// Replicate only tables, which are included in a pg_publication
+        createPublicationIfNeeded(connection_);
         return fetchTablesFromPublication(connection_);
     }
 }

@@ -40,6 +40,7 @@ public:
         std::unique_ptr<PostgreSQLReplicaSettings> settings_);
 
     String getEngineName() const override { return "PostgreSQLReplica"; }
+
     String getMetadataPath() const override { return metadata_path; }
 
     void loadStoredObjects(Context &, bool, bool force_attach) override;
@@ -60,6 +61,7 @@ public:
 
 private:
     void startSynchronization();
+
     StoragePtr getStorage(const String & name);
 
     Poco::Logger * log;
@@ -72,12 +74,6 @@ private:
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
     std::map<std::string, StoragePtr> tables;
-
-    bool checkPostgresTable(const String & table_name) const;
-    std::unordered_set<std::string> fetchTablesList() const;
-    StoragePtr fetchTable(const String & table_name, const Context & context, const bool table_checked) const;
-    void removeOutdatedTables();
-    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }

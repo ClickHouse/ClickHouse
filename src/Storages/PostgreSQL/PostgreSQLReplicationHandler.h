@@ -20,9 +20,8 @@ public:
             const std::string & conn_str_,
             const std::string & metadata_path_,
             std::shared_ptr<Context> context_,
-            const std::string & publication_slot_name_,
-            const std::string & replication_slot_name_,
-            const size_t max_block_size_);
+            const size_t max_block_size_,
+            const String tables_list = "");
 
     void startup();
 
@@ -43,7 +42,7 @@ private:
 
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
 
-    void createPublication(std::shared_ptr<pqxx::work> tx);
+    void createPublicationIfNeeded(PostgreSQLConnection::ConnectionPtr connection_);
 
     void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name);
 
@@ -62,14 +61,15 @@ private:
     Poco::Logger * log;
     std::shared_ptr<Context> context;
     const std::string database_name, connection_str, metadata_path;
-    std::string publication_name, replication_slot;
     const size_t max_block_size;
+    std::string tables_list, replication_slot, publication_name;
 
-    PostgreSQLConnectionPtr connection, replication_connection;
+    PostgreSQLConnectionPtr connection;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task;
     std::atomic<bool> tables_loaded = false;
+    bool new_publication_created = false;
 
     std::unordered_map<String, StoragePostgreSQLReplica *> storages;
     std::unordered_map<String, StoragePtr> nested_storages;
