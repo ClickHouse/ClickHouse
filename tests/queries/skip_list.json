@@ -581,5 +581,6 @@
         "memory_leak",
         "memory_limit",
         "polygon_dicts" // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn"
     ]
 }
