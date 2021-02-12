@@ -331,6 +331,7 @@ struct ContextShared
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
+    String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -1297,6 +1298,13 @@ Context & Context::getGlobalContext()
     return *global_context;
 }
 
+const Context & Context::getBufferContext() const
+{
+    if (!buffer_context)
+        throw Exception("Logical error: there is no buffer context", ErrorCodes::LOGICAL_ERROR);
+    return *buffer_context;
+}
+
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
@@ -2219,6 +2227,10 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
+
+    shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
+    buffer_context = std::make_shared<Context>(*this);
+    buffer_context->setProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const

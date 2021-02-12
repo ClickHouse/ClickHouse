@@ -254,6 +254,7 @@ private:
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
+    std::shared_ptr<Context> buffer_context;/// Buffer context. Could be equal to this.
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for
@@ -541,6 +542,8 @@ public:
     const Context & getGlobalContext() const;
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
+
+    const Context & getBufferContext() const;
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
