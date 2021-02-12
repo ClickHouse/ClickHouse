@@ -490,6 +490,11 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
             if (col == child)
                 return false;
 
+    /// Do not remove input if it was mentioned in index several times.
+    for (const auto * node : index)
+        if (col == node)
+            return false;
+
     /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
     {
