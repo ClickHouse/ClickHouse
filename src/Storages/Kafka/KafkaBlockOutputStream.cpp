@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CREATE_IO_BUFFER;
+}
+
 KafkaBlockOutputStream::KafkaBlockOutputStream(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -24,11 +29,13 @@ Block KafkaBlockOutputStream::getHeader() const
 void KafkaBlockOutputStream::writePrefix()
 {
     buffer = storage.createWriteBuffer(getHeader());
+    if (!buffer)
+        throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
     auto format_settings = getFormatSettings(*context);
     format_settings.protobuf.allow_many_rows_no_delimiters = true;
 
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
+    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer,
         getHeader(), *context,
         [this](const Columns & columns, size_t row)
         {

@@ -19,7 +19,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
+Context updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -78,8 +78,9 @@ std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const
         }
     }
 
-    auto new_context = std::make_shared<Context>(context);
-    new_context->setSettings(new_settings);
+    Context new_context(context);
+    new_context.setSettings(new_settings);
+
     return new_context;
 }
 
@@ -98,7 +99,7 @@ void executeQuery(
 
     const std::string query = queryToString(query_ast);
 
-    auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
+    Context new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())

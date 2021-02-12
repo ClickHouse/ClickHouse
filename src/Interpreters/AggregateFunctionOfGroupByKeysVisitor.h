@@ -97,10 +97,10 @@ public:
                               function_node->name == "any" || function_node->name == "anyLast"))
         {
             KeepAggregateFunctionVisitor::Data keep_data{data.group_by_keys, false};
-            if (function_node->arguments) KeepAggregateFunctionVisitor(keep_data).visit(function_node->arguments);
+            KeepAggregateFunctionVisitor(keep_data).visit(function_node->arguments);
 
             /// Place argument of an aggregate function instead of function
-            if (!keep_data.keep_aggregator && function_node->arguments && !function_node->arguments->children.empty())
+            if (!keep_data.keep_aggregator && !function_node->arguments->children.empty())
             {
                 String alias = function_node->alias;
                 ast = (function_node->arguments->children[0])->clone();

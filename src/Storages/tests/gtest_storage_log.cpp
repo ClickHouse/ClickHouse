@@ -134,7 +134,7 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
     tryRegisterFormats();
 
     WriteBufferFromOwnString out_buf;
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
 
     copyData(*in, *output);
 
