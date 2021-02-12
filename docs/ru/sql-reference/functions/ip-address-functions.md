@@ -279,7 +279,7 @@ SELECT isIPv4String('0.0.0.0');
 └─────────────────────────┘
 ```
 
-## isIPv6String {#isipv4string}
+## isIPv6String {#isipv6string}
 
 Определяет, является ли строка адресом IPv6 или нет.
 
