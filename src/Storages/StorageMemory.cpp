@@ -124,7 +124,7 @@ public:
         if (storage.compress)
         {
             Block compressed_block;
-            for (auto & elem : block)
+            for (const auto & elem : block)
                 compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
 
             new_blocks.emplace_back(compressed_block);
@@ -351,6 +351,7 @@ void registerStorageMemory(StorageFactory & factory)
         return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
     },
     {
+        .supports_settings = true,
         .supports_parallel_insert = true,
     });
 }
