@@ -25,14 +25,14 @@ def setup_module(module):
     global ranged_tester
 
 
-    simple_tester = SimpleLayoutTester()
+    simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
     simple_tester.create_dictionaries(SOURCE)
 
-    complex_tester = ComplexLayoutTester()
+    complex_tester = ComplexLayoutTester(test_name)
     complex_tester.create_dictionaries(SOURCE)
 
-    ranged_tester = RangedLayoutTester()
+    ranged_tester = RangedLayoutTester(test_name)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
@@ -44,7 +44,7 @@ def setup_module(module):
 
     dictionaries = simple_tester.list_dictionaries()
 
-    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_cassandra=True)
+    node = cluster.add_instance('cass_node', main_configs=main_configs, dictionaries=dictionaries, with_cassandra=True)
 
 
 def teardown_module(module):
