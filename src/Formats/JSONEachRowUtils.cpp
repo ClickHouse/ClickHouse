@@ -23,7 +23,7 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
         if (current_object_size > 10 * min_chunk_size)
             throw ParsingException("Size of JSON object is extremely large. Expected not greater than " +
             std::to_string(min_chunk_size) + " bytes, but current is " + std::to_string(current_object_size) +
-            " bytes. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually", ErrorCodes::INCORRECT_DATA);
+            " bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely JSON is malformed", ErrorCodes::INCORRECT_DATA);
 
         if (quotes)
         {
