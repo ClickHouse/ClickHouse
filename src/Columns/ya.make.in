@@ -12,6 +12,7 @@ PEERDIR(
     clickhouse/src/Common
     contrib/libs/icu
     contrib/libs/pdqsort
+    contrib/libs/lz4
 )
 
 SRCS(
