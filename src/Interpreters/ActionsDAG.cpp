@@ -40,16 +40,26 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
     for (const auto & input : inputs_)
     {
         if (input.column && isColumnConst(*input.column))
+        {
             addInput(input, true);
+
+            /// Here we also add column.
+            /// It will allow to remove input which is actually constant (after projection).
+            /// Also, some transforms from query pipeline may randomly materialize constants,
+            ///   without any respect to header structure. So, it is a way to drop materialized column and use
+            ///   constant value from header.
+            /// We cannot remove such input right now cause inputs positions are important in some cases.
+            addColumn(input, true);
+        }
         else
             addInput(input.name, input.type, true);
     }
 }
 
-ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
+ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace, bool add_to_index)
 {
     auto it = index.find(node.result_name);
-    if (it != index.end() && !can_replace)
+    if (it != index.end() && !can_replace && add_to_index)
         throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     auto & res = nodes.emplace_back(std::move(node));
@@ -57,7 +67,8 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
-    index.replace(&res);
+    if (add_to_index)
+        index.replace(&res);
     return res;
 }
 
@@ -91,7 +102,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool
     return addNode(std::move(node), can_replace);
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace, bool materialize)
 {
     if (!column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
@@ -102,7 +113,22 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, boo
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node), can_replace);
+    auto * res = &addNode(std::move(node), can_replace, !materialize);
+
+    if (materialize)
+    {
+        auto & name = res->result_name;
+
+        FunctionOverloadResolverPtr func_builder_materialize =
+                std::make_shared<FunctionOverloadResolverAdaptor>(
+                        std::make_unique<DefaultOverloadResolver>(
+                                std::make_shared<FunctionMaterialize>()));
+
+        res = &addFunction(func_builder_materialize, {res}, {}, true, false);
+        res = &addAlias(*res, name, true);
+    }
+
+    return *res;
 }
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
@@ -117,7 +143,6 @@ ActionsDAG::Node & ActionsDAG::addAlias(Node & child, std::string alias, bool ca
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
-    node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
     return addNode(std::move(node), can_replace);
@@ -144,7 +169,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         const Names & argument_names,
         std::string result_name,
-        const Context & context [[maybe_unused]])
+        const Context & context [[maybe_unused]],
+        bool can_replace)
 {
     const auto & all_settings = context.getSettingsRef();
     settings.max_temporary_columns = all_settings.max_temporary_columns;
@@ -163,14 +189,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     for (const auto & name : argument_names)
         children.push_back(&getNode(name));
 
-    return addFunction(function, children, std::move(result_name), false);
+    return addFunction(function, children, std::move(result_name), can_replace);
 }
 
 ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         Inputs children,
         std::string result_name,
-        bool can_replace)
+        bool can_replace,
+        bool add_to_index)
 {
     size_t num_arguments = children.size();
 
@@ -185,7 +212,6 @@ ActionsDAG::Node & ActionsDAG::addFunction(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         auto & child = *node.children[i];
-        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
         argument.column = child.column;
@@ -251,7 +277,7 @@ ActionsDAG::Node & ActionsDAG::addFunction(
 
     node.result_name = std::move(result_name);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 
@@ -350,10 +376,15 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         stack.push(node);
     }
 
-    /// We cannot remove arrayJoin because it changes the number of rows.
     for (auto & node : nodes)
     {
-        if (node.type == ActionType::ARRAY_JOIN && visited_nodes.count(&node) == 0)
+        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
+        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        bool is_array_join = node.type == ActionType::ARRAY_JOIN;
+
+        bool must_keep_node = is_array_join || prevent_constant_folding;
+        if (must_keep_node && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -414,7 +445,6 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *
             node.result_type = child->result_type;
             node.result_name = std::move(item.second);
             node.column = child->column;
-            node.allow_constant_folding = child->allow_constant_folding;
             node.children.emplace_back(child);
 
             auto & alias = addNode(std::move(node), true);
@@ -632,6 +662,26 @@ bool ActionsDAG::trivial() const
             return false;
 
     return true;
+}
+
+void ActionsDAG::addMaterializingOutputActions()
+{
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    Index new_index;
+    std::vector<Node *> index_nodes(index.begin(), index.end());
+    for (auto * node : index_nodes)
+    {
+        auto & name = node->result_name;
+        node = &addFunction(func_builder_materialize, {node}, {}, true, false);
+        node = &addAlias(*node, name, true);
+        new_index.insert(node);
+    }
+
+    index.swap(new_index);
 }
 
 ActionsDAGPtr ActionsDAG::makeConvertingActions(

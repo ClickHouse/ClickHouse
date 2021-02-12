@@ -4,7 +4,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Processors/QueryPlan/AddingMissedStep.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
@@ -246,10 +246,15 @@ void StorageBuffer::read(
                 if (query_plan.isInitialized())
                 {
 
-                    auto adding_missed = std::make_unique<AddingMissedStep>(
+                    auto actions = addMissingDefaults(
+                            query_plan.getCurrentDataStream().header,
+                            header_after_adding_defaults.getNamesAndTypesList(),
+                            metadata_snapshot->getColumns(),
+                            context);
+
+                    auto adding_missed = std::make_unique<ExpressionStep>(
                             query_plan.getCurrentDataStream(),
-                            header_after_adding_defaults,
-                            metadata_snapshot->getColumns(), context);
+                            std::move(actions));
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
