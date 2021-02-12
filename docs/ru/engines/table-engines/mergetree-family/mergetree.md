@@ -94,6 +94,7 @@ ORDER BY expr
 	-   `max_parts_in_total` — максимальное количество кусков во всех партициях.
 	-   `max_compress_block_size` — максимальный размер блоков несжатых данных перед сжатием для записи в таблицу. Вы также можете задать этот параметр в глобальных настройках (смотрите [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
 	-   `min_compress_block_size` — минимальный размер блоков несжатых данных, необходимых для сжатия при записи следующей засечки. Вы также можете задать этот параметр в глобальных настройках (смотрите [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
+    -   `max_partitions_to_read` — Ограничивает максимальное число партиций для чтения в одном запросе. Также возможно указать настройку [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) в глобальных настройках.
 
 **Пример задания секций**
 
@@ -711,4 +712,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/mergetree/) <!--hide-->

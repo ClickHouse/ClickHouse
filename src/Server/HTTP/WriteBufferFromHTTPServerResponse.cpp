@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/MemoryTracker.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -186,14 +187,9 @@ void WriteBufferFromHTTPServerResponse::finalize()
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock;
+    finalize();
 }
 
 }
