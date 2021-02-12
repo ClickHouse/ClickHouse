@@ -89,8 +89,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
         {
-            auto name = node.function_base->getName();
-            if (name == "ignore")
+            if (!node.function_base->isSuitableForConstantFolding())
                 return false;
         }
     }
