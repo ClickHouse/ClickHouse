@@ -55,3 +55,10 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s != 8 and y - 4
     settings enable_optimize_predicate_expression=0" |
     grep -o "Aggregating\|Filter column\|Filter column: and(minus(y, 4), notEquals(y, 0))\|ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))"
+
+echo "> filter is split, one part is filtered before ARRAY JOIN"
+$CLICKHOUSE_CLIENT -q "
+    explain actions = 1 select x, y from (
+        select range(number) as x, number + 1 as y from numbers(3)
+    ) array join x where y != 2 and x != 0" |
+    grep -o "Filter column: and(notEquals(y, 2), notEquals(x, 0))\|ARRAY JOIN x\|Filter column: notEquals(y, 2)"

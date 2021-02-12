@@ -38,3 +38,7 @@ Filter column
 ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))
 Aggregating
 Filter column: and(minus(y, 4), notEquals(y, 0))
+> filter is split, one part is filtered before ARRAY JOIN
+Filter column: and(notEquals(y, 2), notEquals(x, 0))
+ARRAY JOIN x
+Filter column: notEquals(y, 2)
