@@ -600,4 +600,48 @@ Hello, &quot;world&quot;!
 &apos;foo&apos;
 ```
 
+## decodeXMLComponent {#decode-xml-component}
+
+Replaces XML predefined entities with characters. 
+Predefined entities are `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+This function also replaces numeric character references with Unicode characters.
+Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+
+**Syntax**
+
+``` sql
+decodeXMLComponent(x)
+```
+
+**Parameters**
+
+-   `x` — A sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The sequence of characters after replacement.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT decodeXMLComponent('&apos;foo&apos;');
+SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
+```
+
+Result:
+
+``` text
+'foo' 
+< Σ >
+```
+
+**See Also**
+
+-   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
