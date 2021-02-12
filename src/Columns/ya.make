@@ -19,6 +19,7 @@ SRCS(
     Collator.cpp
     ColumnAggregateFunction.cpp
     ColumnArray.cpp
+    ColumnCompressed.cpp
     ColumnConst.cpp
     ColumnDecimal.cpp
     ColumnFixedString.cpp
