@@ -25,7 +25,7 @@ CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
 
-Выборка всем значений ключа `key2`: 
+Выборка всех значений ключа `key2`: 
 
 ```sql
 SELECT a['key2'] FROM table_map;
