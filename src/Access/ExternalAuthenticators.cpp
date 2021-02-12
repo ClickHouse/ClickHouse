@@ -157,8 +157,14 @@ auto parseKerberosParams(const Poco::Util::AbstractConfiguration & config)
     std::size_t reealm_key_count = 0;
     std::size_t principal_keys_count = 0;
 
-    for (const auto& key : keys)
+    for (auto key : keys)
     {
+        const auto bracket_pos = key.find('[');
+        if (bracket_pos != std::string::npos)
+            key.resize(bracket_pos);
+
+        boost::algorithm::to_lower(key);
+
         reealm_key_count += (key == "realm");
         principal_keys_count += (key == "principal");
     }
@@ -199,8 +205,14 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::size_t ldap_servers_key_count = 0;
     std::size_t kerberos_keys_count = 0;
 
-    for (const auto& key : all_keys)
+    for (auto key : all_keys)
     {
+        const auto bracket_pos = key.find('[');
+        if (bracket_pos != std::string::npos)
+            key.resize(bracket_pos);
+
+        boost::algorithm::to_lower(key);
+
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
     }
