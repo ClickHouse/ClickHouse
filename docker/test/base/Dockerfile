@@ -58,7 +58,7 @@ RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/
 # Some python2 packages deprecated in ubuntu 20.04, so install them using pip
 RUN add-apt-repository universe \
     && apt-get install python2 --yes --no-install-recommends \
-    && curl "https://bootstrap.pypa.io/get-pip.py" --output get-pip.py \
+    && curl "https://bootstrap.pypa.io/2.7/get-pip.py" --output get-pip.py \
     && python2 get-pip.py \
     && pip install requests termcolor
 
