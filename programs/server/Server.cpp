@@ -567,7 +567,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Write a uuid file containing a unique uuid if the file doesn't already exist during server start.
     {
-        fs::path server_uuid_file(path + "uuid");
+        fs::path server_uuid_file = fs::path(path) / "uuid";
 
         if (!fs::exists(server_uuid_file))
         {
