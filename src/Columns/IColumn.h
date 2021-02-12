@@ -359,7 +359,7 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    virtual ColumnPtr compress() const
+    virtual Ptr compress() const
     {
         /// No compression by default.
         return getPtr();
@@ -367,7 +367,7 @@ public:
 
     /// If it's CompressedColumn, decompress it and return.
     /// Otherwise return itself.
-    virtual ColumnPtr decompress() const
+    virtual Ptr decompress() const
     {
         return getPtr();
     }
