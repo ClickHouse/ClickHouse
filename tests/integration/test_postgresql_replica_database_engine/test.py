@@ -36,13 +36,13 @@ def create_postgres_table(cursor, table_name):
     cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
 
 
-def check_tables_are_synchronized(table_name):
-        expected = instance.query('select * from postgres_database.{} order by key;'.format(table_name))
-        result = instance.query('select * from test_database.{} order by key;'.format(table_name))
+def check_tables_are_synchronized(table_name, order_by='key'):
+        expected = instance.query('select * from postgres_database.{} order by {};'.format(table_name, order_by))
+        result = instance.query('select * from test_database.{} order by {};'.format(table_name, order_by))
 
         while result != expected:
             time.sleep(0.5)
-            result = instance.query('select * from test_database.{} order by key;'.format(table_name))
+            result = instance.query('select * from test_database.{} order by {};'.format(table_name, order_by))
 
         assert(result == expected)
 
@@ -121,6 +121,8 @@ def test_replicating_dml(started_cluster):
 
     for i in range(NUM_TABLES):
         cursor.execute('DELETE FROM postgresql_replica_{} WHERE (value*value + {}) % 2 = 0;'.format(i, i))
+        cursor.execute('UPDATE postgresql_replica_{} SET value = value - (value % 7) WHERE key > 128 AND key < 512;'.format(i))
+        cursor.execute('DELETE FROM postgresql_replica_{} WHERE key % 7 = 1;'.format(i, i))
 
     for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
@@ -130,6 +132,81 @@ def test_replicating_dml(started_cluster):
 
     instance.query("DROP DATABASE test_database")
     assert 'test_database' not in instance.query('SHOW DATABASES')
+
+
+def test_different_data_types(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    cursor.execute('drop table if exists test_data_types;')
+    cursor.execute('drop table if exists test_array_data_type;')
+
+    cursor.execute(
+        '''CREATE TABLE test_data_types (
+        id integer PRIMARY KEY, a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
+        h timestamp, i date, j decimal(5, 5), k numeric(5, 5))''')
+
+    cursor.execute(
+        '''CREATE TABLE test_array_data_type
+           (
+                key Integer NOT NULL PRIMARY KEY,
+                a Date[] NOT NULL,                          -- Date
+                b Timestamp[] NOT NULL,                     -- DateTime
+                c real[][] NOT NULL,                        -- Float32
+                d double precision[][] NOT NULL,            -- Float64
+                e decimal(5, 5)[][][] NOT NULL,             -- Decimal32
+                f integer[][][] NOT NULL,                   -- Int32
+                g Text[][][][][] NOT NULL,                  -- String
+                h Integer[][][],                            -- Nullable(Int32)
+                i Char(2)[][][][],                          -- Nullable(String)
+                k Char(2)[]                                 -- Nullable(String)
+           )''')
+
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+
+    for i in range(10):
+        instance.query('''
+            INSERT INTO postgres_database.test_data_types VALUES
+            ({}, -32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12', '2000-05-12', 0.2, 0.2)'''.format(i))
+
+    check_tables_are_synchronized('test_data_types', 'id');
+    result = instance.query('SELECT * FROM test_database.test_data_types ORDER BY id LIMIT 1;')
+    assert(result == '0\t-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t0.20000\t0.20000\n')
+    cursor.execute('drop table test_data_types;')
+
+    instance.query("INSERT INTO postgres_database.test_array_data_type "
+        "VALUES ("
+        "0, "
+        "['2000-05-12', '2000-05-12'], "
+        "['2000-05-12 12:12:12', '2000-05-12 12:12:12'], "
+        "[[1.12345], [1.12345], [1.12345]], "
+        "[[1.1234567891], [1.1234567891], [1.1234567891]], "
+        "[[[0.11111, 0.11111]], [[0.22222, 0.22222]], [[0.33333, 0.33333]]], "
+        "[[[1, 1], [1, 1]], [[3, 3], [3, 3]], [[4, 4], [5, 5]]], "
+        "[[[[['winx', 'winx', 'winx']]]]], "
+        "[[[1, NULL], [NULL, 1]], [[NULL, NULL], [NULL, NULL]], [[4, 4], [5, 5]]], "
+        "[[[[NULL]]]], "
+        "[]"
+        ")")
+
+    expected = (
+        "0\t" +
+        "['2000-05-12','2000-05-12']\t" +
+        "['2000-05-12 12:12:12','2000-05-12 12:12:12']\t" +
+        "[[1.12345],[1.12345],[1.12345]]\t" +
+        "[[1.1234567891],[1.1234567891],[1.1234567891]]\t" +
+        "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
+        "[[[1,1],[1,1]],[[3,3],[3,3]],[[4,4],[5,5]]]\t"
+        "[[[[['winx','winx','winx']]]]]\t"
+        "[[[1,NULL],[NULL,1]],[[NULL,NULL],[NULL,NULL]],[[4,4],[5,5]]]\t"
+        "[[[[NULL]]]]\t"
+        "[]\n"
+        )
+
+    check_tables_are_synchronized('test_array_data_type');
+    result = instance.query('SELECT * FROM test_database.test_array_data_type ORDER BY key;')
+    instance.query("DROP DATABASE test_database")
+    assert(result == expected)
 
 
 if __name__ == '__main__':

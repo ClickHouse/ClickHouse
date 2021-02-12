@@ -52,7 +52,6 @@ def started_cluster():
         instance.query('''
                 CREATE DATABASE postgres_database
                 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')''')
-
         instance.query('CREATE DATABASE test')
         yield cluster
 
@@ -140,6 +139,7 @@ def test_detach_attach_is_ok(started_cluster):
     instance.query('DETACH TABLE test.postgresql_replica')
     instance.query('ATTACH TABLE test.postgresql_replica')
 
+    time.sleep(0.5)
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     cursor.execute('DROP TABLE postgresql_replica;')
     postgresql_replica_check_result(result, True)
@@ -205,10 +205,6 @@ def test_replicating_delete_queries(started_cluster):
     while postgresql_replica_check_result(result) == False:
         time.sleep(0.2)
         result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
-
-    postgresql_replica_check_result(result, True)
-
-    result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT 50 + number, 50 + number from numbers(50)")
 
