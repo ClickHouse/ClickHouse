@@ -50,6 +50,8 @@ private:
     UInt32 scale;
 };
 
+/// Prevent implicit template instantiation of DecimalPaddedPODArray for common decimal types
+
 extern template class DecimalPaddedPODArray<Decimal32>;
 extern template class DecimalPaddedPODArray<Decimal64>;
 extern template class DecimalPaddedPODArray<Decimal128>;
@@ -220,5 +222,15 @@ ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size
 
     return res;
 }
+
+
+/// Prevent implicit template instantiation of ColumnDecimal for common decimal types
+
+extern template class ColumnDecimal<Decimal32>;
+extern template class ColumnDecimal<Decimal64>;
+extern template class ColumnDecimal<Decimal128>;
+extern template class ColumnDecimal<Decimal256>;
+extern template class ColumnDecimal<DateTime64>;
+
 
 }
