@@ -61,7 +61,10 @@ public:
 
 protected:
     /// Clear all accumulated information
-    void clear();
+    void clean();
+
+    /// Function for debugging information output
+    void write();
 
     /// Construct the `structure` vector from the text field `structure`
     virtual void parseStructureFromStructureField(const std::string & argument);

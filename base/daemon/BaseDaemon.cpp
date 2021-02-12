@@ -112,13 +112,11 @@ static void writeSignalIDtoSignalPipe(int sig)
 /** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
 static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
@@ -127,7 +125,6 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
@@ -152,7 +149,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
+        sleepForSeconds(10);
         call_default_signal_handler(sig);
     }
 
@@ -230,10 +227,10 @@ public:
             }
             else
             {
-                siginfo_t info{};
-                ucontext_t context{};
+                siginfo_t info;
+                ucontext_t context;
                 StackTrace stack_trace(NoCapture{});
-                UInt32 thread_num{};
+                UInt32 thread_num;
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
@@ -311,8 +308,7 @@ private:
         if (stack_trace.getSize())
         {
             /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE: This still require memory allocations and mutex lock inside logger.
-            ///       BTW we can also print it to stderr using write syscalls.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
 
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
@@ -325,7 +321,7 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
@@ -987,7 +983,7 @@ void BaseDaemon::setupWatchdog()
         if (errno == ECHILD)
         {
             logger().information("Child process no longer exists.");
-            _exit(WEXITSTATUS(status));
+            _exit(status);
         }
 
         if (WIFEXITED(status))
@@ -1021,7 +1017,7 @@ void BaseDaemon::setupWatchdog()
 
         /// Automatic restart is not enabled but you can play with it.
 #if 1
-        _exit(WEXITSTATUS(status));
+        _exit(status);
 #else
         logger().information("Will restart.");
         if (argv0)

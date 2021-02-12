@@ -33,31 +33,47 @@ class DictionaryReader;
 namespace JoinStuff
 {
 
-/// Flags needed to implement RIGHT and FULL JOINs.
-class JoinUsedFlags
+/// Base class with optional flag attached that's needed to implement RIGHT and FULL JOINs.
+template <typename T, bool with_used>
+struct WithFlags;
+
+template <typename T>
+struct WithFlags<T, true> : T
 {
-    std::vector<std::atomic_bool> flags;
-    bool need_flags;
+    using Base = T;
+    using T::T;
 
-public:
+    mutable std::atomic<bool> used {};
+    void setUsed() const { used.store(true, std::memory_order_relaxed); }    /// Could be set simultaneously from different threads.
+    bool getUsed() const { return used; }
 
-    /// Update size for vector with flags.
-    /// Calling this method invalidates existing flags.
-    /// It can be called several times, but all of them should happen before using this structure.
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
-    void reinit(size_t size_);
+    bool setUsedOnce() const
+    {
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (used.load(std::memory_order_relaxed))
+            return false;
 
-    bool getUsedSafe(size_t i) const;
-
-    template <bool use_flags>
-    void setUsed(size_t i);
-
-    template <bool use_flags>
-    bool getUsed(size_t i);
-
-    template <bool use_flags>
-    bool setUsedOnce(size_t i);
+        bool expected = false;
+        return used.compare_exchange_strong(expected, true);
+    }
 };
+
+template <typename T>
+struct WithFlags<T, false> : T
+{
+    using Base = T;
+    using T::T;
+
+    void setUsed() const {}
+    bool getUsed() const { return true; }
+    bool setUsedOnce() const { return true; }
+};
+
+using MappedOne =        WithFlags<RowRef, false>;
+using MappedAll =        WithFlags<RowRefList, false>;
+using MappedOneFlagged = WithFlags<RowRef, true>;
+using MappedAllFlagged = WithFlags<RowRefList, true>;
+using MappedAsof =       WithFlags<AsofRowRefs, false>;
 
 }
 
@@ -278,30 +294,15 @@ public:
 
             __builtin_unreachable();
         }
-
-        size_t getBufferSizeInCells(Type which) const
-        {
-            switch (which)
-            {
-                case Type::EMPTY:            return 0;
-                case Type::CROSS:            return 0;
-                case Type::DICT:             return 0;
-
-            #define M(NAME) \
-                case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
-                APPLY_FOR_JOIN_VARIANTS(M)
-            #undef M
-            }
-
-            __builtin_unreachable();
-        }
     };
 
-    using MapsOne = MapsTemplate<RowRef>;
-    using MapsAll = MapsTemplate<RowRefList>;
-    using MapsAsof = MapsTemplate<AsofRowRefs>;
+    using MapsOne =             MapsTemplate<JoinStuff::MappedOne>;
+    using MapsAll =             MapsTemplate<JoinStuff::MappedAll>;
+    using MapsOneFlagged =      MapsTemplate<JoinStuff::MappedOneFlagged>;
+    using MapsAllFlagged =      MapsTemplate<JoinStuff::MappedAllFlagged>;
+    using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
-    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
+    using MapsVariant = std::variant<MapsOne, MapsAll, MapsOneFlagged, MapsAllFlagged, MapsAsof>;
     using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
 
     struct RightTableData
@@ -322,14 +323,15 @@ public:
         Arena pool;
     };
 
-    void reuseJoinedData(const HashJoin & join);
+    void reuseJoinedData(const HashJoin & join)
+    {
+        data = join.data;
+    }
 
     std::shared_ptr<RightTableData> getJoinedData() const
     {
         return data;
     }
-
-    bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
 
 private:
     friend class NonJoinedBlockInputStream;
@@ -350,10 +352,6 @@ private:
 
     /// Right table data. StorageJoin shares it between many Join objects.
     std::shared_ptr<RightTableData> data;
-    /// Flags that indicate that particular row already used in join.
-    /// Flag is stored for every record in hash map.
-    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
-    mutable JoinStuff::JoinUsedFlags used_flags;
     Sizes key_sizes;
 
     /// Block with columns from the right-side table.

@@ -45,9 +45,9 @@ def privilege_check(grant_target_name, user_name, node=None):
 
         finally:
             with Finally("I reattach the view as a table", flags=TE):
-                node.query(f"ATTACH VIEW IF NOT EXISTS {view_name} AS SELECT 1")
+                node.query(f"ATTACH TABLE IF NOT EXISTS {view_name}")
             with And("I drop the view", flags=TE):
-                node.query(f"DROP VIEW IF EXISTS {view_name}")
+                node.query(f"DROP TABLE IF EXISTS {view_name}")
 
     with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
         view_name = f"view_{getuid()}"
@@ -64,9 +64,9 @@ def privilege_check(grant_target_name, user_name, node=None):
 
         finally:
             with Finally("I reattach the view as a table", flags=TE):
-                node.query(f"ATTACH VIEW IF NOT EXISTS {view_name} AS SELECT 1")
+                node.query(f"ATTACH TABLE IF NOT EXISTS {view_name}")
             with And("I drop the table", flags=TE):
-                node.query(f"DROP VIEW IF EXISTS {view_name}")
+                node.query(f"DROP TABLE IF EXISTS {view_name}")
 
     with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
         view_name = f"view_{getuid()}"
@@ -87,9 +87,9 @@ def privilege_check(grant_target_name, user_name, node=None):
 
         finally:
             with Finally("I reattach the view as a table", flags=TE):
-                node.query(f"ATTACH VIEW IF NOT EXISTS {view_name} AS SELECT 1")
+                node.query(f"ATTACH TABLE IF NOT EXISTS {view_name}")
             with And("I drop the view", flags=TE):
-                node.query(f"DROP VIEW IF EXISTS {view_name}")
+                node.query(f"DROP TABLE IF EXISTS {view_name}")
 
 @TestFeature
 @Requirements(

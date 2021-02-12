@@ -144,7 +144,8 @@ void StorageMaterializedView::read(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot);
+
 
     storage->read(query_plan, column_names, target_metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 

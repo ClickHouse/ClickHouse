@@ -26,7 +26,7 @@ class Node(object):
     def repr(self):
         return f"Node(name='{self.name}')"
 
-    def restart(self, timeout=300, retries=5):
+    def restart(self, timeout=300, safe=True):
         """Restart node.
         """
         with self.cluster.lock:
@@ -35,20 +35,15 @@ class Node(object):
                     shell = self.cluster._bash.pop(key)
                     shell.__exit__(None, None, None)
 
-        for retry in range(retries):
-            r = self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
-            if r.exitcode == 0:
-                break
+        self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
 
-    def start(self, timeout=300, retries=5):
+    def start(self, timeout=300, safe=True):
         """Start node.
         """
-        for retry in range(retries):
-            r = self.cluster.command(None, f'{self.cluster.docker_compose} start {self.name}', timeout=timeout)
-            if r.exitcode == 0:
-                break
+        self.cluster.command(None, f'{self.cluster.docker_compose} start {self.name}', timeout=timeout)
 
-    def stop(self, timeout=300, retries=5):
+
+    def stop(self, timeout=300, safe=True):
         """Stop node.
         """
         with self.cluster.lock:
@@ -57,10 +52,7 @@ class Node(object):
                     shell = self.cluster._bash.pop(key)
                     shell.__exit__(None, None, None)
 
-        for retry in range(retries):
-            r = self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
-            if r.exitcode == 0:
-                break
+        self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
 
     def command(self, *args, **kwargs):
         return self.cluster.command(self.name, *args, **kwargs)
@@ -79,7 +71,7 @@ class ClickHouseNode(Node):
                     continue
                 assert False, "container is not healthy"
 
-    def stop(self, timeout=300, safe=True, retries=5):
+    def stop(self, timeout=300, safe=True):
         """Stop node.
         """
         if safe:
@@ -97,23 +89,17 @@ class ClickHouseNode(Node):
                     shell = self.cluster._bash.pop(key)
                     shell.__exit__(None, None, None)
 
-        for retry in range(retries):
-            r = self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
-            if r.exitcode == 0:
-                break
+        self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
 
-    def start(self, timeout=300, wait_healthy=True, retries=5):
+    def start(self, timeout=300, wait_healthy=True):
         """Start node.
         """
-        for retry in range(retries):
-            r = self.cluster.command(None, f'{self.cluster.docker_compose} start {self.name}', timeout=timeout)
-            if r.exitcode == 0:
-                break
+        self.cluster.command(None, f'{self.cluster.docker_compose} start {self.name}', timeout=timeout)
 
         if wait_healthy:
             self.wait_healthy(timeout)
 
-    def restart(self, timeout=300, safe=True, wait_healthy=True, retries=5):
+    def restart(self, timeout=300, safe=True, wait_healthy=True):
         """Restart node.
         """
         if safe:
@@ -131,10 +117,7 @@ class ClickHouseNode(Node):
                     shell = self.cluster._bash.pop(key)
                     shell.__exit__(None, None, None)
 
-        for retry in range(retries):
-            r = self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
-            if r.exitcode == 0:
-                break
+        self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
 
         if wait_healthy:
             self.wait_healthy(timeout)

@@ -7,7 +7,6 @@
 #include <common/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
-#include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
 namespace Aws::S3
@@ -24,6 +23,7 @@ namespace DB
 
 namespace DB::S3
 {
+
 class ClientFactory
 {
 public:
@@ -41,21 +41,21 @@ public:
         unsigned int s3_max_redirects);
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const PocoHTTPClientConfiguration & cfg,
+        Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials);
+        bool use_environment_credentials,
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects);
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const PocoHTTPClientConfiguration & cfg,
+        const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        bool use_environment_credentials);
-
-    PocoHTTPClientConfiguration createClientConfiguration(
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 

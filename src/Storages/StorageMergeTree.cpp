@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
@@ -624,7 +625,7 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                disk->remove(it->path());
             }
         }
     }
@@ -730,10 +731,6 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
         return {};
     }
-
-    /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part.merge_type))
-        global_context.getMergeList().bookMergeWithTTL();
 
     merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
     return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands{});
@@ -962,11 +959,9 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
         return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
             if (merge_entry)
-                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
+                mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
             else if (mutate_entry)
-                return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-
-            __builtin_unreachable();
+                mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
         }, PoolType::MERGE_MUTATE};
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
@@ -980,7 +975,6 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
             clearOldWriteAheadLogs();
             clearOldMutations();
             clearEmptyParts();
-            return true;
         }, PoolType::MERGE_MUTATE};
     }
     return {};
@@ -1443,7 +1437,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
             catch (const Exception & ex)
             {
                 if (disk->exists(tmp_checksums_path))
-                    disk->removeFile(tmp_checksums_path);
+                    disk->remove(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
