@@ -41,6 +41,12 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
     }
 }
 
+void DatabaseReplicatedDDLWorker::shutdown()
+{
+    DDLWorker::shutdown();
+    wait_current_task_change.notify_all();
+}
+
 void DatabaseReplicatedDDLWorker::initializeReplication()
 {
     /// Check if we need to recover replica.
@@ -120,8 +126,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
                             "most likely because replica is busy with previous queue entries");
     }
 
-    if (zookeeper->expired())
-        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired, try again");
+    if (zookeeper->expired() || stop_flag)
+        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
 
     processTask(*task);
 

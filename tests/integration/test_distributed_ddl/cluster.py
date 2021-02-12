@@ -10,8 +10,8 @@ from helpers.test_tools import TSV
 
 
 class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
-    def __init__(self, base_path, config_dir):
-        ClickHouseCluster.__init__(self, base_path)
+    def __init__(self, base_path, config_dir, testcase_name):
+        ClickHouseCluster.__init__(self, base_path, name=testcase_name)
 
         self.test_config_dir = config_dir
 

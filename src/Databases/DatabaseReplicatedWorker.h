@@ -15,6 +15,8 @@ public:
 
     String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, const Context & query_context);
 
+    void shutdown() override;
+
 private:
     void initializeMainThread() override;
     void initializeReplication();
