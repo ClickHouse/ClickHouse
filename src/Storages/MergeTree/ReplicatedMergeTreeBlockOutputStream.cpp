@@ -144,6 +144,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
 
+        /// If optimize_on_insert setting is true, current_block could become empty after merge
+        /// and we didn't create part.
+        if (!part)
+            continue;
+
         String block_id;
 
         if (deduplicate)

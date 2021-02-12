@@ -33,3 +33,10 @@ INSERT INTO aggregating_merge_tree VALUES (1, 1, '2020-01-01'), (2, 1, '2020-01-
 SELECT * FROM aggregating_merge_tree ORDER BY key;
 DROP TABLE aggregating_merge_tree;
 
+SELECT 'Check creating empty parts';
+DROP TABLE IF EXISTS empty;
+CREATE TABLE empty (key UInt32, val UInt32, date Datetime) ENGINE=SummingMergeTree(val) PARTITION BY date ORDER BY key;
+INSERT INTO empty VALUES (1, 1, '2020-01-01'), (1, 1, '2020-01-01'), (1, -2, '2020-01-01');
+SELECT * FROM empty ORDER BY key;
+SELECT table, partition, active FROM system.parts where table = 'empty' and active = 1;
+DROP TABLE empty;
