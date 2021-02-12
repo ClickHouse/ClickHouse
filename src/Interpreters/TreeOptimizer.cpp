@@ -10,6 +10,7 @@
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
+#include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -555,6 +556,11 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeCountConstantAndSumOne(ASTPtr & query)
+{
+    RewriteCountVariantsVisitor::visit(query);
+}
+
 
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
 {
@@ -615,6 +621,9 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     /// Move all operations out of any function
     if (settings.optimize_move_functions_out_of_any)
         optimizeAnyFunctions(query);
+
+    if (settings.optimize_normalize_count_variants)
+        optimizeCountConstantAndSumOne(query);
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);

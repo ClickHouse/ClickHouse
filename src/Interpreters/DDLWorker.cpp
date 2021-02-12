@@ -1203,7 +1203,7 @@ void DDLWorker::runCleanupThread()
 }
 
 
-class DDLQueryStatusInputStream : public IBlockInputStream
+class DDLQueryStatusInputStream final : public IBlockInputStream
 {
 public:
 

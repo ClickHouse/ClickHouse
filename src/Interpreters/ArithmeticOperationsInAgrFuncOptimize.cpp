@@ -7,6 +7,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 
+#include <Poco/String.h>
+
 namespace DB
 {
 
@@ -95,9 +97,12 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
            {"max", {"multiply", "divide", "plus", "minus"}},
            {"avg", {"multiply", "divide", "plus", "minus"}}};
 
+    /// Aggregate functions[sum|min|max|avg] is case-insensitive, so we use lower cases name
+    auto lower_name = Poco::toLower(func.name);
+
     const ASTFunction * child_func = getInternalFunction(func);
-    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 ||
-        !supported.count(func.name) || !supported.find(func.name)->second.count(child_func->name))
+    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 || !supported.count(lower_name)
+        || !supported.find(lower_name)->second.count(child_func->name))
         return {};
 
     /// Cannot rewrite function with alias cause alias could become undefined
@@ -116,12 +121,12 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
         if (child_func->name == "divide")
             return {};
 
-        const String & new_name = changeNameIfNeeded(func.name, child_func->name, *first_literal);
+        const String & new_name = changeNameIfNeeded(lower_name, child_func->name, *first_literal);
         optimized_ast = exchangeExtractFirstArgument(new_name, *child_func);
     }
     else if (second_literal) /// second or both are consts
     {
-        const String & new_name = changeNameIfNeeded(func.name, child_func->name, *second_literal);
+        const String & new_name = changeNameIfNeeded(lower_name, child_func->name, *second_literal);
         optimized_ast = exchangeExtractSecondArgument(new_name, *child_func);
     }
 
