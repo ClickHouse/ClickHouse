@@ -42,11 +42,11 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
         for (auto pos : params.keys)
             keys.push_back(params.src_header.getByPosition(pos).name);
 
-        // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
+        std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
         if (auto split_filter = expression->splitActionsForFilter(filter_column_name, removes_filter, keys))
         {
-            // std::cerr << "===============\n" << expression->dumpDAG() << std::endl;
-            // std::cerr << "---------------\n" << split_filter->dumpDAG() << std::endl;
+            std::cerr << "===============\n" << expression->dumpDAG() << std::endl;
+            std::cerr << "---------------\n" << split_filter->dumpDAG() << std::endl;
 
             auto it = expression->getIndex().find(filter_column_name);
             if (it == expression->getIndex().end())

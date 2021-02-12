@@ -40,7 +40,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
-size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 inline const auto & getOptimizations()
 {
@@ -50,7 +50,7 @@ inline const auto & getOptimizations()
         {tryPushDownLimit, "pushDownLimit"},
         {trySplitFilter, "splitFilter"},
         {tryMergeExpressions, "mergeExpressions"},
-        {tryPushDownLimit, "pushDownFilter"},
+        {tryPushDownFilter, "pushDownFilter"},
      }};
 
     return optimizations;
