@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-integration-tests-runner .
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -14,7 +14,6 @@ RUN apt-get update \
     wget \
     git \
     iproute2 \
-    module-init-tools \
     cgroupfs-mount \
     python3-pip \
     tzdata \
@@ -65,17 +64,18 @@ RUN python3 -m pip install \
     dict2xml \
     dicttoxml \
     docker \
-    docker-compose==1.22.0 \
+    docker-compose==1.28.2 \
     grpcio \
     grpcio-tools \
     kafka-python \
     kazoo \
     minio \
     protobuf \
-    psycopg2-binary==2.7.5 \
+    psycopg2-binary==2.8.6 \
     pymongo \
     pytest \
     pytest-timeout \
+    pytest-xdist \
     redis \
     tzlocal \
     urllib3 \
