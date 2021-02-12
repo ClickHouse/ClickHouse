@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorage.h>
+#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -26,7 +26,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -51,7 +50,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
-#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -66,6 +64,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 
 namespace ProfileEvents
@@ -306,8 +305,8 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
+    mutable std::mutex test_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -332,7 +331,7 @@ struct ContextShared
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    AccessControlManager access_control_manager;
+    std::unique_ptr<AccessControlManager> access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -343,6 +342,7 @@ struct ContextShared
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -388,7 +388,8 @@ struct ContextShared
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared()
-        : macros(std::make_unique<Macros>())
+        : access_control_manager(std::make_unique<AccessControlManager>())
+        , macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -429,12 +430,12 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        TemporaryLiveViewCleaner::shutdown();
         DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
 
+        access_control_manager.reset();
         system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
@@ -442,6 +443,7 @@ struct ContextShared
         buffer_flush_schedule_pool.reset();
         schedule_pool.reset();
         distributed_schedule_pool.reset();
+        message_broker_schedule_pool.reset();
         ddl_worker.reset();
 
         /// Stop trace collector if any
@@ -449,7 +451,7 @@ struct ContextShared
         /// Stop zookeeper connection
         zookeeper.reset();
         /// Stop test_keeper storage
-        test_keeper_storage.reset();
+        test_keeper_storage_dispatcher.reset();
     }
 
     bool hasTraceCollector() const
@@ -493,7 +495,6 @@ Context Context::createGlobal(ContextShared * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(*this);
-    TemporaryLiveViewCleaner::init(*this);
 }
 
 SharedContextHolder Context::createShared()
@@ -641,7 +642,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
-    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
+    shared->access_control_manager->setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -653,25 +654,25 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 
 AccessControlManager & Context::getAccessControlManager()
 {
-    return shared->access_control_manager;
+    return *shared->access_control_manager;
 }
 
 const AccessControlManager & Context::getAccessControlManager() const
 {
-    return shared->access_control_manager;
+    return *shared->access_control_manager;
 }
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
-    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
+    shared->access_control_manager->setExternalAuthenticatorsConfig(config);
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.setUsersConfig(*shared->users_config);
+    shared->access_control_manager->setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -949,11 +950,48 @@ bool Context::hasScalar(const String & name) const
 void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
-    auto lock = getLock();
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+}
+
+
+void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+
+    switch (factory_type)
+    {
+        case QueryLogFactories::AggregateFunction:
+            query_factories_info.aggregate_functions.emplace(created_object);
+            break;
+        case QueryLogFactories::AggregateFunctionCombinator:
+            query_factories_info.aggregate_function_combinators.emplace(created_object);
+            break;
+        case QueryLogFactories::Database:
+            query_factories_info.database_engines.emplace(created_object);
+            break;
+        case QueryLogFactories::DataType:
+            query_factories_info.data_type_families.emplace(created_object);
+            break;
+        case QueryLogFactories::Dictionary:
+            query_factories_info.dictionaries.emplace(created_object);
+            break;
+        case QueryLogFactories::Format:
+            query_factories_info.formats.emplace(created_object);
+            break;
+        case QueryLogFactories::Function:
+            query_factories_info.functions.emplace(created_object);
+            break;
+        case QueryLogFactories::Storage:
+            query_factories_info.storages.emplace(created_object);
+            break;
+        case QueryLogFactories::TableFunction:
+            query_factories_info.table_functions.emplace(created_object);
+    }
 }
 
 
@@ -1099,12 +1137,6 @@ String Context::getCurrentDatabase() const
 {
     auto lock = getLock();
     return current_database;
-}
-
-
-String Context::getCurrentQueryId() const
-{
-    return client_info.current_query_id;
 }
 
 
@@ -1492,6 +1524,17 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     return *shared->distributed_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            "BgMsgBrkSchPool");
+    return *shared->message_broker_schedule_pool;
+}
+
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -1534,13 +1577,13 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorage> & Context::getTestKeeperStorage() const
+std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->test_keeper_storage_mutex);
-    if (!shared->test_keeper_storage)
-        shared->test_keeper_storage = std::make_shared<zkutil::TestKeeperStorage>();
+    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+    if (!shared->test_keeper_storage_dispatcher)
+        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    return shared->test_keeper_storage;
+    return shared->test_keeper_storage_dispatcher;
 }
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
@@ -2462,6 +2505,24 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
+}
+
+PartUUIDsPtr Context::getPartUUIDs()
+{
+    auto lock = getLock();
+    if (!part_uuids)
+        part_uuids = std::make_shared<PartUUIDs>();
+
+    return part_uuids;
+}
+
+PartUUIDsPtr Context::getIgnoredPartUUIDs()
+{
+    auto lock = getLock();
+    if (!ignored_part_uuids)
+        ignored_part_uuids = std::make_shared<PartUUIDs>();
+
+    return ignored_part_uuids;
 }
 
 }

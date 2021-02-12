@@ -2,11 +2,15 @@
 
 #if defined(__linux__) || defined(__FreeBSD__)
 
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
 #include <atomic>
 #include <chrono>
+#include <list>
+#include <shared_mutex>
+#include <variant>
+#include <vector>
+
+#include <Poco/Logger.h>
+
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -16,12 +20,11 @@
 #include <Core/Block.h>
 #include <Dictionaries/BucketCache.h>
 #include <IO/HashingWriteBuffer.h>
-#include <list>
 #include <pcg_random.hpp>
-#include <Poco/Logger.h>
-#include <shared_mutex>
-#include <variant>
-#include <vector>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -109,7 +112,7 @@ public:
 
     template <typename Out, typename GetDefault>
     void getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
+            ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & default_value_extractor,
             std::chrono::system_clock::time_point now) const;
 
     void getString(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
@@ -232,7 +235,7 @@ public:
     template <typename Out, typename GetDefault>
     void getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-            GetDefault & get_default, std::chrono::system_clock::time_point now) const;
+            GetDefault & default_value_extractor, std::chrono::system_clock::time_point now) const;
 
     void getString(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
@@ -351,76 +354,19 @@ public:
 
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
+
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr default_values_column) const override;
+
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
+
     template <typename T>
     using ResultArrayType = SSDCacheStorage::ResultArrayType<T>;
-
-#define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void
-    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * def, ColumnString * out)
-    const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * out) const;
-
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -434,11 +380,17 @@ private:
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-            size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+        size_t attribute_index,
+        const PaddedPODArray<Key> & ids,
+        ResultArrayType<OutputType> & out,
+        DefaultGetter & default_value_extractor) const;
 
     template <typename DefaultGetter>
-    void getItemsStringImpl(size_t attribute_index, const PaddedPODArray<Key> & ids,
-            ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsStringImpl(
+        size_t attribute_index,
+        const PaddedPODArray<Key> & ids,
+        ColumnString * out,
+        DefaultGetter & default_value_extractor) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

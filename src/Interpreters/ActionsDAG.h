@@ -80,7 +80,7 @@ public:
     };
 
     /// Index is used to:
-    ///     * find Node buy it's result_name
+    ///     * find Node by it's result_name
     ///     * specify order of columns in result
     /// It represents a set of available columns.
     /// Removing of column from index is equivalent to removing of column from final result.
@@ -106,6 +106,8 @@ public:
         std::list<Node *>::iterator end() { return list.end(); }
         std::list<Node *>::const_iterator begin() const { return list.begin(); }
         std::list<Node *>::const_iterator end() const { return list.end(); }
+        std::list<Node *>::const_reverse_iterator rbegin() const { return list.rbegin(); }
+        std::list<Node *>::const_reverse_iterator rend() const { return list.rend(); }
         std::list<Node *>::const_iterator find(std::string_view key) const
         {
             auto it = map.find(key);
@@ -119,6 +121,7 @@ public:
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
         void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
+        void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
 
         /// If node with same name exists in index, replace it. Otherwise insert new node to index.
         void replace(Node * node)
@@ -195,14 +198,15 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
-    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false);
+    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            const Context & context);
+            const Context & context,
+            bool can_replace = false);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -211,17 +215,17 @@ public:
 
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
+    /// Find column in result. Remove it from index.
+    /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
+    /// Return true if column was removed from inputs.
+    bool removeUnusedResult(const std::string & column_name);
 
     void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
-    /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
-    /// Returns nullptr if no actions may be moved before ARRAY JOIN.
-    ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
-
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
-    bool empty() const; /// If actions only contain inputs.
+    bool trivial() const; /// If actions has no functions or array join.
 
     const ActionsSettings & getSettings() const { return settings; }
 
@@ -229,6 +233,9 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    /// For apply materialize() function for every output.
+    /// Also add aliases so the result names remain unchanged.
+    void addMaterializingOutputActions();
 
     enum class MatchColumnsMode
     {
@@ -247,14 +254,32 @@ public:
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
 
-    /// Create ActionsDAG which represents expression equivalent to applying lhs and rhs actions consequently.
+    /// Create expression which add const column and then materialize it.
+    static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);
+
+    /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
+
+    /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
+    /// Execution of first then second parts on block is equivalent to execution of initial DAG.
+    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
+    /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
+    SplitResult split(std::unordered_set<const Node *> split_nodes) const;
+
+    /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
+    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+
+    /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
+    /// Index of initial actions must contain column_name.
+    SplitResult splitActionsForFilter(const std::string & column_name) const;
+
 private:
-    Node & addNode(Node node, bool can_replace = false);
+    Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
     Node & getNode(const std::string & name);
 
     Node & addAlias(Node & child, std::string alias, bool can_replace);
@@ -262,7 +287,8 @@ private:
             const FunctionOverloadResolverPtr & function,
             Inputs children,
             std::string result_name,
-            bool can_replace);
+            bool can_replace,
+            bool add_to_index = true);
 
     ActionsDAGPtr cloneEmpty() const
     {

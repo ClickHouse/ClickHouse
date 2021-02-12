@@ -77,12 +77,16 @@ public:
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases
+    NamesAndTypesList getAllWithSubcolumns() const;
+    NamesAndTypesList getAllPhysicalWithSubcolumns() const;
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
+    bool hasSubcolumn(const String & column_name) const;
+    bool hasInStorageOrSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
 
     template <typename F>
@@ -105,7 +109,9 @@ public:
 
     Names getNamesOfPhysical() const;
     bool hasPhysical(const String & column_name) const;
+    bool hasPhysicalOrSubcolumn(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;
+    NameAndTypePair getPhysicalOrSubcolumn(const String & column_name) const;
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;
@@ -141,7 +147,12 @@ public:
 private:
     Container columns;
 
+    using SubcolumnsContainer = std::unordered_map<String, NameAndTypePair>;
+    SubcolumnsContainer subcolumns;
+
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
+    void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
+    void removeSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.

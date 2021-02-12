@@ -476,6 +476,17 @@ public:
 
     size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
+    /// Return offset for result in internal buffer.
+    /// Result can have value up to `getBufferSizeInCells() + 1`
+    /// because offset for zero value considered to be 0
+    /// and for other values it will be `offset in buffer + 1`
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
+    }
+
     const Cell * data() const { return buf; }
     Cell * data() { return buf; }
 

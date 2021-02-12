@@ -39,16 +39,26 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
     for (const auto & input : inputs_)
     {
         if (input.column && isColumnConst(*input.column))
+        {
             addInput(input, true);
+
+            /// Here we also add column.
+            /// It will allow to remove input which is actually constant (after projection).
+            /// Also, some transforms from query pipeline may randomly materialize constants,
+            ///   without any respect to header structure. So, it is a way to drop materialized column and use
+            ///   constant value from header.
+            /// We cannot remove such input right now cause inputs positions are important in some cases.
+            addColumn(input, true);
+        }
         else
             addInput(input.name, input.type, true);
     }
 }
 
-ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
+ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace, bool add_to_index)
 {
     auto it = index.find(node.result_name);
-    if (it != index.end() && !can_replace)
+    if (it != index.end() && !can_replace && add_to_index)
         throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     auto & res = nodes.emplace_back(std::move(node));
@@ -56,7 +66,8 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
-    index.replace(&res);
+    if (add_to_index)
+        index.replace(&res);
     return res;
 }
 
@@ -90,7 +101,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool
     return addNode(std::move(node), can_replace);
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace, bool materialize)
 {
     if (!column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
@@ -101,7 +112,22 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, boo
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node), can_replace);
+    auto * res = &addNode(std::move(node), can_replace, !materialize);
+
+    if (materialize)
+    {
+        auto & name = res->result_name;
+
+        FunctionOverloadResolverPtr func_builder_materialize =
+                std::make_shared<FunctionOverloadResolverAdaptor>(
+                        std::make_unique<DefaultOverloadResolver>(
+                                std::make_shared<FunctionMaterialize>()));
+
+        res = &addFunction(func_builder_materialize, {res}, {}, true, false);
+        res = &addAlias(*res, name, true);
+    }
+
+    return *res;
 }
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
@@ -116,7 +142,6 @@ ActionsDAG::Node & ActionsDAG::addAlias(Node & child, std::string alias, bool ca
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
-    node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
     return addNode(std::move(node), can_replace);
@@ -143,7 +168,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         const Names & argument_names,
         std::string result_name,
-        const Context & context [[maybe_unused]])
+        const Context & context [[maybe_unused]],
+        bool can_replace)
 {
     const auto & all_settings = context.getSettingsRef();
     settings.max_temporary_columns = all_settings.max_temporary_columns;
@@ -162,14 +188,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     for (const auto & name : argument_names)
         children.push_back(&getNode(name));
 
-    return addFunction(function, children, std::move(result_name), false);
+    return addFunction(function, children, std::move(result_name), can_replace);
 }
 
 ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         Inputs children,
         std::string result_name,
-        bool can_replace)
+        bool can_replace,
+        bool add_to_index)
 {
     size_t num_arguments = children.size();
 
@@ -184,7 +211,6 @@ ActionsDAG::Node & ActionsDAG::addFunction(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         auto & child = *node.children[i];
-        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
         argument.column = child.column;
@@ -250,7 +276,7 @@ ActionsDAG::Node & ActionsDAG::addFunction(
 
     node.result_name = std::move(result_name);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 
@@ -349,10 +375,15 @@ void ActionsDAG::removeUnusedActions()
         stack.push(node);
     }
 
-    /// We cannot remove arrayJoin because it changes the number of rows.
     for (auto & node : nodes)
     {
-        if (node.type == ActionType::ARRAY_JOIN && visited_nodes.count(&node) == 0)
+        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
+        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        bool is_array_join = node.type == ActionType::ARRAY_JOIN;
+
+        bool must_keep_node = is_array_join || prevent_constant_folding;
+        if (must_keep_node && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -410,7 +441,6 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *
             node.result_type = child->result_type;
             node.result_name = std::move(item.second);
             node.column = child->column;
-            node.allow_constant_folding = child->allow_constant_folding;
             node.children.emplace_back(child);
 
             auto & alias = addNode(std::move(node), true);
@@ -452,6 +482,52 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
     }
 
     return false;
+}
+
+bool ActionsDAG::removeUnusedResult(const std::string & column_name)
+{
+    /// Find column in index and remove.
+    const Node * col;
+    {
+        auto it = index.begin();
+        for (; it != index.end(); ++it)
+            if ((*it)->result_name == column_name)
+                break;
+
+        if (it == index.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+        col = *it;
+        index.remove(it);
+    }
+
+    /// Check if column is in input.
+    auto it = inputs.begin();
+    for (; it != inputs.end(); ++it)
+        if (*it == col)
+            break;
+
+    if (it == inputs.end())
+        return false;
+
+    /// Check column has no dependent.
+    for (const auto & node : nodes)
+        for (const auto * child : node.children)
+            if (col == child)
+                return false;
+
+    /// Remove from nodes and inputs.
+    for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
+    {
+        if (&(*jt) == *it)
+        {
+            nodes.erase(jt);
+            break;
+        }
+    }
+
+    inputs.erase(it);
+    return true;
 }
 
 ActionsDAGPtr ActionsDAG::clone() const
@@ -570,13 +646,33 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
-bool ActionsDAG::empty() const
+bool ActionsDAG::trivial() const
 {
     for (const auto & node : nodes)
-        if (node.type != ActionType::INPUT)
+        if (node.type == ActionType::FUNCTION || node.type == ActionType::ARRAY_JOIN)
             return false;
 
     return true;
+}
+
+void ActionsDAG::addMaterializingOutputActions()
+{
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    Index new_index;
+    std::vector<Node *> index_nodes(index.begin(), index.end());
+    for (auto * node : index_nodes)
+    {
+        auto & name = node->result_name;
+        node = &addFunction(func_builder_materialize, {node}, {}, true, false);
+        node = &addAlias(*node, name, true);
+        new_index.insert(node);
+    }
+
+    index.swap(new_index);
 }
 
 ActionsDAGPtr ActionsDAG::makeConvertingActions(
@@ -688,11 +784,28 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     return actions_dag;
 }
 
+ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
+{
+    auto adding_column_action = std::make_shared<ActionsDAG>();
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    auto column_name = column.name;
+    const auto & column_node = adding_column_action->addColumn(std::move(column));
+    Inputs inputs = {const_cast<Node *>(&column_node)};
+    auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {}, true);
+    adding_column_action->addAlias(function_node, std::move(column_name), true);
+
+    return adding_column_action;
+}
+
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
-    /// merge: x (1), x (2), x (3), y =(first)=> x (3), y, x (2), z, x (4) =(second)=> y, z, x (4), x (2), x (3)
+    /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
 
     /// Will store merged result in `first`.
 
@@ -775,12 +888,19 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             }
         }
 
-        for (auto * node : second.index)
-            first.index.insert(node);
+        for (auto it = second.index.rbegin(); it != second.index.rend(); ++it)
+            first.index.prepend(*it);
     }
 
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
+
+    /// Here we rebuild index because some string_view from the first map now may point to string from second.
+    ActionsDAG::Index first_index;
+    for (auto * node : first.index)
+        first_index.insert(node);
+
+    first.index.swap(first_index);
 
 #if USE_EMBEDDED_COMPILER
     if (first.compilation_cache == nullptr)
@@ -798,43 +918,75 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     return std::make_shared<ActionsDAG>(std::move(first));
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
 {
     /// Split DAG into two parts.
-    /// (this_nodes, this_index) is a part which depends on ARRAY JOIN and stays here.
-    /// (split_nodes, split_index) is a part which will be moved before ARRAY JOIN.
-    std::list<Node> this_nodes;
-    std::list<Node> split_nodes;
-    Index this_index;
-    Index split_index;
-    Inputs new_inputs;
+    /// (first_nodes, first_index) is a part which will have split_list in result.
+    /// (second_nodes, second_index) is a part which will have same index as current actions.
+    std::list<Node> second_nodes;
+    std::list<Node> first_nodes;
+    Index second_index;
+    Index first_index;
+
+    /// List of nodes from current actions which are not inputs, but will be in second part.
+    std::vector<const Node *> new_inputs;
 
     struct Frame
     {
-        Node * node;
+        const Node * node;
         size_t next_child_to_visit = 0;
     };
 
     struct Data
     {
-        bool depend_on_array_join = false;
+        bool needed_by_split_node = false;
         bool visited = false;
         bool used_in_result = false;
 
         /// Copies of node in one of the DAGs.
         /// For COLUMN and INPUT both copies may exist.
-        Node * to_this = nullptr;
-        Node * to_split = nullptr;
+        Node * to_second = nullptr;
+        Node * to_first = nullptr;
     };
 
     std::stack<Frame> stack;
-    std::unordered_map<Node *, Data> data;
+    std::unordered_map<const Node *, Data> data;
 
     for (const auto & node : index)
         data[node].used_in_result = true;
 
-    /// DFS. Decide if node depends on ARRAY JOIN and move it to one of the DAGs.
-    for (auto & node : nodes)
+    /// DFS. Decide if node is needed by split.
+    for (const auto & node : nodes)
+    {
+        if (split_nodes.count(&node) == 0)
+            continue;
+
+        auto & cur_data = data[&node];
+        if (cur_data.needed_by_split_node)
+            continue;
+
+        cur_data.needed_by_split_node = true;
+        stack.push({.node = &node});
+
+        while (!stack.empty())
+        {
+            auto & cur_node = stack.top().node;
+            stack.pop();
+
+            for (const auto * child : cur_node->children)
+            {
+                auto & child_data = data[child];
+                if (!child_data.needed_by_split_node)
+                {
+                    child_data.needed_by_split_node = true;
+                    stack.push({.node = child});
+                }
+            }
+        }
+    }
+
+    /// DFS. Move nodes to one of the DAGs.
+    for (const auto & node : nodes)
     {
         if (!data[&node].visited)
             stack.push({.node = &node});
@@ -844,7 +996,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
             auto & cur = stack.top();
             auto & cur_data = data[cur.node];
 
-            /// At first, visit all children. We depend on ARRAY JOIN if any child does.
+            /// At first, visit all children.
             while (cur.next_child_to_visit < cur.node->children.size())
             {
                 auto * child = cur.node->children[cur.next_child_to_visit];
@@ -857,81 +1009,78 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                 }
 
                 ++cur.next_child_to_visit;
-                if (child_data.depend_on_array_join)
-                    cur_data.depend_on_array_join = true;
             }
 
             /// Make a copy part.
             if (cur.next_child_to_visit == cur.node->children.size())
             {
-                if (cur.node->type == ActionType::INPUT && array_joined_columns.count(cur.node->result_name))
-                    cur_data.depend_on_array_join = true;
-
                 cur_data.visited = true;
                 stack.pop();
 
-                if (cur_data.depend_on_array_join)
+                if (!cur_data.needed_by_split_node)
                 {
-                    auto & copy = this_nodes.emplace_back(*cur.node);
-                    cur_data.to_this = &copy;
+                    auto & copy = second_nodes.emplace_back(*cur.node);
+                    cur_data.to_second = &copy;
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
                     {
                         auto & child_data = data[child];
 
-                        /// If children is not created, int may be from split part.
-                        if (!child_data.to_this)
+                        /// If children is not created, it may be from split part.
+                        if (!child_data.to_second)
                         {
                             if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
                             {
-                                child_data.to_this = &this_nodes.emplace_back(*child);
+                                child_data.to_second = &second_nodes.emplace_back(*child);
                             }
                             else
                             {
-                                /// Node from split part is added as new input.
+                                /// Node from first part is added as new input.
                                 Node input_node;
                                 input_node.type = ActionType::INPUT;
                                 input_node.result_type = child->result_type;
-                                input_node.result_name = child->result_name; // getUniqueNameForIndex(index, child->result_name);
-                                child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+                                input_node.result_name = child->result_name;
+                                child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                                if (child->type != ActionType::INPUT)
-                                    new_inputs.push_back(child_data.to_this);
-
-                                /// This node is needed for current action, so put it to index also.
-                                split_index.replace(child_data.to_split);
+                                new_inputs.push_back(child);
                             }
                         }
 
-                        child = child_data.to_this;
+                        child = child_data.to_second;
+                    }
+
+                    /// Input from second DAG should also be in the first.
+                    if (copy.type == ActionType::INPUT)
+                    {
+                        auto & input_copy = first_nodes.emplace_back(*cur.node);
+                        assert(cur_data.to_first == nullptr);
+                        cur_data.to_first = &input_copy;
+                        new_inputs.push_back(cur.node);
                     }
                 }
                 else
                 {
-                    auto & copy = split_nodes.emplace_back(*cur.node);
-                    cur_data.to_split = &copy;
+                    auto & copy = first_nodes.emplace_back(*cur.node);
+                    cur_data.to_first = &copy;
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
                     {
-                        child = data[child].to_split;
+                        child = data[child].to_first;
                         assert(child != nullptr);
                     }
 
                     if (cur_data.used_in_result)
                     {
-                        split_index.replace(&copy);
-
                         /// If this node is needed in result, add it as input.
                         Node input_node;
                         input_node.type = ActionType::INPUT;
                         input_node.result_type = node.result_type;
                         input_node.result_name = node.result_name;
-                        cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+                        cur_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                        if (copy.type != ActionType::INPUT)
-                            new_inputs.push_back(cur_data.to_this);
+                        new_inputs.push_back(cur.node);
                     }
                 }
             }
@@ -939,42 +1088,119 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     }
 
     for (auto * node : index)
-        this_index.insert(data[node].to_this);
+        second_index.insert(data[node].to_second);
 
-    /// Consider actions are empty if all nodes are constants or inputs.
-    bool split_actions_are_empty = true;
-    for (const auto & node : split_nodes)
-        if (!node.children.empty())
-            split_actions_are_empty = false;
-
-    if (split_actions_are_empty)
-        return {};
-
-    Inputs this_inputs;
-    Inputs split_inputs;
+    Inputs second_inputs;
+    Inputs first_inputs;
 
     for (auto * input : inputs)
     {
         const auto & cur = data[input];
-        if (cur.to_this)
-            this_inputs.push_back(cur.to_this);
-        if (cur.to_split)
-            split_inputs.push_back(cur.to_split);
+        first_inputs.push_back(cur.to_first);
     }
 
-    this_inputs.insert(this_inputs.end(), new_inputs.begin(), new_inputs.end());
+    for (const auto * input : new_inputs)
+    {
+        const auto & cur = data[input];
+        second_inputs.push_back(cur.to_second);
+        first_index.insert(cur.to_first);
+    }
 
-    index.swap(this_index);
-    nodes.swap(this_nodes);
-    inputs.swap(this_inputs);
+    auto first_actions = cloneEmpty();
+    first_actions->nodes.swap(first_nodes);
+    first_actions->index.swap(first_index);
+    first_actions->inputs.swap(first_inputs);
 
-    auto split_actions = cloneEmpty();
-    split_actions->nodes.swap(split_nodes);
-    split_actions->index.swap(split_index);
-    split_actions->inputs.swap(split_inputs);
-    split_actions->settings.project_input = false;
+    auto second_actions = cloneEmpty();
+    second_actions->nodes.swap(second_nodes);
+    second_actions->index.swap(second_index);
+    second_actions->inputs.swap(second_inputs);
 
-    return split_actions;
+    return {std::move(first_actions), std::move(second_actions)};
+}
+
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
+{
+
+    struct Frame
+    {
+        const Node * node;
+        size_t next_child_to_visit = 0;
+    };
+
+    std::unordered_set<const Node *> split_nodes;
+    std::unordered_set<const Node *> visited_nodes;
+
+    std::stack<Frame> stack;
+
+    /// DFS. Decide if node depends on ARRAY JOIN.
+    for (const auto & node : nodes)
+    {
+        if (visited_nodes.count(&node))
+            continue;
+
+        visited_nodes.insert(&node);
+        stack.push({.node = &node});
+
+        while (!stack.empty())
+        {
+            auto & cur = stack.top();
+
+            /// At first, visit all children. We depend on ARRAY JOIN if any child does.
+            while (cur.next_child_to_visit < cur.node->children.size())
+            {
+                auto * child = cur.node->children[cur.next_child_to_visit];
+
+                if (visited_nodes.count(child) == 0)
+                {
+                    visited_nodes.insert(child);
+                    stack.push({.node = child});
+                    break;
+                }
+
+                ++cur.next_child_to_visit;
+            }
+
+            if (cur.next_child_to_visit == cur.node->children.size())
+            {
+                bool depend_on_array_join = false;
+                if (cur.node->type == ActionType::INPUT && array_joined_columns.count(cur.node->result_name))
+                    depend_on_array_join = true;
+
+                for (const auto * child : cur.node->children)
+                {
+                    if (split_nodes.count(child) == 0)
+                        depend_on_array_join = true;
+                }
+
+                if (!depend_on_array_join)
+                    split_nodes.insert(cur.node);
+
+                stack.pop();
+            }
+        }
+    }
+
+    auto res = split(split_nodes);
+    /// Do not remove array joined columns if they are not used.
+    res.first->settings.project_input = false;
+    return res;
+}
+
+ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
+{
+    auto it = index.begin();
+    for (; it != index.end(); ++it)
+        if ((*it)->result_name == column_name)
+            break;
+
+    if (it == index.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
+                        column_name, dumpDAG());
+
+    std::unordered_set<const Node *> split_nodes = {*it};
+    return split(split_nodes);
 }
 
 }
