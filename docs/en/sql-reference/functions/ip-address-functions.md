@@ -267,7 +267,7 @@ SELECT toIPv6('127.0.0.1')
 
 ## isIPv4String {#isipv4string}
 
-Determines whether the input string is an IPv4 address or not.
+Determines whether the input string is an IPv4 address or not. Also will return `0` if `string` is IPv6 address.
 
 **Syntax**
 
@@ -303,7 +303,7 @@ Result:
 
 ## isIPv6String {#isipv6string}
 
-Determines whether the input string is an IPv6 address or not. 
+Determines whether the input string is an IPv6 address or not. Also will return `0` if `string` is IPv4 address.
 
 **Syntax**
 
