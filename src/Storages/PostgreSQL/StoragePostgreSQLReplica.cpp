@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
@@ -124,6 +125,33 @@ ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_t
     if (which.isArray())
         return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
+    /// getName() for decimal returns 'Decimal(precison, scale)', will get an error with it
+    if (which.isDecimal())
+    {
+        auto make_decimal_expression = [&](std::string type_name)
+        {
+            auto ast_expression = std::make_shared<ASTFunction>();
+
+            ast_expression->name = type_name;
+            ast_expression->arguments = std::make_shared<ASTExpressionList>();
+            ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+
+            return ast_expression;
+        };
+
+        if (which.isDecimal32())
+            return make_decimal_expression("Decimal32");
+
+        if (which.isDecimal64())
+            return make_decimal_expression("Decimal64");
+
+        if (which.isDecimal128())
+            return make_decimal_expression("Decimal128");
+
+        if (which.isDecimal256())
+            return make_decimal_expression("Decimal256");
+    }
+
     return std::make_shared<ASTIdentifier>(data_type->getName());
 }
 
@@ -178,11 +206,9 @@ ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery(const std::function<P
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
 
+        //TODO: check for nullable
         for (const auto & column : primary_key_columns)
-        {
-            LOG_WARNING(&Poco::Logger::get("StoragePostgreSQLReplica"), "kssenii table columns {}", column.name);
             order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
-        }
     }
 
     for (const auto & [name, type] : ordinary_columns_and_types)
