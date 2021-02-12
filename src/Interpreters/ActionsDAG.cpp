@@ -1168,7 +1168,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
     {
         auto & inputs_list = inputs_map[name];
         if (inputs_list.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find input {} in ActionsDAG. DAG:\n{}", name, dumpDAG());
+            continue;
 
         allowed_nodes.emplace(inputs_list.front());
         inputs_list.pop_front();
