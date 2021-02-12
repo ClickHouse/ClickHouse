@@ -328,13 +328,15 @@ window w as (partition by p order by o)
 order by p, o, number
 settings max_block_size = 2;
 
--- very bad functions, not implemented yet
+-- our replacement for lag/lead
 select
-    lag(1, 5)(number) over (),
-    lead(2)(number) over (),
-    lag(number) over ()
-from numbers(2); -- { serverError 48 }
+    anyOrNull(number)
+        over (order by number rows between 1 preceding and 1 preceding),
+    anyOrNull(number)
+        over (order by number rows between 1 following and 1 following)
+from numbers(5);
 
+-- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
     fIrSt_VaLue(number) over w,
