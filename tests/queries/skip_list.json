@@ -415,6 +415,7 @@
         "01516_drop_table_stress",
         "01541_max_memory_usage_for_user",
         "01676_dictget_in_default_expression",
+        "01715_background_checker_blather_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
