@@ -33,11 +33,6 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
     void tryAttachTable(

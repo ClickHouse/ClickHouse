@@ -57,7 +57,7 @@ public:
     }
 
     void startup();
-    void shutdown();
+    virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 

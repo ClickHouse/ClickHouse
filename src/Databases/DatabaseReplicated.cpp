@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int REPLICA_IS_ALREADY_EXIST;
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
@@ -332,7 +333,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 ASTPtr zk_create = parseQuery(parser, in_zk->second, size, depth);
                 if (local_create->as<ASTCreateQuery>()->uuid == zk_create->as<ASTCreateQuery>()->uuid)
                 {
-                    /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's tha same table.
+                    /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
                     /// Metadata can be different, it's handled on table replication level.
                     /// TODO maybe we should also compare MergeTree SETTINGS?
                     should_detach = false;
