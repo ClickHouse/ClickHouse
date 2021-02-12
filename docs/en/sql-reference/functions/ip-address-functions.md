@@ -301,7 +301,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## isIPv6String {#isipv4string}
+## isIPv6String {#isipv6string}
 
 Determines whether the input string is an IPv6 address or not. 
 
