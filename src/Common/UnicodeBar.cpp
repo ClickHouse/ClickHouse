@@ -14,7 +14,7 @@ namespace UnicodeBar
 {
     double getWidth(double x, double min, double max, double max_width)
     {
-        if (isNaN(x))
+        if (isNaN(x) || isNaN(min) || isNaN(max))
             return 0;
 
         if (x <= min)

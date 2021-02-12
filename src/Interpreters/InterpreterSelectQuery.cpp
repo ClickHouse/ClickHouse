@@ -13,6 +13,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Access/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -33,6 +34,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/AddingDelayedSourceStep.h>
@@ -67,7 +69,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -99,6 +100,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int ACCESS_DENIED;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -211,6 +213,36 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
+/// Checks that the current user has the SELECT privilege.
+static void checkAccessRightsForSelect(
+    const Context & context,
+    const StorageID & table_id,
+    const StorageMetadataPtr & table_metadata,
+    const Strings & required_columns,
+    const TreeRewriterResult & syntax_analyzer_result)
+{
+    if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
+    {
+        /// For a trivial query like "SELECT count() FROM table" access is granted if at least
+        /// one column is accessible.
+        /// In this case just checking access for `required_columns` doesn't work correctly
+        /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
+        /// which is probably not the same column as the column the current user has access to.
+        auto access = context.getAccess();
+        for (const auto & column : table_metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+                return;
+        }
+        throw Exception(context.getUserName() + ": Not enough privileges. "
+                        "To execute this query it's necessary to have grant SELECT for at least one column on " + table_id.getFullTableName(),
+                        ErrorCodes::ACCESS_DENIED);
+    }
+
+    /// General check.
+    context.checkAccess(AccessType::SELECT, table_id, required_columns);
+}
+
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
 static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
@@ -261,9 +293,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
-    if (context->getSettingsRef().enable_global_with_statement)
-        ApplyWithAliasVisitor().visit(query_ptr);
-    ApplyWithSubqueryVisitor().visit(query_ptr);
+    // Only propagate WITH elements to subqueries if we're not a subquery
+    if (!options.is_subquery)
+    {
+        if (context->getSettingsRef().enable_global_with_statement)
+            ApplyWithAliasVisitor().visit(query_ptr);
+        ApplyWithSubqueryVisitor().visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
@@ -353,13 +389,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
             {
+                /// Extract column compressed sizes.
+                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                for (const auto & [name, sizes] : column_sizes)
+                    column_compressed_sizes[name] = sizes.data_compressed;
+
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, *context, std::move(column_compressed_sizes), metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
 
@@ -466,7 +507,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// The current user should have the SELECT privilege.
         /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
-        context->checkAccess(AccessType::SELECT, table_id, required_columns);
+        checkAccessRightsForSelect(*context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
@@ -1223,6 +1264,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             temp_query_info.query = query_ptr;
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
             temp_query_info.sets = query_analyzer->getPreparedSets();
+
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
         }
         if (num_rows)
@@ -1329,9 +1371,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (is_alias)
                 {
                     auto column_decl = storage_columns.get(column);
-                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
-                    column_expr = setAlias(cast_column_default->clone(), column);
+                    column_expr = column_default->expression->clone();
+                    // recursive visit for alias to alias
+                    replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), *context);
+
+                    column_expr = addTypeConversionToAST(std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), *context);
+                    column_expr = setAlias(column_expr, column);
                 }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
@@ -1543,7 +1588,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, *context);
         }
 
         StreamLocalLimits limits;
@@ -1790,46 +1835,130 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
     query_plan.addStep(std::move(expression_step));
 }
 
+static bool windowDescriptionComparator(const WindowDescription * _left,
+    const WindowDescription * _right)
+{
+    const auto & left = _left->full_sort_description;
+    const auto & right = _right->full_sort_description;
+
+    for (size_t i = 0; i < std::min(left.size(), right.size()); ++i)
+    {
+        if (left[i].column_name < right[i].column_name)
+        {
+            return true;
+        }
+        else if (left[i].column_name > right[i].column_name)
+        {
+            return false;
+        }
+        else if (left[i].column_number < right[i].column_number)
+        {
+            return true;
+        }
+        else if (left[i].column_number > right[i].column_number)
+        {
+            return false;
+        }
+        else if (left[i].direction < right[i].direction)
+        {
+            return true;
+        }
+        else if (left[i].direction > right[i].direction)
+        {
+            return false;
+        }
+        else if (left[i].nulls_direction < right[i].nulls_direction)
+        {
+            return true;
+        }
+        else if (left[i].nulls_direction > right[i].nulls_direction)
+        {
+            return false;
+        }
+
+        assert(left[i] == right[i]);
+    }
+
+    // Note that we check the length last, because we want to put together the
+    // sort orders that have common prefix but different length.
+    return left.size() > right.size();
+}
+
+static bool sortIsPrefix(const WindowDescription & _prefix,
+    const WindowDescription & _full)
+{
+    const auto & prefix = _prefix.full_sort_description;
+    const auto & full = _full.full_sort_description;
+
+    if (prefix.size() > full.size())
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if (full[i] != prefix[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 {
+    // Try to sort windows in such an order that the window with the longest
+    // sort description goes first, and all window that use its prefixes follow.
+    std::vector<const WindowDescription *> windows_sorted;
     for (const auto & [_, w] : query_analyzer->windowDescriptions())
     {
-        const Settings & settings = context->getSettingsRef();
+        windows_sorted.push_back(&w);
+    }
 
-        auto partial_sorting = std::make_unique<PartialSortingStep>(
-            query_plan.getCurrentDataStream(),
-            w.full_sort_description,
-            0 /* LIMIT */,
-            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
-                settings.sort_overflow_mode));
-        partial_sorting->setStepDescription("Sort each block for window '"
-            + w.window_name + "'");
-        query_plan.addStep(std::move(partial_sorting));
+    std::sort(windows_sorted.begin(), windows_sorted.end(),
+        windowDescriptionComparator);
 
-        auto merge_sorting_step = std::make_unique<MergeSortingStep>(
-            query_plan.getCurrentDataStream(),
-            w.full_sort_description,
-            settings.max_block_size,
-            0 /* LIMIT */,
-            settings.max_bytes_before_remerge_sort,
-            settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort,
-            context->getTemporaryVolume(),
-            settings.min_free_disk_space_for_temporary_data);
-        merge_sorting_step->setStepDescription("Merge sorted blocks for window '"
-            + w.window_name + "'");
-        query_plan.addStep(std::move(merge_sorting_step));
+    const Settings & settings = context->getSettingsRef();
+    for (size_t i = 0; i < windows_sorted.size(); ++i)
+    {
+        const auto & w = *windows_sorted[i];
+        if (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1]))
+        {
+            auto partial_sorting = std::make_unique<PartialSortingStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                0 /* LIMIT */,
+                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
+                    settings.sort_overflow_mode));
+            partial_sorting->setStepDescription("Sort each block for window '"
+                + w.window_name + "'");
+            query_plan.addStep(std::move(partial_sorting));
 
-        // First MergeSorted, now MergingSorted.
-        auto merging_sorted = std::make_unique<MergingSortedStep>(
-            query_plan.getCurrentDataStream(),
-            w.full_sort_description,
-            settings.max_block_size,
-            0 /* LIMIT */);
-        merging_sorted->setStepDescription("Merge sorted streams for window '"
-            + w.window_name + "'");
-        query_plan.addStep(std::move(merging_sorted));
+            auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                settings.max_block_size,
+                0 /* LIMIT */,
+                settings.max_bytes_before_remerge_sort,
+                settings.remerge_sort_lowered_memory_bytes_ratio,
+                settings.max_bytes_before_external_sort,
+                context->getTemporaryVolume(),
+                settings.min_free_disk_space_for_temporary_data);
+            merge_sorting_step->setStepDescription(
+                "Merge sorted blocks for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(merge_sorting_step));
+
+            // First MergeSorted, now MergingSorted.
+            auto merging_sorted = std::make_unique<MergingSortedStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                settings.max_block_size,
+                0 /* LIMIT */);
+            merging_sorted->setStepDescription(
+                "Merge sorted streams for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(merging_sorted));
+        }
 
         auto window_step = std::make_unique<WindowStep>(
             query_plan.getCurrentDataStream(),

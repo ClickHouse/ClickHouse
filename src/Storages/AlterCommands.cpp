@@ -320,7 +320,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
-        metadata.columns.flattenNested();
+        if (context.getSettingsRef().flatten_nested)
+            metadata.columns.flattenNested();
     }
     else if (type == DROP_COLUMN)
     {

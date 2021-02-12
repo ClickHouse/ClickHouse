@@ -75,8 +75,28 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-        for (auto * val : data)
-            func->destroy(val);
+    {
+        if (copiedDataInfo.empty())
+        {
+            for (auto * val : data)
+            {
+                func->destroy(val);
+            }
+        }
+        else
+        {
+            size_t pos;
+            for (Map::iterator it = copiedDataInfo.begin(), it_end = copiedDataInfo.end(); it != it_end; ++it)
+            {
+                pos = it->getValue().second;
+                if (data[pos] != nullptr)
+                {
+                    func->destroy(data[pos]);
+                    data[pos] = nullptr;
+                }
+            }
+        }
+    }
 }
 
 void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
@@ -455,14 +475,37 @@ void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
     ///  (only as a whole, see comment above).
     ensureOwnership();
     insertDefault();
-    insertMergeFrom(from, n);
+    insertCopyFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
 }
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
     ensureOwnership();
     insertDefault();
-    insertMergeFrom(place);
+    insertCopyFrom(place);
+}
+
+void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
+{
+    Map::LookupResult result;
+    result = copiedDataInfo.find(place);
+    if (result == nullptr)
+    {
+        copiedDataInfo[place] = data.size()-1;
+        func->merge(data.back(), place, &createOrGetArena());
+    }
+    else
+    {
+        size_t pos = result->getValue().second;
+        if (pos != data.size() - 1)
+        {
+            data[data.size() - 1] = data[pos];
+        }
+        else /// insert same data to same pos, merge them.
+        {
+            func->merge(data.back(), place, &createOrGetArena());
+        }
+    }
 }
 
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
@@ -670,4 +713,31 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
 {
 }
 
+MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
+{
+    if (size == 0)
+        return cloneEmpty();
+
+    size_t from_size = data.size();
+
+    if (size <= from_size)
+    {
+        auto res = createView();
+        auto & res_data = res->data;
+        res_data.assign(data.begin(), data.begin() + size);
+        return res;
+    }
+    else
+    {
+        /// Create a new column to return.
+        MutableColumnPtr cloned_col = cloneEmpty();
+        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
+
+        res->insertRangeFrom(*this, 0, from_size);
+        for (size_t i = from_size; i < size; ++i)
+            res->insertDefault();
+
+        return cloned_col;
+    }
+}
 }
