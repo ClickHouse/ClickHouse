@@ -308,3 +308,10 @@ from
     (select number, intDiv(number, 3) p, mod(number, 5) o
         from numbers(16)) t
 ;
+
+-- A test case for the sort comparator found by fuzzer.
+SELECT
+    max(number) OVER (ORDER BY number DESC NULLS FIRST),
+    max(number) OVER (ORDER BY number ASC NULLS FIRST)
+FROM numbers(2)
+;
