@@ -259,7 +259,7 @@ isIPv4String(string)
 
 **Возвращаемое значение**
 
--   `1` если `string` является адресом IPv4 , `0` если нет.
+-   `1` если `string` является адресом IPv4 , иначе — `0`.
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -268,15 +268,17 @@ isIPv4String(string)
 Запрос:
 
 ```sql
-SELECT isIPv4String('0.0.0.0');
+SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr
 ```
 
 Результат:
 
 ``` text
-┌─isIPv4String('0.0.0.0')─┐
-│                       1 │
-└─────────────────────────┘
+┌─addr─────────────┬─isIPv4String(addr)─┐
+│ 0.0.0.0          │                  1 │
+│ 127.0.0.1        │                  1 │
+│ ::ffff:127.0.0.1 │                  0 │
+└──────────────────┴────────────────────┘
 ```
 
 ## isIPv6String {#isipv6string}
@@ -295,7 +297,7 @@ isIPv6String(string)
 
 **Возвращаемое значение**
 
--   `1` если `string` является адресом IPv6 , `0` если нет.
+-   `1` если `string` является адресом IPv6 , иначе — `0`.
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -304,15 +306,18 @@ isIPv6String(string)
 Запрос:
 
 ``` sql
-SELECT isIPv6String('::ffff:127.0.0.1');
+SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr
 ```
 
 Результат:
 
 ``` text
-┌─isIPv6String('::ffff:127.0.0.1')─┐
-│                                1 │
-└──────────────────────────────────┘
+┌─addr─────────────┬─isIPv6String(addr)─┐
+│ ::               │                  1 │
+│ 1111::ffff       │                  1 │
+│ ::ffff:127.0.0.1 │                  1 │
+│ 127.0.0.1        │                  0 │
+└──────────────────┴────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->
