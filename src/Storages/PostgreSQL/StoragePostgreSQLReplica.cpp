@@ -62,8 +62,6 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
             connection_str,
             metadata_path,
             global_context,
-            global_context->getMacros()->expand(replication_settings->postgresql_replication_slot_name.value),
-            global_context->getMacros()->expand(replication_settings->postgresql_publication_name.value),
             replication_settings->postgresql_max_block_size.changed
                      ? replication_settings->postgresql_max_block_size.value
                      : (global_context->getSettingsRef().max_insert_block_size.value)
@@ -346,7 +344,10 @@ void StoragePostgreSQLReplica::dropNested()
 
 NamesAndTypesList StoragePostgreSQLReplica::getVirtuals() const
 {
-    return NamesAndTypesList{};
+    if (nested_storage)
+        return nested_storage->getVirtuals();
+
+    return {};
 }
 
 

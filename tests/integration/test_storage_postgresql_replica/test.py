@@ -30,6 +30,7 @@ def create_postgres_db(cursor, name):
     cursor.execute("CREATE DATABASE {}".format(name))
 
 def create_postgres_table(cursor, table_name):
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
     cursor.execute(postgres_table_template.format(table_name))
     cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
 

@@ -32,6 +32,7 @@ def create_postgres_db(cursor, name):
 
 
 def create_postgres_table(cursor, table_name):
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
     cursor.execute(postgres_table_template.format(table_name))
     cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
 
@@ -71,7 +72,8 @@ def postgresql_setup_teardown():
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
 
 
-def test_load_and_sync_all_database(started_cluster):
+def test_load_and_sync_all_database_tables(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
     NUM_TABLES = 5
@@ -95,6 +97,7 @@ def test_load_and_sync_all_database(started_cluster):
 
 
 def test_replicating_dml(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
     NUM_TABLES = 5
@@ -135,6 +138,7 @@ def test_replicating_dml(started_cluster):
 
 
 def test_different_data_types(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
     cursor.execute('drop table if exists test_data_types;')
@@ -207,6 +211,54 @@ def test_different_data_types(started_cluster):
     result = instance.query('SELECT * FROM test_database.test_array_data_type ORDER BY key;')
     instance.query("DROP DATABASE test_database")
     assert(result == expected)
+
+
+def test_load_and_sync_subset_of_database_tables(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    NUM_TABLES = 10
+
+    publication_tables = ''
+    for i in range(NUM_TABLES):
+        table_name = 'postgresql_replica_{}'.format(i)
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, number from numbers(50)".format(i))
+
+        if i < NUM_TABLES/2:
+            if publication_tables != '':
+                publication_tables += ', '
+            publication_tables += table_name
+
+    instance.query('''
+            CREATE DATABASE test_database
+            ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
+            SETTINGS postgresql_tables_list = '{}';
+    '''.format(publication_tables))
+    assert 'test_database' in instance.query('SHOW DATABASES')
+
+    time.sleep(1)
+
+    result = instance.query('''SELECT count() FROM system.tables WHERE database = 'test_database';''')
+    assert(int(result) == NUM_TABLES/2)
+
+    database_tables = instance.query('SHOW TABLES FROM test_database')
+    for i in range(NUM_TABLES):
+        table_name = 'postgresql_replica_{}'.format(i)
+        if i < NUM_TABLES/2:
+            assert table_name in database_tables
+        else:
+            assert table_name not in database_tables
+        instance.query("INSERT INTO postgres_database.{} SELECT 50 + number, {} from numbers(100)".format(table_name, i))
+
+    for i in range(NUM_TABLES):
+        table_name = 'postgresql_replica_{}'.format(i)
+        if i < NUM_TABLES/2:
+            check_tables_are_synchronized(table_name);
+        cursor.execute('drop table {};'.format(table_name))
+
+    instance.query("DROP DATABASE test_database")
+    assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
 if __name__ == '__main__':
