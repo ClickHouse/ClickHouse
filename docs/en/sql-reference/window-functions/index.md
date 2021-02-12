@@ -21,7 +21,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `GROUPS` frame | no |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`) | all aggregate functions are supported |
 | `rank()`, `dense_rank()`, `row_number()` | yes |
-| `lag/lead(value, offset)` | no, replace with `any(value) over (.... rows between <offset> preceding and <offset> following)`| 
+| `lag/lead(value, offset)` | no, replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`| 
 
 ## References
 
