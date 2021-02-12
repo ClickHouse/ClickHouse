@@ -1,20 +1,21 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -102,12 +103,12 @@ public:
         : joined_tables(tables_)
         , tables(tables_with_columns)
         , aliases(aliases_)
-        , ands_only(true)
+        , is_complex(false)
     {}
 
     void visit(const ASTFunction & node, const ASTPtr & ast)
     {
-        if (!ands_only)
+        if (is_complex)
             return;
 
         if (node.name == NameAnd::name)
@@ -118,9 +119,14 @@ public:
             for (auto & child : node.arguments->children)
             {
                 if (const auto * func = child->as<ASTFunction>())
+                {
                     visit(*func, child);
+                }
                 else
-                    ands_only = false;
+                {
+                    bool is_literal_or_ident = !child->as<ASTLiteral>() && !child->as<ASTIdentifier>();
+                    is_complex = is_complex || !is_literal_or_ident;
+                }
             }
         }
         else if (node.name == NameEquals::name)
@@ -135,18 +141,22 @@ public:
         else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE, ILIKE, NOT ILIKE
                  functionIsInOperator(node.name))  /// IN, NOT IN
         {
-            /// leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.
-            ///     select a as b form t1, t2 where t1.x = t2.x and b in(42)
-            ///     select a as b form t1 inner join t2 on t1.x = t2.x and b in(42)
+            /// Leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.
+            ///     select a as b from t1, t2 where t1.x = t2.x and b in(42)
+            ///     select a as b from t1 inner join t2 on t1.x = t2.x and b in(42)
+        }
+        else if (node.name == NameOr::name)
+        {
+
         }
         else
         {
-            ands_only = false;
+            is_complex = true;
             asts_to_join_on.clear();
         }
     }
 
-    bool complex() const { return !ands_only; }
+    bool complex() const { return is_complex; }
     bool matchAny(size_t t) const { return asts_to_join_on.count(t); }
 
     ASTPtr makeOnExpression(size_t table_pos)
@@ -172,7 +182,7 @@ private:
     const std::vector<TableWithColumnNamesAndTypes> & tables;
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
     const Aliases & aliases;
-    bool ands_only;
+    bool is_complex;
 
     size_t canMoveEqualsToJoinOn(const ASTFunction & node)
     {
