@@ -1,7 +1,7 @@
-sipHash should be calculated after filtration
+> sipHash should be calculated after filtration
 FUNCTION sipHash64
 Filter column: equals
-sorting steps should know about limit
+> sorting steps should know about limit
 Limit 10
 MergingSorted
 Limit 10
@@ -9,3 +9,32 @@ MergeSorting
 Limit 10
 PartialSorting
 Limit 10
+-- filter push down --
+> filter should be pushed down after aggregating
+Aggregating
+Filter
+> filter should be pushed down after aggregating, column after aggregation is const
+COLUMN Const(UInt8) -> notEquals(y, 0)
+Aggregating
+Filter
+Filter
+> one condition of filter should be pushed down after aggregating, other condition is aliased
+Filter column
+ALIAS notEquals(s, 4) :: 1 -> and(notEquals(y, 0), notEquals(s, 4))
+Aggregating
+Filter column: notEquals(y, 0)
+> one condition of filter should be pushed down after aggregating, other condition is casted
+Filter column
+FUNCTION CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))
+Aggregating
+Filter column: notEquals(y, 0)
+> one condition of filter should be pushed down after aggregating, other two conditions are ANDed
+Filter column
+FUNCTION and(minus(s, 4) :: 2, minus(s, 8) :: 1) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
+Aggregating
+Filter column: notEquals(y, 0)
+> two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased
+Filter column
+ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))
+Aggregating
+Filter column: and(minus(y, 4), notEquals(y, 0))
