@@ -962,12 +962,19 @@ settings max_block_size = 2;
 26	5	2	5	4	3	4
 29	5	2	5	4	3	5
 30	6	0	1	1	1	1
--- very bad functions, not implemented yet
+-- our replacement for lag/lead
 select
-    lag(1, 5)(number) over (),
-    lead(2)(number) over (),
-    lag(number) over ()
-from numbers(2); -- { serverError 48 }
+    anyOrNull(number)
+        over (order by number rows between 1 preceding and 1 preceding),
+    anyOrNull(number)
+        over (order by number rows between 1 following and 1 following)
+from numbers(5);
+\N	1
+0	2
+1	3
+2	4
+3	\N
+-- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
     fIrSt_VaLue(number) over w,
