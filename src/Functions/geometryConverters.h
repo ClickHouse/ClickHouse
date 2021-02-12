@@ -353,7 +353,7 @@ public:
         size++;
         offsets->insertValue(size);
 
-        pointSerializer(point);
+        point_serializer(point);
     }
 
     void operator()(const Ring<Point> & ring)
@@ -362,7 +362,7 @@ public:
         offsets->insertValue(size);
         for (const auto & point : ring)
         {
-            pointSerializer(point);
+            point_serializer(point);
         }
     }
 
@@ -409,24 +409,24 @@ public:
     {
         size++;
         offsets->insertValue(size);
-        ringSerializer(point);
+        ring_serializer(point);
     }
 
     void operator()(const Ring<Point> & ring)
     {
         size++;
         offsets->insertValue(size);
-        ringSerializer(ring);
+        ring_serializer(ring);
     }
 
     void operator()(const Polygon<Point> & polygon)
     {
         size += 1 + polygon.inners().size();
         offsets->insertValue(size);
-        ringSerializer(polygon.outer());
+        ring_serializer(polygon.outer());
         for (const auto & ring : polygon.inners())
         {
-            ringSerializer(ring);
+            ring_serializer(ring);
         }
     }
 
@@ -465,21 +465,21 @@ public:
     {
         size++;
         offsets->insertValue(size);
-        polygonSerializer(point);
+        polygon_serializer(point);
     }
 
     void operator()(const Ring<Point> & ring)
     {
         size++;
         offsets->insertValue(size);
-        polygonSerializer(ring);
+        polygon_serializer(ring);
     }
 
     void operator()(const Polygon<Point> & polygon)
     {
         size++;
         offsets->insertValue(size);
-        polygonSerializer(polygon);
+        polygon_serializer(polygon);
     }
 
     void operator()(const MultiPolygon<Point> & multi_polygon)
@@ -488,7 +488,7 @@ public:
         offsets->insertValue(size);
         for (const auto & polygon : multi_polygon)
         {
-            polygonSerializer(polygon);
+            polygon_serializer(polygon);
         }
     }
 
