@@ -11,5 +11,11 @@ FROM X
 RIGHT JOIN Y ON (X.id + 1) = Y.id
 SETTINGS join_use_nulls=1; -- { serverError 53 }
 
+-- Logical error: 'Arguments of 'plus' have incorrect data types: '2' of type 'UInt8', '1' of type 'UInt8''.
+-- Because 1 became toNullable(1), i.e.:
+--     2 UInt8 Const(size = 1, UInt8(size = 1))
+--     1 UInt8 Const(size = 1, Nullable(size = 1, UInt8(size = 1), UInt8(size = 1)))
+SELECT 2+1 FROM system.one X RIGHT JOIN system.one Y ON X.dummy+1 = Y.dummy SETTINGS join_use_nulls = 1; -- { serverError 53 }
+
 DROP TABLE X;
 DROP TABLE Y;
