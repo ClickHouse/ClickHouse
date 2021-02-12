@@ -53,10 +53,6 @@ public:
 
     void dropTable(const Context & context, const String & name, bool no_delay) override;
 
-    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
-
-    StoragePtr detachTable(const String & name) override;
-
     void drop(const Context & context) override;
 
     void shutdown() override;
@@ -66,6 +62,7 @@ private:
     void startSynchronization();
     StoragePtr getStorage(const String & name);
 
+    Poco::Logger * log;
     const Context global_context;
     String metadata_path;
     ASTPtr database_engine_define;

@@ -252,23 +252,23 @@ void StoragePostgreSQLReplica::createNestedIfNeeded(const std::function<PostgreS
     if (nested_storage)
         return;
 
-    Context context_copy(*global_context);
+    auto context = makeNestedTableContext();
     const auto ast_create = getCreateNestedTableQuery(fetch_table_structure);
 
-    InterpreterCreateQuery interpreter(ast_create, context_copy);
+    InterpreterCreateQuery interpreter(ast_create, context);
     interpreter.execute();
 
     nested_storage = getNested();
 }
 
 
-Context StoragePostgreSQLReplica::makeGetNestedTableContext() const
+Context StoragePostgreSQLReplica::makeNestedTableContext() const
 {
-    auto get_context(*global_context);
-    get_context.makeQueryContext();
-    get_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+    auto context(*global_context);
+    context.makeQueryContext();
+    context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
-    return get_context;
+    return context;
 }
 
 
@@ -277,7 +277,7 @@ StoragePtr StoragePostgreSQLReplica::getNested()
     if (nested_storage)
         return nested_storage;
 
-    auto context = makeGetNestedTableContext();
+    auto context = makeNestedTableContext();
     nested_storage = DatabaseCatalog::instance().getTable(
             StorageID(getStorageID().database_name, getNestedTableName()), context);
 
@@ -290,7 +290,7 @@ StoragePtr StoragePostgreSQLReplica::tryGetNested()
     if (nested_storage)
         return nested_storage;
 
-    auto context = makeGetNestedTableContext();
+    auto context = makeNestedTableContext();
     nested_storage = DatabaseCatalog::instance().tryGetTable(
             StorageID(getStorageID().database_name, getNestedTableName()), context);
 
@@ -338,10 +338,8 @@ void StoragePostgreSQLReplica::dropNested()
     ast_drop->database = table_id.database_name;
     ast_drop->if_exists = true;
 
-    auto drop_context(*global_context);
-    drop_context.makeQueryContext();
-
-    auto interpreter = InterpreterDropQuery(ast_drop, drop_context);
+    auto context = makeNestedTableContext();
+    auto interpreter = InterpreterDropQuery(ast_drop, context);
     interpreter.execute();
 }
 
