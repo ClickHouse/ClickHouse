@@ -10,13 +10,18 @@ This is an experimental feature that is currently in development and is not read
 for general use. It will change in unpredictable backwards-incompatible ways in
 the future releases. Set `allow_experimental_window_functions = 1` to enable it.
 
-ClickHouse currently supports calculation of aggregate functions over a window.
-Pure window functions such as `rank`, `lag`, `lead` and so on are not yet supported.
+ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
-The window can be specified either with an `OVER` clause or with a separate
-`WINDOW` clause.
-
-Only two variants of frame are supported, `ROWS` and `RANGE`. Offsets for the `RANGE` frame are not yet supported.
+| Feature | Support or workaround |
+| --------| ----------|
+| ad hoc window specification (`count(*) over (partition by id order by time desc)`) | yes |
+| `WINDOW` clause (`select ... from table window w as (partiton by id)`) | yes |
+| `ROWS` frame | yes |
+| `RANGE` frame | yes, it is the default |
+| `GROUPS` frame | no |
+| Calculating aggregate functions over a frame (`sum(value) over (order by time)`) | all aggregate functions are supported |
+| `rank()`, `dense_rank()`, `row_number()` | yes |
+| `lag/lead(value, offset)` | no, replace with `any(value) over (.... rows between <offset> preceding and <offset> following)`| 
 
 ## References
 
