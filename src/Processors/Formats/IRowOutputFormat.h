@@ -15,6 +15,14 @@ struct RowOutputFormatParams
 
     // Callback used to indicate that another row is written.
     WriteCallback callback;
+
+    /**
+     * some buffers (kafka / rabbit) split the rows internally using callback
+     * so we can push there formats without framing / delimiters
+     * (like ProtobufSingle). In other cases you can't write more than single row
+     * in unframed format.
+     */
+    bool ignore_no_row_delimiter = false;
 };
 
 class WriteBuffer;

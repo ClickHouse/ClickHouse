@@ -13,8 +13,6 @@
 
 #include <Functions/FunctionHelpers.h>
 
-#include <Common/HashTable/HashMap.h>
-
 namespace DB
 {
 
@@ -84,17 +82,6 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    /// MergedData records, used to avoid duplicated data copy.
-    ///key: src pointer, val:  pos in current column.
-    using Map = HashMap<
-        ConstAggregateDataPtr,
-        size_t,
-        DefaultHash<ConstAggregateDataPtr>,
-        HashTableGrower<3>,
-        HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
-
-    Map copiedDataInfo;
-
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
@@ -132,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(ColumnsWithTypeAndName & arguments, const Context & context) const;
 
     size_t size() const override
     {
@@ -152,8 +139,6 @@ public:
     void insertFrom(const IColumn & from, size_t n) override;
 
     void insertFrom(ConstAggregateDataPtr place);
-
-    void insertCopyFrom(ConstAggregateDataPtr place);
 
     /// Merge state at last row with specified state in another column.
     void insertMergeFrom(ConstAggregateDataPtr place);
@@ -177,8 +162,6 @@ public:
     void updateHashFast(SipHash & hash) const override;
 
     size_t byteSize() const override;
-
-    size_t byteSizeAt(size_t n) const override;
 
     size_t allocatedBytes() const override;
 
@@ -230,7 +213,7 @@ public:
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn &) const override;
-
-    MutableColumnPtr cloneResized(size_t size) const override;
 };
+
+
 }

@@ -28,12 +28,12 @@ namespace ColumnsHashing
 
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
-template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, typename FieldType, bool use_cache = true>
 struct HashMethodOneNumber
-    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache>, Value, Mapped, use_cache>
 {
-    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
     const char * vec;
 
@@ -70,12 +70,12 @@ struct HashMethodOneNumber
 
 
 /// For the case when there is one string key.
-template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true>
 struct HashMethodString
-    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache>, Value, Mapped, use_cache>
 {
-    using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
@@ -108,13 +108,12 @@ protected:
 
 
 /// For the case when there is one fixed-length string key.
-template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true>
 struct HashMethodFixedString
-    : public columns_hashing_impl::
-          HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache>, Value, Mapped, use_cache>
 {
-    using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
@@ -455,13 +454,13 @@ template <>
 struct LowCardinalityKeys<false> {};
 
 /// For the case when all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename Value, typename Key, typename Mapped, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Key, typename Mapped, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache>, Value, Mapped, use_cache>
 {
-    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>;
-    using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache>;
+    using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
     using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>;
 
     static constexpr bool has_nullable_keys = has_nullable_keys_;
@@ -541,13 +540,13 @@ protected:
 };
 
 /// For the case when there is one string key.
-template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, bool use_cache = true>
 struct HashMethodHashed
-    : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache>, Value, Mapped, use_cache>
 {
     using Key = UInt128;
-    using Self = HashMethodHashed<Value, Mapped, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodHashed<Value, Mapped, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
     ColumnRawPtrs key_columns;
 

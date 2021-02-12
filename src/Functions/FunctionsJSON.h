@@ -25,7 +25,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <ext/range.h>
-#include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
 #if !defined(ARCADIA_BUILD)
@@ -56,7 +55,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        static ColumnPtr run(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -167,7 +166,7 @@ private:
         String key;
     };
 
-    static std::vector<Move> prepareMoves(const char * function_name, const ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments);
+    static std::vector<Move> prepareMoves(const char * function_name, ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments);
 
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser>
@@ -287,7 +286,7 @@ public:
         return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
@@ -508,20 +507,11 @@ public:
         }
         else if (element.isDouble())
         {
-            if constexpr (std::is_floating_point_v<NumberType>)
-            {
-                /// We permit inaccurate conversion of double to float.
-                /// Example: double 0.1 from JSON is not representable in float.
-                /// But it will be more convenient for user to perform conversion.
-                value = element.getDouble();
-            }
-            else if (!accurate::convertNumeric(element.getDouble(), value))
+            if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
         else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
-        {
             value = static_cast<NumberType>(element.getBool());
-        }
         else
             return false;
 

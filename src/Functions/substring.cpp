@@ -91,11 +91,9 @@ public:
             if (column_start_const)
             {
                 if (start_value > 0)
-                    sliceFromLeftConstantOffsetUnbounded(
-                        source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1));
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), start_value - 1);
                 else if (start_value < 0)
-                    sliceFromRightConstantOffsetUnbounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
+                    sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -start_value);
                 else
                     throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
             }
@@ -107,11 +105,9 @@ public:
             if (column_start_const && column_length_const)
             {
                 if (start_value > 0)
-                    sliceFromLeftConstantOffsetBounded(
-                        source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1), length_value);
+                    sliceFromLeftConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), start_value - 1, length_value);
                 else if (start_value < 0)
-                    sliceFromRightConstantOffsetBounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
+                    sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), -start_value, length_value);
                 else
                     throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
             }
@@ -122,7 +118,7 @@ public:
         return col_res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t number_of_arguments = arguments.size();
 

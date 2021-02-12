@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Common/UInt128.h>
 #include <common/DayNum.h>
 #include <memory>
 

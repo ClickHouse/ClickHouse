@@ -8,6 +8,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CREATE_IO_BUFFER;
+}
+
+
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -31,18 +37,18 @@ void RabbitMQBlockOutputStream::writePrefix()
         storage.unbindExchange();
 
     buffer = storage.createWriteBuffer();
+    if (!buffer)
+        throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
+
     buffer->activateWriting();
 
-    auto format_settings = getFormatSettings(context);
-    format_settings.protobuf.allow_many_rows_no_delimiters = true;
-
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getHeader(), context,
-        [this](const Columns & /* columns */, size_t /* rows */)
-        {
-            buffer->countRow();
-        },
-        format_settings);
+    child = FormatFactory::instance().getOutput(
+            storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /* columns */, size_t /* rows */)
+            {
+                buffer->countRow();
+            },
+            /* ignore_no_row_delimiter = */ true
+            );
 }
 
 
