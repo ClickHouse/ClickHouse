@@ -55,6 +55,7 @@ DatabasePostgreSQLReplica<DatabaseOrdinary>::DatabasePostgreSQLReplica(
     : DatabaseOrdinary(
             database_name_, metadata_path_, "data/" + escapeForFileName(database_name_) + "/",
             "DatabasePostgreSQLReplica<Ordinary> (" + database_name_ + ")", context)
+    , log(&Poco::Logger::get("PostgreSQLReplicaDatabaseEngine"))
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -117,7 +118,7 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
         }
     }
 
-    LOG_TRACE(&Poco::Logger::get("PostgreSQLReplicaDatabaseEngine"), "Loaded {} tables. Starting synchronization", tables.size());
+    LOG_TRACE(log, "Loaded {} tables. Starting synchronization", tables.size());
     replication_handler->startup();
 }
 
@@ -173,11 +174,20 @@ StoragePtr DatabasePostgreSQLReplica<Base>::tryGetTable(const String & name, con
 }
 
 
-/// TODO: assert called from sync thread
 template<typename Base>
 void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
-    Base::createTable(context, name, table, query);
+    if (context.hasQueryContext())
+    {
+        auto storage_set = context.getQueryContext().getQueryFactoriesInfo().storages;
+        if (storage_set.find("ReplacingMergeTree") != storage_set.end())
+        {
+            Base::createTable(context, name, table, query);
+            return;
+        }
+    }
+
+    LOG_WARNING(log, "Create table query allowed only for ReplacingMergeTree engine and from synchronization thread");
 }
 
 
@@ -185,20 +195,6 @@ template<typename Base>
 void DatabasePostgreSQLReplica<Base>::dropTable(const Context & context, const String & name, bool no_delay)
 {
     Base::dropTable(context, name, no_delay);
-}
-
-
-template<typename Base>
-void DatabasePostgreSQLReplica<Base>::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
-{
-    Base::attachTable(name, table, relative_table_path);
-}
-
-
-template<typename Base>
-StoragePtr DatabasePostgreSQLReplica<Base>::detachTable(const String & name)
-{
-    return Base::detachTable(name);
 }
 
 

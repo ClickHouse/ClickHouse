@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 static const auto reschedule_ms = 500;
 
-/// TODO: context should be const
+/// TODO: add test for syncing only subset of databse tables
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
@@ -81,7 +81,6 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     }
     catch (...)
     {
-        /// TODO: throw
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
@@ -101,7 +100,6 @@ bool PostgreSQLReplicationHandler::isPublicationExist(std::shared_ptr<pqxx::work
     assert(!result.empty());
     bool publication_exists = (result[0][0].as<std::string>() == "t");
 
-    /// TODO: check if publication is still valid?
     if (publication_exists)
         LOG_TRACE(log, "Publication {} already exists. Using existing version", publication_name);
 
@@ -131,26 +129,26 @@ void PostgreSQLReplicationHandler::createPublication(std::shared_ptr<pqxx::work>
         e.addMessage("while creating pg_publication");
         throw;
     }
-
-    /// TODO: check replica identity?
-    /// Requires changed replica identity for included table to be able to receive old values of updated rows.
 }
 
 
 void PostgreSQLReplicationHandler::startSynchronization()
 {
-    /// used commands require a specific transaction isolation mode.
+    /// Used commands require a specific transaction isolation mode.
     replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
 
     auto tx = std::make_shared<pqxx::work>(*replication_connection->conn());
+    bool new_publication = false;
+
     if (publication_name.empty())
     {
         publication_name = fmt::format("{}_ch_publication", database_name);
 
-        /// Publication defines what tables are included into replication stream. Should be deleted only if MaterializePostgreSQL
-        /// table is dropped.
         if (!isPublicationExist(tx))
+        {
             createPublication(tx);
+            new_publication = true;
+        }
     }
     else if (!isPublicationExist(tx))
     {
@@ -175,9 +173,11 @@ void PostgreSQLReplicationHandler::startSynchronization()
     {
         initial_sync();
     }
-    else if (!Poco::File(metadata_path).exists())
+    else if (!Poco::File(metadata_path).exists() || new_publication)
     {
-        /// If replication slot exists and metadata file (where last synced version is written) does not exist, it is not normal.
+        /// In case of some failure, the following cases are possible (since publication and replication slot are reused):
+        /// 1. If replication slot exists and metadata file (where last synced version is written) does not exist, it is not ok.
+        /// 2. If created a new publication and replication slot existed before it was created, it is not ok.
         dropReplicationSlot(ntx, replication_slot);
         initial_sync();
     }
@@ -210,8 +210,6 @@ void PostgreSQLReplicationHandler::startSynchronization()
 
 void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
 {
-    LOG_DEBUG(log, "Creating transaction snapshot");
-
     for (const auto & storage_data : storages)
     {
         try
@@ -231,12 +229,9 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
             /// Already connected to needed database, no need to add it to query.
             query_str = fmt::format("SELECT * FROM {}", storage_data.first);
 
-            Context insert_context(*context);
-            insert_context.makeQueryContext();
-            insert_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
-
             auto insert = std::make_shared<ASTInsertQuery>();
             insert->table_id = nested_storage->getStorageID();
+            auto insert_context = storage_data.second->makeNestedTableContext();
 
             InterpreterInsertQuery interpreter(insert, insert_context);
             auto block_io = interpreter.execute();
@@ -259,7 +254,7 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
         }
     }
 
-    LOG_DEBUG(log, "Done loading from snapshot");
+    LOG_DEBUG(log, "Table dump end");
 }
 
 

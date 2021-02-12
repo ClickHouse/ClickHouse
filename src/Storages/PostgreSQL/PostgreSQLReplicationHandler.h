@@ -40,12 +40,15 @@ private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
 
     bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
+
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
 
     void createPublication(std::shared_ptr<pqxx::work> tx);
+
     void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name);
 
     void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name);
+
     void dropPublication(NontransactionPtr ntx);
 
     void waitConnectionAndStart();

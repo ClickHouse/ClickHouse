@@ -58,7 +58,10 @@ public:
     /// Throw if impossible to get
     StoragePtr getNested();
 
+    Context makeNestedTableContext() const;
+
     void setNestedLoaded() { nested_loaded.store(true); }
+
     bool isNestedLoaded() { return nested_loaded.load(); }
 
 protected:
@@ -80,8 +83,6 @@ private:
     ASTPtr getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure);
 
     std::string getNestedTableName() const;
-
-    Context makeGetNestedTableContext() const;
 
     void dropNested();
 
