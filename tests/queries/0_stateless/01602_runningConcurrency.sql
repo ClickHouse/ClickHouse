@@ -47,3 +47,5 @@ SELECT runningConcurrency(toDate('2000-01-01'), toDateTime('2000-01-01 00:00:00'
 
 -- begin > end
 SELECT runningConcurrency(toDate('2000-01-02'), toDate('2000-01-01')); -- { serverError 117 }
+
+                                                       
