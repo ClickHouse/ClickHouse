@@ -24,7 +24,6 @@ SRCS(
     ColumnFixedString.cpp
     ColumnFunction.cpp
     ColumnLowCardinality.cpp
-    ColumnMap.cpp
     ColumnNullable.cpp
     ColumnString.cpp
     ColumnTuple.cpp

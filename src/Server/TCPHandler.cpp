@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -12,7 +11,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -22,9 +20,8 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -57,28 +54,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
-    : Poco::Net::TCPServerConnection(socket_)
-    , server(server_)
-    , parse_proxy_protocol(parse_proxy_protocol_)
-    , log(&Poco::Logger::get("TCPHandler"))
-    , connection_context(server.context())
-    , query_context(server.context())
-    , server_display_name(std::move(server_display_name_))
-{
-}
-TCPHandler::~TCPHandler()
-{
-    try
-    {
-        state.reset();
-        out->next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
 
 void TCPHandler::runImpl()
 {
@@ -100,13 +75,9 @@ void TCPHandler::runImpl()
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
 
-    /// Support for PROXY protocol
-    if (parse_proxy_protocol && !receiveProxyHeader())
-        return;
-
     if (in->eof())
     {
-        LOG_INFO(log, "Client has not sent any data.");
+        LOG_WARNING(log, "Client has not sent any data.");
         return;
     }
 
@@ -125,7 +96,7 @@ void TCPHandler::runImpl()
 
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
-            LOG_INFO(log, "Client has gone away.");
+            LOG_WARNING(log, "Client has gone away.");
             return;
         }
 
@@ -203,14 +174,8 @@ void TCPHandler::runImpl()
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
-             *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
              */
             if (!receivePacket())
-                continue;
-
-            /** If part_uuids got received in previous packet, trying to read again.
-              */
-            if (state.empty() && state.part_uuids && !receivePacket())
                 continue;
 
             query_scope.emplace(*query_context);
@@ -552,15 +517,9 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
-
-        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-            sendPartUUIDs();
-
         /// This allows the client to prepare output format
         if (Block header = state.io.in->getHeader())
             sendData(header);
@@ -624,9 +583,6 @@ void TCPHandler::processOrdinaryQuery()
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
-
-    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-        sendPartUUIDs();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -729,20 +685,6 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
     throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
 
-void TCPHandler::sendPartUUIDs()
-{
-    auto uuids = query_context->getPartUUIDs()->get();
-    if (!uuids.empty())
-    {
-        for (const auto & uuid : uuids)
-            LOG_TRACE(log, "Sending UUID: {}", toString(uuid));
-
-        writeVarUInt(Protocol::Server::PartUUIDs, *out);
-        writeVectorBinary(uuids, *out);
-        out->next();
-    }
-}
-
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -780,78 +722,6 @@ void TCPHandler::sendExtremes(const Block & extremes)
         state.maybe_compressed_out->next();
         out->next();
     }
-}
-
-
-bool TCPHandler::receiveProxyHeader()
-{
-    if (in->eof())
-    {
-        LOG_WARNING(log, "Client has not sent any data.");
-        return false;
-    }
-
-    String forwarded_address;
-
-    /// Only PROXYv1 is supported.
-    /// Validation of protocol is not fully performed.
-
-    LimitReadBuffer limit_in(*in, 107, true); /// Maximum length from the specs.
-
-    assertString("PROXY ", limit_in);
-
-    if (limit_in.eof())
-    {
-        LOG_WARNING(log, "Incomplete PROXY header is received.");
-        return false;
-    }
-
-    /// TCP4 / TCP6 / UNKNOWN
-    if ('T' == *limit_in.position())
-    {
-        assertString("TCP", limit_in);
-
-        if (limit_in.eof())
-        {
-            LOG_WARNING(log, "Incomplete PROXY header is received.");
-            return false;
-        }
-
-        if ('4' != *limit_in.position() && '6' != *limit_in.position())
-        {
-            LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
-            return false;
-        }
-
-        ++limit_in.position();
-        assertChar(' ', limit_in);
-
-        /// Read the first field and ignore other.
-        readStringUntilWhitespace(forwarded_address, limit_in);
-
-        /// Skip until \r\n
-        while (!limit_in.eof() && *limit_in.position() != '\r')
-            ++limit_in.position();
-        assertString("\r\n", limit_in);
-    }
-    else if (checkString("UNKNOWN", limit_in))
-    {
-        /// This is just a health check, there is no subsequent data in this connection.
-
-        while (!limit_in.eof() && *limit_in.position() != '\r')
-            ++limit_in.position();
-        assertString("\r\n", limit_in);
-        return false;
-    }
-    else
-    {
-        LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
-        return false;
-    }
-
-    LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    connection_context.getClientInfo().forwarded_for = forwarded_address;
-    return true;
 }
 
 
@@ -955,10 +825,6 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
-        case Protocol::Client::IgnoredPartUUIDs:
-            /// Part uuids packet if any comes before query.
-            receiveIgnoredPartUUIDs();
-            return true;
         case Protocol::Client::Query:
             if (!state.empty())
                 receiveUnexpectedQuery();
@@ -992,16 +858,6 @@ bool TCPHandler::receivePacket()
         default:
             throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
-}
-
-void TCPHandler::receiveIgnoredPartUUIDs()
-{
-    state.part_uuids = true;
-    std::vector<UUID> uuids;
-    readVectorBinary(uuids, *in);
-
-    if (!uuids.empty())
-        query_context->getIgnoredPartUUIDs()->add(uuids);
 }
 
 void TCPHandler::receiveClusterNameAndSalt()
@@ -1203,44 +1059,33 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
-        {
-            /// Scalar value
             query_context->addScalar(temporary_id.table_name, block);
-        }
-        else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
-        {
-            /// Data for external tables
-
-            auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-            StoragePtr storage;
-            /// If such a table does not exist, create it.
-            if (resolved)
-            {
-                storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
-            }
-            else
-            {
-                NamesAndTypesList columns = block.getNamesAndTypesList();
-                auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
-                storage = temporary_table.getTable();
-                query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-            }
-            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-            /// The data will be written directly to the table.
-            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
-            temporary_table_out->write(block);
-            temporary_table_out->writeSuffix();
-
-        }
-        else if (state.need_receive_data_for_input)
-        {
-            /// 'input' table function.
-            state.block_for_input = block;
-        }
         else
         {
-            /// INSERT query.
-            state.io.out->write(block);
+            /// If there is an insert request, then the data should be written directly to `state.io.out`.
+            /// Otherwise, we write the blocks in the temporary `external_table_name` table.
+            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+            {
+                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+                StoragePtr storage;
+                /// If such a table does not exist, create it.
+                if (resolved)
+                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+                else
+                {
+                    NamesAndTypesList columns = block.getNamesAndTypesList();
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                    storage = temporary_table.getTable();
+                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+                }
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                /// The data will be written directly to the table.
+                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+            }
+            if (state.need_receive_data_for_input)
+                state.block_for_input = block;
+            else
+                state.io.out->write(block);
         }
         return true;
     }

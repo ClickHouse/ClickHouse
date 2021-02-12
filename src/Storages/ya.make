@@ -17,7 +17,6 @@ SRCS(
     ConstraintsDescription.cpp
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedBlockOutputStream.cpp
-    Distributed/DistributedSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -48,7 +47,6 @@ SRCS(
     MergeTree/MergeTreeDataPartInMemory.cpp
     MergeTree/MergeTreeDataPartTTLInfo.cpp
     MergeTree/MergeTreeDataPartType.cpp
-    MergeTree/MergeTreeDataPartUUID.cpp
     MergeTree/MergeTreeDataPartWide.cpp
     MergeTree/MergeTreeDataPartWriterCompact.cpp
     MergeTree/MergeTreeDataPartWriterInMemory.cpp
@@ -149,7 +147,6 @@ SRCS(
     System/StorageSystemContributors.cpp
     System/StorageSystemContributors.generated.cpp
     System/StorageSystemCurrentRoles.cpp
-    System/StorageSystemDDLWorkerQueue.cpp
     System/StorageSystemDataTypeFamilies.cpp
     System/StorageSystemDatabases.cpp
     System/StorageSystemDetachedParts.cpp

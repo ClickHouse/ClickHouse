@@ -76,8 +76,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
-
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void startup() override;
@@ -89,7 +87,6 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Names & deduplicate_by_columns,
         const Context & context) override;
 
     bool supportsSampling() const override { return true; }
@@ -159,7 +156,7 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void backgroundFlush();
+    void flushBack();
     void reschedule();
 
     BackgroundSchedulePool & bg_pool;

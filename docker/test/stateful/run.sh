@@ -37,15 +37,7 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
-
-service clickhouse-server restart
-
-# Wait for server to start accepting connections
-for _ in {1..120}; do
-    clickhouse-client --query "SELECT 1" && break
-    sleep 1
-done
-
+service clickhouse-server restart && sleep 5
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"

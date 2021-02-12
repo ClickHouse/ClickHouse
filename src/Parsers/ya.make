@@ -60,7 +60,6 @@ SRCS(
     ASTTTLElement.cpp
     ASTTablesInSelectQuery.cpp
     ASTUserNameWithHost.cpp
-    ASTWindowDefinition.cpp
     ASTWithAlias.cpp
     ASTWithElement.cpp
     CommonParsers.cpp
@@ -68,7 +67,6 @@ SRCS(
     ExpressionListParsers.cpp
     IAST.cpp
     IParserBase.cpp
-    InsertQuerySettingsPushDownVisitor.cpp
     Lexer.cpp
     MySQL/ASTAlterCommand.cpp
     MySQL/ASTAlterQuery.cpp

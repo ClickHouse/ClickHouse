@@ -17,7 +17,6 @@ SRCS(
     Executors/ExecutingGraph.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
-    Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
@@ -43,10 +42,9 @@ SRCS(
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp
     Formats/Impl/MySQLOutputFormat.cpp
+    Formats/Impl/NativeFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
-    Formats/Impl/ParallelFormattingOutputFormat.cpp
-    Formats/Impl/ParallelParsingInputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
@@ -92,7 +90,9 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
+    QueryPlan/AddingConstColumnStep.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
+    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
     QueryPlan/CreatingSetsStep.cpp
@@ -114,13 +114,7 @@ SRCS(
     QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
-    QueryPlan/Optimizations/liftUpArrayJoin.cpp
-    QueryPlan/Optimizations/limitPushDown.cpp
-    QueryPlan/Optimizations/mergeExpressions.cpp
-    QueryPlan/Optimizations/optimizeTree.cpp
-    QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
-    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadNothingStep.cpp
@@ -129,13 +123,13 @@ SRCS(
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
-    QueryPlan/WindowStep.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
     Sources/RemoteSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
@@ -161,7 +155,6 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-    Transforms/WindowTransform.cpp
     printPipeline.cpp
 
 )
