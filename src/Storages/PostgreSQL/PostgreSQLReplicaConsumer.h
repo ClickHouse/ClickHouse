@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/PostgreSQL/insertPostgreSQLValue.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -48,16 +49,30 @@ private:
     {
         ExternalResultDescription description;
         MutableColumns columns;
+        std::shared_ptr<ASTExpressionList> columnsAST;
         /// Needed for insertPostgreSQLValue() method to parse array
         std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 
-        BufferData(const Block block)
+        BufferData(StoragePtr storage)
         {
-            description.init(block);
+            const auto storage_metadata = storage->getInMemoryMetadataPtr();
+            description.init(storage_metadata->getSampleBlock());
             columns = description.sample_block.cloneEmptyColumns();
-            for (const auto idx : ext::range(0, description.sample_block.columns()))
+            const auto & storage_columns = storage_metadata->getColumns().getAllPhysical();
+            auto insert_columns = std::make_shared<ASTExpressionList>();
+            size_t idx = 0;
+            assert(description.sample_block.columns() == storage_columns.size());
+
+            for (const auto & column : storage_columns)
+            {
                 if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
                     preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
+                idx++;
+
+                insert_columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+            }
+
+            columnsAST = std::move(insert_columns);
         }
     };
 

@@ -45,7 +45,7 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
 {
     for (const auto & [table_name, storage] : storages)
     {
-        buffers.emplace(table_name, BufferData(storage->getInMemoryMetadata().getSampleBlock()));
+        buffers.emplace(table_name, BufferData(storage));
     }
 
     wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ synchronizationStream(); });
@@ -408,15 +408,17 @@ void PostgreSQLReplicaConsumer::syncTables(std::shared_ptr<pqxx::nontransaction>
 
                     auto insert = std::make_shared<ASTInsertQuery>();
                     insert->table_id = storage->getStorageID();
+                    insert->columns = buffer.columnsAST;
 
                     auto insert_context(*context);
                     insert_context.makeQueryContext();
                     insert_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
-                    InterpreterInsertQuery interpreter(insert, insert_context);
+                    InterpreterInsertQuery interpreter(insert, insert_context, true);
                     auto block_io = interpreter.execute();
                     OneBlockInputStream input(result_rows);
 
+                    assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
                     copyData(input, *block_io.out);
 
                     auto actual_lsn = advanceLSN(tx);
