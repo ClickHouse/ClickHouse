@@ -11,12 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 PostgreSQLReplicaMetadata::PostgreSQLReplicaMetadata(const std::string & metadata_file_path)
     : metadata_file(metadata_file_path)
     , tmp_metadata_file(metadata_file_path + ".tmp")

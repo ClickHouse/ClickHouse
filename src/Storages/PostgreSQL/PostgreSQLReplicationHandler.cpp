@@ -13,16 +13,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
-}
-
 static const auto reschedule_ms = 500;
-
-/// TODO: add test for syncing only subset of databse tables
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,

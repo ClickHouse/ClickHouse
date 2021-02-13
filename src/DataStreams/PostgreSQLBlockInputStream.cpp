@@ -138,8 +138,6 @@ void PostgreSQLBlockInputStream<T>::readSuffix()
     }
 }
 
-
-
 }
 
 #endif

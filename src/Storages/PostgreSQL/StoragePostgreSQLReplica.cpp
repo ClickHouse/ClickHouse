@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 static const auto NESTED_STORAGE_SUFFIX = "_ReplacingMergeTree";
@@ -50,9 +51,6 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "PostgreSQLReplica")
 {
     setInMemoryMetadata(storage_metadata);
-
-    is_postgresql_replica_database = DatabaseCatalog::instance().getDatabase(
-            getStorageID().database_name)->getEngineName() == "PostgreSQLReplica";
 
     auto metadata_path = DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getMetadataPath()
                        +  "/.metadata_" + table_id_.database_name + "_" + table_id_.table_name;
