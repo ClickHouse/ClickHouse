@@ -15,6 +15,10 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+#include <tmmintrin.h>
+#endif
+
 
 template <>
 struct DefaultHash<StringRef> : public StringRefHash {};
@@ -254,5 +258,33 @@ static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
     return {begin, sum_size};
 }
 
+
+/** Pack elements with shuffle instruction.
+  * See the explanation in ColumnsHashing.h
+  */
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+template <typename T>
+static T ALWAYS_INLINE packFixedShuffle(
+    const char * __restrict * __restrict srcs,
+    size_t num_srcs,
+    const size_t * __restrict elem_sizes,
+    size_t idx,
+    const uint8_t * __restrict masks)
+{
+    __m128i res{};
+
+    for (size_t i = 0; i < num_srcs; ++i)
+    {
+        res = _mm_xor_si128(res,
+            _mm_shuffle_epi8(
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(srcs[i] + elem_sizes[i] * idx)),
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(&masks[i * sizeof(T)]))));
+    }
+
+    T out;
+    __builtin_memcpy(&out, &res, sizeof(T));
+    return out;
+}
+#endif
 
 }
