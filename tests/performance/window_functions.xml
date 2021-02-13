@@ -86,4 +86,28 @@
         format Null
     </query>
 
+    <!-- Some synthetic tests.-->
+    <query>
+        select
+            min(number) over w,
+            count(*) over w,
+            max(number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o)
+        format Null
+    </query>
+
+    <query>
+        select
+            first_value(number) over w,
+            dense_rank() over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o)
+        format Null
+    </query>
+
 </test>

@@ -572,6 +572,8 @@
         "01603_rename_overwrite_bug",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
         "01676_dictget_in_default_expression",
+        "01715_background_checker_blather_zookeeper",
+        "01700_system_zookeeper_path_in",
         "attach",
         "ddl_dictionaries",
         "dictionary",

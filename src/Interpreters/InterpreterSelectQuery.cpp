@@ -1847,26 +1847,36 @@ static bool windowDescriptionComparator(const WindowDescription * _left,
         {
             return true;
         }
-
-        if (left[i].column_number < right[i].column_number)
-        {
-            return true;
-        }
-
-        if (left[i].direction < right[i].direction)
-        {
-            return true;
-        }
-
-        if (left[i].nulls_direction < right[i].nulls_direction)
-        {
-            return true;
-        }
-
-        if (left[i] != right[i])
+        else if (left[i].column_name > right[i].column_name)
         {
             return false;
         }
+        else if (left[i].column_number < right[i].column_number)
+        {
+            return true;
+        }
+        else if (left[i].column_number > right[i].column_number)
+        {
+            return false;
+        }
+        else if (left[i].direction < right[i].direction)
+        {
+            return true;
+        }
+        else if (left[i].direction > right[i].direction)
+        {
+            return false;
+        }
+        else if (left[i].nulls_direction < right[i].nulls_direction)
+        {
+            return true;
+        }
+        else if (left[i].nulls_direction > right[i].nulls_direction)
+        {
+            return false;
+        }
+
+        assert(left[i] == right[i]);
     }
 
     // Note that we check the length last, because we want to put together the
