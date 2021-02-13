@@ -175,38 +175,43 @@ def test_insert_distributed_async_send_different_header(batch):
     create_tables('insert_distributed_async_send_cluster_two_shards')
 
     node = get_node(batch)
-    node.query("INSERT INTO dist VALUES (0, '')", settings={
+    node.query("INSERT INTO dist VALUES (0, 'f')", settings={
         'prefer_localhost_replica': 0,
     })
-    node.query('ALTER TABLE dist MODIFY COLUMN value Nullable(String)')
-    node.query("INSERT INTO dist VALUES (2, '')", settings={
+    node.query('ALTER TABLE dist MODIFY COLUMN value UInt64')
+    node.query("INSERT INTO dist VALUES (2, 1)", settings={
         'prefer_localhost_replica': 0,
     })
 
+    n1.query('ALTER TABLE data MODIFY COLUMN value UInt64', settings={
+        'mutations_sync': 1,
+    })
+
     if batch:
-        # first batch with Nullable(String)
-        n1.query('ALTER TABLE data MODIFY COLUMN value Nullable(String)', settings={
-            'mutations_sync': 1,
-        })
-        # but only one batch will be sent
-        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot convert: String to Nullable\(String\)\. Stack trace:"):
+        # but only one batch will be sent, and first is with UInt64 column, so
+        # one rows inserted, and for string ('f') exception will be throw.
+        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot parse string 'f' as UInt64: syntax error at begin of string"):
             node.query('SYSTEM FLUSH DISTRIBUTED dist')
         assert int(n1.query('SELECT count() FROM data')) == 1
-        # second batch with String
-        n1.query('ALTER TABLE data MODIFY COLUMN value String', settings={
-            'mutations_sync': 1,
-        })
+        # but once underlying column String, implicit conversion will do the
+        # thing, and insert left batch.
+        n1.query("""
+        DROP TABLE data SYNC;
+        CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY key;
+        """)
         node.query('SYSTEM FLUSH DISTRIBUTED dist')
-        assert int(n1.query('SELECT count() FROM data')) == 2
-    else:
-        # first send with String
-        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot convert: Nullable\(String\) to String\. Stack trace:"):
-            node.query('SYSTEM FLUSH DISTRIBUTED dist')
         assert int(n1.query('SELECT count() FROM data')) == 1
-        # second send with Nullable(String)
-        n1.query('ALTER TABLE data MODIFY COLUMN value Nullable(String)', settings={
-            'mutations_sync': 1,
-        })
+    else:
+        # first send with String ('f'), so zero rows will be inserted
+        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot parse string 'f' as UInt64: syntax error at begin of string"):
+            node.query('SYSTEM FLUSH DISTRIBUTED dist')
+        assert int(n1.query('SELECT count() FROM data')) == 0
+        # but once underlying column String, implicit conversion will do the
+        # thing, and insert 2 rows (mixed UInt64 and String).
+        n1.query("""
+        DROP TABLE data SYNC;
+        CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY key;
+        """)
         node.query('SYSTEM FLUSH DISTRIBUTED dist')
         assert int(n1.query('SELECT count() FROM data')) == 2
 

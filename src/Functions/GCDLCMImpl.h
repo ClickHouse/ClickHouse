@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 template <class T>
-inline constexpr bool is_gcd_lcm_implemeted = !(is_big_int_v<T> || std::is_floating_point_v<T>);
+inline constexpr bool is_gcd_lcm_implemeted = !is_big_int_v<T>;
 
 template <typename A, typename B, typename Impl, typename Name>
 struct GCDLCMImpl
@@ -33,7 +33,7 @@ struct GCDLCMImpl
     static inline std::enable_if_t<!is_gcd_lcm_implemeted<Result>, Result>
     apply(A, B)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented for big integers and floats", Name::name);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented for big integers", Name::name);
     }
 
     template <typename Result = ResultType>

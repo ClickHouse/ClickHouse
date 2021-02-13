@@ -28,8 +28,7 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_,
-        bool access_to_key_from_attributes_);
+        bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -47,8 +46,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime,
-                                                     require_nonempty, access_to_key_from_attributes);
+        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }

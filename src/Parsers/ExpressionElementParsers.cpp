@@ -24,6 +24,7 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTAssignment.h>
 
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
@@ -45,8 +46,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -504,6 +507,187 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return parser_definition.parse(pos, function->window_definition, expected);
 }
 
+static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
+    Expected & expected)
+{
+    ParserKeyword keyword_rows("ROWS");
+    ParserKeyword keyword_groups("GROUPS");
+    ParserKeyword keyword_range("RANGE");
+
+    if (keyword_rows.ignore(pos, expected))
+    {
+        node->frame.type = WindowFrame::FrameType::Rows;
+    }
+    else if (keyword_groups.ignore(pos, expected))
+    {
+        node->frame.type = WindowFrame::FrameType::Groups;
+    }
+    else if (keyword_range.ignore(pos, expected))
+    {
+        node->frame.type = WindowFrame::FrameType::Range;
+    }
+    else
+    {
+        /* No frame clause. */
+        return true;
+    }
+
+    ParserKeyword keyword_between("BETWEEN");
+    ParserKeyword keyword_unbounded("UNBOUNDED");
+    ParserKeyword keyword_preceding("PRECEDING");
+    ParserKeyword keyword_following("FOLLOWING");
+    ParserKeyword keyword_and("AND");
+    ParserKeyword keyword_current_row("CURRENT ROW");
+
+    // There are two variants of grammar for the frame:
+    // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    // 2) ROWS UNBOUNDED PRECEDING
+    // When the frame end is not specified (2), it defaults to CURRENT ROW.
+    const bool has_frame_end = keyword_between.ignore(pos, expected);
+
+    if (keyword_current_row.ignore(pos, expected))
+    {
+        node->frame.begin_type = WindowFrame::BoundaryType::Current;
+    }
+    else
+    {
+        ParserLiteral parser_literal;
+        ASTPtr ast_literal;
+        if (keyword_unbounded.ignore(pos, expected))
+        {
+            node->frame.begin_type = WindowFrame::BoundaryType::Unbounded;
+        }
+        else if (parser_literal.parse(pos, ast_literal, expected))
+        {
+            const Field & value = ast_literal->as<ASTLiteral &>().value;
+            if (!isInt64FieldType(value.getType()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    Field::Types::toString(value.getType()));
+            }
+            node->frame.begin_offset = value.get<Int64>();
+            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
+            // We can easily get a UINT64_MAX here, which doesn't even fit into
+            // int64_t. Not sure what checks we are going to need here after we
+            // support floats and dates.
+            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame offset must be between {} and {}, but {} is given",
+                    INT_MAX, INT_MIN, node->frame.begin_offset);
+            }
+
+            if (node->frame.begin_offset < 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start offset must be greater than zero, {} given",
+                    node->frame.begin_offset);
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        if (keyword_preceding.ignore(pos, expected))
+        {
+            node->frame.begin_preceding = true;
+        }
+        else if (keyword_following.ignore(pos, expected))
+        {
+            node->frame.begin_preceding = false;
+            if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Frame start UNBOUNDED FOLLOWING is not implemented");
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    if (has_frame_end)
+    {
+        if (!keyword_and.ignore(pos, expected))
+        {
+            return false;
+        }
+
+        if (keyword_current_row.ignore(pos, expected))
+        {
+            node->frame.end_type = WindowFrame::BoundaryType::Current;
+        }
+        else
+        {
+            ParserLiteral parser_literal;
+            ASTPtr ast_literal;
+            if (keyword_unbounded.ignore(pos, expected))
+            {
+                node->frame.end_type = WindowFrame::BoundaryType::Unbounded;
+            }
+            else if (parser_literal.parse(pos, ast_literal, expected))
+            {
+                const Field & value = ast_literal->as<ASTLiteral &>().value;
+                if (!isInt64FieldType(value.getType()))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        Field::Types::toString(value.getType()));
+                }
+                node->frame.end_offset = value.get<Int64>();
+                node->frame.end_type = WindowFrame::BoundaryType::Offset;
+
+                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame offset must be between {} and {}, but {} is given",
+                        INT_MAX, INT_MIN, node->frame.end_offset);
+                }
+
+                if (node->frame.end_offset < 0)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame end offset must be greater than zero, {} given",
+                        node->frame.end_offset);
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            if (keyword_preceding.ignore(pos, expected))
+            {
+                node->frame.end_preceding = true;
+                if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Frame end UNBOUNDED PRECEDING is not implemented");
+                }
+            }
+            else if (keyword_following.ignore(pos, expected))
+            {
+                // Positive offset or UNBOUNDED FOLLOWING.
+                node->frame.end_preceding = false;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    if (!(node->frame == WindowFrame{}))
+    {
+        node->frame.is_default = false;
+    }
+
+    return true;
+}
+
 bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto result = std::make_shared<ASTWindowDefinition>();
@@ -546,6 +730,12 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         {
             return false;
         }
+    }
+
+    if (!tryParseFrameDefinition(result.get(), pos, expected))
+    {
+        /* Broken frame definition. */
+        return false;
     }
 
     ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
@@ -2008,8 +2198,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
-    ParserExpressionList parser_expression_list(false);
+    ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
+
+    ParserList parser_assignment_list(
+        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -2044,9 +2237,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     ASTPtr where_expr;
-    ASTPtr ast_group_by_key;
+    ASTPtr group_by_key;
     ASTPtr recompression_codec;
-    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
+    ASTPtr group_by_assignments;
 
     if (mode == TTLMode::MOVE)
     {
@@ -2058,30 +2251,13 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (mode == TTLMode::GROUP_BY)
     {
-        if (!parser_expression_list.parse(pos, ast_group_by_key, expected))
+        if (!parser_keys_list.parse(pos, group_by_key, expected))
             return false;
 
         if (s_set.ignore(pos))
         {
-            while (true)
-            {
-                if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
-                    break;
-
-                ASTPtr name;
-                ASTPtr value;
-                if (!parser_identifier.parse(pos, name, expected))
-                    return false;
-                if (!s_eq.ignore(pos))
-                    return false;
-                if (!parser_exp.parse(pos, value, expected))
-                    return false;
-
-                String name_str;
-                if (!tryGetIdentifierNameInto(name, name_str))
-                    return false;
-                group_by_aggregations.emplace_back(name_str, std::move(value));
-            }
+            if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
+                return false;
         }
     }
     else if (mode == TTLMode::DELETE && s_where.ignore(pos))
@@ -2105,8 +2281,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::GROUP_BY)
     {
-        ttl_element->group_by_key = std::move(ast_group_by_key->children);
-        ttl_element->group_by_aggregations = std::move(group_by_aggregations);
+        ttl_element->group_by_key = std::move(group_by_key->children);
+        if (group_by_assignments)
+            ttl_element->group_by_assignments = std::move(group_by_assignments->children);
     }
 
     if (mode == TTLMode::RECOMPRESS)
@@ -2139,6 +2316,33 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     }
 
     return false;
+}
+
+bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto assignment = std::make_shared<ASTAssignment>();
+    node = assignment;
+
+    ParserIdentifier p_identifier;
+    ParserToken s_equals(TokenType::Equals);
+    ParserExpression p_expression;
+
+    ASTPtr column;
+    if (!p_identifier.parse(pos, column, expected))
+        return false;
+
+    if (!s_equals.ignore(pos, expected))
+        return false;
+
+    ASTPtr expression;
+    if (!p_expression.parse(pos, expression, expected))
+        return false;
+
+    tryGetIdentifierNameInto(column, assignment->column_name);
+    if (expression)
+        assignment->children.push_back(expression);
+
+    return true;
 }
 
 }

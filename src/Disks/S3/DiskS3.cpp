@@ -23,6 +23,8 @@
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/HeadObjectRequest.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -32,12 +34,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int S3_ERROR;
     extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_DELETE_DIRECTORY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -76,12 +81,12 @@ String getRandomName()
 }
 
 template <typename Result, typename Error>
-void throwIfError(Aws::Utils::Outcome<Result, Error> && response)
+void throwIfError(Aws::Utils::Outcome<Result, Error> & response)
 {
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
+        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
     }
 }
 
@@ -244,7 +249,7 @@ public:
         if (whence == SEEK_CUR)
         {
             /// If position within current working buffer - shift pos.
-            if (working_buffer.size() && size_t(getPosition() + offset_) < absolute_position)
+            if (!working_buffer.empty() && size_t(getPosition() + offset_) < absolute_position)
             {
                 pos += offset_;
                 return getPosition();
@@ -257,7 +262,7 @@ public:
         else if (whence == SEEK_SET)
         {
             /// If position within current working buffer - shift pos.
-            if (working_buffer.size() && size_t(offset_) >= absolute_position - working_buffer.size()
+            if (!working_buffer.empty() && size_t(offset_) >= absolute_position - working_buffer.size()
                 && size_t(offset_) < absolute_position)
             {
                 pos = working_buffer.end() - (absolute_position - offset_);
@@ -500,17 +505,17 @@ private:
     CurrentMetrics::Increment metric_increment;
 };
 
-/// Runs tasks asynchronously using global thread pool.
+/// Runs tasks asynchronously using thread pool.
 class AsyncExecutor : public Executor
 {
 public:
-    explicit AsyncExecutor() = default;
+    explicit AsyncExecutor(int thread_pool_size) : pool(ThreadPool(thread_pool_size)) { }
 
     std::future<void> execute(std::function<void()> task) override
     {
         auto promise = std::make_shared<std::promise<void>>();
 
-        GlobalThreadPool::instance().scheduleOrThrowOnError(
+        pool.scheduleOrThrowOnError(
             [promise, task]()
             {
                 try
@@ -531,6 +536,9 @@ public:
 
         return promise->get_future();
     }
+
+private:
+    ThreadPool pool;
 };
 
 
@@ -544,8 +552,10 @@ DiskS3::DiskS3(
     size_t min_upload_part_size_,
     size_t max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
-    bool send_metadata_)
-    : IDisk(std::make_unique<AsyncExecutor>())
+    bool send_metadata_,
+    int thread_pool_size_,
+    int list_object_keys_size_)
+    : IDisk(std::make_unique<AsyncExecutor>(thread_pool_size_))
     , name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
@@ -556,6 +566,8 @@ DiskS3::DiskS3(
     , max_single_part_upload_size(max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)
+    , revision_counter(0)
+    , list_object_keys_size(list_object_keys_size_)
 {
 }
 
@@ -613,45 +625,31 @@ void DiskS3::moveFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))
         throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
+
+    if (send_metadata)
+    {
+        auto revision = ++revision_counter;
+        const DiskS3::ObjectMetadata object_metadata {
+            {"from_path", from_path},
+            {"to_path", to_path}
+        };
+        createFileOperationObject("rename", revision, object_metadata);
+    }
+
     Poco::File(metadata_path + from_path).renameTo(metadata_path + to_path);
 }
 
 void DiskS3::replaceFile(const String & from_path, const String & to_path)
 {
-    Poco::File from_file(metadata_path + from_path);
-    Poco::File to_file(metadata_path + to_path);
-    if (to_file.exists())
+    if (exists(to_path))
     {
-        Poco::File tmp_file(metadata_path + to_path + ".old");
-        to_file.renameTo(tmp_file.path());
-        from_file.renameTo(metadata_path + to_path);
-        removeFile(to_path + ".old");
+        const String tmp_path = to_path + ".old";
+        moveFile(to_path, tmp_path);
+        moveFile(from_path, to_path);
+        removeFile(tmp_path);
     }
     else
-        from_file.renameTo(to_file.path());
-}
-
-void DiskS3::copyFile(const String & from_path, const String & to_path)
-{
-    if (exists(to_path))
-        removeFile(to_path);
-
-    auto from = readMeta(from_path);
-    auto to = createMeta(to_path);
-
-    for (const auto & [path, size] : from.s3_objects)
-    {
-        auto new_path = getRandomName();
-        Aws::S3::Model::CopyObjectRequest req;
-        req.SetCopySource(bucket + "/" + s3_root_path + path);
-        req.SetBucket(bucket);
-        req.SetKey(s3_root_path + new_path);
-        throwIfError(client->CopyObject(req));
-
-        to.addObject(new_path, size);
-    }
-
-    to.save();
+        moveFile(from_path, to_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t) const
@@ -673,7 +671,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
 
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
-    auto object_metadata = createObjectMetadata(path);
+
+    std::optional<ObjectMetadata> object_metadata;
+    if (send_metadata)
+    {
+        auto revision = ++revision_counter;
+        object_metadata = {
+            {"path", path}
+        };
+        s3_path = "r" + revisionToString(revision) + "-file-" + s3_path;
+    }
+
     if (!exist || mode == WriteMode::Rewrite)
     {
         /// If metadata file exists - remove and create new.
@@ -777,7 +785,8 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
             Aws::S3::Model::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
-            throwIfError(client->DeleteObjects(request));
+            auto outcome = client->DeleteObjects(request);
+            throwIfError(outcome);
         }
     }
 }
@@ -852,6 +861,17 @@ Poco::Timestamp DiskS3::getLastModified(const String & path)
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
 {
+    /// We don't need to record hardlinks created to shadow folder.
+    if (send_metadata && !dst_path.starts_with("shadow/"))
+    {
+        auto revision = ++revision_counter;
+        const ObjectMetadata object_metadata {
+            {"src_path", src_path},
+            {"dst_path", dst_path}
+        };
+        createFileOperationObject("hardlink", revision, object_metadata);
+    }
+
     /// Increment number of references.
     auto src = readMeta(src_path);
     ++src.ref_count;
@@ -886,12 +906,368 @@ void DiskS3::shutdown()
     client->DisableRequestProcessing();
 }
 
-std::optional<DiskS3::ObjectMetadata> DiskS3::createObjectMetadata(const String & path) const
+void DiskS3::createFileOperationObject(const String & operation_name, UInt64 revision, const DiskS3::ObjectMetadata & metadata)
 {
-    if (send_metadata)
-        return (DiskS3::ObjectMetadata){{"path", path}};
+    const String key = "operations/r" + revisionToString(revision) + "-" + operation_name;
+    WriteBufferFromS3 buffer(client, bucket, s3_root_path + key, min_upload_part_size, max_single_part_upload_size, metadata);
+    buffer.write('0');
+    buffer.finalize();
+}
 
-    return {};
+void DiskS3::startup()
+{
+    if (!send_metadata)
+        return;
+
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting up disk {}", name);
+
+    /// Find last revision.
+    UInt64 l = 0, r = LATEST_REVISION;
+    while (l < r)
+    {
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check revision in bounds {}-{}", l, r);
+
+        auto revision = l + (r - l + 1) / 2;
+        auto revision_str = revisionToString(revision);
+
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object with revision {}", revision);
+
+        /// Check file or operation with such revision exists.
+        if (checkObjectExists(s3_root_path + "r" + revision_str)
+            || checkObjectExists(s3_root_path + "operations/r" + revision_str))
+            l = revision;
+        else
+            r = revision - 1;
+    }
+    revision_counter = l;
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {} for disk {}", revision_counter, name);
+}
+
+bool DiskS3::checkObjectExists(const String & prefix)
+{
+    Aws::S3::Model::ListObjectsV2Request request;
+    request.SetBucket(bucket);
+    request.SetPrefix(prefix);
+    request.SetMaxKeys(1);
+
+    auto outcome = client->ListObjectsV2(request);
+    throwIfError(outcome);
+
+    return !outcome.GetResult().GetContents().empty();
+}
+
+Aws::S3::Model::HeadObjectResult DiskS3::headObject(const String & source_bucket, const String & key)
+{
+    Aws::S3::Model::HeadObjectRequest request;
+    request.SetBucket(source_bucket);
+    request.SetKey(key);
+
+    auto outcome = client->HeadObject(request);
+    throwIfError(outcome);
+
+    return outcome.GetResultWithOwnership();
+}
+
+void DiskS3::listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback)
+{
+    Aws::S3::Model::ListObjectsV2Request request;
+    request.SetBucket(source_bucket);
+    request.SetPrefix(source_path);
+    request.SetMaxKeys(list_object_keys_size);
+
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+    do
+    {
+        outcome = client->ListObjectsV2(request);
+        throwIfError(outcome);
+
+        bool should_continue = callback(outcome.GetResult());
+
+        if (!should_continue)
+            break;
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+    } while (outcome.GetResult().GetIsTruncated());
+}
+
+void DiskS3::copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key)
+{
+    Aws::S3::Model::CopyObjectRequest request;
+    request.SetCopySource(src_bucket + "/" + src_key);
+    request.SetBucket(dst_bucket);
+    request.SetKey(dst_key);
+
+    auto outcome = client->CopyObject(request);
+    throwIfError(outcome);
+}
+
+struct DiskS3::RestoreInformation
+{
+    UInt64 revision = LATEST_REVISION;
+    String source_bucket;
+    String source_path;
+};
+
+void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_information)
+{
+    ReadBufferFromFile buffer(metadata_path + restore_file_name, 512);
+    buffer.next();
+
+    /// Empty file - just restore all metadata.
+    if (!buffer.hasPendingData())
+        return;
+
+    try
+    {
+        readIntText(restore_information.revision, buffer);
+        assertChar('\n', buffer);
+
+        if (!buffer.hasPendingData())
+            return;
+
+        readText(restore_information.source_bucket, buffer);
+        assertChar('\n', buffer);
+
+        if (!buffer.hasPendingData())
+            return;
+
+        readText(restore_information.source_path, buffer);
+        assertChar('\n', buffer);
+
+        if (buffer.hasPendingData())
+            throw Exception("Extra information at the end of restore file", ErrorCodes::UNKNOWN_FORMAT);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception("Failed to read restore information", e, ErrorCodes::UNKNOWN_FORMAT);
+    }
+}
+
+void DiskS3::restore()
+{
+    if (!exists(restore_file_name))
+        return;
+
+    try
+    {
+        RestoreInformation information;
+        information.source_bucket = bucket;
+        information.source_path = s3_root_path;
+
+        readRestoreInformation(information);
+        if (information.revision == 0)
+            information.revision = LATEST_REVISION;
+        if (!information.source_path.ends_with('/'))
+            information.source_path += '/';
+
+        if (information.source_bucket == bucket)
+        {
+            /// In this case we need to additionally cleanup S3 from objects with later revision.
+            /// Will be simply just restore to different path.
+            if (information.source_path == s3_root_path && information.revision != LATEST_REVISION)
+                throw Exception("Restoring to the same bucket and path is allowed if revision is latest (0)", ErrorCodes::BAD_ARGUMENTS);
+
+            /// This case complicates S3 cleanup in case of unsuccessful restore.
+            if (information.source_path != s3_root_path && s3_root_path.starts_with(information.source_path))
+                throw Exception("Restoring to the same bucket is allowed only if source path is not a sub-path of configured path in S3 disk", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        ///TODO: Cleanup FS and bucket if previous restore was failed.
+
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
+                 name, information.revision, information.source_bucket, information.source_path);
+
+        restoreFiles(information.source_bucket, information.source_path, information.revision);
+        restoreFileOperations(information.source_bucket, information.source_path, information.revision);
+
+        Poco::File restore_file(metadata_path + restore_file_name);
+        restore_file.remove();
+
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
+    }
+    catch (const Exception & e)
+    {
+        LOG_ERROR(&Poco::Logger::get("DiskS3"), "Failed to restore disk. Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+
+        throw;
+    }
+}
+
+void DiskS3::restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision)
+{
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore files for disk {}", name);
+
+    std::vector<std::future<void>> results;
+    listObjects(source_bucket, source_path, [this, &source_bucket, &source_path, &target_revision, &results](auto list_result)
+    {
+        std::vector<String> keys;
+        for (const auto & row : list_result.GetContents())
+        {
+            const String & key = row.GetKey();
+
+            /// Skip file operations objects. They will be processed separately.
+            if (key.find("/operations/") != String::npos)
+                continue;
+
+            const auto [revision, _] = extractRevisionAndOperationFromKey(key);
+            /// Filter early if it's possible to get revision from key.
+            if (revision > target_revision)
+                continue;
+
+            keys.push_back(key);
+        }
+
+        if (!keys.empty())
+        {
+            auto result = getExecutor().execute([this, &source_bucket, &source_path, keys]()
+            {
+                processRestoreFiles(source_bucket, source_path, keys);
+            });
+
+            results.push_back(std::move(result));
+        }
+
+        return true;
+    });
+
+    for (auto & result : results)
+        result.wait();
+    for (auto & result : results)
+        result.get();
+
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Files are restored for disk {}", name);
+}
+
+void DiskS3::processRestoreFiles(const String & source_bucket, const String & source_path, Strings keys)
+{
+    for (const auto & key : keys)
+    {
+        auto head_result = headObject(source_bucket, key);
+        auto object_metadata = head_result.GetMetadata();
+
+        /// Restore file if object has 'path' in metadata.
+        auto path_entry = object_metadata.find("path");
+        if (path_entry == object_metadata.end())
+            throw Exception("Failed to restore key " + key + " because it doesn't have 'path' in metadata", ErrorCodes::S3_ERROR);
+
+        const auto & path = path_entry->second;
+
+        createDirectories(directoryPath(path));
+        auto metadata = createMeta(path);
+        auto relative_key = shrinkKey(source_path, key);
+
+        /// Copy object if we restore to different bucket / path.
+        if (bucket != source_bucket || s3_root_path != source_path)
+            copyObject(source_bucket, key, bucket, s3_root_path + relative_key);
+
+        metadata.addObject(relative_key, head_result.GetContentLength());
+        metadata.save();
+
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Restored file {}", path);
+    }
+}
+
+void DiskS3::restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision)
+{
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore file operations for disk {}", name);
+
+    /// Enable recording file operations if we restore to different bucket / path.
+    send_metadata = bucket != source_bucket || s3_root_path != source_path;
+
+    listObjects(source_bucket, source_path + "operations/", [this, &source_bucket, &target_revision](auto list_result)
+    {
+        const String rename = "rename";
+        const String hardlink = "hardlink";
+
+        for (const auto & row : list_result.GetContents())
+        {
+            const String & key = row.GetKey();
+
+            const auto [revision, operation] = extractRevisionAndOperationFromKey(key);
+            if (revision == UNKNOWN_REVISION)
+            {
+                LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} with unknown revision", key);
+                continue;
+            }
+
+            /// S3 ensures that keys will be listed in ascending UTF-8 bytes order (revision order).
+            /// We can stop processing if revision of the object is already more than required.
+            if (revision > target_revision)
+                return false;
+
+            /// Keep original revision if restore to different bucket / path.
+            if (send_metadata)
+                revision_counter = revision - 1;
+
+            auto object_metadata = headObject(source_bucket, key).GetMetadata();
+            if (operation == rename)
+            {
+                auto from_path = object_metadata["from_path"];
+                auto to_path = object_metadata["to_path"];
+                if (exists(from_path))
+                {
+                    moveFile(from_path, to_path);
+                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
+                }
+            }
+            else if (operation == hardlink)
+            {
+                auto src_path = object_metadata["src_path"];
+                auto dst_path = object_metadata["dst_path"];
+                if (exists(src_path))
+                {
+                    createDirectories(directoryPath(dst_path));
+                    createHardLink(src_path, dst_path);
+                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
+                }
+            }
+        }
+
+        return true;
+    });
+
+    send_metadata = true;
+
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "File operations restored for disk {}", name);
+}
+
+std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const String & key)
+{
+    UInt64 revision = UNKNOWN_REVISION;
+    String operation;
+
+    re2::RE2::FullMatch(key, key_regexp, &revision, &operation);
+
+    return {revision, operation};
+}
+
+String DiskS3::shrinkKey(const String & path, const String & key)
+{
+    if (!key.starts_with(path))
+        throw Exception("The key " + key + " prefix mismatch with given " + path, ErrorCodes::LOGICAL_ERROR);
+
+    return key.substr(path.length());
+}
+
+String DiskS3::revisionToString(UInt64 revision)
+{
+    static constexpr size_t max_digits = 19; /// UInt64 max digits in decimal representation.
+
+    /// Align revision number with leading zeroes to have strict lexicographical order of them.
+    auto revision_str = std::to_string(revision);
+    auto digits_to_align = max_digits - revision_str.length();
+    for (size_t i = 0; i < digits_to_align; ++i)
+        revision_str = "0" + revision_str;
+
+    return revision_str;
+}
+
+void DiskS3::onFreeze(const String & path)
+{
+    createDirectories(path);
+    WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
+    writeIntText(revision_counter.load(), revision_file_buf);
+    revision_file_buf.finalize();
 }
 
 }

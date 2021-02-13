@@ -3,6 +3,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Interpreters/WindowDescription.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>

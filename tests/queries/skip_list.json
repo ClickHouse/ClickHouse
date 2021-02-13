@@ -90,6 +90,7 @@
         "01300_client_save_history_when_terminated",
         "orc_output",
         "01370_client_autocomplete_word_break_characters",
+        "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
         "01455_time_zones"
     ],
@@ -311,7 +312,8 @@
         "01643_system_suspend",
         "01655_plan_optimizations",
         "01475_read_subcolumns_storages",
-        "01674_clickhouse_client_query_param_cte"
+        "01674_clickhouse_client_query_param_cte",
+        "01666_merge_tree_max_query_limit"
     ],
     "parallel":
     [
@@ -506,6 +508,7 @@
         "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
         "01294_system_distributed_on_cluster",
         "01296_create_row_policy_in_current_database",
+        "01297_create_quota",
         "01305_replica_create_drop_zookeeper",
         "01307_multiple_leaders_zookeeper",
         "01318_long_unsuccessful_mutation_zookeeper",
@@ -558,6 +561,8 @@
         "01541_max_memory_usage_for_user",
         "01542_dictionary_load_exception_race",
         "01575_disable_detach_table_of_dictionary",
+        "01593_concurrent_alter_mutations_kill",
+        "01593_concurrent_alter_mutations_kill_many_replicas",
         "01600_count_of_parts_metrics", // tests global system metrics
         "01600_detach_permanently",
         "01600_log_queries_with_extensive_info",
@@ -566,6 +571,9 @@
         "01602_show_create_view",
         "01603_rename_overwrite_bug",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
+        "01676_dictget_in_default_expression",
+        "01715_background_checker_blather_zookeeper",
+        "01700_system_zookeeper_path_in",
         "attach",
         "ddl_dictionaries",
         "dictionary",
