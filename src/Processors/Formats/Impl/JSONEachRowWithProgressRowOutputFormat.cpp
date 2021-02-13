@@ -33,25 +33,10 @@ void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factor
     factory.registerOutputFormatProcessor("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
-            const FormatSettings & _format_settings)
+            FormatFactory::WriteCallback callback,
+            const FormatSettings & format_settings)
     {
-        FormatSettings settings = _format_settings;
-        settings.json.serialize_as_strings = false;
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf,
-            sample, params, settings);
-    });
-
-    factory.registerOutputFormatProcessor("JSONStringsEachRowWithProgress", [](
-            WriteBuffer & buf,
-            const Block & sample,
-            const RowOutputFormatParams & params,
-            const FormatSettings & _format_settings)
-    {
-        FormatSettings settings = _format_settings;
-        settings.json.serialize_as_strings = true;
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf,
-            sample, params, settings);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, callback, format_settings);
     });
 }
 

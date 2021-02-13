@@ -1,8 +1,3 @@
----
-toc_priority: 54
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0055\u0052\u004c"
----
-
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}
 
 Все функции работают не по RFC - то есть, максимально упрощены ради производительности.
@@ -115,21 +110,17 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 Например, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
-### port(URL[, default_port = 0]) {#port}
-
-Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 
-
 ### path {#path}
 
 Возвращает путь. Пример: `/top/news.html` Путь не включает в себя query string.
 
 ### pathFull {#pathfull}
 
-То же самое, но включая query string и fragment. Пример: /top/news.html?page=2#comments
+То же самое, но включая query string и fragment. Пример: /top/news.html?page=2\#comments
 
 ### queryString {#querystring}
 
-Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также # и всё, что после #.
+Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также \# и всё, что после \#.
 
 ### fragment {#fragment}
 
@@ -137,7 +128,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Возвращает query string и fragment identifier. Пример: страница=1#29390.
+Возвращает query string и fragment identifier. Пример: страница=1\#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 
