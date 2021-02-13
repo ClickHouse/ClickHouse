@@ -715,7 +715,6 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
             writeChar('\n', *used_output.out_maybe_compressed);
 
             used_output.out_maybe_compressed->next();
-            used_output.out->next();
             used_output.out->finalize();
         }
     }
