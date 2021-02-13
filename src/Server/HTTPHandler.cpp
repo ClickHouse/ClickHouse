@@ -774,6 +774,9 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
+
+    if (used_output.out)
+        used_output.out->finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
