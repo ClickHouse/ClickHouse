@@ -77,12 +77,8 @@ static inline T ALWAYS_INLINE packFixed(
     const ColumnRawPtrs * low_cardinality_positions [[maybe_unused]] = nullptr,
     const Sizes * low_cardinality_sizes [[maybe_unused]] = nullptr)
 {
-    union
-    {
-        T key;
-        char bytes[sizeof(key)] = {};
-    };
-
+    T key{};
+    char * bytes = reinterpret_cast<char *>(&key);
     size_t offset = 0;
 
     for (size_t j = 0; j < keys_size; ++j)
