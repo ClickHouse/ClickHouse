@@ -156,4 +156,11 @@ namespace common
             return false;
         return (x * y) / y != x;
     }
+
+    /// Multiply and ignore overflow.
+    template <typename T1, typename T2>
+    inline auto NO_SANITIZE_UNDEFINED mulIgnoreOverflow(T1 x, T2 y)
+    {
+        return x * y;
+    }
 }
