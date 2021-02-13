@@ -135,6 +135,7 @@ SRCS(
     StorageReplicatedMergeTree.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
+    StorageTableName.cpp
     StorageTinyLog.cpp
     StorageURL.cpp
     StorageValues.cpp
