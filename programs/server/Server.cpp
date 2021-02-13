@@ -583,9 +583,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (...)
             {
-                std::string message
-                    = "Caught Exception " + getCurrentExceptionMessage(false) + " writing to write UUID file " + server_uuid_file.string();
-                throw Poco::Exception(message);
+                throw Poco::Exception(
+                    "Caught Exception " + getCurrentExceptionMessage(false) + " while writing the Server UUID file "
+                    + server_uuid_file.string());
             }
             LOG_INFO(log, "Server UUID file {} containing a unique UUID has been written.\n", server_uuid_file.string());
         }
