@@ -1,1 +1,1 @@
-SELECT view(SELECT 1); -- { serverError 183 }
+SELECT view(SELECT 1); -- { clientError 62 }
