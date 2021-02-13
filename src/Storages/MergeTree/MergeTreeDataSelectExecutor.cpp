@@ -834,20 +834,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         plan->addStep(std::move(adding_column));
     }
 
-    if (query_info.prewhere_info_list)
+    if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
     {
-        for (const auto & prewhere_info : *query_info.prewhere_info_list)
-        {
-            if (prewhere_info.remove_columns_actions)
-            {
-                auto expression_step = std::make_unique<ExpressionStep>(
-                    plan->getCurrentDataStream(),
-                    prewhere_info.remove_columns_actions->getActionsDAG().clone());
+        auto expression_step = std::make_unique<ExpressionStep>(
+                plan->getCurrentDataStream(),
+                query_info.prewhere_info->remove_columns_actions->getActionsDAG().clone());
 
-                expression_step->setStepDescription("Remove unused columns after PREWHERE");
-                plan->addStep(std::move(expression_step));
-            }
-        }
+        expression_step->setStepDescription("Remove unused columns after PREWHERE");
+        plan->addStep(std::move(expression_step));
     }
 
     return plan;
@@ -983,7 +977,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             std::move(parts),
             data,
             metadata_snapshot,
-            query_info.prewhere_info_list,
+            query_info.prewhere_info,
             true,
             column_names,
             MergeTreeReadPool::BackoffSettings(settings),
@@ -999,7 +993,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 i, pool, min_marks_for_concurrent_read, max_block_size,
                 settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
                 data, metadata_snapshot, use_uncompressed_cache,
-                query_info.prewhere_info_list, reader_settings, virt_columns);
+                query_info.prewhere_info, reader_settings, virt_columns);
 
             if (i == 0)
             {
@@ -1022,7 +1016,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             auto source = std::make_shared<MergeTreeSelectProcessor>(
                 data, metadata_snapshot, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
-                query_info.prewhere_info_list, true, reader_settings, virt_columns, part.part_index_in_query);
+                query_info.prewhere_info, true, reader_settings, virt_columns, part.part_index_in_query);
 
             res.emplace_back(std::move(source));
         }
@@ -1223,7 +1217,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     column_names,
                     ranges_to_get_from_part,
                     use_uncompressed_cache,
-                    query_info.prewhere_info_list,
+                    query_info.prewhere_info,
                     true,
                     reader_settings,
                     virt_columns,
@@ -1241,7 +1235,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     column_names,
                     ranges_to_get_from_part,
                     use_uncompressed_cache,
-                    query_info.prewhere_info_list,
+                    query_info.prewhere_info,
                     true,
                     reader_settings,
                     virt_columns,
@@ -1395,7 +1389,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                     column_names,
                     part_it->ranges,
                     use_uncompressed_cache,
-                    query_info.prewhere_info_list,
+                    query_info.prewhere_info,
                     true,
                     reader_settings,
                     virt_columns,

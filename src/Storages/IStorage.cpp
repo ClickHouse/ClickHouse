@@ -203,14 +203,14 @@ std::string PrewhereDAGInfo::dump() const
     return ss.str();
 }
 
-std::string FilterInfo::dump() const
+std::string FilterDAGInfo::dump() const
 {
     WriteBufferFromOwnString ss;
-    ss << "FilterInfo for column '" << column_name <<"', do_remove_column "
+    ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-    if (actions_dag)
+    if (actions)
     {
-        ss << "actions_dag " << actions_dag->dumpDAG() << "\n";
+        ss << "actions " << actions->dumpDAG() << "\n";
     }
 
     return ss.str();

@@ -26,7 +26,7 @@ public:
         Names required_columns_,
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
-        const PrewhereInfoListPtr & prewhere_info_list,
+        const PrewhereInfoPtr & prewhere_info,
         bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},

@@ -314,27 +314,38 @@ void StorageBuffer::read(
     }
     else
     {
-        if (query_info.prewhere_info_list)
+        if (query_info.prewhere_info)
         {
-            for (const auto & prewhere_info : *query_info.prewhere_info_list)
+            if (query_info.prewhere_info->filter_info)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<FilterTransform>(
-                        header, prewhere_info.prewhere_actions,
-                        prewhere_info.prewhere_column_name,
-                        prewhere_info.remove_prewhere_column);
+                        header,
+                        query_info.prewhere_info->filter_info->actions,
+                        query_info.prewhere_info->filter_info->column_name,
+                        query_info.prewhere_info->filter_info->do_remove_column);
                 });
-
-                if (prewhere_info.alias_actions)
-                {
-                    pipe_from_buffers.addSimpleTransform([&](const Block & header)
-                    {
-                        return std::make_shared<ExpressionTransform>(
-                            header, prewhere_info.alias_actions);
-                    });
-                }
             }
+
+            if (query_info.prewhere_info->alias_actions)
+            {
+                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(
+                        header,
+                        query_info.prewhere_info->alias_actions);
+                });
+            }
+
+            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header,
+                        query_info.prewhere_info->prewhere_actions,
+                        query_info.prewhere_info->prewhere_column_name,
+                        query_info.prewhere_info->remove_prewhere_column);
+            });
         }
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));

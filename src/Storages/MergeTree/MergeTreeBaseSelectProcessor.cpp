@@ -22,17 +22,17 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     Block header,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const PrewhereInfoListPtr & prewhere_info_list_,
+    const PrewhereInfoPtr & prewhere_info_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(getHeader(std::move(header), prewhere_info_list_, virt_column_names_))
+    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , prewhere_info_list(prewhere_info_list_)
+    , prewhere_info(prewhere_info_)
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -70,18 +70,18 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
 void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
-    if (prewhere_info_list)
+    if (prewhere_info)
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info_list, true);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, true);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info_list, false);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, false);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
@@ -309,37 +309,60 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(Chunk & chunk, MergeTree
     chunk.setColumns(columns, num_rows);
 }
 
-void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const PrewhereInfoListPtr & prewhere_info_list)
+void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
 {
-    if (!prewhere_info_list)
-        return;
-
-    for (const auto & prewhere_info : *prewhere_info_list)
+    if (prewhere_info)
     {
-        if (prewhere_info.alias_actions)
-            prewhere_info.alias_actions->execute(block);
+        if (prewhere_info->filter_info)
+        {
+            auto & filter_info = *prewhere_info->filter_info;
 
-        prewhere_info.prewhere_actions->execute(block);
-        auto & prewhere_column = block.getByName(prewhere_info.prewhere_column_name);
+            if (filter_info.actions)
+                filter_info.actions->execute(block);
 
+            auto & filter_column = block.getByName(filter_info.column_name);
+            if (!filter_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception("Invalid type for row-level security filter: " + filter_column.type->getName(),
+                    ErrorCodes::LOGICAL_ERROR);
+            }
+
+            if (filter_info.do_remove_column)
+                block.erase(filter_info.column_name);
+            else
+            {
+                auto & ctn = block.getByName(filter_info.column_name);
+                ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            }
+        }
+
+        if (prewhere_info->alias_actions)
+            prewhere_info->alias_actions->execute(block);
+
+        if (prewhere_info->prewhere_actions)
+            prewhere_info->prewhere_actions->execute(block);
+
+        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
+        {
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
                 ErrorCodes::LOGICAL_ERROR);
+        }
 
-        if (prewhere_info.remove_prewhere_column)
-            block.erase(prewhere_info.prewhere_column_name);
+        if (prewhere_info->remove_prewhere_column)
+            block.erase(prewhere_info->prewhere_column_name);
         else
         {
-            auto & ctn = block.getByName(prewhere_info.prewhere_column_name);
+            auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
     }
 }
 
 Block MergeTreeBaseSelectProcessor::getHeader(
-    Block block, const PrewhereInfoListPtr & prewhere_info_list, const Names & virtual_columns)
+    Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
 {
-    executePrewhereActions(block, prewhere_info_list);
+    executePrewhereActions(block, prewhere_info);
     injectVirtualColumns(block, nullptr, virtual_columns);
     return block;
 }

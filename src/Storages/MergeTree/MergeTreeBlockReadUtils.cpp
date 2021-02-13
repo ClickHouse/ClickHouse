@@ -118,10 +118,11 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
 MergeTreeReadTask::MergeTreeReadTask(
     const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
     const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
-    const NamesAndTypesList & pre_columns_, const bool should_reorder_, MergeTreeBlockSizePredictorPtr && size_predictor_)
+    const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+    MergeTreeBlockSizePredictorPtr && size_predictor_)
     : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
     ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
-    should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
+    remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
 {
 }
 
@@ -257,7 +258,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const PrewhereInfoListPtr & prewhere_info_list,
+    const PrewhereInfoPtr & prewhere_info,
     bool check_columns)
 {
     Names column_names = required_columns;
@@ -266,12 +267,22 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// inject columns required for defaults evaluation
     bool should_reorder = !injectRequiredColumns(storage, metadata_snapshot, data_part, column_names).empty();
 
-    if (prewhere_info_list)
+    if (prewhere_info)
     {
-        for (const auto & prewhere_info : *prewhere_info_list)
+        if (prewhere_info->filter_info && prewhere_info->filter_info->actions)
         {
-            const auto required_column_names = (prewhere_info.alias_actions ?
-                prewhere_info.alias_actions->getRequiredColumns() : prewhere_info.prewhere_actions->getRequiredColumns());
+            const auto required_column_names = prewhere_info->filter_info->actions->getRequiredColumns();
+            pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
+        }
+
+        if (prewhere_info->alias_actions)
+        {
+            const auto required_column_names = prewhere_info->alias_actions->getRequiredColumns();
+            pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
+        }
+        else
+        {
+            const auto required_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
             pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
         }
 
