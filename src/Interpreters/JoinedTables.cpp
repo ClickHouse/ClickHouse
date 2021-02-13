@@ -230,7 +230,7 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
 {
     /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
     InJoinSubqueriesPreprocessor::SubqueryTables renamed_tables;
-    InJoinSubqueriesPreprocessor(context, renamed_tables).visit(query);
+    InJoinSubqueriesPreprocessor(context.getQueryContext(), renamed_tables).visit(query);
 
     String database;
     if (!renamed_tables.empty())

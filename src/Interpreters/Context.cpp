@@ -884,6 +884,47 @@ const Block & Context::getScalar(const String & name) const
 }
 
 
+void Context::addQueryTable(const StoragePtr & storage)
+{
+    auto lock = getLock();
+    const auto & storage_id = storage->getStorageID();
+    auto it = query_tables.find({storage_id.database_name, storage_id.table_name});
+    if (it == query_tables.end())
+        query_tables.emplace(std::make_pair(storage_id.database_name, storage_id.table_name), storage);
+    else if (it->second != storage)
+        throw Exception("Duplicated query table " + storage_id.getFullTableName(), ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+
+StoragePtr Context::getQueryTable(const StorageID & storage_id) const
+{
+    auto lock = getLock();
+    auto it = query_tables.find({storage_id.database_name, storage_id.table_name});
+    if (it == query_tables.end())
+        return {};
+    else
+        return it->second;
+}
+
+
+Tables Context::getQueryTables() const
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+
+    Tables res;
+    for (const auto & table : query_tables)
+        res[table.second->getStorageID().getFullTableName()] = table.second;
+
+    if (query_context && query_context != this)
+    {
+        Tables buf = query_context->getQueryTables();
+        res.insert(buf.begin(), buf.end());
+    }
+    return res;
+}
+
+
 Tables Context::getExternalTables() const
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);

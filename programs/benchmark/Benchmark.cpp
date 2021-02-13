@@ -412,7 +412,7 @@ private:
             connection.disconnect();
 
         RemoteBlockInputStream stream(
-            connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+            connection, query, {}, global_context, nullptr, Scalars(), Tables(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 

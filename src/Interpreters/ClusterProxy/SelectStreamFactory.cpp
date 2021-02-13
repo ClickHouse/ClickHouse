@@ -41,14 +41,16 @@ SelectStreamFactory::SelectStreamFactory(
     StorageID main_table_,
     const Scalars & scalars_,
     bool has_virtual_shard_num_column_,
-    const Tables & external_tables_)
+    const Tables & external_tables_,
+    const Tables & query_tables_)
     : header(header_),
     processed_stage{processed_stage_},
     main_table(std::move(main_table_)),
     table_func_ptr{nullptr},
     scalars{scalars_},
     has_virtual_shard_num_column(has_virtual_shard_num_column_),
-    external_tables{external_tables_}
+    external_tables(external_tables_),
+    query_tables(query_tables_)
 {
 }
 
@@ -58,13 +60,15 @@ SelectStreamFactory::SelectStreamFactory(
     ASTPtr table_func_ptr_,
     const Scalars & scalars_,
     bool has_virtual_shard_num_column_,
-    const Tables & external_tables_)
+    const Tables & external_tables_,
+    const Tables & query_tables_)
     : header(header_),
     processed_stage{processed_stage_},
     table_func_ptr{table_func_ptr_},
     scalars{scalars_},
     has_virtual_shard_num_column(has_virtual_shard_num_column_),
-    external_tables{external_tables_}
+    external_tables(external_tables_),
+    query_tables(query_tables_)
 {
 }
 
@@ -147,7 +151,7 @@ void SelectStreamFactory::createForShard(
     auto emplace_remote_stream = [&]()
     {
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard_info.pool, modified_query, header, context, throttler, scalars, external_tables, processed_stage);
+            shard_info.pool, modified_query, header, context, throttler, scalars, external_tables, query_tables, processed_stage);
         remote_query_executor->setLogger(log);
 
         remote_query_executor->setPoolMode(PoolMode::GET_MANY);
@@ -248,8 +252,8 @@ void SelectStreamFactory::createForShard(
 
         auto lazily_create_stream = [
                 pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast,
-                &context, context_ptr, throttler,
-                main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
+                &context, context_ptr, throttler, main_table = main_table, table_func_ptr = table_func_ptr,
+                scalars = scalars, external_tables = external_tables, query_tables = query_tables,
                 stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes, async_read]()
             -> Pipe
         {
@@ -294,7 +298,7 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    std::move(connections), modified_query, header, context, throttler, scalars, external_tables, stage);
+                    std::move(connections), modified_query, header, context, throttler, scalars, external_tables, query_tables, stage);
 
                 return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
             }

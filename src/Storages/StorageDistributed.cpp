@@ -526,11 +526,26 @@ void StorageDistributed::read(
     if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", metadata_snapshot))
         has_virtual_shard_num_column = false;
 
-    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
-        ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
-        : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
+    ClusterProxy::SelectStreamFactory select_stream_factory = [&]()
+    {
+        if (remote_table_function_ptr)
+            return ClusterProxy::SelectStreamFactory(
+                header,
+                processed_stage,
+                remote_table_function_ptr,
+                scalars,
+                has_virtual_shard_num_column,
+                context.getExternalTables(),
+                context.getQueryTables());
+        return ClusterProxy::SelectStreamFactory(
+            header,
+            processed_stage,
+            StorageID{remote_database, remote_table},
+            scalars,
+            has_virtual_shard_num_column,
+            context.getExternalTables(),
+            context.getQueryTables());
+    }();
 
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, context, query_info);

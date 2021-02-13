@@ -21,7 +21,7 @@ where distr1.id in
     from distr1
     join distr2 on distr1.id = distr2.id
     where distr1.id > 0
-); -- { serverError 288 }
+);
 
 select distinct(d0.id) from distr1 d0
 where d0.id in

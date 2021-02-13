@@ -24,6 +24,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableName.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
@@ -1210,6 +1211,27 @@ bool TCPHandler::receiveData(bool scalar)
         else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
         {
             /// Data for external tables
+
+            if (temporary_id.table_name == "_query_tables")
+            {
+                if (block.rows() != 1)
+                    throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Block for query tables should have 1 row storing database and table, but it contains {} rows",
+                            block.rows());
+                String database = block.getByName("database").column->getDataAt(0).toString();
+                String table = block.getByName("table").column->getDataAt(0).toString();
+                String remote_database = block.getByName("remote_database").column->getDataAt(0).toString();
+                String remote_table = block.getByName("remote_table").column->getDataAt(0).toString();
+                auto columns_description = ColumnsDescription::parse(block.getByName("columns").column->getDataAt(0).toString());
+
+                query_context->addQueryTable(StorageTableName::create(
+                                StorageID{database, table},
+                                StorageID{remote_database, remote_table},
+                                columns_description,
+                                query_context->getGlobalContext()));
+                return true;
+            }
 
             auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
             StoragePtr storage;

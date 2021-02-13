@@ -251,6 +251,9 @@ private:
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
 
+    // Temporary StorageProxy used to replace certain tables
+    std::map<std::pair<String, String>, StoragePtr> query_tables;
+
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
@@ -406,6 +409,10 @@ public:
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
+
+    void addQueryTable(const StoragePtr & storage);
+    StoragePtr getQueryTable(const StorageID & storage_id) const;
+    Tables getQueryTables() const;
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);

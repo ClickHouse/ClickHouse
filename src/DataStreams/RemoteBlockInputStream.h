@@ -24,24 +24,39 @@ class RemoteBlockInputStream : public IBlockInputStream
 public:
     /// Takes already set connection.
     RemoteBlockInputStream(
-            Connection & connection,
-            const String & query_, const Block & header_, const Context & context_,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        Connection & connection,
+        const String & query_,
+        const Block & header_,
+        const Context & context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        const Tables & query_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     RemoteBlockInputStream(
-            std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Block & header_, const Context & context_,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        std::vector<IConnectionPool::Entry> && connections,
+        const String & query_,
+        const Block & header_,
+        const Context & context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        const Tables & query_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteBlockInputStream(
-            const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Block & header_, const Context & context_,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        const ConnectionPoolWithFailoverPtr & pool,
+        const String & query_,
+        const Block & header_,
+        const Context & context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        const Tables & query_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.

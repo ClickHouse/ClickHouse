@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <DataTypes/DataTypeString.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
@@ -14,6 +15,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Common/FiberStack.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageTableName.h>
 
 namespace DB
 {
@@ -22,14 +24,26 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
+    extern const int LOGICAL_ERROR;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_, const Block & header_, const Context & context_,
-    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_,
+    const Block & header_,
+    const Context & context_,
+    ThrottlerPtr throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    const Tables & query_tables_,
+    QueryProcessingStage::Enum stage_)
+    : header(header_)
+    , query(query_)
+    , context(context_)
+    , scalars(scalars_)
+    , external_tables(external_tables_)
+    , query_tables(query_tables_)
+    , stage(stage_)
 {
     create_multiplexed_connections = [this, &connection, throttler]()
     {
@@ -39,10 +53,21 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections,
-    const String & query_, const Block & header_, const Context & context_,
-    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_,
+    const Block & header_,
+    const Context & context_,
+    const ThrottlerPtr & throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    const Tables & query_tables_,
+    QueryProcessingStage::Enum stage_)
+    : header(header_)
+    , query(query_)
+    , context(context_)
+    , scalars(scalars_)
+    , external_tables(external_tables_)
+    , query_tables(query_tables_)
+    , stage(stage_)
 {
     create_multiplexed_connections = [this, connections, throttler]() mutable
     {
@@ -53,10 +78,21 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_, const Block & header_, const Context & context_,
-    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_,
+    const Block & header_,
+    const Context & context_,
+    const ThrottlerPtr & throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    const Tables & query_tables_,
+    QueryProcessingStage::Enum stage_)
+    : header(header_)
+    , query(query_)
+    , context(context_)
+    , scalars(scalars_)
+    , external_tables(external_tables_)
+    , query_tables(query_tables_)
+    , stage(stage_)
 {
     create_multiplexed_connections = [this, pool, throttler]()
     {
@@ -468,6 +504,39 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 res.emplace_back(std::move(data));
             }
+
+            auto type_string = std::make_shared<DataTypeString>();
+            Block query_table_block;
+            query_table_block.insert({type_string->createColumn(), type_string, "database"});
+            query_table_block.insert({type_string->createColumn(), type_string, "table"});
+            query_table_block.insert({type_string->createColumn(), type_string, "remote_database"});
+            query_table_block.insert({type_string->createColumn(), type_string, "remote_table"});
+            query_table_block.insert({type_string->createColumn(), type_string, "columns"});
+
+            for (const auto & table : query_tables)
+            {
+                StoragePtr cur = table.second;
+                const auto * nested_table = dynamic_cast<StorageTableName *>(cur.get());
+                if (nested_table == nullptr)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Query tables should be of type StorageTableName, but it's {}", cur->getName());
+                const auto & storage_id = cur->getStorageID();
+                auto metadata_snapshot = cur->getInMemoryMetadataPtr();
+                auto data = std::make_unique<ExternalTableData>();
+                data->table_name = "_query_table";
+
+                Block block = query_table_block;
+                MutableColumns new_columns = block.cloneEmptyColumns();
+                new_columns[0]->insert(storage_id.database_name);
+                new_columns[1]->insert(storage_id.table_name);
+                new_columns[2]->insert(nested_table->getNestedStorageID().database_name);
+                new_columns[3]->insert(nested_table->getNestedStorageID().table_name);
+                new_columns[4]->insert(metadata_snapshot->getColumns().toString());
+
+                Chunk chunk(std::move(new_columns), 1);
+                data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromSingleChunk>(std::move(block), std::move(chunk)));
+                res.emplace_back(std::move(data));
+            }
+
             external_tables_data.push_back(std::move(res));
         }
     }

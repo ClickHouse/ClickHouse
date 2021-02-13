@@ -8,6 +8,7 @@
 #include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageTableName.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
@@ -101,6 +102,7 @@ TemporaryTableHolder::TemporaryTableHolder(
       )
 {
 }
+
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
         : global_context(rhs.global_context), temporary_tables(rhs.temporary_tables), id(rhs.id)
@@ -637,6 +639,10 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context & context) const
 {
+    auto storage = context.getQueryTable(table_id);
+    if (storage)
+        return storage;
+
     std::optional<Exception> exc;
     auto res = getTableImpl(table_id, context, &exc);
     if (!res.second)
@@ -646,6 +652,10 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context &
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, const Context & context) const
 {
+    auto storage = context.getQueryTable(table_id);
+    if (storage)
+        return storage;
+
     return getTableImpl(table_id, context, nullptr).second;
 }
 

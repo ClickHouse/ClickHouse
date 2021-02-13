@@ -23,7 +23,8 @@ public:
         StorageID main_table_,
         const Scalars & scalars_,
         bool has_virtual_shard_num_column_,
-        const Tables & external_tables);
+        const Tables & external_tables_,
+        const Tables & query_tables_);
 
     /// TableFunction in a query.
     SelectStreamFactory(
@@ -32,7 +33,8 @@ public:
         ASTPtr table_func_ptr_,
         const Scalars & scalars_,
         bool has_virtual_shard_num_column_,
-        const Tables & external_tables_);
+        const Tables & external_tables_,
+        const Tables & query_tables_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -52,6 +54,7 @@ private:
     Scalars scalars;
     bool has_virtual_shard_num_column = false;
     Tables external_tables;
+    Tables query_tables;
 };
 
 }

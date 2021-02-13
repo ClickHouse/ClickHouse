@@ -47,9 +47,9 @@ public:
         virtual ~CheckShardsAndTables() {}
     };
 
-    InJoinSubqueriesPreprocessor(const Context & context_, SubqueryTables & renamed_tables_,
+    InJoinSubqueriesPreprocessor(Context & context_, SubqueryTables & renamed_tables_,
                                  CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
-        : context(context_)
+        : query_context(context_)
         , renamed_tables(renamed_tables_)
         , checker(std::move(_checker))
     {}
@@ -57,7 +57,7 @@ public:
     void visit(ASTPtr & ast) const;
 
 private:
-    const Context & context;
+    Context & query_context;
     SubqueryTables & renamed_tables;
     CheckShardsAndTables::Ptr checker;
 };

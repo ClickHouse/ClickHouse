@@ -34,22 +34,37 @@ public:
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, const Context & context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        const String & query_,
+        const Block & header_,
+        const Context & context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        const Tables & query_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Block & header_, const Context & context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        const String & query_,
+        const Block & header_,
+        const Context & context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        const Tables & query_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, const Context & context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        const String & query_,
+        const Block & header_,
+        const Context & context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        const Tables & query_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     ~RemoteQueryExecutor();
@@ -117,6 +132,8 @@ private:
     Scalars scalars;
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
+    /// Query tables to rewrite local tables
+    Tables query_tables;
     QueryProcessingStage::Enum stage;
 
     /// Streams for reading from temporary tables and following sending of data
