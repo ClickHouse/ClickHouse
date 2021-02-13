@@ -60,24 +60,28 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
 {
-    if (!blocksHaveEqualStructure(out->getHeader(), block))
-    {
-        ConvertingBlockInputStream convert(
-            std::make_shared<OneBlockInputStream>(block),
-            out->getHeader(),
-            ConvertingBlockInputStream::MatchColumnsMode::Name);
-        auto adopted_block = convert.read();
+    if (blocksHaveEqualStructure(header, block))
+        return block;
 
-        for (size_t i = 0; i < repeats; ++i)
-            out->write(adopted_block);
-    }
-    else
-    {
-        for (size_t i = 0; i < repeats; ++i)
-            out->write(block);
-    }
+    LOG_WARNING(log,
+        "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
+        header.dumpStructure(), block.dumpStructure());
+
+    ConvertingBlockInputStream convert(
+        std::make_shared<OneBlockInputStream>(block),
+        header,
+        ConvertingBlockInputStream::MatchColumnsMode::Name);
+    return convert.read();
+}
+
+
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, size_t repeats, Poco::Logger * log)
+{
+    Block adopted_block = adoptBlock(out->getHeader(), block, log);
+    for (size_t i = 0; i < repeats; ++i)
+        out->write(adopted_block);
 }
 
 
@@ -343,7 +347,9 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
-            job.stream->write(shard_block);
+
+            Block adopted_shard_block = adoptBlock(job.stream->getHeader(), shard_block, log);
+            job.stream->write(adopted_shard_block);
         }
         else // local
         {
@@ -367,7 +373,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 job.stream->writePrefix();
             }
 
-            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount(), log);
         }
 
         job.blocks_written += 1;
@@ -383,11 +389,18 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
     size_t start = 0;
     size_t end = shards_info.size();
-    if (random_shard_insert)
+
+    if (settings.insert_shard_id)
+    {
+        start = settings.insert_shard_id - 1;
+        end = settings.insert_shard_id;
+    }
+    else if (random_shard_insert)
     {
         start = storage.getRandomShardIndex(shards_info);
         end = start + 1;
     }
+
     size_t num_shards = end - start;
 
     if (!pool)
@@ -545,7 +558,7 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 }
 
 
-void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
+void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context.getSettingsRef();
@@ -581,7 +594,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 }
 
 
-void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
+void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
     /// Async insert does not support settings forwarding yet whereas sync one supports
     InterpreterInsertQuery interp(query_ast, context);
@@ -589,7 +602,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     auto block_io = interp.execute();
 
     block_io.out->writePrefix();
-    writeBlockConvert(block_io.out, block, repeats);
+    writeBlockConvert(block_io.out, block, repeats, log);
     block_io.out->writeSuffix();
 }
 

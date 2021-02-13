@@ -4,6 +4,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 
 
 namespace DB
@@ -58,7 +59,8 @@ private:
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings,
+        const String & query_id) const;
 
     /// out_projection - save projection only with columns, requested to read
     QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
@@ -73,7 +75,8 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ActionsDAGPtr & out_projection) const;
+        ActionsDAGPtr & out_projection,
+        const String & query_id) const;
 
     QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
@@ -86,7 +89,8 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ActionsDAGPtr & out_projection) const;
+        ActionsDAGPtr & out_projection,
+        const String & query_id) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
@@ -110,6 +114,24 @@ private:
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log);
+
+    /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
+    ///  as well as `max_block_number_to_read`.
+    void selectPartsToRead(
+        MergeTreeData::DataPartsVector & parts,
+        const std::unordered_set<String> & part_values,
+        const std::optional<KeyCondition> & minmax_idx_condition,
+        std::optional<PartitionPruner> & partition_pruner,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read) const;
+
+    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
+    void selectPartsToReadWithUUIDFilter(
+        MergeTreeData::DataPartsVector & parts,
+        const std::unordered_set<String> & part_values,
+        const std::optional<KeyCondition> & minmax_idx_condition,
+        std::optional<PartitionPruner> & partition_pruner,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        const Context & query_context) const;
 };
 
 }
