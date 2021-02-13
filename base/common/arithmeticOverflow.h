@@ -1,6 +1,8 @@
 #pragma once
 
 #include <common/extended_types.h>
+#include <common/defines.h>
+
 
 namespace common
 {
