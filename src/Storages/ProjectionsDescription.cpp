@@ -130,13 +130,13 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
     {
-        const auto & column = result.sample_block.getByPosition(i);
+        const auto & column_with_type_name = result.sample_block.getByPosition(i);
 
-        if (column.column && isColumnConst(*column.column))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column.name);
+        if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
 
-        result.column_names.emplace_back(column.name);
-        result.data_types.emplace_back(column.type);
+        result.column_names.emplace_back(column_with_type_name.name);
+        result.data_types.emplace_back(column_with_type_name.type);
     }
 
     StorageInMemoryMetadata metadata;

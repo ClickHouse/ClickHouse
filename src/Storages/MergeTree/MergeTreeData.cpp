@@ -3631,7 +3631,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     const SelectQueryOptions & option,
     const ASTPtr & query_ptr,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info) const
+    SelectQueryInfo & query_info)
 {
     const auto & settings = context.getSettingsRef();
     if (!settings.allow_experimental_projection_optimization || option.ignore_projections)
@@ -3645,20 +3645,20 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     // The ownership of ProjectionDescription is hold in metadata_snapshot which lives with InterpreterSelect
     std::vector<std::pair<const ProjectionDescription *, ProjectionKeyActions>> candidates;
     ParserFunction parse_function;
-    for (auto & projection : metadata_snapshot->projections)
+    for (const auto & projection : metadata_snapshot->projections)
     {
         bool covered = true;
         ASTs expr_names;
         Strings maybe_dimension_column_exprs;
         Block key_block = projection.metadata->primary_key.sample_block;
-        for (auto & ctn : query_block)
+        for (const auto & column_with_type_name : query_block)
         {
-            if (!projection.sample_block.has(ctn.name))
-                maybe_dimension_column_exprs.push_back(ctn.name);
+            if (!projection.sample_block.has(column_with_type_name.name))
+                maybe_dimension_column_exprs.push_back(column_with_type_name.name);
             else
             {
-                if (key_block.has(ctn.name))
-                    key_block.erase(ctn.name);
+                if (key_block.has(column_with_type_name.name))
+                    key_block.erase(column_with_type_name.name);
             }
         }
 

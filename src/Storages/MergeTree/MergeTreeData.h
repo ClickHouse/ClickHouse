@@ -357,12 +357,12 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    bool getQueryProcessingStageWithAggregateProjection(
+    static bool getQueryProcessingStageWithAggregateProjection(
         const Context & context,
         const SelectQueryOptions & option,
         const ASTPtr & query_ptr,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info) const;
+        SelectQueryInfo & query_info);
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
 

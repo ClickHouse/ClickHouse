@@ -249,7 +249,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read);
 
         auto pipe = plan ? plan->convertToPipe() : Pipe();
-        if (!pipe.empty()) {
+        if (!pipe.empty())
+        {
             // We already project the block at the end, using projection_block, so we can just add
             // more colunms here without worrying
             if (!query_info.key_actions.func_map.empty())
@@ -2076,10 +2077,11 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read)
 {
-    auto prev_parts = std::move(parts);
+    MergeTreeData::DataPartsVector prev_parts;
+    std::swap(prev_parts, parts);
     for (const auto & part_or_projection : prev_parts)
     {
-        const auto part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values.find(part->name) == part_values.end())
             continue;
 
@@ -2126,7 +2128,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         auto ignored_part_uuids = non_const_context.getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
-        auto prev_parts = std::move(selected_parts);
+        MergeTreeData::DataPartsVector prev_parts;
+        std::swap(prev_parts, selected_parts);
         for (const auto & part_or_projection : prev_parts)
         {
             const auto part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();

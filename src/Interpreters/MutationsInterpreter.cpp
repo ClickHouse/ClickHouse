@@ -492,7 +492,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
-            auto & projection = projections_desc.get(command.projection_name);
+            const auto & projection = projections_desc.get(command.projection_name);
             for (const auto & column : projection.required_columns)
                 dependencies.emplace(column, ColumnDependency::PROJECTION);
             materialized_projections.emplace(command.projection_name);

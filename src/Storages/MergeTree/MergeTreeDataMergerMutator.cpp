@@ -670,7 +670,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const IMergeTreeDataPart * parent_part,
     const String & prefix)
 {
-    const String TMP_PREFIX = parent_part ? prefix : "tmp_merge_";
+    const String tmp_prefix = parent_part ? prefix : "tmp_merge_";
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -693,7 +693,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     auto disk = space_reservation->getDisk();
     String part_path = data.relative_data_path;
-    String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
+    String new_part_tmp_path = part_path + tmp_prefix + future_part.name + "/";
     if (disk->exists(new_part_tmp_path))
         throw Exception("Directory " + fullPath(disk, new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
@@ -722,7 +722,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         future_part.type,
         future_part.part_info,
         single_disk_volume,
-        TMP_PREFIX + future_part.name,
+        tmp_prefix + future_part.name,
         parent_part);
 
     new_data_part->uuid = future_part.uuid;
@@ -1104,7 +1104,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         MergeTreeData::DataPartsVector projection_parts;
-        for (auto & part : parts)
+        for (const auto & part : parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
             if (it != part->getProjectionParts().end())
@@ -1872,7 +1872,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
         {
             bool mutate = false;
             const auto & index_cols = index.expression->getRequiredColumns();
-            for (auto & col : index_cols)
+            for (const auto & col : index_cols)
             {
                 if (updated_columns.count(col))
                 {
@@ -1928,7 +1928,7 @@ std::set<MergeTreeProjectionPtr> MergeTreeDataMergerMutator::getProjectionsToRec
             // If some dependent columns gets mutated
             bool mutate = false;
             const auto & projection_cols = projection.required_columns;
-            for (auto & col : projection_cols)
+            for (const auto & col : projection_cols)
             {
                 if (updated_columns.count(col))
                 {
@@ -2039,7 +2039,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     {
         LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
 
-        auto & projection = projections.get(name);
+        const auto & projection = projections.get(name);
 
         std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
         size_t current_level = 0;
@@ -2058,7 +2058,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                 current_level_parts.pop_back();
             }
 
-            if (selected_parts.size() == 0)
+            if (selected_parts.empty())
             {
                 if (next_level_parts.empty())
                 {
