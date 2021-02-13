@@ -181,10 +181,11 @@ $ zcat result.gz
 2
 ```
 
-## Default Database {#default-database}
-
 !!! note "Note"
     Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
+
+
+## Default Database {#default-database}
 
 You can use the ‘database’ URL parameter or the ‘X-ClickHouse-Database’ header to specify the default database.
 
