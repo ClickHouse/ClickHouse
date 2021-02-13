@@ -15,8 +15,34 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
+struct PrewhereInfo;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
+struct PrewhereDAGInfo;
+using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
+
+struct FilterInfo;
+using FilterInfoPtr = std::shared_ptr<FilterInfo>;
+
+struct FilterDAGInfo;
+using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
+struct InputOrderInfo;
+using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
+
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+class ReadInOrderOptimizer;
+using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
+
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
+
 struct PrewhereInfo
 {
+    /// Information about the preliminary filter expression, if any.
+    FilterInfoPtr filter_info;
     /// Actions which are executed in order to alias columns are used for prewhere actions.
     ExpressionActionsPtr alias_actions;
     /// Actions which are executed on block in order to get filter column for prewhere step.
@@ -26,15 +52,9 @@ struct PrewhereInfo
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
-
-    PrewhereInfo() = default;
-    explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
-        : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
-using PrewhereInfoList = std::vector<PrewhereInfo>;
-
-/// Same as PrewhereInfo, but with ActionsDAG
+/// Same as PrewhereInfo, but with ActionsDAG.
 struct PrewhereDAGInfo
 {
     ActionsDAGPtr alias_actions;
@@ -54,7 +74,15 @@ struct PrewhereDAGInfo
 /// Helper struct to store all the information about the filter expression.
 struct FilterInfo
 {
-    ActionsDAGPtr actions_dag;
+    ExpressionActionsPtr actions;
+    String column_name;
+    bool do_remove_column = false;
+};
+
+/// Same as FilterInfo, but with ActionsDAG.
+struct FilterDAGInfo
+{
+    ActionsDAGPtr actions;
     String column_name;
     bool do_remove_column = false;
 
@@ -77,20 +105,6 @@ struct InputOrderInfo
     bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
 
-using PrewhereInfoListPtr = std::shared_ptr<PrewhereInfoList>;
-using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
-using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
-
-struct TreeRewriterResult;
-using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-
-class ReadInOrderOptimizer;
-using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
-
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
-
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
@@ -106,7 +120,7 @@ struct SelectQueryInfo
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
-    PrewhereInfoListPtr prewhere_info_list;
+    PrewhereInfoPtr prewhere_info;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage

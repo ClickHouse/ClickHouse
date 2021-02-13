@@ -42,14 +42,26 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::FetchColumns:
         {
             Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
-            if (query_info.prewhere_info_list)
+            if (query_info.prewhere_info)
             {
-                for (const auto & prewhere_info : *query_info.prewhere_info_list)
+                auto & prewhere_info = *query_info.prewhere_info;
+
+                if (prewhere_info.filter_info)
                 {
-                    prewhere_info.prewhere_actions->execute(header);
-                    if (prewhere_info.remove_prewhere_column)
-                        header.erase(prewhere_info.prewhere_column_name);
+                    auto & filter_info = *prewhere_info.filter_info;
+
+                    if (filter_info.actions)
+                        filter_info.actions->execute(header);
+
+                    if (filter_info.do_remove_column)
+                        header.erase(filter_info.column_name);
                 }
+
+                if (prewhere_info.prewhere_actions)
+                    prewhere_info.prewhere_actions->execute(header);
+
+                if (prewhere_info.remove_prewhere_column)
+                    header.erase(prewhere_info.prewhere_column_name);
             }
             return header;
         }

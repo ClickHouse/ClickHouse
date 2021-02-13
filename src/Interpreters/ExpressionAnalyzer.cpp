@@ -1320,7 +1320,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         bool first_stage_,
         bool second_stage_,
         bool only_types,
-        const FilterInfoPtr & filter_info_,
+        const FilterDAGInfoPtr & filter_info_,
         const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
@@ -1383,7 +1383,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (storage && filter_info_)
         {
             filter_info = filter_info_;
-            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions_dag, filter_info->column_name);
+            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions, filter_info->column_name);
         }
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
@@ -1583,7 +1583,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
-        filter_info->actions_dag->projectInput();
+        filter_info->actions->projectInput();
     if (hasWhere())
         before_where->projectInput();
     if (hasHaving())

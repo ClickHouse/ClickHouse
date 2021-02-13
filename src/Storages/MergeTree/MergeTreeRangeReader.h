@@ -13,8 +13,7 @@ using ColumnUInt8 = ColumnVector<UInt8>;
 class IMergeTreeReader;
 class MergeTreeIndexGranularity;
 struct PrewhereInfo;
-using PrewhereInfoList = std::vector<PrewhereInfo>;
-using PrewhereInfoListPtr = std::shared_ptr<PrewhereInfoList>;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
@@ -25,7 +24,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereInfoListPtr & prewhere_info_list,
+        const PrewhereInfoPtr & prewhere_info_,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
@@ -218,7 +217,7 @@ private:
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    PrewhereInfoListPtr prewhere_info_list;
+    PrewhereInfoPtr prewhere_info;
 
     Stream stream;
 

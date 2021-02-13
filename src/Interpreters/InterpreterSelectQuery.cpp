@@ -447,10 +447,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
-                filter_info = std::make_shared<FilterInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions_dag, row_policy_filter, required_columns);
+                filter_info = std::make_shared<FilterDAGInfo>();
+                filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
                 source_header = metadata_snapshot->getSampleBlockForColumns(
-                        filter_info->actions_dag->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
+                    filter_info->actions->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
             }
         }
 
@@ -807,9 +807,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     bool intermediate_stage = false;
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
-    const bool filter_in_prewhere = (
-        (settings.optimize_move_to_prewhere || expressions.prewhere_info) &&
-        !input && !input_pipe && storage && storage->supportsPrewhere()
+    const bool execute_row_level_filter_in_prewhere = (
+        (
+            settings.optimize_move_to_prewhere || // ...when it is allowed to move things to prewhere, so we do it for row-level filter actions too.
+            expressions.prewhere_info             // ...or when we already have prewhere and must execute row-level filter before it.
+        ) &&
+        !input && !input_pipe && storage && storage->supportsPrewhere() // Check that prewhere can be used at all.
     );
 
     if (options.only_analyze)
@@ -817,11 +820,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
         query_plan.addStep(std::move(read_nothing));
 
-        if (expressions.filter_info && filter_in_prewhere)
+        if (expressions.filter_info && execute_row_level_filter_in_prewhere)
         {
             auto row_level_security_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentDataStream(),
-                expressions.filter_info->actions_dag,
+                expressions.filter_info->actions,
                 expressions.filter_info->column_name,
                 expressions.filter_info->do_remove_column);
 
@@ -880,7 +883,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             to_aggregation_stage = true;
 
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
-        executeFetchColumns(from_stage, query_plan, filter_in_prewhere);
+        executeFetchColumns(from_stage, query_plan, execute_row_level_filter_in_prewhere);
 
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
@@ -945,11 +948,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         if (expressions.first_stage)
         {
-            if (expressions.filter_info && !filter_in_prewhere)
+            if (expressions.filter_info && !execute_row_level_filter_in_prewhere)
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                         query_plan.getCurrentDataStream(),
-                        expressions.filter_info->actions_dag,
+                        expressions.filter_info->actions,
                         expressions.filter_info->column_name,
                         expressions.filter_info->do_remove_column);
 
@@ -1200,40 +1203,55 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 {
     Pipe pipe(std::make_shared<NullSource>(source_header));
 
-    if (query_info.prewhere_info_list)
+    if (query_info.prewhere_info)
     {
-        for (const auto & prewhere_info : *query_info.prewhere_info_list)
+        auto & prewhere_info = *query_info.prewhere_info;
+
+        if (prewhere_info.filter_info)
         {
-            if (prewhere_info.alias_actions)
-            {
-                pipe.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(
-                        header, prewhere_info.alias_actions);
-                });
-            }
+            auto & filter_info = *prewhere_info.filter_info;
 
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(
                     header,
-                    prewhere_info.prewhere_actions,
-                    prewhere_info.prewhere_column_name,
-                    prewhere_info.remove_prewhere_column);
+                    filter_info.actions,
+                    filter_info.column_name,
+                    filter_info.do_remove_column);
             });
+        }
 
-            // To remove additional columns
-            // In some cases, we did not read any marks so that the pipeline.streams is empty
-            // Thus, some columns in prewhere are not removed as expected
-            // This leads to mismatched header in distributed table
-            if (prewhere_info.remove_columns_actions)
+        if (prewhere_info.alias_actions)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
             {
-                pipe.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(
-                        header, prewhere_info.remove_columns_actions);
-                });
-            }
+                return std::make_shared<ExpressionTransform>(
+                    header,
+                    prewhere_info.alias_actions);
+            });
+        }
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(
+                header,
+                prewhere_info.prewhere_actions,
+                prewhere_info.prewhere_column_name,
+                prewhere_info.remove_prewhere_column);
+        });
+
+        // To remove additional columns
+        // In some cases, we did not read any marks so that the pipeline.streams is empty
+        // Thus, some columns in prewhere are not removed as expected
+        // This leads to mismatched header in distributed table
+        if (prewhere_info.remove_columns_actions)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(
+                    header,
+                    prewhere_info.remove_columns_actions);
+            });
         }
     }
 
@@ -1242,7 +1260,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
     query_plan.addStep(std::move(read_from_pipe));
 }
 
-void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan, bool filter_in_prewhere)
+void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan, bool execute_row_level_filter_in_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
@@ -1569,47 +1587,33 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
 
-        if (expressions.filter_info && filter_in_prewhere)
-        {
-            if (!query_info.prewhere_info_list)
-                query_info.prewhere_info_list = std::make_shared<PrewhereInfoList>();
-
-            query_info.prewhere_info_list->emplace(
-                query_info.prewhere_info_list->begin(),
-                std::make_shared<ExpressionActions>(expressions.filter_info->actions_dag),
-                expressions.filter_info->column_name);
-
-            if (alias_actions)
-            {
-                query_info.prewhere_info_list->back().alias_actions = std::make_shared<ExpressionActions>(alias_actions);
-                alias_actions = nullptr;
-            }
-
-            auto & new_filter_info = query_info.prewhere_info_list->front();
-
-            new_filter_info.remove_prewhere_column = expressions.filter_info->do_remove_column;
-            new_filter_info.need_filter = true;
-        }
-
         if (prewhere_info)
         {
-            if (!query_info.prewhere_info_list)
-                query_info.prewhere_info_list = std::make_shared<PrewhereInfoList>();
+            query_info.prewhere_info = std::make_shared<PrewhereInfo>();
 
-            query_info.prewhere_info_list->emplace_back(
-                std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions),
-                prewhere_info->prewhere_column_name);
+            if (expressions.filter_info && execute_row_level_filter_in_prewhere)
+            {
+                query_info.prewhere_info->filter_info = std::make_shared<FilterInfo>();
 
-            auto & new_prewhere_info = query_info.prewhere_info_list->back();
+                if (expressions.filter_info->actions)
+                    query_info.prewhere_info->filter_info->actions = std::make_shared<ExpressionActions>(expressions.filter_info->actions);
+
+                query_info.prewhere_info->filter_info->column_name = expressions.filter_info->column_name;
+                query_info.prewhere_info->filter_info->do_remove_column = expressions.filter_info->do_remove_column;
+            }
 
             if (prewhere_info->alias_actions)
-                new_prewhere_info.alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
+                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
+
+            if (prewhere_info->prewhere_actions)
+                query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
 
             if (prewhere_info->remove_columns_actions)
-                new_prewhere_info.remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
+                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
 
-            new_prewhere_info.remove_prewhere_column = prewhere_info->remove_prewhere_column;
-            new_prewhere_info.need_filter = prewhere_info->need_filter;
+            query_info.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
+            query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+            query_info.prewhere_info->need_filter = prewhere_info->need_filter;
         }
 
         /// Create optimizer with prepared actions.
