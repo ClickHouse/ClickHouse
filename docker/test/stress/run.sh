@@ -31,6 +31,18 @@ function start()
         sleep 0.5
         counter=$((counter + 1))
     done
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
 }
 
 # install test configs
