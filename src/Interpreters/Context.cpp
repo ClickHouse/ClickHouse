@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -305,8 +305,10 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+#if USE_NURAFT
+    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+#endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -449,8 +451,7 @@ struct ContextShared
         trace_collector.reset();
         /// Stop zookeeper connection
         zookeeper.reset();
-        /// Stop test_keeper storage
-        test_keeper_storage_dispatcher.reset();
+
     }
 
     bool hasTraceCollector() const
@@ -1583,14 +1584,47 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
-{
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
-    if (!shared->test_keeper_storage_dispatcher)
-        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    return shared->test_keeper_storage_dispatcher;
+void Context::initializeNuKeeperStorageDispatcher() const
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+
+    if (shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
+
+    const auto & config = getConfigRef();
+    if (config.has("test_keeper_server"))
+    {
+        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher->initialize(config);
+    }
+#endif
 }
+
+#if USE_NURAFT
+std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
+{
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (!shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
+
+    return shared->nu_keeper_storage_dispatcher;
+}
+#endif
+
+void Context::shutdownNuKeeperStorageDispatcher() const
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (shared->nu_keeper_storage_dispatcher)
+    {
+        shared->nu_keeper_storage_dispatcher->shutdown();
+        shared->nu_keeper_storage_dispatcher.reset();
+    }
+#endif
+}
+
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
