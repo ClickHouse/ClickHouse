@@ -19,6 +19,7 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 class Context;
 class WriteBuffer;
+class QueryProcessHolder;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
@@ -76,6 +77,8 @@ public:
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 
+    void addQueryProcessHolder(std::shared_ptr<QueryProcessHolder> query_process_holder_);
+
     /// Tree node. Step and it's children.
     struct Node
     {
@@ -95,6 +98,7 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::shared_ptr<QueryProcessHolder> query_process_holder;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

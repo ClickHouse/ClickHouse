@@ -17,6 +17,7 @@ namespace DB
 {
 
 class QueryStatus;
+class QueryProcessHolder;
 class ExecutingGraph;
 using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 
@@ -30,7 +31,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors_, QueryStatus * elem = nullptr);
+    explicit PipelineExecutor(Processors & processors_, QueryStatus * elem = nullptr, std::shared_ptr<QueryProcessHolder> query_process_holder_ = {});
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -128,6 +129,8 @@ private:
 
     /// Now it's used to check if query was killed.
     QueryStatus * process_list_element = nullptr;
+    /// FIXME: consider replacing QueryStatus with QueryProcessHolder (but not that easy)
+    std::shared_ptr<QueryProcessHolder> query_process_holder;
 
     /// Graph related methods.
     bool expandPipeline(Stack & stack, UInt64 pid);

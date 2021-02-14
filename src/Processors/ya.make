@@ -122,6 +122,7 @@ SRCS(
     QueryPlan/PartialSortingStep.cpp
     QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
+    QueryPlan/QueryProcessHolder.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadNothingStep.cpp
     QueryPlan/ReverseRowsStep.cpp

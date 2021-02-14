@@ -108,6 +108,7 @@ public:
 
     void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
+    void addQueryProcessHolder(std::shared_ptr<QueryProcessHolder> query_process_holder_);
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
     void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
@@ -152,6 +153,8 @@ private:
     size_t max_threads = 0;
 
     QueryStatus * process_list_element = nullptr;
+
+    std::shared_ptr<QueryProcessHolder> query_process_holder;
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();

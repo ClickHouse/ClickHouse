@@ -1,4 +1,5 @@
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/QueryPlan/QueryProcessHolder.h>
 #include <queue>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/printPipeline.h>
@@ -33,13 +34,14 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
+PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem, std::shared_ptr<QueryProcessHolder> query_process_holder_)
     : processors(processors_)
     , cancelled(false)
     , finished(false)
     , num_processing_executors(0)
     , expand_pipeline_task(nullptr)
     , process_list_element(elem)
+    , query_process_holder(std::move(query_process_holder_))
 {
     try
     {
@@ -390,6 +392,9 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
+    if (query_process_holder)
+        query_process_holder->initialize();
+
     try
     {
         executeImpl(num_threads);
@@ -417,6 +422,20 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
+    /// Some queries with QueryProcess attached (query_process_holder)
+    /// still can be executed within the same thread, in this case QueryProcess
+    /// cannot be changed yet.
+    ///
+    /// Example of such query is:
+    ///
+    ///     select * from remote('127.1', system.one) where dummy global in (select * from remote('127.1', system.one))
+    ///
+    /// But this will be fixed in [1], although this does not mean that can:
+    ///
+    ///     assert(!query_process_holder);
+    ///
+    ///   [1]: https://github.com/ClickHouse/ClickHouse/pull/20550
+
     if (finished)
         return false;
 

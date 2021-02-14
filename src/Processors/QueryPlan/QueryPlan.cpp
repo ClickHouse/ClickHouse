@@ -7,6 +7,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/QueryProcessHolder.h>
 
 namespace DB
 {
@@ -86,6 +87,9 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
         max_threads = std::max(max_threads, plan->max_threads);
         interpreter_context.insert(interpreter_context.end(),
                                    plan->interpreter_context.begin(), plan->interpreter_context.end());
+
+        if (plan->query_process_holder)
+            addQueryProcessHolder(std::move(plan->query_process_holder));
     }
 }
 
@@ -174,6 +178,8 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
     for (auto & context : interpreter_context)
         last_pipeline->addInterpreterContext(std::move(context));
 
+    last_pipeline->addQueryProcessHolder(std::move(query_process_holder));
+
     return last_pipeline;
 }
 
@@ -191,6 +197,21 @@ Pipe QueryPlan::convertToPipe()
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
+}
+
+void QueryPlan::addQueryProcessHolder(std::shared_ptr<QueryProcessHolder> query_process_holder_)
+{
+    ///
+    /// FIXME: multiple QueryProcess is required for multiple localhost nodes for Distributed query, i.e.:
+    ///     SELECT * FROM remote('127.{1,1}')
+    /// But for now it will use one of them, anyway this is not a common query.
+    ///
+    /// NOTE: should be replaced with assert(!query_process_holder) once it will be addressed.
+    ///
+    if (query_process_holder)
+        return;
+
+    query_process_holder = std::move(query_process_holder_);
 }
 
 

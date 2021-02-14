@@ -12,6 +12,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/QueryProcessHolder.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -94,6 +95,12 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
     pipe.addTransform(std::move(transform));
+}
+
+void QueryPipeline::addQueryProcessHolder(std::shared_ptr<QueryProcessHolder> query_process_holder_)
+{
+    assert(!query_process_holder);
+    query_process_holder = std::move(query_process_holder_);
 }
 
 void QueryPipeline::transform(const Transformer & transformer)
@@ -424,7 +431,8 @@ PipelineExecutorPtr QueryPipeline::execute()
     if (!isCompleted())
         throw Exception("Cannot execute pipeline because it is not completed.", ErrorCodes::LOGICAL_ERROR);
 
-    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
+    return std::make_shared<PipelineExecutor>(
+        pipe.processors, process_list_element, std::move(query_process_holder));
 }
 
 void QueryPipeline::setCollectedProcessors(Processors * processors)
