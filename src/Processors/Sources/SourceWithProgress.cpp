@@ -59,19 +59,19 @@ void SourceWithProgress::progress(const Progress & value)
         total_rows_approx = 0;
     }
 
-    /// Will compute this and update last_total_elapsed_time only if needed.
-    UInt64 current_chunk_elapsed_time = 0;
+    /// Will compute this and update last_total_processing_time only if needed.
+    UInt64 current_chunk_processing_time = 0;
 
     if (progress_callback || process_list_elem)
     {
-        const auto total_elapsed_time = total_stopwatch.elapsedNanoseconds();
-        current_chunk_elapsed_time = total_elapsed_time - last_total_elapsed_time;
-        last_total_elapsed_time = total_elapsed_time;
+        const auto total_processing_time = total_stopwatch.elapsedNanoseconds();
+        current_chunk_processing_time = total_processing_time - last_total_processing_time;
+        last_total_processing_time = total_processing_time;
     }
 
     if (progress_callback)
     {
-        value.setElapsedTimeIfNull(current_chunk_elapsed_time);
+        value.setElapsedTimeIfNull(current_chunk_processing_time);
         progress_callback(value);
     }
 
@@ -113,18 +113,18 @@ void SourceWithProgress::progress(const Progress & value)
         }
 
         constexpr UInt64 profile_events_update_period = 10 * 1'000'000; // 10 milliseconds worth nanoseconds
-        if (last_profile_events_update_time + profile_events_update_period < last_total_elapsed_time)
+        if (last_profile_events_update_time + profile_events_update_period < last_total_processing_time)
         {
             /// Should be done in PipelineExecutor.
             /// It is here for compatibility with IBlockInputsStream.
             CurrentThread::updatePerformanceCounters();
-            last_profile_events_update_time = last_total_elapsed_time;
+            last_profile_events_update_time = last_total_processing_time;
         }
 
         /// Should be done in PipelineExecutor.
         /// It is here for compatibility with IBlockInputsStream.
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, progress.total_rows_to_read,
-                                     last_total_elapsed_time / 1000 /* nanoseconds to microseconds */);
+                                     last_total_processing_time / 1000 /* nanoseconds to microseconds */);
 
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
