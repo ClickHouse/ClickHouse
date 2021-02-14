@@ -29,7 +29,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     /// cast of numeric constant in condition to UInt8
     if (const auto * function = condition->as<ASTFunction>())
     {
-        if (function->name == "cast")
+        if (function->name == "CAST")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {

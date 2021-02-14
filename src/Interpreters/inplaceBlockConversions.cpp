@@ -79,7 +79,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         auto cast_func = makeASTFunction(
-            "cast", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
+            "CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
 
         conversion_expr_list->children.emplace_back(setAlias(cast_func, required_column.name));
 

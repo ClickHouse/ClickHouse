@@ -56,6 +56,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <common/logger_useful.h>
@@ -1118,6 +1119,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
 
 BlockIO InterpreterCreateQuery::execute()
 {
+    FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {
