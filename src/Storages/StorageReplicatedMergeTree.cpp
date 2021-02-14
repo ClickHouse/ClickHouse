@@ -1330,14 +1330,61 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         if (!existing_part)
             existing_part = getActiveContainingPart(entry.new_part_name);
 
-        /// Even if the part is locally, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-        if (existing_part && getZooKeeper()->exists(replica_path + "/parts/" + existing_part->name))
+        const String part_path = replica_path + "/parts/" + existing_part->name;
+
+        /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
+        if (existing_part && getZooKeeper()->exists(part_path))
         {
             if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
             {
                 LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
             }
             return true;
+        }
+
+        auto try_find_part_in_detached = [this, &]()
+        {
+            const MergeTreePartInfo target_part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+
+            MergeTreePartInfo part_iter;
+            const Poco::DirectoryIterator dir_end;
+
+            // TODO REPLACE
+
+            const String checksum = getZooKeeper()->get(part_path)
+
+            for (const std::string & path : getDataPaths())
+            {
+                for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+                {
+                    if (!MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_iter, format_version) ||
+                        part_iter.partition_id != target_part.partition_id)
+                        continue;
+
+                    DataPartPtr iter_part_ptr = {
+                        *this, // storage
+                        dir_it.name(), //name
+                        getVolume(), //volume ??
+                        std::nullopt, // ?? relative path
+                        entry.new_part_type
+                    };
+
+                    // TODO Why hex, not checksums_str?
+                    if (our_part_ptr->checksums.getTotalChecksumHex() !=
+                        iter_part_ptr->checksums.getTotalChecksumHex())
+                        /// the part with same partition id has different checksum, so it is corrupt.
+                        return false;
+
+                    ///Attach part
+                    return true;
+                }
+            }
+        };
+
+        /// We also check for the part in the detached/ folder by checksum
+        if (entry.type == LogEntry::GET_PART)
+        {
+            try_find_part_in_detached();
         }
     }
 
@@ -1353,24 +1400,27 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     bool do_fetch = false;
 
-    if (entry.type == LogEntry::GET_PART)
+    switch (entry.type)
     {
-        /// Before fetching the part, we need to look for it in the detached/ folder by checksum.
-        /// If we are lucky, we do not copy the part over the network.
-        // TODO
-        do_fetch = true;
+        case LogEntry::GET_PART:
+            /// We surely don't have this part locally as we've checked it before, so download it.
+            do_fetch = true;
+            break;
+        case LogEntry::MERGE_PARTS:
+            /// Sometimes it's better to fetch the merged part instead of merging,
+            /// e.g when we don't have all the source parts.
+            do_fetch = !tryExecuteMerge(entry);
+            break;
+        case LogEntry::MUTATE_PART:
+            /// Sometimes it's better to fetch mutated part instead of merging.
+            do_fetch = !tryExecutePartMutation(entry);
+            break;
+        case LogEntry::ALTER_METADATA:
+            return executeMetadataAlter(entry);
+        default:
+            throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)),
+                ErrorCodes::LOGICAL_ERROR);
     }
-    else if (entry.type == LogEntry::MERGE_PARTS)
-        /// Sometimes it's better to fetch merged part instead of merge
-        /// For example when we don't have all source parts for merge
-        do_fetch = !tryExecuteMerge(entry);
-    else if (entry.type == LogEntry::MUTATE_PART)
-        /// Sometimes it's better to fetch mutated part instead of merge
-        do_fetch = !tryExecutePartMutation(entry);
-    else if (entry.type == LogEntry::ALTER_METADATA)
-        return executeMetadataAlter(entry);
-    else
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
 
     if (do_fetch)
         return executeFetch(entry);
@@ -3104,7 +3154,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 
     for (const String & replica : replicas)
     {
-        /// We don't interested in ourself.
+        /// We aren't interested in ourself.
         if (replica == replica_name)
             continue;
 

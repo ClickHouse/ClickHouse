@@ -52,6 +52,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "get\n" << new_part_name;
             break;
 
+        case ATTACH_PART:
+            out << "attach\n" << new_part_name;
+            break;
+
         case MERGE_PARTS:
             out << "merge\n";
             for (const String & s : source_parts)
@@ -175,9 +179,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     in >> type_str >> "\n";
 
     bool trailing_newline_found = false;
+
     if (type_str == "get")
     {
         type = GET_PART;
+        in >> new_part_name;
+    }
+    else if (type_str == "attach")
+    {
+        type = ATTACH_PART;
         in >> new_part_name;
     }
     else if (type_str == "merge")
