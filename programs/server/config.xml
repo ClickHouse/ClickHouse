@@ -421,8 +421,14 @@
     <!-- Comma-separated list of prefixes for user-defined settings. -->
     <custom_settings_prefixes></custom_settings_prefixes>
 
-    <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distributed DDL worker and so on). -->
+    <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
+
+    <!-- Buffer profile of settings.
+         This settings are used by Buffer storage to flush data to the underlying table.
+         Default: used from system_profile directive.
+    -->
+    <!-- <buffer_profile>default</buffer_profile> -->
 
     <!-- Default database. -->
     <default_database>default</default_database>

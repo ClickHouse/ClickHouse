@@ -217,10 +217,12 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
             current_frame.object = object->name;
             if (std::filesystem::exists(current_frame.object.value()))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
+                std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
+                if (dwarf_it->second.findAddress(
+                        uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST, inline_frames))
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
@@ -314,7 +316,11 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 }
 
 static void toStringEveryLineImpl(
-    const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, std::function<void(const std::string &)> callback)
+    bool fatal,
+    const StackTrace::FramePointers & frame_pointers,
+    size_t offset,
+    size_t size,
+    std::function<void(const std::string &)> callback)
 {
     if (size == 0)
         return callback("<Empty trace>");
@@ -324,11 +330,12 @@ static void toStringEveryLineImpl(
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
     {
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         const void * virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -340,10 +347,11 @@ static void toStringEveryLineImpl(
         {
             if (std::filesystem::exists(object->name))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
+                auto mode = fatal ? DB::Dwarf::LocationInfoMode::FULL_WITH_INLINE : DB::Dwarf::LocationInfoMode::FAST;
+                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
                     out << location.file.toString() << ":" << location.line << ": ";
             }
         }
@@ -360,11 +368,20 @@ static void toStringEveryLineImpl(
         out << " @ " << physical_addr;
         out << " in " << (object ? object->name : "?");
 
+        for (size_t j = 0; j < inline_frames.size(); ++j)
+        {
+            const auto & frame = inline_frames[j];
+            int status = 0;
+            callback(fmt::format("{}.{}. inlined from {}:{}: {}",
+                     i, j+1, frame.location.file.toString(), frame.location.line, demangle(frame.name, status)));
+        }
+
         callback(out.str());
         out.str({});
     }
 #else
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    UNUSED(fatal);
+    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
@@ -382,13 +399,13 @@ static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers
 {
     std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
-    toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
+    toStringEveryLineImpl(false, frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }
 
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
-    toStringEveryLineImpl(frame_pointers, offset, size, std::move(callback));
+    toStringEveryLineImpl(true, frame_pointers, offset, size, std::move(callback));
 }
 
 

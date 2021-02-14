@@ -54,13 +54,15 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else if (begin_type == BoundaryType::Unbounded)
     {
-        buf << "UNBOUNDED PRECEDING";
+        buf << "UNBOUNDED";
+        buf << " "
+            << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
     else
     {
         buf << abs(begin_offset);
         buf << " "
-            << (begin_offset > 0 ? "FOLLOWING" : "PRECEDING");
+            << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
     buf << " AND ";
     if (end_type == BoundaryType::Current)
@@ -69,18 +71,25 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else if (end_type == BoundaryType::Unbounded)
     {
-        buf << "UNBOUNDED PRECEDING";
+        buf << "UNBOUNDED";
+        buf << " "
+            << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
     else
     {
         buf << abs(end_offset);
         buf << " "
-            << (end_offset > 0 ? "FOLLOWING" : "PRECEDING");
+            << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
 }
 
 void WindowFrame::checkValid() const
 {
+    // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
+    // forbidden at the parsing level.
+    assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
+    assert(!(end_type == BoundaryType::Unbounded && end_preceding));
+
     if (begin_type == BoundaryType::Unbounded
         || end_type == BoundaryType::Unbounded)
     {
@@ -89,14 +98,14 @@ void WindowFrame::checkValid() const
 
     if (begin_type == BoundaryType::Current
         && end_type == BoundaryType::Offset
-        && end_offset > 0)
+        && !end_preceding)
     {
         return;
     }
 
     if (end_type == BoundaryType::Current
         && begin_type == BoundaryType::Offset
-        && begin_offset < 0)
+        && begin_preceding)
     {
         return;
     }
@@ -112,21 +121,44 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && begin_type == BoundaryType::Offset)
     {
-        if (type == FrameType::Rows)
+        // Frame starting with following rows can't have preceding rows.
+        if (!(end_preceding && !begin_preceding))
         {
-            if (end_offset >= begin_offset)
-            {
-                return;
-            }
-        }
+            // Frame start offset must be less or equal that the frame end offset.
+            const bool begin_before_end
+                = begin_offset * (begin_preceding ? -1 : 1)
+                    <= end_offset * (end_preceding ? -1 : 1);
 
-        // For RANGE and GROUPS, we must check that end follows begin if sorted
-        // according to ORDER BY (we don't support them yet).
+            if (!begin_before_end)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start offset {} {} does not precede the frame end offset {} {}",
+                    begin_offset, begin_preceding ? "PRECEDING" : "FOLLOWING",
+                    end_offset, end_preceding ? "PRECEDING" : "FOLLOWING");
+            }
+            return;
+        }
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Window frame '{}' is invalid",
         toString());
+}
+
+void WindowDescription::checkValid() const
+{
+    frame.checkValid();
+
+    // RANGE OFFSET requires exactly one ORDER BY column.
+    if (frame.type == WindowFrame::FrameType::Range
+        && (frame.begin_type == WindowFrame::BoundaryType::Offset
+            || frame.end_type == WindowFrame::BoundaryType::Offset)
+        && order_by.size() != 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The RANGE OFFSET window frame requires exactly one ORDER BY column, {} given",
+           order_by.size());
+    }
 }
 
 }
