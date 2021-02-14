@@ -60,6 +60,11 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(this->written_bytes, out);
     writeCString("\",\"total_rows_to_read\":\"", out);
     writeText(this->total_rows_to_read, out);
+    if (this->elapsed_time > 0)
+    {
+        writeCString("\",\"elapsed_time\":\"", out);
+        writeText(this->elapsed_time, out);
+    }
     writeCString("\"}", out);
 }
 

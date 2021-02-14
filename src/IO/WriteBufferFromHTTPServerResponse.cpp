@@ -46,8 +46,10 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
     if (headers_finished_sending)
         return;
 
+    auto progress_values = accumulated_progress.getValues();
+    progress_values.elapsed_time = total_watch.elapsedNanoseconds();
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
+    progress_values.writeJSON(progress_string_writer);
 
     if (response_header_ostr)
         *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
@@ -60,8 +62,10 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
     if (headers_finished_sending)
         return;
 
+    auto progress_values = accumulated_progress.getValues();
+    progress_values.elapsed_time = total_watch.elapsedNanoseconds();
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
+    progress_values.writeJSON(progress_string_writer);
 
     if (response_header_ostr)
         *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;

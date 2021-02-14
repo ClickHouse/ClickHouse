@@ -20,6 +20,7 @@ struct ProgressValues
     size_t total_rows_to_read;
     size_t written_rows;
     size_t written_bytes;
+    size_t elapsed_time = 0;        /// In nanoseconds. Not read. Must be set manually. Written only to JSON, and only when greater than 0.
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
