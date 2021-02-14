@@ -546,7 +546,7 @@ accurateCastOrNull(x, T)
 
 **Returned value**
 
--   The value in specified data type `T`.
+-   The value, converted to the specified data type `T`.
 
 **Example**
 
