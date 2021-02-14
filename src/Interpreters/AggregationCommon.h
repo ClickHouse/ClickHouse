@@ -264,7 +264,7 @@ static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
   */
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 template <typename T>
-static T ALWAYS_INLINE packFixedShuffle(
+static T inline packFixedShuffle(
     const char * __restrict * __restrict srcs,
     size_t num_srcs,
     const size_t * __restrict elem_sizes,
