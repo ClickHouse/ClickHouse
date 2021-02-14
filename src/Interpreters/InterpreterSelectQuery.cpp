@@ -1215,6 +1215,16 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
         {
             auto & filter_info = *prewhere_info.filter_info;
 
+            if (filter_info.alias_actions)
+            {
+                pipe.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(
+                        header,
+                        filter_info.alias_actions);
+                });
+            }
+
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(
@@ -1598,6 +1608,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             if (expressions.filter_info && execute_row_level_filter_in_prewhere)
             {
                 query_info.prewhere_info->filter_info = std::make_shared<FilterInfo>();
+
+                if (alias_actions)
+                    query_info.prewhere_info->filter_info->alias_actions = std::make_shared<ExpressionActions>(std::move(alias_actions));
 
                 if (expressions.filter_info->actions)
                     query_info.prewhere_info->filter_info->actions = std::make_shared<ExpressionActions>(expressions.filter_info->actions);

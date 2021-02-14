@@ -899,6 +899,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         if (prewhere_info->filter_info)
         {
+            if (prewhere_info->filter_info->alias_actions)
+                prewhere_info->filter_info->alias_actions->execute(block);
+
             if (prewhere_info->filter_info->actions)
                 prewhere_info->filter_info->actions->execute(block);
 
