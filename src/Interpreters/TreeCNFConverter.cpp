@@ -16,10 +16,10 @@ void splitMultiLogic(ASTPtr & node)
     {
         if (func->arguments->children.size() > 2)
         {
-            ASTPtr res = func->arguments->children.front();
+            ASTPtr res = func->arguments->children.front()->clone();
             for (size_t i = 1; i < func->arguments->children.size(); ++i)
             {
-                res = makeASTFunction(func->name, res, func->arguments->children[i]);
+                res = makeASTFunction(func->name, res, func->arguments->children[i]->clone());
             }
             node = std::move(res);
         }
@@ -41,8 +41,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
             /// apply De Morgan's Law
             node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
-                func->arguments->children[0],
-                func->arguments->children[1]);
+                func->arguments->children[0]->clone(),
+                func->arguments->children[1]->clone());
         }
 
         auto * new_func = node->as<ASTFunction>();
@@ -52,14 +52,14 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else if (func && func->name == "not")
     {
         /// delete NOT
-        node = func->arguments->children[0];
+        node = func->arguments->children[0]->clone();
 
         traversePushNot(node, !add_negation);
     }
     else
     {
         if (add_negation)
-            node = makeASTFunction("not", node);
+            node = makeASTFunction("not", node->clone());
     }
 }
 
@@ -118,8 +118,8 @@ void pushOr(ASTPtr & query)
         /// apply the distributive law ( a or (b and c) -> (a or b) and (a or c) )
         or_node.get() = makeASTFunction(
                       "and",
-                      makeASTFunction("or", a, b),
-                      makeASTFunction("or", a, c));
+                      makeASTFunction("or", a->clone(), b->clone()),
+                      makeASTFunction("or", a->clone(), c->clone()));
 
         /// add new ors to stack
         auto * new_func = or_node.get()->as<ASTFunction>();
@@ -190,7 +190,7 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
     for (const auto & group : groups)
     {
         if (group.size() == 1)
-            or_groups.push_back(*group.begin());
+            or_groups.push_back((*group.begin())->clone());
         else if (group.size() > 1)
         {
             or_groups.push_back(makeASTFunction("or"));
