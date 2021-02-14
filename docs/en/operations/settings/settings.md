@@ -311,12 +311,8 @@ Enables or disables parsing enum values as enum ids for TSV input format.
 
 Possible values:
 
-<<<<<<< HEAD
-Enables or disables using default values if input data contain `NULL`, but the data type of the corresponding column in not `Nullable(T)` (for text input formats).
-=======
 -   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs
->>>>>>> 6325b15a63335e2efd7de1ae92d2907493a07a9c
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
@@ -1318,15 +1314,7 @@ See also:
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-Write to a quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
-=======
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
->>>>>>> 6325b15a63335e2efd7de1ae92d2907493a07a9c
-=======
-Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
->>>>>>> 547db452d63ba42b88e82cbe9a2aa1f5c683403f
 
 Default value: 600 000 milliseconds (ten minutes).
 
@@ -1625,11 +1613,7 @@ Default value: 0.
 -   Type: seconds
 -   Default value: 60 seconds
 
-<<<<<<< HEAD
-Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed\_replica\_error\_half\_life is set to 1 second, then the replica is considered normal 3 seconds after the last error.
-=======
 Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after the last error.
->>>>>>> 6325b15a63335e2efd7de1ae92d2907493a07a9c
 
 See also:
 
@@ -1875,8 +1859,6 @@ Default value: `0`.
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 
-<<<<<<< HEAD
-=======
 ## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
 
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table when there is no distributed key.
@@ -1907,7 +1889,6 @@ Default value: `1`.
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
->>>>>>> 6325b15a63335e2efd7de1ae92d2907493a07a9c
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
@@ -2224,11 +2205,7 @@ Default value: `0`.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-<<<<<<< HEAD
-Defines how many seconds a locking request waits before failing. 
-=======
 Defines how many seconds a locking request waits before failing.
->>>>>>> 6325b15a63335e2efd7de1ae92d2907493a07a9c
 
 Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
@@ -2614,59 +2591,5 @@ Possible values:
 -   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
-
-## optimize_on_insert {#optimize-on-insert}
-
-Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 1.
-
-**Example**
-
-The difference between enabled and disabled:
-
-Query:
-
-```sql
-SET optimize_on_insert = 1;
-
-CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
-
-INSERT INTO test1 SELECT number % 2 FROM numbers(5);
-
-SELECT * FROM test1;
-
-SET optimize_on_insert = 0;
-
-CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
-
-INSERT INTO test2 SELECT number % 2 FROM numbers(5);
-
-SELECT * FROM test2;
-```
-
-Result:
-
-``` text
-┌─FirstTable─┐
-│          0 │
-│          1 │
-└────────────┘
-
-┌─SecondTable─┐
-│           0 │
-│           0 │
-│           0 │
-│           1 │
-│           1 │
-└─────────────┘
-```
-
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
