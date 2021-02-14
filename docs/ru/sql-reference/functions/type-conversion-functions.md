@@ -494,7 +494,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 
 Преобразует входное значение `x` в указанный тип данных `T`.
 
-Отличие от [cast(x, T)](#type_conversion_function-cast) в том, что `accurateCast` не допускает переполнения числовых типов, если значение типа `x` не соответствует границам типа `T`. Например, `accurateCast(-1, 'UInt8')` вернет ошибку.
+В отличие от функции [cast(x, T)](#type_conversion_function-cast), `accurateCast` не допускает переполнения при преобразовании числовых типов. Например, `accurateCast(-1, 'UInt8')` вызовет исключение.
 
 **Примеры**
 
