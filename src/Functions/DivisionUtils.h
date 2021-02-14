@@ -100,7 +100,14 @@ struct DivideIntegralImpl
                     throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
                         ErrorCodes::ILLEGAL_DIVISION);
 
-            return static_cast<Result>(checkedDivision(CastA(a), CastB(b)));
+            auto res = checkedDivision(CastA(a), CastB(b));
+
+            if constexpr (std::is_floating_point_v<decltype(res)>)
+                if (isNaN(res) || res > std::numeric_limits<Result>::max() || res < std::numeric_limits<Result>::lowest())
+                    throw Exception("Cannot perform integer division, because it will produce infinite or too large number",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            return static_cast<Result>(res);
         }
     }
 
