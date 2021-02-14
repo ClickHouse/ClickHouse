@@ -626,6 +626,17 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
         optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot);
 
+    if (select_query->where())
+    {
+        Poco::Logger::get("&&&&&&&&&&&&&&& WHERE").information(select_query->where()->getColumnName());
+        Poco::Logger::get("&&&&&&&&&&&&&&& WHERE").information(select_query->where()->dumpTree());
+    }
+    if (select_query->prewhere())
+    {
+        Poco::Logger::get("&&&&&&&&&&&&&&& prewhere").information(select_query->prewhere()->getColumnName());
+        Poco::Logger::get("&&&&&&&&&&&&&&& prewhere").information(select_query->prewhere()->dumpTree());
+    }
+
     /// Push the predicate expression down to the subqueries.
     rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
