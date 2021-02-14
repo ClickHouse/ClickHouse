@@ -137,10 +137,10 @@ DROP TABLE IF EXISTS bitmap_column_expr_test3;
 CREATE TABLE bitmap_column_expr_test3
 (
     tag_id String,
-    z AggregateFunction(groupBitmap, UInt32),
+    z AggregateFunction(groupBitmap, UInt64),
     replace Nested (
-        from UInt32,
-        to UInt32
+        from UInt16,
+        to UInt64
     )
 )
 ENGINE = MergeTree
@@ -149,10 +149,10 @@ ORDER BY tag_id;
 DROP TABLE IF EXISTS numbers10;
 CREATE VIEW numbers10 AS SELECT number FROM system.numbers LIMIT 10;
 
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag1', groupBitmapState(toUInt32(number)), cast([] as Array(UInt32)), cast([] as Array(UInt32)) FROM numbers10;
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag2', groupBitmapState(toUInt32(number)), cast([0] as Array(UInt32)), cast([2] as Array(UInt32)) FROM numbers10;
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag3', groupBitmapState(toUInt32(number)), cast([0,7] as Array(UInt32)), cast([3,101] as Array(UInt32)) FROM numbers10;
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag4', groupBitmapState(toUInt32(number)), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag1', groupBitmapState(toUInt64(number)), cast([] as Array(UInt16)), cast([] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag2', groupBitmapState(toUInt64(number)), cast([0] as Array(UInt16)), cast([2] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag3', groupBitmapState(toUInt64(number)), cast([0,7] as Array(UInt16)), cast([3,101] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag4', groupBitmapState(toUInt64(number)), cast([5,999,2] as Array(UInt16)), cast([2,888,20] as Array(UInt64)) FROM numbers10;
 
 SELECT tag_id, bitmapToArray(z), replace.from, replace.to, bitmapToArray(bitmapTransform(z, replace.from, replace.to)) FROM bitmap_column_expr_test3 ORDER BY tag_id;
 
@@ -232,11 +232,11 @@ select bitmapHasAll(bitmapBuild([
 
 -- bitmapContains:
 ---- Empty
-SELECT bitmapContains(bitmapBuild(emptyArrayUInt32()), toUInt32(0));
-SELECT bitmapContains(bitmapBuild(emptyArrayUInt16()), toUInt32(5));
+SELECT bitmapContains(bitmapBuild(emptyArrayUInt32()), toUInt8(0));
+SELECT bitmapContains(bitmapBuild(emptyArrayUInt16()), toUInt16(5));
 ---- Small
 select bitmapContains(bitmapBuild([1,5,7,9]),toUInt32(0));
-select bitmapContains(bitmapBuild([1,5,7,9]),toUInt32(9));
+select bitmapContains(bitmapBuild([1,5,7,9]),toUInt64(9));
 ---- Large
 select bitmapContains(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
@@ -250,31 +250,31 @@ select bitmapContains(bitmapBuild([
 
 -- bitmapSubsetInRange:
 ---- Empty
-SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(emptyArrayUInt32()), toUInt32(0), toUInt32(10)));
-SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(emptyArrayUInt16()), toUInt32(0), toUInt32(10)));
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(emptyArrayUInt32()), toUInt64(0), toUInt32(10)));
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(emptyArrayUInt16()), toUInt32(0), toUInt64(10)));
 ---- Small
-select bitmapToArray(bitmapSubsetInRange(bitmapBuild([1,5,7,9]), toUInt32(0), toUInt32(4)));
-select bitmapToArray(bitmapSubsetInRange(bitmapBuild([1,5,7,9]), toUInt32(10), toUInt32(10)));
-select bitmapToArray(bitmapSubsetInRange(bitmapBuild([1,5,7,9]), toUInt32(3), toUInt32(7)));
+select bitmapToArray(bitmapSubsetInRange(bitmapBuild([1,5,7,9]), toUInt8(0), toUInt16(4)));
+select bitmapToArray(bitmapSubsetInRange(bitmapBuild([1,5,7,9]), toUInt32(10), toUInt64(10)));
+select bitmapToArray(bitmapSubsetInRange(bitmapBuild([1,5,7,9]), toUInt64(3), toUInt32(7)));
 ---- Large
 select bitmapToArray(bitmapSubsetInRange(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(0), toUInt32(100)));
+    100,200,500]), toUInt8(0), toUInt32(100)));
 select bitmapToArray(bitmapSubsetInRange(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(30), toUInt32(200)));
+    100,200,500]), toUInt64(30), toUInt32(200)));
 select bitmapToArray(bitmapSubsetInRange(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(100), toUInt32(200)));
+    100,200,500]), toUInt32(100), toUInt64(200)));
 
 -- bitmapSubsetLimit:
 ---- Empty
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(emptyArrayUInt32()), toUInt32(0), toUInt32(10)));
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(emptyArrayUInt16()), toUInt32(0), toUInt32(10)));
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(emptyArrayUInt32()), toUInt8(0), toUInt32(10)));
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(emptyArrayUInt16()), toUInt32(0), toUInt64(10)));
 ---- Small
-select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(0), toUInt32(4)));
-select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(10), toUInt32(10)));
-select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(3), toUInt32(7)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt8(0), toUInt32(4)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(10), toUInt64(10)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt16(3), toUInt32(7)));
 ---- Large
 select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
@@ -284,7 +284,7 @@ select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
     100,200,500]), toUInt32(30), toUInt32(200)));
 select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(100), toUInt32(200)));
+    100,200,500]), toUInt32(100), toUInt16(200)));
 
 -- bitmapMin:
 ---- Empty
@@ -309,3 +309,39 @@ select bitmapMax(bitmapBuild([1,5,7,9]));
 select bitmapMax(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
     100,200,500]));
+
+
+-- reproduce #18911
+CREATE TABLE bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGINE = Memory;
+INSERT INTO bitmap_test SELECT '2019-01-01', 1, number FROM numbers(1,50);
+INSERT INTO bitmap_test SELECT '2019-01-02', 1, number FROM numbers(11,60);
+INSERT INTO bitmap_test SELECT '2019-01-03', 2, number FROM numbers(1,10);
+
+SELECT
+    bitmapCardinality(day_today) AS today_users,
+    bitmapCardinality(day_before) AS before_users,
+    bitmapOrCardinality(day_today, day_before) AS all_users,
+    bitmapAndCardinality(day_today, day_before) AS old_users,
+    bitmapAndnotCardinality(day_today, day_before) AS new_users,
+    bitmapXorCardinality(day_today, day_before) AS diff_users
+FROM
+(
+    SELECT
+        city_id,
+        groupBitmapState(uid) AS day_today
+    FROM bitmap_test
+    WHERE pickup_date = '2019-01-02'
+    GROUP BY
+        rand((rand((rand('') % nan) = NULL) % 7) % rand(NULL)),
+        city_id
+) AS js1
+ALL LEFT JOIN
+(
+    SELECT
+        city_id,
+        groupBitmapState(uid) AS day_before
+    FROM bitmap_test
+    WHERE pickup_date = '2019-01-01'
+    GROUP BY city_id
+) AS js2 USING (city_id) FORMAT Null;
+drop table bitmap_test;

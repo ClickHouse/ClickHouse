@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
 namespace DB
 {
 
@@ -46,7 +49,7 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
     if (tasks.count(key))
-        throw Exception("Task was already added to task queue", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
 
@@ -56,6 +59,22 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+}
+
+static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
+{
+    WriteBufferFromOwnString res;
+    res << "Tasks = [";
+
+    for (const auto & task : tasks)
+    {
+        res << "(id " << task.first << " thread " << task.second.thread_num << " ptr ";
+        writePointerHex(task.second.data, res);
+        res << " fd " << task.second.fd << ")";
+    }
+
+    res << "]";
+    return res.str();
 }
 
 PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
@@ -81,10 +100,14 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
     if (event.data.ptr == pipe_fd)
         return {};
 
-    std::uintptr_t key = reinterpret_cast<uintptr_t>(event.data.ptr);
+    void * ptr = event.data.ptr;
+    std::uintptr_t key = reinterpret_cast<uintptr_t>(ptr);
     auto it = tasks.find(key);
     if (it == tasks.end())
-        throw Exception("Task was not found in task queue", ErrorCodes::LOGICAL_ERROR);
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} ({}) was not found in task queue: {}",
+                        key, ptr, dumpTasks(tasks));
+    }
 
     auto res = it->second;
     tasks.erase(it);
@@ -98,7 +121,6 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 void PollingQueue::finish()
 {
     is_finished = true;
-    tasks.clear();
 
     uint64_t buf = 0;
     while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))

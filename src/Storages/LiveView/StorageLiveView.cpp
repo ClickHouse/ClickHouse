@@ -20,6 +20,7 @@ limitations under the License. */
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
+#include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 
@@ -254,6 +255,8 @@ StorageLiveView::StorageLiveView(
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
 
+    log = &Poco::Logger::get("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
@@ -275,12 +278,21 @@ StorageLiveView::StorageLiveView(
     if (query.live_view_timeout)
     {
         is_temporary = true;
-        temporary_live_view_timeout = std::chrono::seconds{*query.live_view_timeout};
+        temporary_live_view_timeout = Seconds {*query.live_view_timeout};
+    }
+
+    if (query.live_view_periodic_refresh)
+    {
+        is_periodically_refreshed = true;
+        periodic_live_view_refresh = Seconds {*query.live_view_periodic_refresh};
     }
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
+
+    periodic_refresh_task = global_context.getSchedulePool().createTask("LieViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
+    periodic_refresh_task->deactivate();
 }
 
 Block StorageLiveView::getHeader() const
@@ -369,9 +381,20 @@ bool StorageLiveView::getNewBlocks()
             }
             new_blocks_metadata->hash = key.toHexString();
             new_blocks_metadata->version = getBlocksVersion() + 1;
+            new_blocks_metadata->time = std::chrono::system_clock::now();
+
             (*blocks_ptr) = new_blocks;
             (*blocks_metadata_ptr) = new_blocks_metadata;
+
             updated = true;
+        }
+        else
+        {
+            new_blocks_metadata->hash = getBlocksHashKey();
+            new_blocks_metadata->version = getBlocksVersion();
+            new_blocks_metadata->time = std::chrono::system_clock::now();
+
+            (*blocks_metadata_ptr) = new_blocks_metadata;
         }
     }
     return updated;
@@ -392,11 +415,18 @@ void StorageLiveView::startup()
 {
     if (is_temporary)
         TemporaryLiveViewCleaner::instance().addView(std::static_pointer_cast<StorageLiveView>(shared_from_this()));
+
+    if (is_periodically_refreshed)
+        periodic_refresh_task->activate();
 }
 
 void StorageLiveView::shutdown()
 {
     shutdown_called = true;
+
+    if (is_periodically_refreshed)
+        periodic_refresh_task->deactivate();
+
     DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
 }
 
@@ -415,12 +445,52 @@ void StorageLiveView::drop()
     condition.notify_all();
 }
 
-void StorageLiveView::refresh()
+void StorageLiveView::scheduleNextPeriodicRefresh()
+{
+    Seconds current_time = std::chrono::duration_cast<Seconds> (std::chrono::system_clock::now().time_since_epoch());
+    Seconds blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
+
+    if ((current_time - periodic_live_view_refresh) >= blocks_time)
+    {
+        refresh(false);
+        blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
+    }
+    current_time = std::chrono::duration_cast<Seconds> (std::chrono::system_clock::now().time_since_epoch());
+
+    auto next_refresh_time = blocks_time + periodic_live_view_refresh;
+
+    if (current_time >= next_refresh_time)
+        periodic_refresh_task->scheduleAfter(0);
+    else
+    {
+        auto schedule_time = std::chrono::duration_cast<MilliSeconds> (next_refresh_time - current_time);
+        periodic_refresh_task->scheduleAfter(static_cast<size_t>(schedule_time.count()));
+    }
+}
+
+void StorageLiveView::periodicRefreshTaskFunc()
+{
+    LOG_TRACE(log, "periodic refresh task");
+
+    std::lock_guard lock(mutex);
+
+    if (hasActiveUsers())
+        scheduleNextPeriodicRefresh();
+}
+
+void StorageLiveView::refresh(bool grab_lock)
 {
     // Lock is already acquired exclusively from InterperterAlterQuery.cpp InterpreterAlterQuery::execute() method.
     // So, reacquiring lock is not needed and will result in an exception.
+
+    if (grab_lock)
     {
         std::lock_guard lock(mutex);
+        if (getNewBlocks())
+            condition.notify_all();
+    }
+    else
+    {
         if (getNewBlocks())
             condition.notify_all();
     }
@@ -435,15 +505,21 @@ Pipe StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
+    std::lock_guard lock(mutex);
+
+    if (!(*blocks_ptr))
+        refresh(false);
+
+    else if (is_periodically_refreshed)
     {
-        std::lock_guard lock(mutex);
-        if (!(*blocks_ptr))
-        {
-            if (getNewBlocks())
-                condition.notify_all();
-        }
-        return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+        Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
+        Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime().time_since_epoch());
+
+        if ((current_time - periodic_live_view_refresh) >= blocks_time)
+            refresh(false);
     }
+
+    return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
 }
 
 BlockInputStreams StorageLiveView::watch(
@@ -458,6 +534,7 @@ BlockInputStreams StorageLiveView::watch(
 
     bool has_limit = false;
     UInt64 limit = 0;
+    BlockInputStreamPtr reader;
 
     if (query.limit_length)
     {
@@ -466,45 +543,28 @@ BlockInputStreams StorageLiveView::watch(
     }
 
     if (query.is_watch_events)
-    {
-        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(
+        reader = std::make_shared<LiveViewEventsBlockInputStream>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds());
-
-        {
-            std::lock_guard lock(mutex);
-            if (!(*blocks_ptr))
-            {
-                if (getNewBlocks())
-                    condition.notify_all();
-            }
-        }
-
-        processed_stage = QueryProcessingStage::Complete;
-
-        return { reader };
-    }
     else
-    {
-        auto reader = std::make_shared<LiveViewBlockInputStream>(
+        reader = std::make_shared<LiveViewBlockInputStream>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds());
 
-        {
-            std::lock_guard lock(mutex);
-            if (!(*blocks_ptr))
-            {
-                if (getNewBlocks())
-                    condition.notify_all();
-            }
-        }
+    {
+        std::lock_guard lock(mutex);
 
-        processed_stage = QueryProcessingStage::Complete;
+        if (!(*blocks_ptr))
+            refresh(false);
 
-        return { reader };
+        if (is_periodically_refreshed)
+            scheduleNextPeriodicRefresh();
     }
+
+    processed_stage = QueryProcessingStage::Complete;
+    return { reader };
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const

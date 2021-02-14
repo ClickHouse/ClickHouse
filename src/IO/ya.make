@@ -51,7 +51,6 @@ SRCS(
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
-    WriteBufferAIO.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
     WriteBufferFromFileDescriptor.cpp
@@ -69,7 +68,6 @@ SRCS(
     ZstdInflatingReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
-    createWriteBufferFromFileBase.cpp
     parseDateTimeBestEffort.cpp
     readFloatText.cpp
 

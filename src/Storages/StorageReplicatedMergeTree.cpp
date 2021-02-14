@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
 
@@ -1490,7 +1489,12 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
+    /// Account TTL merge
+    if (isTTLMergeType(future_merged_part.merge_type))
+        global_context.getMergeList().bookMergeWithTTL();
+
     auto table_id = getStorageID();
+    /// Add merge to list
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
 
     Transaction transaction(*this);
@@ -2678,7 +2682,7 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
 
     return JobAndPool{[this, selected_entry] () mutable
     {
-        processQueueEntry(selected_entry);
+        return processQueueEntry(selected_entry);
     }, pool_type};
 }
 
@@ -3008,6 +3012,21 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
     ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
 }
 
+void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    String part_path = replica_path + "/parts/" + part_name;
+    Coordination::Stat stat;
+
+    /// Part doesn't exist, nothing to remove
+    if (!zookeeper->exists(part_path, &stat))
+        return;
+
+    Coordination::Requests ops;
+
+    removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+    zookeeper->multi(ops);
+}
 
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {
@@ -3680,7 +3699,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     /// We clear all old parts after stopping all background operations. It's
     /// important, because background operations can produce temporary parts
-    /// which will remove themselves in their descrutors. If so, we may have
+    /// which will remove themselves in their destructors. If so, we may have
     /// race condition between our remove call and background process.
     clearOldPartsFromFilesystem(true);
 }
@@ -4652,7 +4671,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };
-    constexpr auto event_wait_timeout_ms = 1000;
+
+    /// Don't recheck ZooKeeper too often
+    constexpr auto event_wait_timeout_ms = 3000;
 
     if (startsWith(entry.znode_name, "log-"))
     {
@@ -4673,10 +4694,11 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 break;
 
-            if (wait_for_non_active)
-                event->wait();
-            else
-                event->tryWait(event_wait_timeout_ms);
+            /// Wait with timeout because we can be already shut down, but not dropped.
+            /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+            /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+            /// but the query will never finish because the drop already shut down the table.
+            event->tryWait(event_wait_timeout_ms);
         }
     }
     else if (startsWith(entry.znode_name, "queue-"))
@@ -4721,10 +4743,11 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
                 if (!log_pointer_new.empty() && parse<UInt64>(log_pointer_new) > log_index)
                     break;
 
-                if (wait_for_non_active)
-                    event->wait();
-                else
-                    event->tryWait(event_wait_timeout_ms);
+                /// Wait with timeout because we can be already shut down, but not dropped.
+                /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+                /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+                /// but the query will never finish because the drop already shut down the table.
+                event->tryWait(event_wait_timeout_ms);
             }
         }
     }
@@ -4958,8 +4981,13 @@ void StorageReplicatedMergeTree::fetchPartition(
     const String & from_,
     const Context & query_context)
 {
-    String auxiliary_zookeeper_name = extractZooKeeperName(from_);
-    String from = extractZooKeeperPath(from_);
+    Macros::MacroExpansionInfo info;
+    info.expand_special_macros_only = false;
+    info.table_id = getStorageID();
+    info.table_id.uuid = UUIDHelpers::Nil;
+    auto expand_from = query_context.getMacros()->expand(from_, info);
+    String auxiliary_zookeeper_name = extractZooKeeperName(expand_from);
+    String from = extractZooKeeperPath(expand_from);
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -5556,9 +5584,9 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
             continue;
 
         ReadBufferFromString buf(result.data);
-        Int64 block_num = 0;
-        bool parsed = tryReadIntText(block_num, buf) && buf.eof();
-        if (!parsed || (min_block_num <= block_num && block_num <= max_block_num))
+        MergeTreePartInfo part_info;
+        bool parsed = MergeTreePartInfo::tryParsePartName(result.data, &part_info, format_version);
+        if (!parsed || (min_block_num <= part_info.min_block && part_info.max_block <= max_block_num))
             ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
     }
 }
@@ -6145,7 +6173,7 @@ bool StorageReplicatedMergeTree::dropPart(
 
         Coordination::Requests ops;
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.partition_id, part_info.min_block, part_info.max_block);
-        size_t clean_block_ops_size = ops.size();
+        size_t clear_block_ops_size = ops.size();
 
         /// Set fake level to treat this part as virtual in queue.
         auto drop_part_info = part->info;
@@ -6170,10 +6198,15 @@ bool StorageReplicatedMergeTree::dropPart(
             LOG_TRACE(log, "A new log entry appeared while trying to commit DROP RANGE. Retry.");
             continue;
         }
+        else if (rc == Coordination::Error::ZNONODE)
+        {
+            LOG_TRACE(log, "Other replica already removing same part {} or part deduplication node was removed by background thread. Retry.", part_name);
+            continue;
+        }
         else
             zkutil::KeeperMultiException::check(rc, ops, responses);
 
-        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clean_block_ops_size + 1]).path_created;
+        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size + 1]).path_created;
         entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
         return true;

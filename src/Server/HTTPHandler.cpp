@@ -19,7 +19,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -219,8 +219,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
         }
     }
 
-    ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-    copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    if (!read_buffers_raw_ptr.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    }
 }
 
 
@@ -295,6 +298,7 @@ void HTTPHandler::processQuery(
 
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
+    client_info.http_referer = request.get("Referer", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
 
     /// This will also set client_info.current_user and current_address
@@ -796,7 +800,6 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
 
 std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
-
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body

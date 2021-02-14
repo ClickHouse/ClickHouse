@@ -288,7 +288,7 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать:
 
 -   Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../../../operations/system-tables/parts.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
--   Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
+-   Кортеж из выражений или констант, совпадающий (в типах) с кортежем партиционирования. В случае ключа партиционирования из одного элемента, выражение следует обернуть в функцию `tuple(...)`. Например, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 -   Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 -   Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached_parts](../../../operations/system-tables/detached_parts.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 

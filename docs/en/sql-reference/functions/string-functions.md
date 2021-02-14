@@ -574,7 +574,7 @@ encodeXMLComponent(x)
 
 -   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
-**Returned value(s)**
+**Returned value**
 
 -   The sequence of characters with escape characters.
 

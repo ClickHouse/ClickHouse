@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteIntText.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
@@ -16,6 +17,7 @@
 #include <ext/range.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
@@ -245,188 +247,90 @@ IPAddressDictionary::IPAddressDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_,
-    bool access_to_key_from_attributes_)
+    bool require_nonempty_)
     : IDictionaryBase(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
-    , access_to_key_from_attributes(access_to_key_from_attributes_)
+    , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
-    if (access_to_key_from_attributes)
-    {
-        dict_struct.attributes.emplace_back(dict_struct.key->front());
-    }
-
     createAttributes();
 
     loadData();
     calculateBytesAllocated();
 }
 
-#define DECLARE(TYPE) \
-    void IPAddressDictionary::get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
-    { \
-        validateKeyTypes(key_types); \
-\
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        const auto null_value = std::get<TYPE>(attribute.null_values); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, \
-            key_columns, \
-            [&](const size_t row, const auto value) { out[row] = value; }, \
-            [&](const size_t) { return null_value; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void IPAddressDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
-{
-    validateKeyTypes(key_types);
-
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        key_columns,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return null_value; });
-}
-
-#define DECLARE(TYPE) \
-    void IPAddressDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        validateKeyTypes(key_types); \
-\
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, \
-            key_columns, \
-            [&](const size_t row, const auto value) { out[row] = value; }, \
-            [&](const size_t row) { return def[row]; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void IPAddressDictionary::getString(
+ColumnPtr IPAddressDictionary::getColumn(
     const std::string & attribute_name,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnString * const def,
-    ColumnString * const out) const
+    const ColumnPtr default_values_column) const
 {
     validateKeyTypes(key_types);
 
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        key_columns,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t row) { return def->getDataAt(row); });
-}
-
-#define DECLARE(TYPE) \
-    void IPAddressDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        validateKeyTypes(key_types); \
-\
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void IPAddressDictionary::getString(
-    const std::string & attribute_name,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const String & def,
-    ColumnString * const out) const
-{
-    validateKeyTypes(key_types);
+    ColumnPtr result;
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        key_columns,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return StringRef{def}; });
+    auto size = key_columns.front()->size();
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+        const auto & null_value = std::get<AttributeType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                key_columns,
+                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                key_columns,
+                [&](const size_t row, const auto value) { return out[row] = value; },
+                default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
-void IPAddressDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
+
+ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
     validateKeyTypes(key_types);
 
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
+
+    auto result = ColumnUInt8::create(rows);
+    auto& out = result->getData();
+
     if (first_column->isNumeric())
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
@@ -451,22 +355,29 @@ void IPAddressDictionary::has(const Columns & key_columns, const DataTypes & key
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+
+    return result;
 }
 
 void IPAddressDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
-
-    for (const auto & attribute : dict_struct.attributes)
+    auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
     {
-        attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.reserve(attributes.size() + dict_attrs.size());
+        for (const auto & attribute : dict_attrs)
+        {
+            attribute_index_by_name.emplace(attribute.name, attributes.size());
+            attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
-        if (attribute.hierarchical)
-            throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-                            ErrorCodes::TYPE_MISMATCH};
-    }
+            if (attribute.hierarchical)
+                throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
+                                ErrorCodes::TYPE_MISMATCH};
+        }
+    };
+
+    create_attributes_from_dictionary_attributes(dict_struct.attributes);
+    if (access_to_key_from_attributes)
+        create_attributes_from_dictionary_attributes(*dict_struct.key);
 }
 
 void IPAddressDictionary::loadData()
@@ -484,19 +395,13 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-
-        size_t attributes_size = dict_struct.attributes.size();
-        if (access_to_key_from_attributes)
-        {
-            /// last attribute contains key and will be filled in code below
-            attributes_size--;
-        }
-        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
+        const auto attribute_column_ptrs = ext::map<Columns>(
+            ext::range(0, dict_struct.attributes.size()),
             [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
 
         for (const auto row : ext::range(0, rows))
         {
-            for (const auto attribute_idx : ext::range(0, attribute_column_ptrs.size()))
+            for (const auto attribute_idx : ext::range(0, dict_struct.attributes.size()))
             {
                 const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
                 auto & attribute = attributes[attribute_idx];
@@ -652,6 +557,13 @@ void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
     bucket_count = vec.size();
 }
 
+template <>
+void IPAddressDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    addAttributeSize<StringRef>(attribute);
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+}
+
 void IPAddressDictionary::calculateBytesAllocated()
 {
     if (auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
@@ -669,63 +581,17 @@ void IPAddressDictionary::calculateBytesAllocated()
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-                break;
-            }
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
-
 
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
@@ -734,65 +600,27 @@ void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field
     attribute.maps.emplace<ContainerType<T>>();
 }
 
+template <>
+void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+{
+    attribute.null_values = null_value.isNull() ? String() : null_value.get<String>();
+    attribute.maps.emplace<ContainerType<StringRef>>();
+    attribute.string_arena = std::make_unique<Arena>();
+}
+
 IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
     Attribute attr{type, {}, {}, {}};
 
-    switch (type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
+        createAttributeImpl<AttributeType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utString:
-        {
-
-            attr.null_values = null_value.isNull() ? String() : null_value.get<String>();
-            attr.maps.emplace<ContainerType<StringRef>>();
-            attr.string_arena = std::make_unique<Arena>();
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(type, type_call);
 
     return attr;
 }
@@ -802,9 +630,12 @@ const uint8_t * IPAddressDictionary::getIPv6FromOffset(const IPAddressDictionary
     return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -841,7 +672,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
                 set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
             }
             else
-                set_value(i, get_default(i));
+                set_value(i, default_value_extractor[i]);
         }
         return;
     }
@@ -876,13 +707,16 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
             mask_column[*found_it] == mask))
             set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
         else
-            set_value(i, get_default(i));
+            set_value(i, default_value_extractor[i]);
     }
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -891,7 +725,7 @@ void IPAddressDictionary::getItemsImpl(
     if (unlikely(key_columns.size() == 2))
     {
         getItemsByTwoKeyColumnsImpl<AttributeType, OutputType>(
-            attribute, key_columns, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
+            attribute, key_columns, std::forward<ValueSetter>(set_value), default_value_extractor);
         query_count.fetch_add(rows, std::memory_order_relaxed);
         return;
     }
@@ -909,7 +743,7 @@ void IPAddressDictionary::getItemsImpl(
             if (found != ipNotFound())
                 set_value(i, static_cast<OutputType>(vec[*found]));
             else
-                set_value(i, get_default(i));
+                set_value(i, default_value_extractor[i]);
         }
     }
     else
@@ -924,7 +758,7 @@ void IPAddressDictionary::getItemsImpl(
             if (found != ipNotFound())
                 set_value(i, static_cast<OutputType>(vec[*found]));
             else
-                set_value(i, get_default(i));
+                set_value(i, default_value_extractor[i]);
         }
     }
 
@@ -940,45 +774,24 @@ void IPAddressDictionary::setAttributeValueImpl(Attribute & attribute, const T v
 
 void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field & value)
 {
-    switch (attribute.type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return setAttributeValueImpl<UInt8>(attribute, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt16:
-            return setAttributeValueImpl<UInt16>(attribute, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt32:
-            return setAttributeValueImpl<UInt32>(attribute, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt64:
-            return setAttributeValueImpl<UInt64>(attribute, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt128:
-            return setAttributeValueImpl<UInt128>(attribute, value.get<UInt128>());
-        case AttributeUnderlyingType::utInt8:
-            return setAttributeValueImpl<Int8>(attribute, value.get<Int64>());
-        case AttributeUnderlyingType::utInt16:
-            return setAttributeValueImpl<Int16>(attribute, value.get<Int64>());
-        case AttributeUnderlyingType::utInt32:
-            return setAttributeValueImpl<Int32>(attribute, value.get<Int64>());
-        case AttributeUnderlyingType::utInt64:
-            return setAttributeValueImpl<Int64>(attribute, value.get<Int64>());
-        case AttributeUnderlyingType::utFloat32:
-            return setAttributeValueImpl<Float32>(attribute, value.get<Float64>());
-        case AttributeUnderlyingType::utFloat64:
-            return setAttributeValueImpl<Float64>(attribute, value.get<Float64>());
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            return setAttributeValueImpl<Decimal32>(attribute, value.get<Decimal32>());
-        case AttributeUnderlyingType::utDecimal64:
-            return setAttributeValueImpl<Decimal64>(attribute, value.get<Decimal64>());
-        case AttributeUnderlyingType::utDecimal128:
-            return setAttributeValueImpl<Decimal128>(attribute, value.get<Decimal128>());
-
-        case AttributeUnderlyingType::utString:
+        if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.get<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            return setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
+            setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
         }
-    }
+        else
+        {
+            setAttributeValueImpl<AttributeType>(attribute, value.get<NearestFieldType<AttributeType>>());
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const std::string & attribute_name) const
@@ -1045,7 +858,7 @@ static auto keyViewGetter()
 
 BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<IPAddressDictionary, UInt64>;
+    using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
 
 
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
@@ -1171,11 +984,8 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
-        const auto & layout_prefix = config_prefix + ".layout.ip_trie";
-        const bool access_to_key_from_attributes = config.getBool(layout_prefix + ".access_to_key_from_attributes", false);
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime,
-                                                     require_nonempty, access_to_key_from_attributes);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }
