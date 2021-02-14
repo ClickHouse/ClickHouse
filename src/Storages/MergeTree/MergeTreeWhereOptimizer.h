@@ -33,7 +33,7 @@ public:
     MergeTreeWhereOptimizer(
         SelectQueryInfo & query_info,
         const Context & context,
-        const MergeTreeData & data,
+        std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & queried_columns_,
         Poco::Logger * log_);
@@ -74,8 +74,6 @@ private:
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
-
-    void calculateColumnSizes(const MergeTreeData & data, const Names & column_names);
 
     void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const;
 

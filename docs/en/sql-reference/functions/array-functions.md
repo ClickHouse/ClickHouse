@@ -1288,72 +1288,225 @@ Returns the index of the first element in the `arr1` array for which `func` retu
 
 Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
-## arrayMin(\[func,\] arr1, …) {#array-min}
+## arrayMin {#array-min}
 
-Returns the min of the `func` values. If the function is omitted, it just returns the min of the array elements.
+Returns the minimum of elements in the source array. 
+
+If the `func` function is specified, returns the mininum of elements converted by this function.
 
 Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax**
+
 ```sql
-SELECT arrayMin([1, 2, 4]) AS res
+arrayMin([func,] arr)
+```
+
+**Parameters**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+-   The minimum of function values (or the array minimum). 
+
+Type: if `func` is specified, matches `func` return value type, else matches the array elements type. 
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayMin([1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │   1 │
 └─────┘
+```
 
+Query:
 
-SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res
+```sql
+SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │  -4 │
 └─────┘
 ```
 
-## arrayMax(\[func,\] arr1, …) {#array-max}
+## arrayMax {#array-max}
 
-Returns the max of the `func` values. If the function is omitted, it just returns the max of the array elements.
+Returns the maximum of elements in the source array. 
+
+If the `func` function is specified, returns the maximum of elements converted by this function.
 
 Note that the `arrayMax` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax**
+
 ```sql
-SELECT arrayMax([1, 2, 4]) AS res
+arrayMax([func,] arr)
+```
+
+**Parameters**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+-   The maximum of function values (or the array maximum). 
+
+Type: if `func` is specified, matches `func` return value type, else matches the array elements type. 
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayMax([1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │   4 │
 └─────┘
+```
 
+Query:
 
-SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res
+```sql
+SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │  -1 │
 └─────┘
 ```
 
-## arraySum(\[func,\] arr1, …) {#array-sum}
+## arraySum {#array-sum}
 
-Returns the sum of the `func` values. If the function is omitted, it just returns the sum of the array elements.
+Returns the sum of elements in the source array. 
+
+If the `func` function is specified, returns the sum of elements converted by this function.
 
 Note that the `arraySum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax**
+
 ```sql
-SELECT arraySum([2,3]) AS res
+arraySum([func,] arr)
+```
+
+**Parameters**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).   
+
+**Returned value**
+
+-   The sum of the function values (or the array sum).
+
+Type: for decimal numbers in source array (or for converted values, if `func` is specified) — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [UInt64](../../sql-reference/data-types/int-uint.md), and for numeric signed — [Int64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arraySum([2, 3]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │   5 │
 └─────┘
+```
 
+Query:
 
-SELECT arraySum(x -> x*x, [2, 3]) AS res
+```sql
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │  13 │
 └─────┘
 ```
 
+## arrayAvg {#array-avg}
 
-## arrayAvg(\[func,\] arr1, …) {#array-avg}
+Returns the average of elements in the source array. 
 
-Returns the average of the `func` values. If the function is omitted, it just returns the average of the array elements.
+If the `func` function is specified, returns the average of elements converted by this function.
 
 Note that the `arrayAvg` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+
+**Syntax**
+
+```sql
+arrayAvg([func,] arr)
+```
+
+**Parameters**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).   
+
+**Returned value**
+
+-   The average of function values (or the array average).
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayAvg([1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
+┌────────────────res─┐
+│ 2.3333333333333335 │
+└────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
+```
+
+Result:
+
+```text
+┌─res─┐
+│  10 │
+└─────┘
+```
 
 ## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
