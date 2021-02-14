@@ -57,7 +57,6 @@ toc_title: "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\u0020\u0442\u
 -   возможности `CAP_NET_ADMIN`.
 -   [procfs](https://ru.wikipedia.org/wiki/Procfs) (только Linux).
 
-**procfs**
 
 Если для сервера ClickHouse не включено `CAP_NET_ADMIN`, он пытается обратиться к `ProcfsMetricsProvider`. `ProcfsMetricsProvider` позволяет собирать системные показатели для каждого запроса (для CPU и I/O).
 
