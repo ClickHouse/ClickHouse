@@ -1,81 +1,82 @@
 #include "Server.h"
 
 #include <memory>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Dictionaries/registerDictionaries.h>
-#include <Disks/registerDisks.h>
-#include <Formats/registerFormats.h>
-#include <Functions/registerFunctions.h>
+#include <Poco/Version.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Net/HTTPServer.h>
+#include <Poco/Net/NetException.h>
+#include <Poco/Util/HelpFormatter.h>
+#include <Poco/UUIDGenerator.h>
+#include <ext/scope_guard.h>
+#include <common/logger_useful.h>
+#include <common/phdr_cache.h>
+#include <common/ErrorHandlers.h>
+#include <common/getMemoryAmount.h>
+#include <common/errnoToString.h>
+#include <common/coverage.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/DNSResolver.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Macros.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <common/getFQDNOrHostName.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getExecutablePath.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <Common/getMappedArea.h>
+#include <Common/remapExecutable.h>
+#include <Common/TLDListsHolder.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
-#include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Server/HTTPHandlerFactory.h>
-#include <Server/MySQLHandlerFactory.h>
-#include <Server/PostgreSQLHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
-#include <Server/TCPHandlerFactory.h>
-#include <Server/TestKeeperTCPHandlerFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Storages/registerStorages.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Net/HTTPServer.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/UUIDGenerator.h>
-#include <Poco/Util/HelpFormatter.h>
-#include <Poco/Version.h>
-#include <Common/ClickHouseRevision.h>
+#include <Formats/registerFormats.h>
+#include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
-#include <Common/ServerUUIDFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/StatusFile.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/TLDListsHolder.h>
 #include <Common/ThreadFuzzer.h>
-#include <Common/ThreadProfileEvents.h>
-#include <Common/ThreadStatus.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/getMappedArea.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/remapExecutable.h>
-#include <common/ErrorHandlers.h>
-#include <common/coverage.h>
-#include <common/errnoToString.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/getMemoryAmount.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <ext/scope_guard.h>
-#include "MetricsTransmitter.h"
+#include <Common/Elf.h>
+#include <Server/MySQLHandlerFactory.h>
+#include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include "Common/config_version.h"
-#    include "config_core.h"
-#    if USE_OPENCL
-#        include "Common/BitonicSort.h" // Y_IGNORE
-#    endif
+#   include "config_core.h"
+#   include "Common/config_version.h"
+#   if USE_OPENCL
+#       include "Common/BitonicSort.h" // Y_IGNORE
+#   endif
 #endif
 
 #if defined(OS_LINUX)
