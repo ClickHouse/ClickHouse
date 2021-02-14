@@ -8,7 +8,7 @@ namespace DB
 
 struct FunctionNameNormalizer
 {
-    static void visit(ASTPtr &);
+    static void visit(IAST *);
 };
 
 }
