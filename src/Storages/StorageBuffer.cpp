@@ -323,6 +323,16 @@ void StorageBuffer::read(
         {
             if (query_info.prewhere_info->filter_info)
             {
+                if (query_info.prewhere_info->filter_info->alias_actions)
+                {
+                    pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(
+                            header,
+                            query_info.prewhere_info->filter_info->alias_actions);
+                    });
+                }
+
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<FilterTransform>(

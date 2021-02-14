@@ -338,6 +338,9 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         {
             auto & filter_info = *prewhere_info->filter_info;
 
+            if (filter_info.alias_actions)
+                filter_info.alias_actions->execute(block);
+
             if (filter_info.actions)
                 filter_info.actions->execute(block);
 

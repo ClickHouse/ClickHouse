@@ -74,6 +74,7 @@ struct PrewhereDAGInfo
 /// Helper struct to store all the information about the filter expression.
 struct FilterInfo
 {
+    ExpressionActionsPtr alias_actions;
     ExpressionActionsPtr actions;
     String column_name;
     bool do_remove_column = false;
