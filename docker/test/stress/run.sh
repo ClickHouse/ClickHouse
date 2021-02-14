@@ -10,14 +10,7 @@ dpkg -i package_folder/clickhouse-test_*.deb
 
 function stop()
 {
-    timeout 120 service clickhouse-server stop
-
-    # Wait for process to disappear from processlist and also try to kill zombies.
-    while kill -9 "$(pidof clickhouse-server)"
-    do
-        echo "Killed clickhouse-server"
-        sleep 0.5
-    done
+    clickhouse stop
 }
 
 function start()
@@ -33,7 +26,8 @@ function start()
             tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
-        timeout 120 service clickhouse-server start
+        # use root to match with current uid
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
         sleep 0.5
         counter=$((counter + 1))
     done
