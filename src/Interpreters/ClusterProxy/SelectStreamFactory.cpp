@@ -15,6 +15,7 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryProcessHolder.h>
 
 
 namespace ProfileEvents
@@ -74,14 +75,14 @@ namespace
 std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
     const Block & header,
-    const Context & context,
+    const std::shared_ptr<Context> & context,
     QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
+    InterpreterSelectQuery interpreter(query_ast, *context, SelectQueryOptions(processed_stage));
     interpreter.buildQueryPlan(*query_plan);
 
     /// Convert header structure to expected.
@@ -96,6 +97,9 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto converting = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_actions_dag);
     converting->setStepDescription("Convert block structure for query from local replica");
     query_plan->addStep(std::move(converting));
+
+    query_plan->addQueryProcessHolder(std::make_shared<QueryProcessHolder>(
+        query_ast, /* internal= */ false, context));
 
     return query_plan;
 }
@@ -121,7 +125,7 @@ void SelectStreamFactory::createForShard(
     Pipes & delayed_pipes,
     Poco::Logger * log)
 {
-    const auto & context = *context_ptr;
+    auto & context = *context_ptr;
 
     bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -139,7 +143,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        plans.emplace_back(createLocalPlan(modified_query_ast, header, context, processed_stage));
+        plans.emplace_back(createLocalPlan(modified_query_ast, header, context_ptr, processed_stage));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -283,7 +287,7 @@ void SelectStreamFactory::createForShard(
 
             if (try_results.empty() || local_delay < max_remote_delay)
             {
-                auto plan = createLocalPlan(modified_query_ast, header, context, stage);
+                auto plan = createLocalPlan(modified_query_ast, header, context_ptr, stage);
                 return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline()));
             }
             else
