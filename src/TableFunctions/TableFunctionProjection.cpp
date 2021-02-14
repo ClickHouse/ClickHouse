@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -31,7 +32,7 @@ void TableFunctionProjection::parseArguments(const ASTPtr & ast_function, const 
 
     if (args_func.size() != 1)
         throw Exception(
-            "Table function 'projection' requires exactly 2 arguments"
+            "Table function `projection` requires exactly 2 arguments"
             " - names of source table and projection",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -39,11 +40,18 @@ void TableFunctionProjection::parseArguments(const ASTPtr & ast_function, const 
 
     if (args.size() != 2)
         throw Exception(
-            "Table function 'projection' requires exactly 2 arguments"
+            "Table function `projection` requires exactly 2 arguments"
             " - names of source table and projection",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    source_table_id = IdentifierSemantic::extractDatabaseAndTable(args[0]->as<const ASTIdentifier &>());
+    if (const auto * ident = args[0]->as<ASTIdentifier>())
+        source_table_id = IdentifierSemantic::extractDatabaseAndTable(*ident);
+    else
+        throw Exception(
+            "The first argument of table function `projection` should be an identifier"
+            " - name of source table",
+            ErrorCodes::BAD_ARGUMENTS);
+
     if (source_table_id.database_name.empty())
         source_table_id.database_name = context.getConfigRef().getString("default_database", "default");
     projection_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context)->as<const ASTLiteral &>().value.safeGet<String>();
