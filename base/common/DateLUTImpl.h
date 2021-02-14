@@ -238,7 +238,7 @@ public:
     template <typename V>
     inline ExtendedDayNum toDayNum(V v) const
     {
-        return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType()) - daynum_offset_epoch};
+        return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
     }
 
     /// Round down to start of monday.
