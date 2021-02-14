@@ -527,7 +527,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 Преобразует входное значение `x` в указанный тип данных `T`.
 
-Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md), и возвращает [NULL](../../sql-reference/syntax.md#null-literal), если приведенное значение не может быть представлено в целевом типе.
+Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md). Если исходное значение не может быть преобразовано к целевому типу, возвращает [NULL](../../sql-reference/syntax.md#null-literal).
 
 **Синтаксис**
 
