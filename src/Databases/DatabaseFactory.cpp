@@ -14,6 +14,7 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
+#include <Common/Macros.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -196,10 +197,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         const auto & arguments = engine->arguments->children;
 
-        //TODO allow macros in arguments
-        const auto & zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
-        const auto & shard_name  = safeGetLiteralValue<String>(arguments[1], "Replicated");
-        const auto & replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
+        String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
+        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
+
+        zookeeper_path = context.getMacros()->expand(zookeeper_path);
+        shard_name = context.getMacros()->expand(shard_name);
+        replica_name = context.getMacros()->expand(replica_name);
 
         return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid, zookeeper_path, shard_name, replica_name, context);
     }

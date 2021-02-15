@@ -18,28 +18,6 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-/** DatabaseReplicated engine
-  * supports replication of metadata
-  * via DDL log being written to ZooKeeper
-  * and executed on all of the replicas
-  * for a given database.
-  *
-  * One Clickhouse server can have multiple
-  * replicated databases running and updating
-  * at the same time.
-  * 
-  * The engine has two parameters ZooKeeper path and 
-  * replica name.
-  * The same ZooKeeper path corresponds to the same
-  * database. Replica names MUST be different for all replicas
-  * of the same database.
-  *
-  * Using this engine, creation of Replicated tables
-  * requires no ZooKeeper path and replica name parameters.
-  * Table's replica name is the same as database replica name.
-  * Table's ZooKeeper path is a concatenation of database
-  * ZooKeeper path, /tables/, and UUID of the table.
-  */
 class DatabaseReplicated : public DatabaseAtomic
 {
 public:
@@ -49,6 +27,9 @@ public:
 
     ~DatabaseReplicated() override;
 
+    String getEngineName() const override { return "Replicated"; }
+
+    /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current MetadataTransaction.
     void dropTable(const Context &, const String & table_name, bool no_delay) override;
     void renameTable(const Context & context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
@@ -64,21 +45,22 @@ public:
     void removeDictionary(const Context & context, const String & dictionary_name) override;
     void detachTablePermanently(const Context & context, const String & table_name) override;
 
-    void drop(const Context & /*context*/) override;
-
-    String getEngineName() const override { return "Replicated"; }
-
+    /// Try to execute DLL query on current host as initial query. If query is succeed,
+    /// then it will be executed on all replicas.
     BlockIO propose(const ASTPtr & query, const Context & query_context);
 
     void stopReplication();
-    void shutdown() override;
-
-    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
+    /// Returns cluster consisting of database replicas
     ClusterPtr getCluster() const;
+
+    void drop(const Context & /*context*/) override;
+
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
+    void shutdown() override;
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
