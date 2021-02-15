@@ -8,6 +8,20 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 dpkg -i package_folder/clickhouse-test_*.deb
 
+function configure()
+{
+    # install test configs
+    /usr/share/clickhouse-test/config/install.sh
+
+    # for clickhouse-server (via service)
+    echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
+    # for clickhouse-client
+    export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
+
+    # since we run clickhouse from root
+    sudo chown root: /var/lib/clickhouse
+}
+
 function stop()
 {
     clickhouse stop
@@ -45,13 +59,7 @@ continue
     gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
 }
 
-# install test configs
-/usr/share/clickhouse-test/config/install.sh
-
-# for clickhouse-server (via service)
-echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
-# for clickhouse-client
-export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
+configure
 
 start
 
