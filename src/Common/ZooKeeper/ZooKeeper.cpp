@@ -551,14 +551,6 @@ Coordination::Error ZooKeeper::trySet(const std::string & path, const std::strin
 
 Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses)
 {
-    String desc;
-    for (const auto & r : requests)
-    {
-        auto & r_ref = *r;
-        desc += String(typeid(r_ref).name()) + "\t" + r->getPath() + "\n";
-    }
-    LOG_TRACE(&Poco::Logger::get("ZKTX"), "zk multi {}", desc);
-
     if (requests.empty())
         return Coordination::Error::ZOK;
 

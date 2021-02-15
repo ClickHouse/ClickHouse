@@ -296,6 +296,7 @@
         "01015_attach_part",
         "01015_database_bad_tables",
         "01017_uniqCombined_memory_usage",
+        "01018_ddl_dictionaries_concurrent_requrests",  /// Cannot parse ATTACH DICTIONARY IF NOT EXISTS
         "01019_alter_materialized_view_atomic",
         "01019_alter_materialized_view_consistent",
         "01019_alter_materialized_view_query",
