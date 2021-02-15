@@ -701,7 +701,7 @@ parseDateTimeBestEffortUSOrNull(time_string [, time_zone]);
 
 **Parameters**
 
--   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
+-   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
 
 **Supported non-standard formats**
