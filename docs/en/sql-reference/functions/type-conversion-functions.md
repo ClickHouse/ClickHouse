@@ -738,28 +738,14 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57') AS parseDateTimeBestEffortUSOrNull;
+SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrNull;
 ```
 
 Result:
 
 ``` text
 ┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-10 21:12:57 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02.10.2021 21:12:57') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-10 21:12:57 │
+│             2021-02-11 00:12:57 │
 └─────────────────────────────────┘
 ```
 
@@ -767,6 +753,20 @@ Query:
 
 ``` sql
 SELECT parseDateTimeBestEffortUSOrNull('02.10.2021') AS parseDateTimeBestEffortUSOrNull;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUSOrNull─┐
+│             2021-02-10 00:00:00 │
+└─────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUSOrNull('10.2021') AS parseDateTimeBestEffortUSOrNull;
 ```
 
 Result:
@@ -826,35 +826,35 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57') AS parseDateTimeBestEffortUSOrZero;
+SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrZero;
 ```
 
 Result:
 
 ``` text
 ┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-10 21:12:57 │
+│             2021-02-11 00:12:57 │
 └─────────────────────────────────┘
 ```
 
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02.10.2021 21:12:57') AS parseDateTimeBestEffortUS;
+SELECT parseDateTimeBestEffortUSOrZero('02.10.2021') AS parseDateTimeBestEffortUSOrZero;
 ```
 
 Result:
 
 ``` text
 ┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-10 21:12:57 │
+│             2021-02-10 00:00:00 │
 └─────────────────────────────────┘
 ```
 
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02.2021 21:12:57') AS parseDateTimeBestEffortUSOrZero;
+SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOrZero;
 ```
 
 Result:
