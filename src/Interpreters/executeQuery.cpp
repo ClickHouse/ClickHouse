@@ -338,7 +338,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool has_query_tail,
     ReadBuffer * istr)
 {
     const auto current_time = std::chrono::system_clock::now();
@@ -421,7 +420,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
-            insert_query->has_tail = has_query_tail;
+            insert_query->tail = istr;
         }
         else
         {
@@ -896,13 +895,11 @@ BlockIO executeQuery(
     const String & query,
     Context & context,
     bool internal,
-    QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data)
+    QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
     BlockIO streams;
-    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
-        internal, stage, !may_have_embedded_data, nullptr);
+    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -922,10 +919,9 @@ BlockIO executeQuery(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data,
     bool allow_processors)
 {
-    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data);
+    BlockIO res = executeQuery(query, context, internal, stage);
 
     if (!allow_processors && res.pipeline.initialized())
         res.in = res.getInputStream();
@@ -945,22 +941,16 @@ void executeQuery(
     const char * begin;
     const char * end;
 
-    /// If 'istr' is empty now, fetch next data into buffer.
-    if (!istr.hasPendingData())
-        istr.next();
+    istr.nextIfAtEnd();
 
     size_t max_query_size = context.getSettingsRef().max_query_size;
 
-    bool may_have_tail;
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
         end = istr.buffer().end();
         istr.position() += end - begin;
-        /// Actually we don't know will query has additional data or not.
-        /// But we can't check istr.eof(), because begin and end pointers will become invalid
-        may_have_tail = true;
     }
     else
     {
@@ -973,24 +963,23 @@ void executeQuery(
         begin = parse_buf.data();
         end = begin + parse_buf.size();
         /// Can check stream for eof, because we have copied data
-        may_have_tail = !istr.eof();
     }
 
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
-
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
+
+    assert(streams.in || pipeline.initialized());
 
     try
     {
         if (streams.out)
         {
-            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
-            copyData(in, *streams.out);
+            copyData(*streams.in, *streams.out);
         }
-        else if (streams.in)
+        else if (!pipeline.initialized())
         {
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
@@ -1028,7 +1017,7 @@ void executeQuery(
 
             copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
-        else if (pipeline.initialized())
+        else
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 

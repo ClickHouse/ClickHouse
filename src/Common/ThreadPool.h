@@ -152,7 +152,7 @@ public:
 class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() {}
+    ThreadFromGlobalPool() = default;
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)

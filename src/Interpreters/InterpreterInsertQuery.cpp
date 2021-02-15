@@ -6,7 +6,6 @@
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
@@ -403,14 +402,16 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-    else if (query.data && !query.has_tail) /// can execute without additional data
+    else if (query.data)
     {
-        // res.out = std::move(out_streams.at(0));
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out_streams.at(0));
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, query.tail, query_sample_block, context, nullptr);
+        res.out = std::move(out_streams.at(0));
     }
     else
-        res.out = std::move(out_streams.at(0));
+    {
+        assert(false);
+        __builtin_unreachable();
+    }
 
     res.pipeline.addStorageHolder(table);
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
