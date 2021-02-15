@@ -84,6 +84,7 @@ public:
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
+    void tryConnectToZooKeeper(bool force_attach);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
@@ -100,6 +101,7 @@ private:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
+    std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
 };
 

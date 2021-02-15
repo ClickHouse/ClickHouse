@@ -82,37 +82,6 @@ DatabaseReplicated::DatabaseReplicated(
     /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
-
-    if (!context_.hasZooKeeper())
-    {
-        throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
-    }
-    //FIXME it will fail on startup if zk is not available
-
-    auto current_zookeeper = global_context.getZooKeeper();
-
-    if (!current_zookeeper->exists(zookeeper_path))
-    {
-        /// Create new database, multiple nodes can execute it concurrently
-        createDatabaseNodesInZooKeeper(current_zookeeper);
-    }
-
-    replica_path = zookeeper_path + "/replicas/" + getFullReplicaName();
-
-    String replica_host_id;
-    if (current_zookeeper->tryGet(replica_path, replica_host_id))
-    {
-        String host_id = getHostID(global_context, db_uuid);
-        if (replica_host_id != host_id)
-            throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
-                            "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
-                            replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
-    }
-    else
-    {
-        /// Throws if replica with the same name was created concurrently
-        createReplicaNodesInZooKeeper(current_zookeeper);
-    }
 }
 
 String DatabaseReplicated::getFullReplicaName() const
@@ -203,6 +172,50 @@ ClusterPtr DatabaseReplicated::getCluster() const
     return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, global_context.getTCPPort(), false);
 }
 
+void DatabaseReplicated::tryConnectToZooKeeper(bool force_attach)
+{
+    try
+    {
+        if (!global_context.hasZooKeeper())
+        {
+            throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+        }
+
+        auto current_zookeeper = global_context.getZooKeeper();
+
+        if (!current_zookeeper->exists(zookeeper_path))
+        {
+            /// Create new database, multiple nodes can execute it concurrently
+            createDatabaseNodesInZooKeeper(current_zookeeper);
+        }
+
+        replica_path = zookeeper_path + "/replicas/" + getFullReplicaName();
+
+        String replica_host_id;
+        if (current_zookeeper->tryGet(replica_path, replica_host_id))
+        {
+            String host_id = getHostID(global_context, db_uuid);
+            if (replica_host_id != host_id)
+                throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
+                                "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                                replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+        }
+        else
+        {
+            /// Throws if replica with the same name already exists
+            createReplicaNodesInZooKeeper(current_zookeeper);
+        }
+
+        is_readonly = false;
+    }
+    catch(...)
+    {
+        if (!force_attach)
+            throw;
+        tryLogCurrentException(log);
+    }
+}
+
 bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
     current_zookeeper->createAncestors(zookeeper_path);
@@ -256,6 +269,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
 void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
+    tryConnectToZooKeeper(force_attach);
+
     DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, global_context);
@@ -264,6 +279,9 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
 
 BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_context)
 {
+    if (is_readonly)
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
+
     if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
@@ -297,6 +315,24 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_
     return io;
 }
 
+static UUID getTableUUIDIfReplicated(const String & metadata, const Context & context)
+{
+    bool looks_like_replicated = metadata.find("ReplicatedMergeTree") != std::string::npos;
+    if (!looks_like_replicated)
+        return UUIDHelpers::Nil;
+
+    ParserCreateQuery parser;
+    auto size = context.getSettingsRef().max_query_size;
+    auto depth = context.getSettingsRef().max_parser_depth;
+    ASTPtr query = parseQuery(parser, metadata, size, depth);
+    const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
+    if (!create.storage || !create.storage->engine)
+        return UUIDHelpers::Nil;
+    if (!startsWith(create.storage->engine->name, "Replicated") || !endsWith(create.storage->engine->name, "MergeTree"))
+        return UUIDHelpers::Nil;
+    assert(create.uuid != UUIDHelpers::Nil);
+    return create.uuid;
+}
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr)
 {
@@ -311,42 +347,44 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
 
+    /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
+    /// Metadata can be different, it's handled on table replication level.
+    /// We need to handle only renamed tables.
+    /// TODO maybe we should also update MergeTree SETTINGS if required?
+    std::unordered_map<UUID, String> zk_replicated_id_to_name;
+    for (const auto & zk_table : table_name_to_metadata)
+    {
+        UUID zk_replicated_id = getTableUUIDIfReplicated(zk_table.second, global_context);
+        if (zk_replicated_id != UUIDHelpers::Nil)
+            zk_replicated_id_to_name.emplace(zk_replicated_id, zk_table.first);
+    }
+
     Strings tables_to_detach;
+    std::vector<std::pair<String, String>> replicated_tables_to_rename;
     size_t total_tables = 0;
-    auto existing_tables_it = getTablesIterator(global_context, {});
-    while (existing_tables_it->isValid())
+    std::vector<UUID> replicated_ids;
+    for (auto existing_tables_it = getTablesIterator(global_context, {}); existing_tables_it->isValid(); existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
-        auto in_zk = table_name_to_metadata.find(name);
-        String local_metadata = readMetadataFile(name);
-        if (in_zk == table_name_to_metadata.end() || in_zk->second != local_metadata)
+        UUID local_replicated_id = UUIDHelpers::Nil;
+        if (existing_tables_it->table()->supportsReplication())
         {
-            bool should_detach = true;
-            bool looks_like_replicated = in_zk->second.find("ReplicatedMergeTree") != std::string::npos;
-
-            if (looks_like_replicated)
+            local_replicated_id = existing_tables_it->table()->getStorageID().uuid;
+            auto it = zk_replicated_id_to_name.find(local_replicated_id);
+            if (it != zk_replicated_id_to_name.end())
             {
-                ParserCreateQuery parser;
-                auto size = global_context.getSettingsRef().max_query_size;
-                auto depth = global_context.getSettingsRef().max_parser_depth;
-                ASTPtr local_create = parseQuery(parser, local_metadata, size, depth);
-                ASTPtr zk_create = parseQuery(parser, in_zk->second, size, depth);
-                if (local_create->as<ASTCreateQuery>()->uuid == zk_create->as<ASTCreateQuery>()->uuid)
-                {
-                    /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
-                    /// Metadata can be different, it's handled on table replication level.
-                    /// TODO maybe we should also compare MergeTree SETTINGS?
-                    should_detach = false;
-                }
+                if (name != it->second)
+                    replicated_tables_to_rename.emplace_back(name, it->second);
+                continue;
             }
+        }
 
-            if (should_detach)
+        auto in_zk = table_name_to_metadata.find(name);
+        if (in_zk == table_name_to_metadata.end() || in_zk->second != readMetadataFile(name))
+        {
                 tables_to_detach.emplace_back(std::move(name));
         }
-        existing_tables_it->next();
-        ++total_tables;
     }
-    existing_tables_it.reset();
 
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
@@ -375,17 +413,18 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         if (getDatabaseName() != db_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
+        auto table = tryGetTable(table_name, global_context);
         if (isDictionaryExist(table_name))
         {
             LOG_DEBUG(log, "Will DROP DICTIONARY {}", backQuoteIfNeed(table_name));
             DatabaseAtomic::removeDictionary(global_context, table_name);
             ++dropped_dicts;
         }
-        else if (!tryGetTable(table_name, global_context)->storesDataOnDisk())
+        else if (!table->storesDataOnDisk())
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
-            tryGetTable(table_name, global_context)->shutdown();
+            table->shutdown();
             DatabaseAtomic::dropTable(global_context, table_name, true);
         }
         else
@@ -400,6 +439,20 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     if (!tables_to_detach.empty())
         LOG_WARNING(log, "Cleaned {} outdated objects: dropped {} dictionaries and {} tables, moved {} tables",
                     tables_to_detach.size(), dropped_dicts, dropped_tables.size(), moved_tables);
+
+    /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
+    for (const auto & old_to_new : replicated_tables_to_rename)
+    {
+        const String & from = old_to_new.first;
+        const String & to = old_to_new.second;
+
+        LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
+        /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
+        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
+        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
+        DatabaseAtomic::renameTable(global_context, from, *this, to, false, false);
+    }
+
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);

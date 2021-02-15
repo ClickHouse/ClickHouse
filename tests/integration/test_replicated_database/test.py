@@ -196,14 +196,16 @@ def test_recover_staled_replica(started_cluster):
     dummy_node.query("CREATE TABLE recover.mt2 (n int) ENGINE=MergeTree order by n", settings=settings)
     main_node.query("CREATE TABLE recover.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
     dummy_node.query("CREATE TABLE recover.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
+    main_node.query("CREATE TABLE recover.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
+    dummy_node.query("CREATE TABLE recover.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
     main_node.query("CREATE DICTIONARY recover.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
     dummy_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
 
-    for table in ['t1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2']:
+    for table in ['t1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'rmt3', 'rmt5']:
         main_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
     for table in ['t1', 't2', 'mt1', 'mt2']:
         dummy_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
-    for table in ['rmt1', 'rmt2']:
+    for table in ['rmt1', 'rmt2', 'rmt3', 'rmt5']:
         main_node.query("SYSTEM SYNC REPLICA recover.{}".format(table))
 
     with PartitionManager() as pm:
@@ -212,6 +214,8 @@ def test_recover_staled_replica(started_cluster):
         main_node.query("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
         main_node.query("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
         main_node.query("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
+        main_node.query("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
+        main_node.query("DROP TABLE recover.rmt5", settings=settings)
         main_node.query("DROP DICTIONARY recover.d2", settings=settings)
         main_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());", settings=settings)
 
@@ -223,25 +227,52 @@ def test_recover_staled_replica(started_cluster):
         main_node.query("DROP TABLE recover.tmp", settings=settings)
         main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
 
-    assert main_node.query("SELECT name FROM system.tables WHERE database='recover' ORDER BY name") == "d1\nd2\nm1\nmt1\nmt2\nrmt1\nrmt2\nt2\ntmp\n"
+    assert main_node.query("SELECT name FROM system.tables WHERE database='recover' ORDER BY name") == "d1\nd2\nm1\nmt1\nmt2\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
     query = "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover' ORDER BY name"
     expected = main_node.query(query)
     assert_eq_with_retry(dummy_node, query, expected)
 
-    for table in ['m1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'd1', 'd2']:
+    for table in ['m1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'rmt4', 'd1', 'd2']:
         assert main_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
-    for table in ['t2', 'rmt1', 'rmt2', 'd1', 'd2', 'mt2']:
+    for table in ['t2', 'rmt1', 'rmt2', 'rmt4', 'd1', 'd2', 'mt2']:
         assert dummy_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
     for table in ['m1', 'mt1']:
         assert dummy_node.query("SELECT count() FROM recover.{}".format(table)) == "0\n"
 
-    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == "1\n"
-    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables").strip()
-    assert "mt1_22_" in table
+    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == "2\n"
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'mt1_26_%'").strip()
+    assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'rmt5_26_%'").strip()
     assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
 
-    expected = "Cleaned 3 outdated objects: dropped 1 dictionaries and 1 tables, moved 1 tables"
+    expected = "Cleaned 4 outdated objects: dropped 1 dictionaries and 1 tables, moved 2 tables"
     assert_logs_contain(dummy_node, expected)
 
     dummy_node.query("DROP TABLE recover.tmp")
+    assert_eq_with_retry(main_node, "SELECT count() FROM system.tables WHERE database='recover' AND name='tmp'", "0\n")
 
+def test_startup_without_zk(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS testdb SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover SYNC")
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(main_node)
+        err = main_node.query_and_get_error("CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');")
+        assert "ZooKeeper" in err
+    main_node.query("CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');")
+    #main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n")
+    main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=MergeTree order by n")
+    main_node.query("INSERT INTO startup.rmt VALUES (42)")
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(main_node)
+        main_node.restart_clickhouse(stop_start_wait_sec=30)
+        assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
+
+    for _ in range(10):
+        try:
+            main_node.query("CREATE TABLE startup.m (n int) ENGINE=Memory")
+            break
+        except:
+            time.sleep(1)
+
+    main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
+    assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"

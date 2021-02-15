@@ -29,6 +29,8 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
         try
         {
             auto zookeeper = getAndSetZooKeeper();
+            if (database->is_readonly)
+                database->tryConnectToZooKeeper(false);
             initializeReplication();
             initialized = true;
             return;
