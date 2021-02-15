@@ -199,6 +199,15 @@ std::shared_ptr<Context> StorageRabbitMQ::addSettings(const Context & context) c
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);
 
+    for (const auto & setting : *rabbitmq_settings)
+    {
+        const auto & setting_name = setting.getName();
+
+        /// check for non-rabbitmq-related settings
+        if (!setting_name.starts_with("rabbitmq_"))
+            modified_context->setSetting(setting_name, setting.getValue());
+    }
+
     return modified_context;
 }
 

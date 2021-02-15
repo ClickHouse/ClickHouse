@@ -59,6 +59,8 @@ Optional parameters:
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
+Also FormatFactory settings can be added along with rabbitmq-related settings.
+
 Required configuration:
 
 The RabbitMQ server configuration should be added using the ClickHouse config file.
@@ -75,11 +77,13 @@ Example:
 ``` sql
   CREATE TABLE queue (
     key UInt64,
-    value UInt64
+    value UInt64,
+    date DateTime
   ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
                             rabbitmq_exchange_name = 'exchange1',
                             rabbitmq_format = 'JSONEachRow',
-                            rabbitmq_num_consumers = 5;
+                            rabbitmq_num_consumers = 5,
+                            date_time_input_format = 'best_effort';
 ```
 
 ## Description {#description}
@@ -105,6 +109,7 @@ Exchange type options:
 -   `consistent_hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
 Setting `rabbitmq_queue_base` may be used for the following cases:
+
 -   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
 -   to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
 -   to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
