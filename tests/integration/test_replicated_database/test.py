@@ -8,11 +8,11 @@ from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
-main_node = cluster.add_instance('main_node', main_configs=['configs/config.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
-dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/config.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 2})
-competing_node = cluster.add_instance('competing_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 3})
-snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
-snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
+main_node = cluster.add_instance('main_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
+dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 2})
+competing_node = cluster.add_instance('competing_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 3})
+snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
+snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
 
 all_nodes = [main_node, dummy_node, competing_node, snapshotting_node, snapshot_recovering_node]
 

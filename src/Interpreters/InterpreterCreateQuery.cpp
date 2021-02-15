@@ -138,20 +138,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         bool old_style_database = context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-
-        //FIXME revert it before merge
-        engine->name = "Atomic";
-        if (old_style_database)
-        {
-            if (database_name == "test")
-                engine->name = "Ordinary";      // for stateful tests
-            else
-                engine = makeASTFunction("Replicated",
-                                     std::make_shared<ASTLiteral>(fmt::format("/clickhouse/db/{}/", create.database)),
-                                     std::make_shared<ASTLiteral>("s1"),
-                                     std::make_shared<ASTLiteral>("r" + toString(getpid())));
-        }
-
+        engine->name = old_style_database ? "Ordinary" : "Atomic";
         engine->no_empty_args = true;
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
@@ -219,6 +206,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception("MaterializeMySQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    }
+
+    if (create.storage->engine->name == "Replicated" && !context.getSettingsRef().allow_experimental_database_replicated && !internal)
+    {
+        throw Exception("Replicated is an experimental database engine. "
+                        "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", context);

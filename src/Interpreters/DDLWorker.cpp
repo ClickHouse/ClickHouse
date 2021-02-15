@@ -32,10 +32,6 @@
 
 namespace fs = std::filesystem;
 
-namespace CurrentMetrics
-{
-    extern const Metric MaxDDLEntryID;
-}
 
 namespace DB
 {
@@ -152,12 +148,14 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 
 
 DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-                     const String & logger_name)
+                     const String & logger_name, const CurrentMetrics::Metric * max_entry_metric_)
     : context(context_)
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
+    , max_entry_metric(max_entry_metric_)
 {
-    CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, 0);
+    if (max_entry_metric)
+        CurrentMetrics::set(*max_entry_metric, 0);
 
     if (1 < pool_size)
     {
@@ -456,7 +454,8 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     {
         if (max_id.compare_exchange_weak(prev_id, id))
         {
-            CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
+            if (max_entry_metric)
+                CurrentMetrics::set(*max_entry_metric, id);
             break;
         }
     }
@@ -596,7 +595,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
 }
 
 
-bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage)
+bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const StoragePtr storage)
 {
     /// Pure DROP queries have to be executed on each node separately
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)

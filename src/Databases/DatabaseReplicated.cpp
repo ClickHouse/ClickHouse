@@ -311,7 +311,8 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
     auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, query_context, hosts_to_wait);
-    io.in = std::move(stream);
+    if (query_context.getSettingsRef().database_replicated_ddl_output)
+        io.in = std::move(stream);
     return io;
 }
 

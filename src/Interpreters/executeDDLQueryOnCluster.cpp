@@ -205,10 +205,6 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     addTotalRowsApprox(waiting_hosts.size());
 
     timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
-
-    //FIXME revert it before merge
-    if (context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary)
-        timeout_seconds = 10;
 }
 
 Block DDLQueryStatusInputStream::readImpl()
@@ -252,7 +248,6 @@ Block DDLQueryStatusInputStream::readImpl()
             sleepForMilliseconds(std::min<size_t>(1000, 50 * (try_number + 1)));
         }
 
-        /// TODO: add shared lock
         if (!zookeeper->exists(node_path))
         {
             throw Exception(ErrorCodes::UNFINISHED,
@@ -301,12 +296,7 @@ Block DDLQueryStatusInputStream::readImpl()
         res = sample.cloneWithColumns(std::move(columns));
     }
 
-    //FIXME revert it before merge
-    bool is_functional_tests = !by_hostname && context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
-    if (is_functional_tests)
-        return {};
-    else
-        return res;
+    return res;
 }
 
 Strings DDLQueryStatusInputStream::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)

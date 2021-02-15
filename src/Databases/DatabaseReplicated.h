@@ -80,7 +80,6 @@ public:
 
     ClusterPtr getCluster() const;
 
-    //FIXME
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
