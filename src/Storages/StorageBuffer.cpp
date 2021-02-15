@@ -321,28 +321,6 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            if (query_info.prewhere_info->filter_info)
-            {
-                if (query_info.prewhere_info->filter_info->alias_actions)
-                {
-                    pipe_from_buffers.addSimpleTransform([&](const Block & header)
-                    {
-                        return std::make_shared<ExpressionTransform>(
-                            header,
-                            query_info.prewhere_info->filter_info->alias_actions);
-                    });
-                }
-
-                pipe_from_buffers.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<FilterTransform>(
-                        header,
-                        query_info.prewhere_info->filter_info->actions,
-                        query_info.prewhere_info->filter_info->column_name,
-                        query_info.prewhere_info->filter_info->do_remove_column);
-                });
-            }
-
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
@@ -350,6 +328,18 @@ void StorageBuffer::read(
                     return std::make_shared<ExpressionTransform>(
                         header,
                         query_info.prewhere_info->alias_actions);
+                });
+            }
+
+            if (query_info.prewhere_info->row_level_filter)
+            {
+                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                            header,
+                            query_info.prewhere_info->row_level_filter,
+                            query_info.prewhere_info->row_level_column_name,
+                            false);
                 });
             }
 

@@ -46,16 +46,8 @@ Block getHeaderForProcessingStage(
             {
                 auto & prewhere_info = *query_info.prewhere_info;
 
-                if (prewhere_info.filter_info)
-                {
-                    auto & filter_info = *prewhere_info.filter_info;
-
-                    if (filter_info.actions)
-                        filter_info.actions->execute(header);
-
-                    if (filter_info.do_remove_column)
-                        header.erase(filter_info.column_name);
-                }
+                if (prewhere_info.row_level_filter)
+                    prewhere_info.row_level_filter->execute(header);
 
                 if (prewhere_info.prewhere_actions)
                     prewhere_info.prewhere_actions->execute(header);

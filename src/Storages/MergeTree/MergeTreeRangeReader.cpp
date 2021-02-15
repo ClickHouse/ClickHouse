@@ -561,17 +561,11 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
     if (prewhere_info)
     {
-        if (prewhere_info->filter_info)
-        {
-            if (prewhere_info->filter_info->actions)
-                prewhere_info->filter_info->actions->execute(sample_block, true);
-
-            if (prewhere_info->filter_info->do_remove_column)
-                sample_block.erase(prewhere_info->filter_info->column_name);
-        }
-
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(sample_block, true);
+
+        if (prewhere_info->row_level_filter)
+            prewhere_info->row_level_filter->execute(sample_block, true);
 
         if (prewhere_info->prewhere_actions)
             prewhere_info->prewhere_actions->execute(sample_block, true);
@@ -897,31 +891,20 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
             block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
-        if (prewhere_info->filter_info)
-        {
-            if (prewhere_info->filter_info->alias_actions)
-                prewhere_info->filter_info->alias_actions->execute(block);
-
-            if (prewhere_info->filter_info->actions)
-                prewhere_info->filter_info->actions->execute(block);
-
-            const auto filter_column_pos = block.getPositionByName(prewhere_info->filter_info->column_name);
-            result.addFilter(block.getByPosition(filter_column_pos).column);
-
-            if (prewhere_info->filter_info->do_remove_column)
-                block.erase(prewhere_info->filter_info->column_name);
-            else
-                block.getByPosition(filter_column_pos).column = block.getByPosition(filter_column_pos).type->createColumnConst(result.num_rows, 1);
-        }
-
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(block);
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
 
-        if (prewhere_info->prewhere_actions)
-            prewhere_info->prewhere_actions->execute(block);
+        if (prewhere_info->row_level_filter)
+        {
+            prewhere_info->row_level_filter->execute(block);
+            const auto filter_column_pos = block.getPositionByName(prewhere_info->row_level_column_name);
+            result.addFilter(block.getByPosition(filter_column_pos).column);
+        }
+
+        prewhere_info->prewhere_actions->execute(block);
 
         prewhere_column_pos = block.getPositionByName(prewhere_info->prewhere_column_name);
         result.addFilter(block.getByPosition(prewhere_column_pos).column);
@@ -943,7 +926,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (result.totalRowsPerGranule() == 0)
         result.setFilterConstFalse();
     /// If we need to filter in PREWHERE
-    else if (prewhere_info->need_filter || result.need_filter || prewhere_info->remove_prewhere_column)
+    else if (prewhere_info->need_filter || result.need_filter || prewhere_info->row_level_filter)
     {
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)

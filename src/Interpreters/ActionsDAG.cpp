@@ -80,14 +80,14 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     return **it;
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace, bool add_to_index)
 {
     Node node;
     node.type = ActionType::INPUT;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace)

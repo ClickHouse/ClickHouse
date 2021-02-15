@@ -41,14 +41,16 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 
 struct PrewhereInfo
 {
-    /// Information about the preliminary filter expression, if any.
-    FilterInfoPtr filter_info;
     /// Actions which are executed in order to alias columns are used for prewhere actions.
     ExpressionActionsPtr alias_actions;
+    /// Actions for row level security filter. Applied separately before prewhere_actions.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    ExpressionActionsPtr row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ExpressionActionsPtr prewhere_actions;
     /// Actions which are executed after reading from storage in order to remove unused columns.
     ExpressionActionsPtr remove_columns_actions;
+    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
@@ -58,8 +60,10 @@ struct PrewhereInfo
 struct PrewhereDAGInfo
 {
     ActionsDAGPtr alias_actions;
+    ActionsDAGPtr row_level_filter_actions;
     ActionsDAGPtr prewhere_actions;
     ActionsDAGPtr remove_columns_actions;
+    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
