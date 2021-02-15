@@ -59,4 +59,55 @@
         format Null
     ]]></query>
 
+    <!--
+        Rows from the hottest 21-second intervals, to test the RANGE OFFSET frame.
+    -->
+    <query>
+        SELECT * FROM
+            (SELECT EventTime,
+                count(*) OVER (ORDER BY EventTime ASC
+                    RANGE BETWEEN 10 PRECEDING AND 10 FOLLOWING) AS c
+            FROM hits_10m_single)
+        FORMAT Null
+    </query>
+
+    <!--
+        This is kind of the same, except the following frame boundary is not
+        inclusive. Should be much faster, because we don't have to reset the
+        aggregation state. After we support subtraction of aggregate state, the
+        above query should become closer in performance to this one.
+    -->
+    <query>
+        select * from
+            (select EventTime,
+                count(*) over (partition by
+                    floor((toUInt32(EventTime) + 10 + 1) / 20)) as c
+            from hits_10m_single)
+        format Null
+    </query>
+
+    <!-- Some synthetic tests.-->
+    <query>
+        select
+            min(number) over w,
+            count(*) over w,
+            max(number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o)
+        format Null
+    </query>
+
+    <query>
+        select
+            first_value(number) over w,
+            dense_rank() over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o)
+        format Null
+    </query>
+
 </test>
