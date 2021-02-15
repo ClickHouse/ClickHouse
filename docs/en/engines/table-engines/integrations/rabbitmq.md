@@ -59,7 +59,7 @@ Optional parameters:
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
-Also FormatFactory settings can be added along with rabbitmq-related settings.
+Also format settings can be added along with rabbitmq-related settings.
 
 Required configuration:
 

@@ -52,7 +52,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
-Настройки FormatFactory также могут быть добавлены в списке RabbitMQ настроек.
+Настройки форматов данных также могут быть добавлены в списке RabbitMQ настроек.
 
 Требуемая конфигурация:
 
