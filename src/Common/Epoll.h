@@ -16,12 +16,11 @@ class Epoll
 public:
     Epoll();
 
-    Epoll(const Epoll & other) = delete;
-    Epoll & operator=(const Epoll & other) = delete;
+    Epoll(const Epoll &) = delete;
+    Epoll & operator=(const Epoll &) = delete;
 
+    Epoll & operator=(Epoll && other);
     Epoll(Epoll && other);
-
-    Epoll & operator=(Epoll && other) = default;
 
     /// Add new file descriptor to epoll. If ptr set to nullptr, epoll_event.data.fd = fd,
     /// otherwise epoll_event.data.ptr = ptr.
@@ -47,7 +46,7 @@ public:
 
 private:
     int epoll_fd;
-    int events_count;
+    std::atomic<int> events_count;
 };
 
 }

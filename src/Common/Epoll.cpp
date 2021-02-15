@@ -21,9 +21,21 @@ Epoll::Epoll() : events_count(0)
         throwFromErrno("Cannot open epoll descriptor", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-Epoll::Epoll(Epoll && other) : epoll_fd(other.epoll_fd), events_count(other.events_count)
+Epoll::Epoll(Epoll && other)
 {
+    epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
+    int count = other.events_count;
+    events_count = count;
+}
+
+Epoll & Epoll::operator=(Epoll && other)
+{
+    epoll_fd = other.epoll_fd;
+    other.epoll_fd = -1;
+    int count = other.events_count;
+    events_count = count;
+    return *this;
 }
 
 void Epoll::add(int fd, void * ptr)
@@ -35,18 +47,18 @@ void Epoll::add(int fd, void * ptr)
     else
         event.data.fd = fd;
 
+    ++events_count;
+
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1)
         throwFromErrno("Cannot add new descriptor to epoll", DB::ErrorCodes::EPOLL_ERROR);
-
-    ++events_count;
 }
 
 void Epoll::remove(int fd)
 {
+    --events_count;
+
     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == -1)
         throwFromErrno("Cannot remove descriptor from epoll", DB::ErrorCodes::EPOLL_ERROR);
-
-    --events_count;
 }
 
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback) const
@@ -54,7 +66,7 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
     if (events_count == 0)
         throw Exception("There is no events in epoll", ErrorCodes::LOGICAL_ERROR);
 
-    int ready_size = 0;
+    int ready_size;
     int timeout = blocking && !async_callback ? -1 : 0;
     do
     {
