@@ -358,19 +358,6 @@ void ConnectionEstablisher::resetResult()
     }
 }
 
-void ConnectionEstablisher::processFail(bool add_description)
-{
-    if (action_before_disconnect)
-        action_before_disconnect(socket_fd);
-
-    fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
-    if (add_description)
-        fail_message += " (" + result.entry->getDescription() + ")";
-    resetResult();
-    socket_fd = -1;
-    stage = Stage::FAILED;
-}
-
 void ConnectionEstablisher::run()
 {
     try
@@ -463,20 +450,19 @@ void ConnectionEstablisher::run()
 
         stage = Stage::FINISHED;
     }
-    catch (Poco::Net::NetException &)
-    {
-        processFail(true);
-    }
-    catch (Poco::TimeoutException &)
-    {
-        processFail(true);
-    }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+        if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             throw;
 
-        processFail(false);
+        if (action_before_disconnect)
+            action_before_disconnect(socket_fd);
+
+        fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
+        resetResult();
+        socket_fd = -1;
+        stage = Stage::FAILED;
     }
 }
 
