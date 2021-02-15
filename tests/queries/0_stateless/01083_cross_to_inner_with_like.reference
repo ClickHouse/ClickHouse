@@ -19,3 +19,10 @@ SELECT
 FROM n
 ALL INNER JOIN r ON k = r.k
 WHERE (k = r.k) AND (name NOT LIKE \'A%\')
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON (k + 1) = (r.k + 1)
+WHERE ((k + 1) = (r.k + 1)) AND ((name = \'A\') OR (name = \'AA\'))
