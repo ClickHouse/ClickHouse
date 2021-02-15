@@ -6,6 +6,7 @@
 namespace DB
 {
 
+class ReadBuffer;
 
 /** INSERT query
   */
@@ -24,8 +25,8 @@ public:
     const char * data = nullptr;
     const char * end = nullptr;
 
-    /// Query has additional data, which will be sent later
-    bool has_tail = false;
+    /// Query may have additional data if buffer is not nullptr
+    ReadBuffer * tail;
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
