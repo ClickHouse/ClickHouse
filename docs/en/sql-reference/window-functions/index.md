@@ -14,15 +14,15 @@ ClickHouse supports the standard grammar for defining windows and window functio
 
 | Feature | Support or workaround |
 | --------| ----------|
-| ad hoc window specification (`count(*) over (partition by id order by time desc)`) | yes |
+| ad hoc window specification (`count(*) over (partition by id order by time desc)`) | supported |
 | expressions involving window functions, e.g. `(count(*) over ()) / 2)` | not supported, wrap in a subquery ([feature request](https://github.com/ClickHouse/ClickHouse/issues/19857)) |
-| `WINDOW` clause (`select ... from table window w as (partiton by id)`) | yes |
-| `ROWS` frame | yes |
-| `RANGE` frame | yes, it is the default |
-| `GROUPS` frame | no |
+| `WINDOW` clause (`select ... from table window w as (partiton by id)`) | supported |
+| `ROWS` frame | supported |
+| `RANGE` frame | supported, the default |
+| `GROUPS` frame | not supported |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`) | all aggregate functions are supported |
-| `rank()`, `dense_rank()`, `row_number()` | yes |
-| `lag/lead(value, offset)` | no, replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`| 
+| `rank()`, `dense_rank()`, `row_number()` | supported |
+| `lag/lead(value, offset)` | not supported, replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`| 
 
 ## References
 
