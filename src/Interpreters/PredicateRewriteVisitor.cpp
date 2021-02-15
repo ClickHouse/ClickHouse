@@ -26,11 +26,18 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 {
     auto & internal_select_list = union_select_query.list_of_selects->children;
 
-    if (!internal_select_list.empty())
-        visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
-
-    for (size_t index = 1; index < internal_select_list.size(); ++index)
-        visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+    for (size_t index = 0; index < internal_select_list.size(); ++index)
+    {
+        if (auto * child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+            visit(*child_union, internal_select_list[index]);
+        else
+        {
+            if (index == 0)
+                visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
+            else
+                visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+        }
+    }
 }
 
 void PredicateRewriteVisitorData::visitFirstInternalSelect(ASTSelectQuery & select_query, ASTPtr &)
