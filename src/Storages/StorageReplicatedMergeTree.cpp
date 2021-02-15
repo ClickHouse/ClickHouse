@@ -1312,28 +1312,29 @@ MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(co
     MergeTreePartInfo part_iter;
     const Poco::DirectoryIterator dir_end;
 
+    const String detached_dir = "detached";
+
     for (const String& path : getDataPaths())
     {
-        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        for (Poco::DirectoryIterator it{path + detached_dir}; it != dir_end; ++it)
         {
-            if (!MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_iter, format_version) || // this line is correct
+            if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_iter, format_version) || // this line is correct
                 part_iter.partition_id != target_part.partition_id ||
                 entry.new_part_name != part_iter.getPartName()) // TODO check if the last statement is valid,
                 // Maybe we can't compare by names
                 continue;
 
             const String& part_name = part_iter.getPartName();
-            const String part_dir = "detached/"; //TODO double-check
-            const String part_to_path = part_dir + part_name;
+            const String part_to_path = detached_dir + part_name;
 
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
-                getDiskForPart(part_name, part_dir));
+                getDiskForPart(part_name, detached_dir));
 
             //createPart uses part name as arg 1, "detached/" as arg 2 so maybe we need "detached/" too
             MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
 
             if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
-                /// the part with same partition id has different checksum, so it is corrupt.
+                /// the part with same name and partition id has different checksum, so it is corrupt.
                 return {};
 
             return iter_part_ptr;
