@@ -20,8 +20,12 @@ void updateReportFile(const char * coverage_report_file) {
     if (report_file)
         fclose(report_file);
 
-    if (coverage_report_file)
+    if (coverage_report_file) {
         report_file = fopen(coverage_report_file, "w");
+
+        if (!report_file)
+            exit(1);
+    }
 }
 
 void dumpCoverageReportIfPossible()  {
@@ -39,7 +43,7 @@ extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *s
   if (start == stop || *start) return;  // Initialize only once.
 
   if (!report_file) // highly suboptimal
-      updateReportFile("coverage_report");
+      updateReportFile("~/ch-thesis/coverage_report");
 
   fprintf(report_file, "INIT: %p %p\n",
           static_cast<void *>(start),
