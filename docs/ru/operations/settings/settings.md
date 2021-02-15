@@ -2473,4 +2473,70 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 Значение по умолчанию: `16`.
 
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Задает вероятность того, что ClickHouse начнет трассировку для выполненных запросов (если не указан [входящий контекст](https://www.w3.org/TR/trace-context/) трассировки).
+
+Возможные значения:
+
+-   0 — трассировка для выполненных запросов отключена (если не указан входящий контекст трассировки).
+-   Положительное число с плавающей точкой в диапазоне [0..1]. Например, при значении настройки, равной `0,5`, ClickHouse начнет трассировку в среднем для половины запросов.
+-   1 — трассировка для всех выполненных запросов включена.
+
+Значение по умолчанию: `0`.
+
+## optimize_on_insert {#optimize-on-insert}
+
+Включает или выключает преобразование данных перед добавлением в таблицу, как будто над добавляемым блоком предварительно было произведено слияние (в соответствии с движком таблицы).
+
+Возможные значения:
+
+-   0 — выключена
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+**Пример**
+
+Сравните добавление данных при включенной и выключенной настройке:
+
+Запрос:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Результат:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
