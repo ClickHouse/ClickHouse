@@ -25,6 +25,7 @@ SRCS(
     MySQLHandler.cpp
     MySQLHandlerFactory.cpp
     NotFoundHandler.cpp
+    NuKeeperTCPHandler.cpp
     PostgreSQLHandler.cpp
     PostgreSQLHandlerFactory.cpp
     PrometheusMetricsWriter.cpp
@@ -33,7 +34,6 @@ SRCS(
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
-    TestKeeperTCPHandler.cpp
     WebUIRequestHandler.cpp
 
 )

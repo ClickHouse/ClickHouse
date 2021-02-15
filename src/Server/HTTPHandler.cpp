@@ -700,7 +700,6 @@ void HTTPHandler::trySendExceptionToClient(
             writeChar('\n', *used_output.out_maybe_compressed);
 
             used_output.out_maybe_compressed->next();
-            used_output.out->next();
             used_output.out->finalize();
         }
         else
@@ -766,6 +765,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
+
+    if (used_output.out)
+        used_output.out->finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
