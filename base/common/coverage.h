@@ -1,4 +1,6 @@
 #pragma once
+/// This file should be included ONLY if the WITH_COVERAGE option is on
+
 #include <sanitizer/coverage_interface.h>
 
 void dumpCoverageReportIfPossible();
