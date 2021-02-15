@@ -304,6 +304,14 @@ inline const DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, c
     return DataTypeDecimalTrait<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
+template <typename DecimalType>
+inline void clamp(DecimalType & value, UInt32 scale, const typename DecimalType::NativeType min_whole_value, const typename DecimalType::NativeType max_whole_value)
+{
+    const auto scale_multiplier = scaleMultiplier<DecimalType>(scale);
+    value = std::max<typename DecimalType::NativeType>(value, min_whole_value * scale_multiplier);
+    value = std::min<typename DecimalType::NativeType>(value, max_whole_value * scale_multiplier);
+}
+
 }
 
 }

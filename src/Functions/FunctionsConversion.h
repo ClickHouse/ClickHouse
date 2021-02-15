@@ -980,6 +980,7 @@ struct ConvertThroughParsing
                     {
                         DateTime64 value = 0;
                         readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
+                        DecimalUtils::clamp<DateTime64>(value, vec_to.getScale(), 0, 0xFFFFFFFF);
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
