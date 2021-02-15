@@ -16,6 +16,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+void addAndTerm(ASTPtr & ast, const ASTPtr & term)
+{
+    if (!ast)
+        ast = term;
+    else
+        ast = makeASTFunction("and", ast, term);
+}
+
+/// If this is an inner join and the expression related to less than 2 tables, then move it to WHERE
+bool canMoveToWhere(std::pair<size_t, size_t> table_numbers, ASTTableJoin::Kind kind)
+{
+    return kind == ASTTableJoin::Kind::Inner &&
+        (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0);
+}
+
+}
+
 void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
                                                  const std::pair<size_t, size_t> & table_no)
 {
@@ -80,57 +100,36 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(left, right, data);
 
-        if (table_numbers.first != table_numbers.second && table_numbers.first > 0 && table_numbers.second > 0)
-            data.new_on_expression_valid = true;
-
-        /**
-          * if this is an inner join and the expression related to less than 2 tables, then move it to WHERE
-          */
-        if (data.kind == ASTTableJoin::Kind::Inner
-            && (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0))
+        if (canMoveToWhere(table_numbers, data.kind))
         {
-            if (!data.new_where_conditions)
-                data.new_where_conditions = ast->clone();
-            else
-                data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
+            addAndTerm(data.new_where_conditions, ast);
         }
         else
         {
+            if (data.kind == ASTTableJoin::Kind::Inner)
+            {
+                addAndTerm(data.new_on_expression, ast);
+            }
             data.addJoinKeys(left, right, table_numbers);
-            if (!data.new_on_expression)
-                data.new_on_expression = ast->clone();
-            else
-                data.new_on_expression = makeASTFunction("and", data.new_on_expression, ast->clone());
         }
     }
-    else if (inequality != ASOF::Inequality::None)
+    else if (inequality != ASOF::Inequality::None && !data.is_asof)
     {
-        if (!data.is_asof)
+        ASTPtr left = func.arguments->children.at(0);
+        ASTPtr right = func.arguments->children.at(1);
+        auto table_numbers = getTableNumbers(left, right, data);
+        if (canMoveToWhere(table_numbers, data.kind))
         {
-            ASTPtr left = func.arguments->children.at(0);
-            ASTPtr right = func.arguments->children.at(1);
-            auto table_numbers = getTableNumbers(left, right, data);
-
-            if (table_numbers.first != table_numbers.second && table_numbers.first > 0 && table_numbers.second > 0)
-                data.new_on_expression_valid = true;
-
-            if (data.kind == ASTTableJoin::Kind::Inner
-                && (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0))
-            {
-                if (!data.new_where_conditions)
-                    data.new_where_conditions = ast->clone();
-                else
-                    data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
-
-                return;
-            }
-            else
-            {
-                throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
-                    ErrorCodes::NOT_IMPLEMENTED);
-            }
+            addAndTerm(data.new_where_conditions, ast);
         }
-
+        else
+        {
+            throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
+                ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+    else if (inequality != ASOF::Inequality::None && data.is_asof)
+    {
         if (data.asof_left_key || data.asof_right_key)
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
                 ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
