@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
@@ -15,6 +19,12 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
 
     while (loadAtPosition(in, memory, pos) && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size))
     {
+        const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
+        if (current_object_size > 10 * min_chunk_size)
+            throw ParsingException("Size of JSON object is extremely large. Expected not greater than " +
+            std::to_string(min_chunk_size) + " bytes, but current is " + std::to_string(current_object_size) +
+            " bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely JSON is malformed", ErrorCodes::INCORRECT_DATA);
+
         if (quotes)
         {
             pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
