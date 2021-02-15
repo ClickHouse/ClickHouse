@@ -20,21 +20,40 @@ class HedgedConnections : public IConnections
 public:
     struct ReplicaState
     {
-        Connection * connection = nullptr;
-        std::unordered_map<int, ConnectionTimeoutDescriptorPtr> active_timeouts;
-    };
+        ReplicaState()
+        {
+            epoll.add(receive_timeout.getDescriptor());
+            epoll.add(change_replica_timeout.getDescriptor());
+        }
 
-    struct ReplicaLocation
-    {
-        size_t offset;
-        size_t index;
+        Connection * connection = nullptr;
+        TimerDescriptor receive_timeout;
+        TimerDescriptor change_replica_timeout;
+        /// We store socket and timeout descriptors in epoll
+        /// and use it's fd outside.
+        Epoll epoll;
     };
 
     struct OffsetState
     {
+        /// Replicas with the same offset.
         std::vector<ReplicaState> replicas;
-        size_t active_connection_count;
-        bool first_packet_of_data_received;
+        /// An amount of active replicas, when first_packet_of_data_received is true,
+        /// active_connection_count is always <= 1 (because we stop working with
+        /// other replicas when we receive first data packet from one of them)
+        size_t active_connection_count = 0;
+        bool first_packet_of_data_received = false;
+    };
+
+    /// We process events in epoll, so we need to determine replica by it's
+    /// file descriptor. We store map fd -> replica location. To determine
+    /// where replica is, we need a replica offset
+    /// (the same as parallel_replica_offset), and index, which is needed because
+    /// we can have many replicas with same offset (when receive_data_timeout has expired).
+    struct ReplicaLocation
+    {
+        size_t offset;
+        size_t index;
     };
 
     HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
@@ -75,7 +94,11 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
 private:
-    /// We will save actions with replicas in pipeline to perform them on the new replicas.
+    /// If we don't receive data from replica for receive_data_timeout, we are trying
+    /// to get new replica and send query to it. Beside sending query, there are some
+    /// additional actions like sendScalarsData or sendExternalTablesData and we need
+    /// to perform these actions in the same order on the new replica. So, we will
+    /// save actions with replicas in pipeline to perform them on the new replicas.
     class Pipeline
     {
     public:
@@ -86,13 +109,11 @@ private:
         std::vector<std::function<void(ReplicaState &)>> pipeline;
     };
 
-    Packet receivePacketFromReplica(ReplicaLocation & replica_location, AsyncCallback async_callback = {});
+    Packet receivePacketFromReplica(const ReplicaLocation & replica_location, AsyncCallback async_callback = {});
 
-    Packet receivePacketImpl(AsyncCallback async_callback = {});
+    ReplicaLocation getReadyReplicaLocation(AsyncCallback async_callback = {});
 
-    void processReceivedFirstDataPacket(ReplicaLocation & replica_location);
-
-    void processTimeoutEvent(ReplicaLocation & replica_location, ConnectionTimeoutDescriptorPtr timeout_descriptor);
+    void processReceivedFirstDataPacket(const ReplicaLocation & replica_location);
 
     void tryGetNewReplica(bool start_new_connection);
 
@@ -100,12 +121,7 @@ private:
 
     int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
-    void addTimeoutToReplica(ConnectionTimeoutType type, ReplicaState & replica);
-
-    void removeTimeoutsFromReplica(ReplicaState & replica);
-
-    void removeTimeoutFromReplica(ConnectionTimeoutType type, ReplicaState & replica);
-
+    bool checkPendingData(ReplicaLocation & location_out);
 
     HedgedConnectionsFactory hedged_connections_factory;
 
@@ -116,8 +132,6 @@ private:
 
     /// Map socket file descriptor to replica location (it's offset and index in OffsetState.replicas).
     std::unordered_map<int, ReplicaLocation> fd_to_replica_location;
-    /// Map timeout file descriptor to replica location (it's offset and index in OffsetState.replicas).
-    std::unordered_map<int, ReplicaLocation> timeout_fd_to_replica_location;
 
     /// A queue of offsets for new replicas. When we get RECEIVE_DATA_TIMEOUT from
     /// the replica, we push it's offset to this queue and start trying to get

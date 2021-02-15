@@ -12,21 +12,6 @@
 namespace DB
 {
 
-enum class ConnectionTimeoutType
-{
-    RECEIVE_HELLO_TIMEOUT,
-    RECEIVE_TABLES_STATUS_TIMEOUT,
-    RECEIVE_DATA_TIMEOUT,
-    RECEIVE_TIMEOUT,
-};
-
-struct ConnectionTimeoutDescriptor
-{
-    ConnectionTimeoutType type;
-    TimerDescriptor timer;
-};
-
-using ConnectionTimeoutDescriptorPtr = std::shared_ptr<ConnectionTimeoutDescriptor>;
 using TimerDescriptorPtr = std::shared_ptr<TimerDescriptor>;
 
 /** Class for establishing hedged connections with replicas.
@@ -40,12 +25,27 @@ class HedgedConnectionsFactory
 public:
     using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
 
+    struct ReplicaStatus
+    {
+        ReplicaStatus(const ConnectionEstablisher & establisher) : connection_establisher(establisher)
+        {
+            epoll.add(receive_timeout.getDescriptor());
+            epoll.add(change_replica_timeout.getDescriptor());
+        }
+
+        ConnectionEstablisher connection_establisher;
+        TimerDescriptor receive_timeout;
+        TimerDescriptor change_replica_timeout;
+        bool is_ready = false;
+        bool is_in_process = false;
+        Epoll epoll;
+    };
+
     enum class State
     {
-        EMPTY = 0,
-        READY = 1,
-        NOT_READY = 2,
-        CANNOT_CHOOSE = 3,
+        READY,
+        NOT_READY,
+        CANNOT_CHOOSE,
     };
 
     HedgedConnectionsFactory(const ConnectionPoolWithFailoverPtr & pool_,
@@ -64,7 +64,7 @@ public:
     State getNextConnection(bool start_new_connection, bool blocking, Connection *& connection_out);
 
     /// Check if we can try to produce new READY replica.
-    bool canGetNewConnection() const { return ready_indexes.size() + failed_pools_count < shuffled_pools.size(); }
+    bool canGetNewConnection() const { return ready_replicas_count + failed_pools_count < shuffled_pools.size(); }
 
     /// Stop working with all replicas that are not READY.
     void stopChoosingReplicas();
@@ -78,9 +78,11 @@ public:
     ~HedgedConnectionsFactory();
 
 private:
-    State startEstablishingConnection(int index, Connection *& connection_out);
+    /// Try to start establishing connection to the new replica. Return
+    /// the index of the new replica or -1 if cannot start new connection.
+    int startEstablishingNewConnection(Connection *& connection_out);
 
-    State processConnectionEstablisherStage(int replica_index, bool remove_from_epoll = false);
+    void processConnectionEstablisherStage(int replica_index, bool remove_from_epoll = false);
 
     /// Find an index of the next free replica to start connection.
     /// Return -1 if there is no free replica.
@@ -88,20 +90,20 @@ private:
 
     int getReadyFileDescriptor(bool blocking);
 
+    int checkPendingData();
+
     void addTimeouts(int replica_index);
 
-    void addTimeoutToReplica(ConnectionTimeoutType type, int replica_index);
+    void resetReplicaTimeouts(int replica_index);
 
-    void removeTimeoutsFromReplica(int replica_index);
+    void processFailedConnection(int replica_index, bool remove_from_epoll);
 
-    void processFailedConnection(int replica_index);
+    void processSocketEvent(int replica_index, Connection *& connection_out);
 
-    State processReplicaEvent(int replica_index, Connection *& connection_out);
-
-    bool processTimeoutEvent(int replica_index, ConnectionTimeoutDescriptorPtr timeout_descriptor);
+    void processReceiveTimeout(int replica_index);
 
     /// Return NOT_READY state if there is no ready events, READY if replica is ready
-    /// and EMPTY if we need to try next replica.
+    /// and CANNOT_CHOOSE if there is no more events in epoll.
     State processEpollEvents(bool blocking, Connection *& connection_out);
 
     State setBestUsableReplica(Connection *& connection_out);
@@ -111,20 +113,16 @@ private:
     const ConnectionTimeouts timeouts;
     std::shared_ptr<QualifiedTableName> table_to_check;
 
-    std::vector<ConnectionEstablisher> connection_establishers;
+    std::vector<ReplicaStatus> replicas;
     std::vector<ShuffledPool> shuffled_pools;
-
-    std::vector<std::unordered_map<int, ConnectionTimeoutDescriptorPtr>> replicas_timeouts;
 
     /// Map socket file descriptor to replica index.
     std::unordered_map<int, int> fd_to_replica_index;
-    /// Map timeout file descriptor to replica index.
-    std::unordered_map<int, int> timeout_fd_to_replica_index;
 
     /// Indexes of replicas, that are in process of connection.
-    std::unordered_set<int> indexes_in_process;
+    size_t replicas_in_process_count = 0;
     /// Indexes of ready replicas.
-    std::unordered_set<int> ready_indexes;
+    size_t ready_replicas_count = 0;
 
     int last_used_index = -1;
     bool fallback_to_stale_replicas;
@@ -136,9 +134,6 @@ private:
     size_t failed_pools_count;
     size_t max_tries;
 };
-
-/// Create ConnectionTimeoutDescriptor with particular type.
-ConnectionTimeoutDescriptorPtr createConnectionTimeoutDescriptor(ConnectionTimeoutType type, const ConnectionTimeouts & timeouts);
 
 }
 #endif

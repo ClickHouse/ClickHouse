@@ -27,10 +27,16 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
+TimerDescriptor::TimerDescriptor(TimerDescriptor && other) : timer_fd(other.timer_fd)
+{
+    other.timer_fd = -1;
+}
+
 TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.
-    close(timer_fd);
+    if (timer_fd != -1)
+        close(timer_fd);
 }
 
 void TimerDescriptor::reset() const

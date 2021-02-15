@@ -11,10 +11,17 @@ namespace DB
 
 using AsyncCallback = std::function<void(int, const Poco::Timespan &, const std::string &)>;
 
-class Epoll : boost::noncopyable
+class Epoll
 {
 public:
     Epoll();
+
+    Epoll(const Epoll & other) = delete;
+    Epoll & operator=(const Epoll & other) = delete;
+
+    Epoll(Epoll && other);
+
+    Epoll & operator=(Epoll && other) = default;
 
     /// Add new file descriptor to epoll. If ptr set to nullptr, epoll_event.data.fd = fd,
     /// otherwise epoll_event.data.ptr = ptr.

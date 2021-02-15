@@ -20,6 +20,11 @@ Epoll::Epoll() : events_count(0)
         throwFromErrno("Cannot open epoll descriptor", DB::ErrorCodes::EPOLL_ERROR);
 }
 
+Epoll::Epoll(Epoll && other) : epoll_fd(other.epoll_fd), events_count(other.events_count)
+{
+    other.epoll_fd = -1;
+}
+
 void Epoll::add(int fd, void * ptr)
 {
     epoll_event event;
@@ -45,6 +50,9 @@ void Epoll::remove(int fd)
 
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback) const
 {
+    if (events_count == 0)
+        throw Exception("There is no events in epoll", ErrorCodes::LOGICAL_ERROR);
+
     int ready_size = 0;
     int timeout = blocking && !async_callback ? -1 : 0;
     do
@@ -64,7 +72,8 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 
 Epoll::~Epoll()
 {
-    close(epoll_fd);
+    if (epoll_fd != -1)
+        close(epoll_fd);
 }
 
 }

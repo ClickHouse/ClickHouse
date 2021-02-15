@@ -2,7 +2,6 @@
 <yandex>
     <profiles>
         <default>
-            <sleep_before_send_data>30</sleep_before_send_data>
         </default>
     </profiles>
 </yandex>

@@ -65,9 +65,6 @@ public:
     /// disconnect. It may be useful for removing file descriptor from epoll.
     void setActionBeforeDisconnect(std::function<void(int)> action) { action_before_disconnect = action; }
 
-    /// Process fail connection.
-    void processFail(bool add_description = false);
-
     IConnectionPool * pool;
     const ConnectionTimeouts * timeouts;
     std::string fail_message;
