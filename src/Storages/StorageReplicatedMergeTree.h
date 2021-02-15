@@ -404,6 +404,9 @@ private:
       */
     bool executeLogEntry(LogEntry & entry);
 
+    /// Lookup the part for the entry in the detached/ folder.
+    /// returns nullptr if the part is corrupt or missing.
+    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry) const;
 
     void executeDropRange(const LogEntry & entry);
 

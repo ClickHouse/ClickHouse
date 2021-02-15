@@ -2694,12 +2694,12 @@ void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & comm
             if (command.part)
             {
                 auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
-                /// We able to parse it
+                /// We are able to parse it
                 MergeTreePartInfo::fromPartName(part_name, format_version);
             }
             else
             {
-                /// We able to parse it
+                /// We are able to parse it
                 getPartitionIDFromQuery(command.partition, global_context);
             }
         }

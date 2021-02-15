@@ -41,7 +41,8 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    bool optimize_on_insert_)
+    bool optimize_on_insert_,
+    bool is_attach_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
@@ -51,6 +52,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , optimize_on_insert(optimize_on_insert_)
+    , is_attach(is_attach_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -258,10 +260,17 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             part->name = part->getNewName(part->info);
 
-            /// Will add log entry about new part.
-
             StorageReplicatedMergeTree::LogEntry log_entry;
-            log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
+            /// Will add log entry about new part.
+            if (is_attach)
+            {
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
+                log_entry.part_checksum = ...; //TODO initialize checksum
+            }
+            else
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
             log_entry.create_time = time(nullptr);
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;
