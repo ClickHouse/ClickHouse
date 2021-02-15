@@ -38,19 +38,19 @@ void dumpCoverageReportIfPossible()  {
 // binary (executable or DSO). The callback will be called at least
 // once per DSO and may be called multiple times with the same parameters.
 extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop) {
-  static uint64_t n;  // Counter for the guards.
+    static uint64_t n;  // Counter for the guards.
 
-  if (start == stop || *start) return;  // Initialize only once.
+    if (start == stop || *start) return;  // Initialize only once.
 
-  if (!report_file) // highly suboptimal
-      updateReportFile("~/ch-thesis/coverage_report");
+    if (!report_file) // highly suboptimal
+        updateReportFile("~/ch-thesis/coverage_report");
 
-  fprintf(report_file, "INIT: %p %p\n",
-          static_cast<void *>(start),
-          static_cast<void *>(stop));
+    fprintf(report_file, "INIT: %p %p\n",
+            static_cast<void *>(start),
+            static_cast<void *>(stop));
 
-  for (uint32_t *x = start; x < stop; x++)
-    *x = ++n;  // Guards should start from 1.
+    for (uint32_t *x = start; x < stop; x++)
+      *x = ++n;  // Guards should start from 1.
 }
 
 // This callback is inserted by the compiler on every edge in the
@@ -61,15 +61,15 @@ extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *s
 // But for large functions it will emit a simple call:
 //    __sanitizer_cov_trace_pc_guard(guard);
 extern "C" void __sanitizer_cov_trace_pc_guard(uint32_t *edge_index) {
-  if (!*edge_index) return;  // Duplicate the guard check.
-  // If you set *guard to 0 this code will not be called again for this edge.
-  // Now you can get the PC and do whatever you want:
-  //   store it somewhere or symbolize it and print right away.
-  // The values of `*guard` are as you set them in
-  // __sanitizer_cov_trace_pc_guard_init and so you can make them consecutive
-  // and use them to dereference an array or a bit vector.
-  fprintf(report_file, "CALL: index: %p, return address: %p, value: %x PC\n",
-          static_cast<void*>(edge_index),
-          static_cast<void*>(__builtin_return_address(0)),
-          *edge_index);
+    if (!*edge_index) return;  // Duplicate the guard check.
+    // If you set *guard to 0 this code will not be called again for this edge.
+    // Now you can get the PC and do whatever you want:
+    //   store it somewhere or symbolize it and print right away.
+    // The values of `*guard` are as you set them in
+    // __sanitizer_cov_trace_pc_guard_init and so you can make them consecutive
+    // and use them to dereference an array or a bit vector.
+    fprintf(report_file, "CALL: index: %p, return address: %p, value: %x PC\n",
+            static_cast<void*>(edge_index),
+            static_cast<void*>(__builtin_return_address(0)),
+            *edge_index);
 }
