@@ -37,7 +37,6 @@ public:
         ASTPtr new_on_expression{};
         ASTPtr new_where_conditions{};
         bool has_some{false};
-        bool new_on_expression_valid{false};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no,

@@ -424,11 +424,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         if (is_asof)
+        {
             data.asofToJoinKeys();
-        else if (!data.new_on_expression_valid)
-            throw Exception("JOIN expects left and right joined keys from two joined table in ON section. Unexpected '" + queryToString(data.new_on_expression) + "'",
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-        else if (data.new_where_conditions != nullptr)
+        }
+        else if (data.new_where_conditions && data.new_on_expression)
         {
             table_join.on_expression = data.new_on_expression;
             new_where_conditions = data.new_where_conditions;
@@ -823,7 +822,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                         result.analyzed_join->table_join);
 
-    ASTPtr new_where_condition;
+    ASTPtr new_where_condition = nullptr;
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases, new_where_condition);
     if (new_where_condition)
         moveJoinedKeyToWhere(select_query, new_where_condition);
