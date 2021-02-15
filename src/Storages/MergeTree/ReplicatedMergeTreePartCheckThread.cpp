@@ -250,6 +250,10 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->getColumns(), part->checksums);
 
+        /// The double-get scheme is needed to retain compatibility with very old parts that were created
+        /// before the ReplicatedMergeTreePartHeader was introduced.
+        /// See also ReplicatedMergeTreeBlockOutputStream.cpp:270
+
         String part_path = storage.replica_path + "/parts/" + part_name;
         String part_znode;
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
