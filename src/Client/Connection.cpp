@@ -171,7 +171,8 @@ void Connection::sendHello()
       * Limiting number of possible characters in user-controlled part of handshake
       *  will mitigate this possibility but doesn't solve it completely.
       */
-        auto has_control_character = [](const std::string & s) {
+        auto has_control_character = [](const std::string & s)
+        {
             for (auto c : s)
                 if (isControlASCII(c))
                     return true;
