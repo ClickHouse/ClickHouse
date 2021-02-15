@@ -1098,6 +1098,17 @@ public:
         return grower.bufSize();
     }
 
+    /// Return offset for result in internal buffer.
+    /// Result can have value up to `getBufferSizeInCells() + 1`
+    /// because offset for zero value considered to be 0
+    /// and for other values it will be `offset in buffer + 1`
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
+    }
+
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const
     {
