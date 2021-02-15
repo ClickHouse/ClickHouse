@@ -1,4 +1,8 @@
-option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+if (APPLE)
+    option(ENABLE_LIBPQXX "Enalbe libpqxx" FALSE)
+else ()
+    option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+endif ()
 
 if (NOT ENABLE_LIBPQXX)
     return()
