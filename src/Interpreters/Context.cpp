@@ -674,7 +674,7 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
 {
     auto lock = getLock();
-    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager->getExternalAuthenticators().getKerberosParams());
+    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
