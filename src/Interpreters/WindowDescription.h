@@ -17,7 +17,7 @@ class ASTFunction;
 struct WindowFunctionDescription
 {
     std::string column_name;
-    const ASTFunction * function_node;
+    const ASTFunction * function_node = nullptr;
     AggregateFunctionPtr aggregate_function;
     Array function_parameters;
     DataTypes argument_types;
@@ -38,19 +38,21 @@ struct WindowFrame
 
     FrameType type = FrameType::Range;
 
-    // UNBOUNDED FOLLOWING for the frame end doesn't make much sense, so
-    // Unbounded here means UNBOUNDED PRECEDING.
-    // Offset might be both preceding and following, preceding is negative
-    // (be careful, this is not symmetric w/the frame end unlike in the grammar,
-    // so a positive literal in PRECEDING will give a negative number here).
+    // UNBOUNDED FOLLOWING for the frame end is forbidden by the standard, but for
+    // uniformity the begin_preceding still has to be set to true for UNBOUNDED
+    // frame start.
+    // Offset might be both preceding and following, controlled by begin_preceding,
+    // but the offset value must be positive.
     BoundaryType begin_type = BoundaryType::Unbounded;
     // This should have been a Field but I'm getting some crazy linker errors.
     int64_t begin_offset = 0;
+    bool begin_preceding = true;
 
-    // Here as well, Unbounded is UNBOUNDED FOLLOWING, and positive Offset is
-    // following.
+    // Here as well, Unbounded can only be UNBOUNDED FOLLOWING, and end_preceding
+    // must be false.
     BoundaryType end_type = BoundaryType::Current;
     int64_t end_offset = 0;
+    bool end_preceding = false;
 
 
     // Throws BAD_ARGUMENTS exception if the frame definition is incorrect, e.g.
@@ -67,8 +69,10 @@ struct WindowFrame
         return other.type == type
             && other.begin_type == begin_type
             && other.begin_offset == begin_offset
+            && other.begin_preceding == begin_preceding
             && other.end_type == end_type
             && other.end_offset == end_offset
+            && other.end_preceding == end_preceding
             ;
     }
 
@@ -127,7 +131,10 @@ struct WindowDescription
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
 
+
     std::string dump() const;
+
+    void checkValid() const;
 };
 
 using WindowFunctionDescriptions = std::vector<WindowFunctionDescription>;
