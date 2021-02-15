@@ -233,14 +233,18 @@ public:
 
     void get(Geometry<Point> & container, size_t i) const
     {
-        auto & multi_polygon = boost::get<MultiPolygon<Point>>(container);
+        get(boost::get<MultiPolygon<Point>>(container), i);
+    }
+
+    void get(MultiPolygon<Point> & container, size_t i) const
+    {
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
-        multi_polygon.resize(r - l);
+        container.resize(r - l);
         for (size_t j = l; j < r; j++)
         {
-            polygon_parser.get(multi_polygon[j - l], j);
+            polygon_parser.get(container[j - l], j);
         }
     }
 
@@ -262,18 +266,17 @@ using GeometryFromColumnParser = boost::variant<
 template <typename Point>
 Geometry<Point> createContainer(const GeometryFromColumnParser<Point> & parser);
 
-extern template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> & parser);
-extern template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> & parser);
-
 template <typename Point>
 void get(const GeometryFromColumnParser<Point> & parser, Geometry<Point> & container, size_t i);
-
-extern template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
-extern template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
 
 template <typename Point>
 GeometryFromColumnParser<Point> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
+
+extern template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> & parser);
+extern template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> & parser);
+extern template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
+extern template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
 extern template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 extern template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
@@ -531,5 +534,9 @@ using PolygonSerializer = GeometrySerializer<Geometry<Point>, PolygonSerializerV
 
 template <typename Point>
 using MultiPolygonSerializer = GeometrySerializer<Geometry<Point>, MultiPolygonSerializerVisitor<Point>>;
+
+
+template <typename Point, template<typename> typename Desired>
+void checkColumnTypeOrThrow(const ColumnWithTypeAndName & column);
 
 }
