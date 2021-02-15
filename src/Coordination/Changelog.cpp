@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int LOGICAL_ERROR;
-    extern const int UNIMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -287,7 +287,7 @@ void Changelog::appendEntry(size_t index, nuraft::ptr<nuraft::log_entry> log_ent
 void Changelog::writeAt(size_t index, nuraft::ptr<nuraft::log_entry> log_entry)
 {
     if (index < current_writer->getStartIndex())
-        throw Exception(ErrorCodes::UNIMPLEMENTED, "Currently cannot overwrite index from previous file");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Currently cannot overwrite index from previous file");
 
     if (index_to_start_pos.count(index) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
