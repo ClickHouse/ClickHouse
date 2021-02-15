@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeOneElementTuple.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/typeid_cast.h>
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 }
@@ -357,7 +359,7 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     });
 }
 
-void DataTypeTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeTuple::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
@@ -412,7 +414,7 @@ static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(IDataT
     return tuple_state;
 }
 
-void DataTypeTuple::serializeBinaryBulkStatePrefix(
+void DataTypeTuple::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -430,7 +432,7 @@ void DataTypeTuple::serializeBinaryBulkStatePrefix(
     state = std::move(tuple_state);
 }
 
-void DataTypeTuple::serializeBinaryBulkStateSuffix(
+void DataTypeTuple::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -445,7 +447,7 @@ void DataTypeTuple::serializeBinaryBulkStateSuffix(
     settings.path.pop_back();
 }
 
-void DataTypeTuple::deserializeBinaryBulkStatePrefix(
+void DataTypeTuple::deserializeBinaryBulkStatePrefixImpl(
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const
 {
@@ -463,7 +465,7 @@ void DataTypeTuple::deserializeBinaryBulkStatePrefix(
     state = std::move(tuple_state);
 }
 
-void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
+void DataTypeTuple::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -482,21 +484,22 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeTuple::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     auto * tuple_state = checkAndGetTupleDeserializeState(state);
+    auto & column_tuple = assert_cast<ColumnTuple &>(column);
 
     settings.path.push_back(Substream::TupleElement);
     settings.avg_value_size_hint = 0;
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         settings.path.back().tuple_element_name = names[i];
-        auto & element_col = extractElementColumn(column, i);
-        elems[i]->deserializeBinaryBulkWithMultipleStreams(element_col, limit, settings, tuple_state->states[i]);
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
     }
     settings.path.pop_back();
 }
@@ -611,6 +614,47 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
+DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        if (startsWith(subcolumn_name, names[i]))
+        {
+            size_t name_length = names[i].size();
+            DataTypePtr subcolumn_type;
+            if (subcolumn_name.size() == name_length)
+                subcolumn_type = elems[i];
+            else if (subcolumn_name[name_length] == '.')
+                subcolumn_type = elems[i]->tryGetSubcolumnType(subcolumn_name.substr(name_length + 1));
+
+            if (subcolumn_type)
+                return createOneElementTuple(std::move(subcolumn_type), names[i]);
+        }
+    }
+
+    return nullptr;
+}
+
+ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        if (startsWith(subcolumn_name, names[i]))
+        {
+            size_t name_length = names[i].size();
+            const auto & subcolumn = extractElementColumn(column, i);
+
+            if (subcolumn_name.size() == name_length)
+                return subcolumn.assumeMutable();
+
+            if (subcolumn_name[name_length] == '.')
+                return elems[i]->getSubcolumn(subcolumn_name.substr(name_length + 1), subcolumn);
+        }
+    }
+
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -646,15 +690,6 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create);
-}
-
-void registerDataTypeNested(DataTypeFactory & factory)
-{
-    /// Nested(...) data type is just a sugar for Array(Tuple(...))
-    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
-    {
-        return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
-    });
 }
 
 }

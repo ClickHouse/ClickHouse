@@ -103,11 +103,6 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
     delegate->replaceFile(from_path, to_path);
 }
 
-void DiskDecorator::copyFile(const String & from_path, const String & to_path)
-{
-    delegate->copyFile(from_path, to_path);
-}
-
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
@@ -130,9 +125,19 @@ DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
     return delegate->writeFile(path, buf_size, mode);
 }
 
-void DiskDecorator::remove(const String & path)
+void DiskDecorator::removeFile(const String & path)
 {
-    delegate->remove(path);
+    delegate->removeFile(path);
+}
+
+void DiskDecorator::removeFileIfExists(const String & path)
+{
+    delegate->removeFileIfExists(path);
+}
+
+void DiskDecorator::removeDirectory(const String & path)
+{
+    delegate->removeDirectory(path);
 }
 
 void DiskDecorator::removeRecursive(const String & path)
@@ -165,24 +170,19 @@ void DiskDecorator::truncateFile(const String & path, size_t size)
     delegate->truncateFile(path, size);
 }
 
-int DiskDecorator::open(const String & path, mode_t mode) const
-{
-    return delegate->open(path, mode);
-}
-
-void DiskDecorator::close(int fd) const
-{
-    delegate->close(fd);
-}
-
-void DiskDecorator::sync(int fd) const
-{
-    delegate->sync(fd);
-}
-
 Executor & DiskDecorator::getExecutor()
 {
     return delegate->getExecutor();
+}
+
+SyncGuardPtr DiskDecorator::getDirectorySyncGuard(const String & path) const
+{
+    return delegate->getDirectorySyncGuard(path);
+}
+
+void DiskDecorator::onFreeze(const String & path)
+{
+    delegate->onFreeze(path);
 }
 
 }

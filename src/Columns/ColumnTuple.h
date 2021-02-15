@@ -99,6 +99,7 @@ public:
     Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
+    ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
 
 private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

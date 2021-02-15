@@ -7,8 +7,6 @@ toc_title: EmbeddedRocksDB
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
-`EmbeddedRocksDB` lets you:
-
 ## Creating a Table {#table_engine-EmbeddedRocksDB-creating-a-table}
 
 ``` sql
@@ -23,6 +21,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Required parameters:
 
 -  `primary_key_name` – any column name in the column list.
+- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
+- columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
+- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
 
 Example:
 
@@ -38,8 +39,4 @@ ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
 
-## Description {#description}
-
-- `primary key` must be specified, it only supports one column in primary key. The primary key will serialized in binary as rocksdb key.
-- columns other than the primary key will be serialized in binary as rocksdb value in corresponding order.
-- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from rocksdb.
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/embedded-rocksdb/) <!--hide-->

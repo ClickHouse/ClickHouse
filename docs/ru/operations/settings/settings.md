@@ -406,20 +406,45 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 Возможные значения:
 
--   `'best_effort'` — включает расширенный парсинг.
+-   `best_effort` — включает расширенный парсинг.
 
-ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
+ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `2018-06-08T01:02:03.000Z`.
 
--   `'basic'` — используется базовый парсер.
+-   `basic` — используется базовый парсер.
 
-ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `'2019-08-20 10:18:56'` или `2019-08-20`.
+ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `2019-08-20 10:18:56` или `2019-08-20`.
 
-Значение по умолчанию: `'basic'`.
+Значение по умолчанию: `basic`.
 
 См. также:
 
 -   [Тип данных DateTime.](../../sql-reference/data-types/datetime.md)
 -   [Функции для работы с датой и временем.](../../sql-reference/functions/date-time-functions.md)
+
+## date_time_output_format {#settings-date_time_output_format}
+
+Позволяет выбрать разные выходные форматы текстового представления даты и времени.
+
+Возможные значения:
+
+-   `simple` - простой выходной формат.
+
+    Выходные дата и время Clickhouse в формате `YYYY-MM-DD hh:mm:ss`. Например, `2019-08-20 10:18:56`. Расчет выполняется в соответствии с часовым поясом типа данных (если он есть) или часовым поясом сервера.
+
+-   `iso` - выходной формат ISO.
+
+    Выходные дата и время Clickhouse в формате [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ`. Например, `2019-08-20T10:18:56Z`. Обратите внимание, что выходные данные отображаются в формате UTC (`Z` означает UTC).
+
+-   `unix_timestamp` - выходной формат Unix.
+
+    Выходные дата и время в формате [Unix](https://en.wikipedia.org/wiki/Unix_time). Например `1566285536`.
+
+Значение по умолчанию: `simple`.
+
+См. также:
+
+-   [Тип данных DateTime](../../sql-reference/data-types/datetime.md)
+-   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -1995,6 +2020,21 @@ SELECT * FROM a;
 
 -   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
 
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](../../sql-reference/statements/select/group-by.md) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Возможные значения:
+
+-   0 — оптимизация по ключу сортировки отключена.
+-   1 — оптимизация по ключу сортировки включена.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Оптимизация GROUP BY для отсортированных таблиц](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
+
 ## mutations_sync {#mutations_sync}
 
 Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter/index.md#mutations)) синхронно.
@@ -2360,11 +2400,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Рассмотрим запрос с агрегирующими функциями:
 ```sql
-SELECT
-    SUM(-1),
-    MAX(0)
-FROM system.one
-WHERE 0
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 ```
 
 Результат запроса с настройкой `aggregate_functions_null_for_empty = 0`:
@@ -2396,6 +2432,16 @@ WHERE 0
 
 Смотрите примеры в разделе [UNION](../../sql-reference/statements/select/union.md).
 
+## data_type_default_nullable {#data_type_default_nullable}
+
+Позволяет использовать по умолчанию тип данных [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
+
+Возможные значения:
+
+- 1 — типы данных в определении столбца заданы по умолчанию как `Nullable`.
+- 0 — типы данных в определении столбца не заданы по умолчанию как `Nullable`.
+
+Значение по умолчанию: `0`.
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
@@ -2415,5 +2461,70 @@ WHERE 0
 Большие значения этой настройки могут привести к задержкам репликации.
 
 Эта настройка полезна, когда скорость слияния ограничивается мощностью процессора, а не скоростью операций ввода-вывода (при выполнении "тяжелого" сжатия данных, при расчете агрегатных функций или выражений по умолчанию, требующих большого объема вычислений, или просто при большом количестве мелких слияний).
+
+## max_final_threads {#max-final-threads}
+
+Устанавливает максимальное количество параллельных потоков для фазы чтения данных запроса `SELECT` с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 или 1 — настройка отключена. `SELECT` запросы выполняются в один поток.
+
+Значение по умолчанию: `16`.
+
+## optimize_on_insert {#optimize-on-insert}
+
+Включает или выключает преобразование данных перед добавлением в таблицу, как будто над добавляемым блоком предварительно было произведено слияние (в соответствии с движком таблицы).
+
+Возможные значения:
+
+-   0 — выключена
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+**Пример**
+
+Сравните добавление данных при включенной и выключенной настройке:
+
+Запрос:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Результат:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

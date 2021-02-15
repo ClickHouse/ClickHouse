@@ -428,7 +428,7 @@ Possible values:
 
 -   `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `'2019-08-20 10:18:56'` or `2019-08-20`.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
 
 Default value: `'basic'`.
 
@@ -443,19 +443,19 @@ Allows choosing different output formats of the text representation of date and 
 
 Possible values:
 
--   `'simple'` - Simple output format.
+-   `simple` - Simple output format.
 
-    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `'2019-08-20 10:18:56'`. Calculation is performed according to the data type's time zone (if present) or server time zone.
+    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
--   `'iso'` - ISO output format.
+-   `iso` - ISO output format.
 
-    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `'2019-08-20T10:18:56Z'`. Note that output is in UTC (`Z` means UTC).
+    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
--   `'unix_timestamp'` - Unix timestamp output format.
+-   `unix_timestamp` - Unix timestamp output format.
 
-    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `'1566285536'`.
+    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
-Default value: `'simple'`.
+Default value: `simple`.
 
 See also:
 
@@ -1944,6 +1944,21 @@ Possible values:
 
 Default value: 16.
 
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Sets the number of threads performing background tasks for message streaming. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**See Also**
+
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine
+
 ## validate_polygons {#validate_polygons}
 
 Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
@@ -2133,6 +2148,21 @@ Default value: `1`.
 **See Also**
 
 -   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
+
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+
+Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `GROUP BY` optimization is disabled.
+-   1 — `GROUP BY` optimization is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [GROUP BY optimization](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
 
 ## mutations_sync {#mutations_sync}
 
@@ -2474,7 +2504,6 @@ Possible values:
 
 Default value: `0`.
 
-
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -2491,11 +2520,7 @@ Default value: 0.
 
 Consider the following query with aggregate functions:
 ```sql
-SELECT
-    SUM(-1),
-    MAX(0)
-FROM system.one
-WHERE 0
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 ```
 
 With `aggregate_functions_null_for_empty = 0` it would produce:
@@ -2512,7 +2537,6 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 └───────────────┴──────────────┘
 ```
 
-
 ## union_default_mode {#union-default-mode}
 
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -2527,7 +2551,6 @@ Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
 
-
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
@@ -2538,7 +2561,6 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 
 Default value: `0`.
-
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
@@ -2558,5 +2580,70 @@ Selects one replica to perform the merge on. Sets the time threshold from the st
 High values for that threshold may lead to replication delays.
 
 It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
+
+## max_final_threads {#max-final-threads}
+
+Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Possible values:
+
+-   Positive integer.
+-   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
+
+Default value: `16`.
+
+## optimize_on_insert {#optimize-on-insert}
+
+Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Result:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

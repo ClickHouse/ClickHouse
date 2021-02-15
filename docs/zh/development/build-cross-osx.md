@@ -33,8 +33,8 @@ cd cctools-port/cctools
 make install
 
 cd ${CCTOOLS}
-wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-tar xJf MacOSX10.14.sdk.tar.xz
+wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
+tar xJf MacOSX10.15.sdk.tar.xz
 ```
 
 # 编译 ClickHouse {#bian-yi-clickhouse}
@@ -46,7 +46,7 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_SYSTEM_NAME=Darwin \
     -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar \
     -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib \
     -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld \
-    -DSDK_PATH=${CCTOOLS}/MacOSX10.14.sdk
+    -DSDK_PATH=${CCTOOLS}/MacOSX10.15.sdk
 ninja -C build-osx
 ```
 

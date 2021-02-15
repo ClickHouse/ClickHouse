@@ -15,38 +15,35 @@ namespace DB
 template <ASTTableJoin::Kind kind, typename ASTTableJoin::Strictness>
 struct MapGetter;
 
-template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::RightAny> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::RightAny> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::RightAny> { using Map = HashJoin::MapsOneFlagged; };
-template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::RightAny> { using Map = HashJoin::MapsOneFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::RightAny>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::RightAny> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::RightAny> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::RightAny>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
 
-template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any> { using Map = HashJoin::MapsOneFlagged; };
-template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Any> { using Map = HashJoin::MapsAllFlagged; };
-template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Any> { using Map = HashJoin::MapsAllFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Any> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Any>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 
-template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All> { using Map = HashJoin::MapsAll; };
-template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All> { using Map = HashJoin::MapsAll; };
-template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::All> { using Map = HashJoin::MapsAllFlagged; };
-template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::All> { using Map = HashJoin::MapsAllFlagged; };
-
-/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Semi> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Semi> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Semi> { using Map = HashJoin::MapsAllFlagged; };
-template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Semi> { using Map = HashJoin::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::All> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::All>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 
 /// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Anti> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Anti> { using Map = HashJoin::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Anti> { using Map = HashJoin::MapsAllFlagged; };
-template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Anti> { using Map = HashJoin::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Semi>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Semi> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Semi> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Semi>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+
+/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Anti>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Anti> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Anti> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Anti>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 
 template <ASTTableJoin::Kind kind>
-struct MapGetter<kind, ASTTableJoin::Strictness::Asof>
-{
-    using Map = HashJoin::MapsAsof;
-};
+struct MapGetter<kind, ASTTableJoin::Strictness::Asof> { using Map = HashJoin::MapsAsof; static constexpr bool flagged = false; };
 
 
 static constexpr std::array<ASTTableJoin::Strictness, 6> STRICTNESSES = {
