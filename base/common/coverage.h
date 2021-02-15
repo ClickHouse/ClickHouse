@@ -1,7 +1,7 @@
 #pragma once
 
 #ifndef CMAKE_CODE_COV
-void dumpCoverageReportIfPossible() {}
+inline void dumpCoverageReportIfPossible() {}
 #else
 void dumpCoverageReportIfPossible();
 #endif
