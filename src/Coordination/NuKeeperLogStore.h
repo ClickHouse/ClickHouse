@@ -13,12 +13,35 @@ class NuKeeperLogStore : public nuraft::log_store
 public:
     NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_);
 
+    void init(size_t from_log_idx);
+
+    size_t start_index() const override;
+
+    size_t next_slot() const override;
+
+    nuraft::ptr<nuraft::log_entry> last_entry() const override;
+
+    size_t append(nuraft::ptr<nuraft::log_entry> & entry) override;
+
+    void write_at(size_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
+
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(size_t start, size_t end) override;
+
+    nuraft::ptr<nuraft::log_entry> entry_at(size_t index) override;
+
+    size_t term_at(size_t index) override;
+
+    nuraft::ptr<nuraft::buffer> pack(size_t index, int32_t cnt) override;
+
+    void apply_pack(size_t index, nuraft::buffer & pack) override;
+
+    bool compact(size_t last_log_index) override;
+
+    bool flush() override;
 
 private:
-    mutable std::mutex logs_lock;
-    std::atomic<size_t> start_idx;
-    Changelog in_memory_changelog;
-    ChangelogOnDiskHelper on_disk_changelog_helper;
+    mutable std::mutex changelog_lock;
+    Changelog changelog;
 };
 
 }
