@@ -12,6 +12,7 @@
 #include <common/find_symbols.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -181,6 +182,35 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     }
 }
 
+namespace
+{
+    void tryToReplaceNullFieldsInTupleWithDefaultValues(Field & value, const IDataType & type)
+    {
+        const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
+
+        if (!type_tuple || value.getType() != Field::Types::Tuple)
+            return;
+
+        Tuple & tuple_value = value.get<Tuple>();
+
+        size_t src_tuple_size = tuple_value.size();
+        size_t dst_tuple_size = type_tuple->getElements().size();
+
+        if (src_tuple_size != dst_tuple_size)
+            throw Exception("Bad size of tuple. Expected size: " + std::to_string(src_tuple_size) + ", actual size: " + std::to_string(dst_tuple_size), ErrorCodes::TYPE_MISMATCH);
+
+        for (size_t i = 0; i < src_tuple_size; ++i)
+        {
+            const auto & element_type = *(type_tuple->getElements()[i]);
+
+            if (tuple_value[i].isNull() && !element_type.isNullable())
+                tuple_value[i] = element_type.getDefault();
+
+            tryToReplaceNullFieldsInTupleWithDefaultValues(tuple_value[i], element_type);
+        }
+    }
+}
+
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -298,6 +328,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     buf.position() = const_cast<char *>(token_iterator->begin);
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
+
+    if (format_settings.null_as_default)
+        tryToReplaceNullFieldsInTupleWithDefaultValues(value_raw.first, type);
+
     Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
