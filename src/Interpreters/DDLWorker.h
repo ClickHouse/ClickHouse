@@ -43,7 +43,7 @@ class DDLWorker
 {
 public:
     DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              const String & logger_name = "DDLWorker");
+              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -81,7 +81,7 @@ protected:
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
-    static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
+    static bool taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, StoragePtr storage);
 
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
@@ -144,6 +144,7 @@ protected:
     size_t max_tasks_in_queue = 1000;
 
     std::atomic<UInt64> max_id = 0;
+    const CurrentMetrics::Metric * max_entry_metric;
 };
 
 
