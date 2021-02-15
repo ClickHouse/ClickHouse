@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EPOLL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 Epoll::Epoll() : events_count(0)

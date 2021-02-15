@@ -307,7 +307,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
             continue;
         }
 
-        /// Get ready descriptor fro epoll.
+        /// Get ready descriptor from epoll.
         event_fd = getReadyFileDescriptor(blocking);
 
         /// Check if there is no events.
