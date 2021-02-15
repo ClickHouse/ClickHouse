@@ -1,11 +1,7 @@
 #pragma once
-/// This file should be included ONLY if the WITH_COVERAGE option is on
 
-#include <sanitizer/coverage_interface.h>
-
+#ifndef CMAKE_CODE_COV
+void dumpCoverageReportIfPossible() {}
+#else
 void dumpCoverageReportIfPossible();
-void updateTestId(int new_test_id);
-void updateReportFile(const char * coverage_report_file);
-
-extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop);
-extern "C" void __sanitizer_cov_trace_pc_guard(uint32_t *edge_index);
+#endif

@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "coverage.h"
+#include <sanitizer/coverage_interface.h>
 
 // Use roaring bitmaps
 // Use some way to pass test id without the foss
