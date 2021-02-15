@@ -19,7 +19,7 @@ Gets a named value from the [macros](../../operations/server-configuration-param
 getMacro(name);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
@@ -108,7 +108,7 @@ Extracts the trailing part of a string after the last slash or backslash. This f
 basename( expr )
 ```
 
-**Parameters**
+**Arguments**
 
 -   `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
@@ -192,7 +192,7 @@ Returns estimation of uncompressed byte size of its arguments in memory.
 byteSize(argument [, ...])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `argument` — Value.
 
@@ -349,7 +349,7 @@ The function is intended for development, debugging and demonstration.
 isConstant(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Expression to check.
 
@@ -420,7 +420,7 @@ Checks whether floating point value is finite.
 
     ifNotFinite(x,y)
 
-**Parameters**
+**Arguments**
 
 -   `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
 -   `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
@@ -460,7 +460,7 @@ Allows building a unicode-art diagram.
 
 `bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
-Parameters:
+Arguments:
 
 -   `x` — Size to display.
 -   `min, max` — Integer constants. The value must fit in `Int64`.
@@ -645,7 +645,7 @@ Accepts the time delta in seconds. Returns a time delta with (year, month, day, 
 formatReadableTimeDelta(column[, maximum_unit])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `column` — A column with numeric time delta.
 -   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
@@ -730,7 +730,7 @@ The result of the function depends on the affected data blocks and the order of 
 The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
 To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
 
-**Parameters**
+**Arguments**
 
 -   `column` — A column name or scalar expression.
 -   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
@@ -924,7 +924,7 @@ The result of the function depends on the order of data in the block. It assumes
 runningConcurrency(begin, end)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
@@ -989,7 +989,7 @@ Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
 getSizeOfEnumType(value)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `value` — Value of type `Enum`.
 
@@ -1018,7 +1018,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `value` — Any value.
 
@@ -1050,7 +1050,7 @@ Returns the name of the class that represents the data type of the column in RAM
 toColumnTypeName(value)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `value` — Any type of value.
 
@@ -1090,7 +1090,7 @@ Outputs a detailed description of data structures in RAM
 dumpColumnStructure(value)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `value` — Any type of value.
 
@@ -1120,7 +1120,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfArgumentType(expression)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
@@ -1162,7 +1162,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfTypeName(type)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `type` — A string representing a type name.
 
@@ -1204,7 +1204,7 @@ Used for internal implementation of [arrayJoin](../../sql-reference/functions/ar
 SELECT replicate(x, arr);
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
 -   `x` — The value that the resulting array will be filled with.
@@ -1337,7 +1337,7 @@ Takes state of aggregate function. Returns result of aggregation (or finalized s
 finalizeAggregation(state)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
@@ -1441,7 +1441,7 @@ Accumulates states of an aggregate function for each row of a data block.
 runningAccumulate(agg_state[, grouping]);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 -   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
@@ -1547,7 +1547,7 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` st
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 -   `value_column` — name of the column of the table that contains required data.
@@ -1651,7 +1651,7 @@ Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/AS
 randomPrintableASCII(length)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — Resulting string length. Positive integer.
 
@@ -1687,7 +1687,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomString(length)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — String length. Positive integer.
 
@@ -1735,7 +1735,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomFixedString(length);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1773,7 +1773,7 @@ Generates a random string of a specified length. Result string contains valid UT
 randomStringUTF8(length);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1845,7 +1845,7 @@ Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is
 isDecimalOverflow(d, [p])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
 -   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
@@ -1882,7 +1882,7 @@ Returns number of decimal digits you need to represent the value.
 countDigits(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
 
@@ -1941,7 +1941,7 @@ Returns [native interface](../../interfaces/tcp.md) TCP port number listened by 
 tcpPort()
 ```
 
-**Parameters**
+**Arguments**
 
 -   None.
 
