@@ -54,6 +54,7 @@
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>
+#include "Storages/MergeTree/MergeTreeReaderCompact.h"
 
 #include <ctime>
 #include <thread>
@@ -1303,6 +1304,45 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         getSettings()->use_minimalistic_checksums_in_zookeeper);
 }
 
+MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry& entry) const
+{
+    const MergeTreePartInfo target_part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    const String& part_checksum = entry.part_checksum;
+
+    MergeTreePartInfo part_iter;
+    const Poco::DirectoryIterator dir_end;
+
+    for (const String& path : getDataPaths())
+    {
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        {
+            if (!MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_iter, format_version) || // this line is correct
+                part_iter.partition_id != target_part.partition_id ||
+                entry.new_part_name != part_iter.getPartName()) // TODO check if the last statement is valid,
+                // Maybe we can't compare by names
+                continue;
+
+            const String& part_name = part_iter.getPartName();
+            const String part_dir = "detached/"; //TODO double-check
+            const String part_to_path = part_dir + part_name;
+
+            auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
+                getDiskForPart(part_name, part_dir));
+
+            //createPart uses part name as arg 1, "detached/" as arg 2 so maybe we need "detached/" too
+            MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
+
+            if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
+                /// the part with same partition id has different checksum, so it is corrupt.
+                return {};
+
+            return iter_part_ptr;
+        }
+    }
+
+    return {};
+}
+
 
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 {
@@ -1318,7 +1358,16 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
+    /// Try to look in the detached/ folder first, if found, attach the part
+    if (entry.type == LogEntry::ATTACH_PART)
+        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
+            // no need to call checkAlterPartitionIsPossible as we already parsed the part name
+            /// TODO Allow to use quorum here.
+            ReplicatedMergeTreeBlockOutputStream (*this, getInMemoryMetadataPtr() , 0, 0, 0, false, false, false)
+                .writeExistingPart(part);
+
     if (entry.type == LogEntry::GET_PART ||
+        entry.type == LogEntry::ATTACH_PART ||
         entry.type == LogEntry::MERGE_PARTS ||
         entry.type == LogEntry::MUTATE_PART)
     {
@@ -1336,61 +1385,19 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         {
             if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
             {
-                LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
+                LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
+                    entry.new_part_name, existing_part->name);
             }
             return true;
         }
-
-        auto try_find_part_in_detached = [this, &]()
-        {
-            const MergeTreePartInfo target_part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-
-            MergeTreePartInfo part_iter;
-            const Poco::DirectoryIterator dir_end;
-
-            // TODO REPLACE
-
-            const String checksum = getZooKeeper()->get(part_path)
-
-            for (const std::string & path : getDataPaths())
-            {
-                for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
-                {
-                    if (!MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_iter, format_version) ||
-                        part_iter.partition_id != target_part.partition_id)
-                        continue;
-
-                    DataPartPtr iter_part_ptr = {
-                        *this, // storage
-                        dir_it.name(), //name
-                        getVolume(), //volume ??
-                        std::nullopt, // ?? relative path
-                        entry.new_part_type
-                    };
-
-                    // TODO Why hex, not checksums_str?
-                    if (our_part_ptr->checksums.getTotalChecksumHex() !=
-                        iter_part_ptr->checksums.getTotalChecksumHex())
-                        /// the part with same partition id has different checksum, so it is corrupt.
-                        return false;
-
-                    ///Attach part
-                    return true;
-                }
-            }
-        };
-
-        /// We also check for the part in the detached/ folder by checksum
-        if (entry.type == LogEntry::GET_PART)
-        {
-            try_find_part_in_detached();
-        }
     }
 
-    if (entry.type == LogEntry::GET_PART && entry.source_replica == replica_name)
+    if ((entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART) &&
+        entry.source_replica == replica_name)
         LOG_WARNING(log, "Part {} from own log doesn't exist.", entry.new_part_name);
 
-    /// Perhaps we don't need this part, because during write with quorum, the quorum has failed (see below about `/quorum/failed_parts`).
+    /// Perhaps we don't need this part, because during write with quorum, the quorum has failed
+    /// (see below about `/quorum/failed_parts`).
     if (entry.quorum && getZooKeeper()->exists(zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name))
     {
         LOG_DEBUG(log, "Skipping action for part {} because quorum for that part was failed.", entry.new_part_name);
@@ -1401,8 +1408,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     switch (entry.type)
     {
-        case LogEntry::GET_PART:
+        case LogEntry::ATTACH_PART:
             /// We surely don't have this part locally as we've checked it before, so download it.
+            [[fallthrough]];
+        case LogEntry::GET_PART:
             do_fetch = true;
             break;
         case LogEntry::MERGE_PARTS:
