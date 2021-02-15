@@ -23,7 +23,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install clang-11 (recommended) {#install-clang-11}
+### Install clang-12 (recommended) {#install-clang-12}
 
 On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
@@ -33,16 +33,16 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
-#### Use clang-11 for Builds {#use-gcc-10-for-builds}
+#### Use clang-12 for Builds {#use-clang-12-for-builds}
 
 ``` bash
-$ export CC=clang-11
-$ export CXX=clang++-11
+$ export CC=clang-12
+$ export CXX=clang++-12
 ```
 
 ### Install GCC 10 {#install-gcc-10}
 
-We recommend building ClickHouse with clang-11, GCC-10 also supported, but it is not used for production builds.
+We recommend building ClickHouse with clang-12, GCC-10 also supported, but it is not used for production builds.
 
 If you want to use GCC-10 there are several ways to install it.
 
