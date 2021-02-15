@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -36,6 +36,11 @@ RUN apt-get update \
     && apt-get install \
         gcc-9 \
         g++-9 \
+        clang-12 \
+        clang-tidy-12 \
+        lld-12 \
+        llvm-12 \
+        llvm-12-dev \
         clang-11 \
         clang-tidy-11 \
         lld-11 \
