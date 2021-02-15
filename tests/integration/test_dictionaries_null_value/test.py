@@ -1,11 +1,13 @@
 import pytest
+import os
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry
 
-ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DICTIONARY_FILES = ['configs/dictionaries/cache.xml']
 
-cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
+cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+instance = cluster.add_instance('instance', main_configs=DICTIONARY_FILES)
 
 
 @pytest.fixture(scope="module")
@@ -40,5 +42,4 @@ def test_null_value(started_cluster):
 
     # Check, that empty null_value interprets as default value
     assert query("select dictGetUInt64('cache', 'UInt64_', toUInt64(12121212))") == "0\n"
-    assert query(
-        "select toTimeZone(dictGetDateTime('cache', 'DateTime_', toUInt64(12121212)), 'UTC')") == "1970-01-01 00:00:00\n"
+    assert query("select toTimeZone(dictGetDateTime('cache', 'DateTime_', toUInt64(12121212)), 'UTC')") == "1970-01-01 00:00:00\n"

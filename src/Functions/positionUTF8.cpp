@@ -5,8 +5,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NamePositionUTF8
 {
@@ -14,8 +12,6 @@ struct NamePositionUTF8
 };
 
 using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8>;
-
-}
 
 void registerFunctionPositionUTF8(FunctionFactory & factory)
 {

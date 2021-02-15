@@ -1,7 +1,5 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <Common/MemorySanitizer.h>
-#include <Common/MemoryTracker.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -48,21 +46,16 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
 
 ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-
-    finish();
-
     try
     {
+        finish();
+
         int rc = deflateEnd(&zstr);
         if (rc != Z_OK)
             throw Exception(std::string("deflateEnd failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
     catch (...)
     {
-        /// It is OK not to terminate under an error from deflateEnd()
-        /// since all data already written to the stream.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }

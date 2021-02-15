@@ -67,6 +67,8 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
+    void copyFile(const String & from_path, const String & to_path) override;
+
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
@@ -81,11 +83,12 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        size_t estimated_size,
+        size_t aio_threshold) override;
 
-    void removeFile(const String & path) override;
-    void removeFileIfExists(const String & path) override;
-    void removeDirectory(const String & path) override;
+    void remove(const String & path) override;
+
     void removeRecursive(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
@@ -98,9 +101,7 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::Local; }
-
-    SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+    const String getType() const override { return "local"; }
 
 private:
     bool tryReserve(UInt64 bytes);

@@ -169,7 +169,7 @@ struct ReplaceRegexpImpl
 
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        /// Cannot perform search for whole columns. Will process each string separately.
+        /// Cannot perform search for whole block. Will process each string separately.
         for (size_t i = 0; i < size; ++i)
         {
             int from = i > 0 ? offsets[i - 1] : 0;

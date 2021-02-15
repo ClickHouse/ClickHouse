@@ -10,10 +10,8 @@ RUN apt-get update -y \
             debhelper \
             parallel \
             expect \
-            python3 \
-            python3-lxml \
-            python3-termcolor \
-            python3-requests \
+            python \
+            python-lxml \
             curl \
             sudo \
             openssl \

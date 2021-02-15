@@ -75,28 +75,8 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-    {
-        if (copiedDataInfo.empty())
-        {
-            for (auto * val : data)
-            {
-                func->destroy(val);
-            }
-        }
-        else
-        {
-            size_t pos;
-            for (Map::iterator it = copiedDataInfo.begin(), it_end = copiedDataInfo.end(); it != it_end; ++it)
-            {
-                pos = it->getValue().second;
-                if (data[pos] != nullptr)
-                {
-                    func->destroy(data[pos]);
-                    data[pos] = nullptr;
-                }
-            }
-        }
-    }
+        for (auto * val : data)
+            func->destroy(val);
 }
 
 void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
@@ -181,7 +161,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
@@ -192,7 +172,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
         if (data.size() == 1)
         {
             /// Case for const column. Predict using single model.
-            machine_learning_function->predictValues(data[0], *res, arguments, 0, arguments.front().column->size(), context);
+            machine_learning_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
         }
         else
         {
@@ -200,7 +180,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
             size_t row_num = 0;
             for (auto * val : data)
             {
-                machine_learning_function->predictValues(val, *res, arguments, row_num, 1, context);
+                machine_learning_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
             }
         }
@@ -413,12 +393,6 @@ size_t ColumnAggregateFunction::byteSize() const
             + (my_arena ? my_arena->size() : 0);
 }
 
-size_t ColumnAggregateFunction::byteSizeAt(size_t) const
-{
-    /// Lower estimate as aggregate function can allocate more data in Arena.
-    return sizeof(data[0]) + func->sizeOfData();
-}
-
 /// Like in byteSize(), the size is underestimated.
 size_t ColumnAggregateFunction::allocatedBytes() const
 {
@@ -475,37 +449,14 @@ void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
     ///  (only as a whole, see comment above).
     ensureOwnership();
     insertDefault();
-    insertCopyFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
+    insertMergeFrom(from, n);
 }
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
     ensureOwnership();
     insertDefault();
-    insertCopyFrom(place);
-}
-
-void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
-{
-    Map::LookupResult result;
-    result = copiedDataInfo.find(place);
-    if (result == nullptr)
-    {
-        copiedDataInfo[place] = data.size()-1;
-        func->merge(data.back(), place, &createOrGetArena());
-    }
-    else
-    {
-        size_t pos = result->getValue().second;
-        if (pos != data.size() - 1)
-        {
-            data[data.size() - 1] = data[pos];
-        }
-        else /// insert same data to same pos, merge them.
-        {
-            func->merge(data.back(), place, &createOrGetArena());
-        }
-    }
+    insertMergeFrom(place);
 }
 
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
@@ -713,31 +664,4 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
 {
 }
 
-MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
-{
-    if (size == 0)
-        return cloneEmpty();
-
-    size_t from_size = data.size();
-
-    if (size <= from_size)
-    {
-        auto res = createView();
-        auto & res_data = res->data;
-        res_data.assign(data.begin(), data.begin() + size);
-        return res;
-    }
-    else
-    {
-        /// Create a new column to return.
-        MutableColumnPtr cloned_col = cloneEmpty();
-        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
-
-        res->insertRangeFrom(*this, 0, from_size);
-        for (size_t i = from_size; i < size; ++i)
-            res->insertDefault();
-
-        return cloned_col;
-    }
-}
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Common/UInt128.h>
 #include <common/DayNum.h>
 #include <memory>
 
@@ -36,7 +37,7 @@ using ConstAggregateDataPtr = const char *;
 class ProtobufWriter : private boost::noncopyable
 {
 public:
-    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_);
+    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names);
     ~ProtobufWriter();
 
     /// Should be called at the beginning of writing a message.
@@ -88,7 +89,7 @@ private:
     class SimpleWriter
     {
     public:
-        SimpleWriter(WriteBuffer & out_, const bool use_length_delimiters_);
+        SimpleWriter(WriteBuffer & out_);
         ~SimpleWriter();
 
         void startMessage();
@@ -137,7 +138,6 @@ private:
         size_t current_piece_start;
         size_t num_bytes_skipped;
         std::vector<NestedInfo> nested_infos;
-        const bool use_length_delimiters;
     };
 
     class IConverter

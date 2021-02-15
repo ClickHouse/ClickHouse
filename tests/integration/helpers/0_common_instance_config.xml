@@ -4,7 +4,4 @@
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <path>/var/lib/clickhouse/</path>
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-
-    <!-- For tests which check compatibility with older versions. -->
-    <users_config>users.xml</users_config>
 </yandex>
