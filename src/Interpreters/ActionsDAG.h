@@ -196,7 +196,7 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
+    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false, bool add_to_index = true);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
     const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
@@ -220,7 +220,7 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
-    void projectInput() { settings.project_input = true; }
+    void projectInput(bool project = true) { settings.project_input = project; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;

@@ -334,37 +334,29 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
 {
     if (prewhere_info)
     {
-        if (prewhere_info->filter_info)
-        {
-            auto & filter_info = *prewhere_info->filter_info;
-
-            if (filter_info.alias_actions)
-                filter_info.alias_actions->execute(block);
-
-            if (filter_info.actions)
-                filter_info.actions->execute(block);
-
-            auto & filter_column = block.getByName(filter_info.column_name);
-            if (!filter_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception("Invalid type for row-level security filter: " + filter_column.type->getName(),
-                    ErrorCodes::LOGICAL_ERROR);
-            }
-
-            if (filter_info.do_remove_column)
-                block.erase(filter_info.column_name);
-            else
-            {
-                auto & ctn = block.getByName(filter_info.column_name);
-                ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-            }
-        }
+        std::cerr << "0: " << block.dumpStructure() << std::endl;
 
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(block);
 
+        std::cerr << "1: " << block.dumpStructure() << std::endl;
+
+        if (prewhere_info->row_level_filter)
+        {
+            prewhere_info->row_level_filter->execute(block);
+            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
+            if (!row_level_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
+                    ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+        std::cerr << "2: " << block.dumpStructure() << std::endl;
+
         if (prewhere_info->prewhere_actions)
             prewhere_info->prewhere_actions->execute(block);
+
+        std::cerr << "3: " << block.dumpStructure() << std::endl;
 
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -380,6 +372,8 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
+
+        std::cerr << "4: " << block.dumpStructure() << std::endl;
     }
 }
 

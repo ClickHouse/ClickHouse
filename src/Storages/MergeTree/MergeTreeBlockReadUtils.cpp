@@ -269,30 +269,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (prewhere_info)
     {
-        if (prewhere_info->filter_info)
-        {
-            if (prewhere_info->filter_info->alias_actions)
-            {
-                const auto required_column_names = prewhere_info->filter_info->alias_actions->getRequiredColumns();
-                pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
-            }
-            else if (prewhere_info->filter_info->actions)
-            {
-                const auto required_column_names = prewhere_info->filter_info->actions->getRequiredColumns();
-                pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
-            }
-        }
-
         if (prewhere_info->alias_actions)
-        {
-            const auto required_column_names = prewhere_info->alias_actions->getRequiredColumns();
-            pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
-        }
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+        else if (prewhere_info->row_level_filter)
+            pre_column_names = prewhere_info->row_level_filter->getRequiredColumns();
         else if (prewhere_info->prewhere_actions)
-        {
-            const auto required_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
-            pre_column_names.insert(pre_column_names.end(), required_column_names.begin(), required_column_names.end());
-        }
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
