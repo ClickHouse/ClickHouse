@@ -236,7 +236,7 @@ void PostgreSQLReplicaConsumer::readTupleData(
         case PostgreSQLQuery::UPDATE:
         {
             /// TODO: If table has primary key, skip old value and remove first insert with -1.
-            //  Otherwise use replica identity full (with check) and use fisrt insert.
+            //  Otherwise use replica identity full (with check) and use first insert.
 
             if (old_value)
                 buffer.columns[num_columns]->insert(Int8(-1));

@@ -121,7 +121,7 @@ ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_t
     if (which.isArray())
         return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
-    /// getName() for decimal returns 'Decimal(precison, scale)', will get an error with it
+    /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
     if (which.isDecimal())
     {
         auto make_decimal_expression = [&](std::string type_name)

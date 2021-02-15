@@ -37,10 +37,19 @@ def create_postgres_table(cursor, table_name):
     cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
 
 
+def assert_nested_table_is_created(table_name):
+    database_tables = instance.query('SHOW TABLES FROM test_database')
+    while table_name not in database_tables:
+        time.sleep(0.2)
+        database_tables = instance.query('SHOW TABLES FROM test_database')
+    assert(table_name in database_tables)
+
+
 def check_tables_are_synchronized(table_name, order_by='key'):
         expected = instance.query('select * from postgres_database.{} order by {};'.format(table_name, order_by))
         result = instance.query('select * from test_database.{} order by {};'.format(table_name, order_by))
 
+        assert_nested_table_is_created(table_name)
         while result != expected:
             time.sleep(0.5)
             result = instance.query('select * from test_database.{} order by {};'.format(table_name, order_by))
@@ -79,15 +88,17 @@ def test_load_and_sync_all_database_tables(started_cluster):
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
-        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
-        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, number from numbers(50)".format(i))
+        table_name = 'postgresql_replica_{}'.format(i)
+        create_postgres_table(cursor, table_name);
+        instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(50)".format(table_name))
 
     instance.query("CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
     assert 'test_database' in instance.query('SHOW DATABASES')
 
     for i in range(NUM_TABLES):
-        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
-        cursor.execute('drop table postgresql_replica_{};'.format(i))
+        table_name = 'postgresql_replica_{}'.format(i)
+        check_tables_are_synchronized(table_name);
+        cursor.execute('drop table {};'.format(table_name))
 
     result = instance.query('''SELECT count() FROM system.tables WHERE database = 'test_database';''')
     assert(int(result) == NUM_TABLES)
@@ -113,7 +124,8 @@ def test_replicating_dml(started_cluster):
         instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 50 + number, {} from numbers(1000)".format(i, i))
 
     for i in range(NUM_TABLES):
-        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+        table_name = 'postgresql_replica_{}'.format(i)
+        check_tables_are_synchronized(table_name);
 
     for i in range(NUM_TABLES):
         cursor.execute('UPDATE postgresql_replica_{} SET value = {} * {} WHERE key < 50;'.format(i, i, i))
@@ -225,7 +237,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
         create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
         instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, number from numbers(50)".format(i))
 
-        if i < NUM_TABLES/2:
+        if i < int(NUM_TABLES/2):
             if publication_tables != '':
                 publication_tables += ', '
             publication_tables += table_name
@@ -239,13 +251,17 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
     time.sleep(1)
 
+    for i in range(int(NUM_TABLES/2)):
+        table_name = 'postgresql_replica_{}'.format(i)
+        assert_nested_table_is_created(table_name)
+
     result = instance.query('''SELECT count() FROM system.tables WHERE database = 'test_database';''')
-    assert(int(result) == NUM_TABLES/2)
+    assert(int(result) == int(NUM_TABLES/2))
 
     database_tables = instance.query('SHOW TABLES FROM test_database')
     for i in range(NUM_TABLES):
         table_name = 'postgresql_replica_{}'.format(i)
-        if i < NUM_TABLES/2:
+        if i < int(NUM_TABLES/2):
             assert table_name in database_tables
         else:
             assert table_name not in database_tables
@@ -253,7 +269,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
     for i in range(NUM_TABLES):
         table_name = 'postgresql_replica_{}'.format(i)
-        if i < NUM_TABLES/2:
+        if i < int(NUM_TABLES/2):
             check_tables_are_synchronized(table_name);
         cursor.execute('drop table {};'.format(table_name))
 
