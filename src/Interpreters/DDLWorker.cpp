@@ -211,7 +211,7 @@ void DDLWorker::shutdown()
 
 DDLWorker::~DDLWorker()
 {
-    shutdown();
+    DDLWorker::shutdown();
 }
 
 
