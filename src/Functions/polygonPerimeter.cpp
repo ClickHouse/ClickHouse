@@ -20,11 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 template <typename Point>
 class FunctionPolygonPerimeter : public IFunction
 {
@@ -58,38 +53,18 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void checkInputType(const ColumnsWithTypeAndName & arguments) const
-    {
-        /// Array(Array(Array(Tuple(Float64, Float64))))
-        auto desired = std::make_shared<const DataTypeArray>(
-            std::make_shared<const DataTypeArray>(
-                std::make_shared<const DataTypeArray>(
-                    std::make_shared<const DataTypeTuple>(
-                        DataTypes{std::make_shared<const DataTypeFloat64>(), std::make_shared<const DataTypeFloat64>()}
-                    )
-                )
-            )
-        );
-        if (!desired->equals(*arguments[0].type))
-            throw Exception(fmt::format("The type of the argument of function {} must be Array(Array(Array(Tuple(Float64, Float64))))", name), ErrorCodes::BAD_ARGUMENTS);
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        checkInputType(arguments);
-        auto parser = makeGeometryFromColumnParser<Point>(arguments[0]);
-        auto container = createContainer(parser);
+        checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[0]);
+        auto parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[0].column->convertToFullColumnIfConst()));
+        MultiPolygon<Point> container;
 
         auto res_column = ColumnFloat64::create();
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            get(parser, container, i);
-
-            Float64 perimeter = boost::geometry::perimeter(
-                boost::get<MultiPolygon<Point>>(container));
-
-            res_column->insertValue(perimeter);
+            parser.get(container, i);
+            res_column->insertValue(boost::geometry::perimeter(container));
         }
 
         return res_column;

@@ -9,6 +9,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -107,5 +109,29 @@ template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geom
 template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
+
+template <typename Point, template<typename> typename Desired>
+void checkColumnTypeOrThrow(const ColumnWithTypeAndName & column)
+{
+    DataTypePtr desired_type;
+    if constexpr (std::is_same_v<Desired<Point>, Ring<Point>>)
+        desired_type = DataTypeCustomRingSerialization::nestedDataType();
+    else if constexpr (std::is_same_v<Desired<Point>, Polygon<Point>>)
+        desired_type = DataTypeCustomPolygonSerialization::nestedDataType();
+    else if constexpr (std::is_same_v<Desired<Point>, MultiPolygon<Point>>)
+        desired_type = DataTypeCustomMultiPolygonSerialization::nestedDataType();
+    else
+        throw Exception("Unexpected Desired type.", ErrorCodes::LOGICAL_ERROR);
+
+    if (!desired_type->equals(*column.type))
+            throw Exception(fmt::format("Expected type {} (MultiPolygon), but got {}", desired_type->getName(), column.type->getName()), ErrorCodes::BAD_ARGUMENTS);
+}
+
+template void checkColumnTypeOrThrow<CartesianPoint, Ring>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<CartesianPoint, Polygon>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<CartesianPoint, MultiPolygon>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<GeographicPoint, Ring>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<GeographicPoint, Polygon>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<GeographicPoint, MultiPolygon>(const ColumnWithTypeAndName &);
 
 }

@@ -26,8 +26,9 @@ void DataTypeCustomPointSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomPointSerialization::nestedDataType()
 {
-    static auto data_type = DataTypePtr(std::make_unique<DataTypeTuple>(
-        DataTypes({std::make_unique<DataTypeFloat64>(), std::make_unique<DataTypeFloat64>()})));
+    static const auto data_type = std::make_shared<const DataTypeTuple>(
+        DataTypes{std::make_shared<const DataTypeFloat64>(), std::make_shared<const DataTypeFloat64>()}
+    );
     return data_type;
 }
 
@@ -45,7 +46,7 @@ void DataTypeCustomRingSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomRingSerialization::nestedDataType()
 {
-    static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType()));
+    static auto data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType());
     return data_type;
 }
 
@@ -63,7 +64,7 @@ void DataTypeCustomPolygonSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomPolygonSerialization::nestedDataType()
 {
-    static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType()));
+    static auto data_type = std::make_shared<const DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType());
     return data_type;
 }
 
@@ -81,7 +82,7 @@ void DataTypeCustomMultiPolygonSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomMultiPolygonSerialization::nestedDataType()
 {
-    static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType()));
+    static auto data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType());
     return data_type;
 }
 
