@@ -100,7 +100,7 @@ private:
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized();
+    bool prepareSynchronized(MaterializeMetadata & metadata);
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 

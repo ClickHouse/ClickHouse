@@ -155,7 +155,9 @@ void MaterializeMySQLSyncThread::synchronization()
 
     try
     {
-        if (std::optional<MaterializeMetadata> metadata = prepareSynchronized())
+        MaterializeMetadata metadata(
+            DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata");
+        if (prepareSynchronized(metadata))
         {
             Stopwatch watch;
             Buffers buffers(database_name);
@@ -168,7 +170,7 @@ void MaterializeMySQLSyncThread::synchronization()
 
                 {
                     if (binlog_event)
-                        onEvent(buffers, binlog_event, *metadata);
+                        onEvent(buffers, binlog_event, metadata);
 
                     if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
                             settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
@@ -178,7 +180,7 @@ void MaterializeMySQLSyncThread::synchronization()
                         watch.restart();
 
                         if (!buffers.data.empty())
-                            flushBuffersData(buffers, *metadata);
+                            flushBuffersData(buffers, metadata);
                     }
                 }
             }
@@ -281,12 +283,12 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
 }
 
 static inline void dumpDataForTables(
-    mysqlxx::Pool::Entry & connection, MaterializeMetadata & master_info,
+    mysqlxx::Pool::Entry & connection, const std::unordered_map<String, String> & need_dumping_tables,
     const String & query_prefix, const String & database_name, const String & mysql_database_name,
     const Context & context, const std::function<bool()> & is_cancelled)
 {
-    auto iterator = master_info.need_dumping_tables.begin();
-    for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
+    auto iterator = need_dumping_tables.begin();
+    for (; iterator != need_dumping_tables.end() && !is_cancelled(); ++iterator)
     {
         try
         {
@@ -325,7 +327,7 @@ static inline UInt32 randomNumber()
     return dist6(rng);
 }
 
-std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized()
+bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
 {
     bool opened_transaction = false;
     mysqlxx::PoolWithFailover::Entry connection;
@@ -338,10 +340,10 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             opened_transaction = false;
 
             checkMySQLVariables(connection);
-            MaterializeMetadata metadata(
-                connection, DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", mysql_database_name, opened_transaction);
+            std::unordered_map<String, String> need_dumping_tables;
+            metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables);
 
-            if (!metadata.need_dumping_tables.empty())
+            if (!need_dumping_tables.empty())
             {
                 Position position;
                 position.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
@@ -349,7 +351,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 metadata.transaction(position, [&]()
                 {
                     cleanOutdatedTables(database_name, global_context);
-                    dumpDataForTables(connection, metadata, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
+                    dumpDataForTables(connection, need_dumping_tables, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
                 });
 
                 const auto & position_message = [&]()
@@ -368,7 +370,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set, metadata.binlog_checksum);
 
             setSynchronizationThreadException(nullptr);
-            return metadata;
+            return true;
         }
         catch (...)
         {
@@ -390,7 +392,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
         }
     }
 
-    return {};
+    return false;
 }
 
 void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
