@@ -714,8 +714,10 @@ parseDateTimeBestEffortUSOrNull(time_string [, time_zone]);
 
 **Returned values**
 
--   `time_string` converted to the `DateTime` data type.
--   `NULL`.
+Possible values:
+
+- `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
+- `NULL` if the input string cannot be converted to the `DateTime` data type.
 
 **Examples**
 
