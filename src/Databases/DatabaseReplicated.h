@@ -6,7 +6,6 @@
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/BlockIO.h>
 
 
 namespace DB

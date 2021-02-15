@@ -25,7 +25,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & conte
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
 
-class DDLQueryStatusInputStream : public IBlockInputStream
+class DDLQueryStatusInputStream final : public IBlockInputStream
 {
 public:
     DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_, const std::optional<Strings> & hosts_to_wait = {});

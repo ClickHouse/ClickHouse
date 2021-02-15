@@ -130,6 +130,7 @@ SRCS(
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
+    RewriteCountVariantsVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp

@@ -1,18 +1,24 @@
 #include <boost/program_options.hpp>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Interpreters/Context.h>
-#include <IO/copyData.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
-#include <Storages/StorageMemory.h>
-#include <Processors/Sources/SourceFromInputStream.h>
+
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
+#include <Formats/FormatFactory.h>
 #include <common/find_symbols.h>
 
 
@@ -39,7 +45,7 @@ ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
     return data;
 }
 
-void BaseExternalTable::clean()
+void BaseExternalTable::clear()
 {
     name.clear();
     file.clear();
@@ -47,17 +53,6 @@ void BaseExternalTable::clean()
     structure.clear();
     sample_block.clear();
     read_buffer.reset();
-}
-
-/// Function for debugging information output
-void BaseExternalTable::write()
-{
-    std::cerr << "file " << file << std::endl;
-    std::cerr << "name " << name << std::endl;
-    std::cerr << "format " << format << std::endl;
-    std::cerr << "structure: \n";
-    for (const auto & elem : structure)
-        std::cerr << '\t' << elem.first << ' ' << elem.second << std::endl;
 }
 
 void BaseExternalTable::parseStructureFromStructureField(const std::string & argument)
@@ -182,7 +177,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     executor->execute(/*num_threads = */ 1);
 
     /// We are ready to receive the next file, for this we clear all the information received
-    clean();
+    clear();
 }
 
 }
