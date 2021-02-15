@@ -424,6 +424,7 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
