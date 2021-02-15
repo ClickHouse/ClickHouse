@@ -262,11 +262,22 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             StorageReplicatedMergeTree::LogEntry log_entry;
 
-            /// Will add log entry about new part.
             if (is_attach)
             {
-                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
-                log_entry.part_checksum = ...; //TODO initialize checksum
+                const String part_path = storage.replica_path + "/parts/" + part->name;
+                const String part_znode = zookeeper->get(part_path);
+
+                /// We don't support old parts (that were existent before the ReplicatedMergeTreePartHeader
+                /// introduction), so for them the implementation falls back to fetching from other replica.
+                /// See also ReplicatedMergeTreePartCheckThread.cpp:253
+                if (part_znode.empty())
+                    log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+                else
+                {
+                    log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
+                    log_entry.part_checksum = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
+                    // TODO
+                }
             }
             else
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
