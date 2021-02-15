@@ -27,14 +27,14 @@ create_table_sql_template = """
 
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
+    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
     return conn
 
 
 def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
+        cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
 
 def create_mysql_table(conn, table_name):
@@ -119,7 +119,7 @@ def test_mysql_simple_select_works(started_cluster):
                        settings={"external_table_functions_use_nulls": "0"}) == '0\n511\n'
 
     node1.query('''
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
 '''.format(table_name, table_name))
 
     node1.query(

@@ -185,6 +185,14 @@ class ClickHouseCluster:
         self.mongo_host = "mongo1"
         self.mongo_port = get_open_port()
 
+        # available when with_cassandra == True
+        self.cassandra_host = "cassandra1"
+        self.cassandra_port = get_open_port()
+
+        # available when with_mysql == True
+        self.mysql_host = "mysql57"
+        self.mysql_port = get_open_port()
+
         self.zookeeper_use_tmpfs = True
 
         self.docker_client = None
@@ -196,6 +204,17 @@ class ClickHouseCluster:
         if p.basename(cmd) == 'clickhouse':
             cmd += " client"
         return cmd
+
+    def setup_mysql_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql = True
+        env_variables['MYSQL_HOST'] = self.mysql_host
+        env_variables['MYSQL_EXTERNAL_PORT'] = str(self.mysql_port)
+        env_variables['MYSQL_INTERNAL_PORT'] = "3306"
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
+        self.base_mysql_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+
+        return self.base_mysql_cmd
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
@@ -288,12 +307,7 @@ class ClickHouseCluster:
             cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
-            self.with_mysql = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
-            self.base_mysql_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
-
-            cmds.append(self.base_mysql_cmd)
+            cmds.append(self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
@@ -305,11 +319,7 @@ class ClickHouseCluster:
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
-                self.with_mysql = True
-                self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
-                self.base_mysql_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
-                cmds.append(self.base_mysql_cmd)
+                cmds.append(self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir))
 
             if not self.with_postgres:
                 self.with_postgres = True
@@ -385,7 +395,7 @@ class ClickHouseCluster:
             else:
                 # Attach empty certificates directory to ensure non-secure mode.
                 minio_certs_dir = p.join(self.instances_dir, 'empty_minio_certs_dir')
-                os.mkdir(minio_certs_dir)
+                os.makedirs(minio_certs_dir, exist_ok=True)
                 env_variables['MINIO_CERTS_DIR'] = minio_certs_dir
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
@@ -394,6 +404,8 @@ class ClickHouseCluster:
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
+            env_variables['CASSANDRA_EXTERNAL_PORT'] = str(self.cassandra_port)
+            env_variables['CASSANDRA_INTERNAL_PORT'] = "9042"
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
             self.base_cassandra_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                        '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
@@ -488,7 +500,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
+                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=self.mysql_port)
                 conn.close()
                 print("Mysql Started")
                 return
@@ -622,7 +634,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_cassandra_to_start(self, timeout=30):
-        cass_client = cassandra.cluster.Cluster(["localhost"], port="9043")
+        cass_client = cassandra.cluster.Cluster(["localhost"], self.cassandra_port)
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -1213,7 +1225,7 @@ class ClickHouseInstance:
                     "Database": "clickhouse",
                     "Uid": "root",
                     "Pwd": "clickhouse",
-                    "Server": "mysql1",
+                    "Server": self.cluster.mysql_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
@@ -1325,7 +1337,7 @@ class ClickHouseInstance:
         depends_on = []
 
         if self.with_mysql:
-            depends_on.append("mysql1")
+            depends_on.append("mysql57")
 
         if self.with_kafka:
             depends_on.append("kafka1")

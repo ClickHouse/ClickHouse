@@ -37,7 +37,7 @@ def started_cluster():
         instance.query("CREATE DATABASE IF NOT EXISTS test")
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
-        instance.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql1:3306', 'test', 'root', 'clickhouse')")
+        instance.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql57:3306', 'test', 'root', 'clickhouse')")
 
         yield cluster
 
@@ -66,7 +66,8 @@ def test_load_mysql_dictionaries(started_cluster):
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
-        cursor.execute("CREATE DATABASE IF NOT EXISTS {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
+        cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
 
 def prepare_mysql_table(table_name, index):
@@ -88,7 +89,7 @@ def prepare_mysql_table(table_name, index):
 
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.10', port=3308)
+    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.10', port=cluster.mysql_port)
     return conn
 
 

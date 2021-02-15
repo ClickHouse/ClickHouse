@@ -8,8 +8,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceCassandra
 
-SOURCE = SourceCassandra("Cassandra", "localhost", "9043", "cassandra1", "9042", "", "")
-
+SOURCE = None
 cluster = None
 node = None
 simple_tester = None
@@ -24,6 +23,9 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
+    cluster = ClickHouseCluster(__file__, name=test_name)
+
+    SOURCE = SourceCassandra("Cassandra", "localhost", cluster.cassandra_port, cluster.cassandra_host, "9042", "", "")
 
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
@@ -35,8 +37,6 @@ def setup_module(module):
     ranged_tester = RangedLayoutTester(test_name)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
-
-    cluster = ClickHouseCluster(__file__, name=test_name)
 
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))

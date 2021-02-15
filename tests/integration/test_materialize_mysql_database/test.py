@@ -28,7 +28,7 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', ip_address='127.0.0.1', port=3308, docker_compose=None, project_name=cluster.project_name):
+    def __init__(self, user='root', password='clickhouse', ip_address='127.0.0.1', port=cluster.mysql_port, docker_compose=None, project_name=cluster.project_name):
         self.user = user
         self.port = port
         self.ip_address = ip_address

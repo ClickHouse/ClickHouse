@@ -8,8 +8,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMySQL
 
-SOURCE = SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse")
-
+SOURCE = None
 cluster = None
 node = None
 simple_tester = None
@@ -25,6 +24,10 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
+    cluster = ClickHouseCluster(__file__, name=test_name)
+
+    SOURCE = SourceMySQL("MySQL", "localhost", cluster.mysql_port, cluster.mysql_host, "3306", "root", "clickhouse")
+
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
     simple_tester.create_dictionaries(SOURCE)
@@ -36,15 +39,13 @@ def setup_module(module):
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
-    cluster = ClickHouseCluster(__file__, name=test_name)
-
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
     main_configs.append(os.path.join('configs', 'log_conf.xml'))
 
     dictionaries = simple_tester.list_dictionaries()
  
-    node = cluster.add_instance('mysql_node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True)
+    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True)
 
 
 def teardown_module(module):

@@ -246,7 +246,7 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_2 INT NOT NULL FIRST")
     mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1")
     mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
-        "0" if service_name == "mysql1" else "(id)"))
+        "0" if service_name == "mysql57" else "(id)"))
 
     # create mapping
     clickhouse_node.query(
@@ -264,9 +264,9 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
         "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_1 INT NOT NULL, ADD COLUMN add_column_2 INT NOT NULL FIRST")
     mysql_node.query(
         "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
-            "0" if service_name == "mysql1" else "(id)"))
+            "0" if service_name == "mysql57" else "(id)"))
 
-    default_expression = "DEFAULT\t0" if service_name == "mysql1" else "DEFAULT\tid"
+    default_expression = "DEFAULT\t0" if service_name == "mysql57" else "DEFAULT\tid"
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
                 "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t" + default_expression + "\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
