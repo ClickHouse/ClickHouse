@@ -19,6 +19,7 @@ public:
         const Aliases & aliases;
         const String current_database;
         bool done = false;
+        bool cross_to_inner_join_rewrite = true;
     };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &);
