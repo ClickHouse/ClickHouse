@@ -34,11 +34,11 @@ cat >> /usr/local/hadoop/etc/hadoop/core-site.xml << EOF
    </property>
   <property>
     <name>fs.defaultFS</name>
-    <value>hdfs://kerberizedhdfs1:9000</value>
+    <value>hdfs://kerberizedhdfs1:9010</value>
   </property>
   <property>
     <name>fs.default.name</name>
-    <value>hdfs://kerberizedhdfs1:9000</value>
+    <value>hdfs://kerberizedhdfs1:9010</value>
   </property>
   <!--
   <property>

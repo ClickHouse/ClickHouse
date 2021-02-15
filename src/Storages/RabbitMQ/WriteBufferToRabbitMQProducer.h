@@ -41,6 +41,9 @@ public:
 
 private:
     void nextImpl() override;
+    void addChunk();
+    void reinitializeChunks();
+
     void iterateEventLoop();
     void writingFunc();
     bool setupConnection(bool reconnecting);

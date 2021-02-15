@@ -8,6 +8,7 @@
 #include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
@@ -148,10 +149,16 @@ void DatabaseCatalog::loadDatabases()
     std::lock_guard lock{tables_marked_dropped_mutex};
     if (!tables_marked_dropped.empty())
         (*drop_task)->schedule();
+
+    /// Another background thread which drops temporary LiveViews.
+    /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
+    TemporaryLiveViewCleaner::instance().startupIfNecessary();
 }
 
 void DatabaseCatalog::shutdownImpl()
 {
+    TemporaryLiveViewCleaner::shutdown();
+
     if (drop_task)
         (*drop_task)->deactivate();
 
@@ -524,6 +531,7 @@ std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
 DatabaseCatalog::DatabaseCatalog(Context & global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
+    TemporaryLiveViewCleaner::init(global_context);
 }
 
 DatabaseCatalog & DatabaseCatalog::init(Context & global_context_)

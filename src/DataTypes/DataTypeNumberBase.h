@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UInt128.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeWithSimpleSerialization.h>
 
@@ -51,7 +52,13 @@ public:
 
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }
-    bool shouldAlignRightInPrettyFormats() const override { return true; }
+
+    bool shouldAlignRightInPrettyFormats() const override
+    {
+        /// Just a number, without customizations. Counterexample: IPv4.
+        return !custom_text_serialization;
+    }
+
     bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }
@@ -63,5 +70,22 @@ public:
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
 };
+
+/// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types
+
+extern template class DataTypeNumberBase<UInt8>;
+extern template class DataTypeNumberBase<UInt16>;
+extern template class DataTypeNumberBase<UInt32>;
+extern template class DataTypeNumberBase<UInt64>;
+extern template class DataTypeNumberBase<UInt128>; // base for UUID
+extern template class DataTypeNumberBase<UInt256>;
+extern template class DataTypeNumberBase<Int16>;
+extern template class DataTypeNumberBase<Int8>;
+extern template class DataTypeNumberBase<Int32>;
+extern template class DataTypeNumberBase<Int64>;
+extern template class DataTypeNumberBase<Int128>;
+extern template class DataTypeNumberBase<Int256>;
+extern template class DataTypeNumberBase<Float32>;
+extern template class DataTypeNumberBase<Float64>;
 
 }

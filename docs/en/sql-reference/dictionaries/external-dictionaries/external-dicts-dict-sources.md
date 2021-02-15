@@ -93,7 +93,7 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
-When dictionary with FILE source is created via DDL command (`CREATE DICTIONARY ...`), source of the dictionary have to be located in `user_files` directory, to prevent DB users accessing arbitrary file on clickhouse node.
+When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
@@ -115,7 +115,7 @@ Setting fields:
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
-That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on clickhouse node.
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -160,14 +160,14 @@ Setting fields:
 -   `url` – The source URL.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 -   `credentials` – Basic HTTP authentication. Optional parameter.
-    -   `user` – Username required for the authentication.
-    -   `password` – Password required for the authentication.
+-   `user` – Username required for the authentication.
+-   `password` – Password required for the authentication.
 -   `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
-    -   `header` – Single HTTP header entry.
-    -   `name` – Identifiant name used for the header send on the request.
-    -   `value` – Value set for a specific identifiant name.
+-   `header` – Single HTTP header entry.
+-   `name` – Identifiant name used for the header send on the request.
+-   `value` – Value set for a specific identifiant name.
 
-When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries checked with the `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server. 
+When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -583,7 +583,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(MONGO(
+SOURCE(MONGODB(
     host 'localhost'
     port 27017
     user ''

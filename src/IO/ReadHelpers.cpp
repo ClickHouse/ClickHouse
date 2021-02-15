@@ -253,9 +253,6 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
-
-        if (buf.hasPendingData())
-            return;
     }
 }
 
@@ -686,7 +683,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /** CSV format can contain insignificant spaces and tabs.
               * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
+              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
               */
             size_t size = s.size();
             while (size > 0
@@ -1017,7 +1014,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message)
+Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
 {
     int code = 0;
     String name;
@@ -1044,7 +1041,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message)
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code);
+    return Exception(out.str(), code, remote_exception);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
@@ -1107,9 +1104,9 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     assert(current >= in.position());
     assert(current <= in.buffer().end());
 
-    const int old_bytes = memory.size();
-    const int additional_bytes = current - in.position();
-    const int new_bytes = old_bytes + additional_bytes;
+    const size_t old_bytes = memory.size();
+    const size_t additional_bytes = current - in.position();
+    const size_t new_bytes = old_bytes + additional_bytes;
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)
