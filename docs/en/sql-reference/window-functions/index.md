@@ -19,6 +19,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `WINDOW` clause (`select ... from table window w as (partiton by id)`) | supported |
 | `ROWS` frame | supported |
 | `RANGE` frame | supported, the default |
+| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame | not supported, specify the number of seconds instead |
 | `GROUPS` frame | not supported |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`) | all aggregate functions are supported |
 | `rank()`, `dense_rank()`, `row_number()` | supported |
