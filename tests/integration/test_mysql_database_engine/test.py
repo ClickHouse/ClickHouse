@@ -21,7 +21,7 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
+    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=cluster.mysql_port):
         self.user = user
         self.port = port
         self.hostname = hostname
@@ -55,11 +55,12 @@ class MySQLNodeInstance:
 
 
 def test_mysql_ddl_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')")
         assert 'test_database' in clickhouse_node.query('SHOW DATABASES')
 
         mysql_node.query(
@@ -88,13 +89,13 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
 
 
 def test_clickhouse_ddl_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             'CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;')
 
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')")
 
         assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_database')
         clickhouse_node.query("DROP TABLE test_database.test_table")
@@ -113,12 +114,12 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
 
 
 def test_clickhouse_dml_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             'CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;')
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse')")
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test_database, 'root', 'clickhouse')")
 
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '0'
         clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i``d`) select number from numbers(10000)")
@@ -131,7 +132,7 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
 
 
 def test_clickhouse_join_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query("CREATE TABLE test.t1_mysql_local ("
                          "pays    VARCHAR(55) DEFAULT 'FRA' NOT NULL,"
@@ -143,9 +144,9 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
                          "opco    VARCHAR(5) DEFAULT ''"
                          ")")
         clickhouse_node.query(
-            "CREATE TABLE default.t1_remote_mysql AS mysql('mysql1:3306','test','t1_mysql_local','root','clickhouse')")
+            "CREATE TABLE default.t1_remote_mysql AS mysql('mysql57:3306','test','t1_mysql_local','root','clickhouse')")
         clickhouse_node.query(
-            "CREATE TABLE default.t2_remote_mysql AS mysql('mysql1:3306','test','t2_mysql_local','root','clickhouse')")
+            "CREATE TABLE default.t2_remote_mysql AS mysql('mysql57:3306','test','t2_mysql_local','root','clickhouse')")
         assert clickhouse_node.query("SELECT s.pays "
                                      "FROM default.t1_remote_mysql AS s "
                                      "LEFT JOIN default.t1_remote_mysql AS s_ref "
@@ -154,19 +155,19 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
 
 
 def test_bad_arguments_for_mysql_database_engine(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
         with pytest.raises(QueryRuntimeException) as exception:
             mysql_node.query("CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'")
             clickhouse_node.query(
-                "CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql1:3306', test_bad_arguments, root, 'clickhouse')")
+                "CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql57:3306', test_bad_arguments, root, 'clickhouse')")
         assert 'Database engine MySQL requested literal argument.' in str(exception.value)
         mysql_node.query("DROP DATABASE test_bad_arguments")
 
 
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
-        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse')",
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"})
 
         assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
@@ -177,7 +178,7 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
 
         clickhouse_node.query(
-            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
+            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
             settings={"mysql_datatypes_support_level": "decimal"})
 
         assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
@@ -306,7 +307,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         else:
             return [do_execute(q) for q in query]
 
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
         execute_query(mysql_node, [
             "DROP DATABASE IF EXISTS ${mysql_db}",
             "CREATE DATABASE ${mysql_db}  DEFAULT CHARACTER SET 'utf8'",
@@ -323,7 +324,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         # MySQL TABLE ENGINE
         execute_query(clickhouse_node, [
             "DROP TABLE IF EXISTS ${ch_mysql_table};",
-            "CREATE TABLE ${ch_mysql_table} (value ${expected_ch_type}) ENGINE = MySQL('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
+            "CREATE TABLE ${ch_mysql_table} (value ${expected_ch_type}) ENGINE = MySQL('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
         ], settings=clickhouse_query_settings)
 
         # Validate type
@@ -343,7 +344,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         # MySQL DATABASE ENGINE
         execute_query(clickhouse_node, [
             "DROP DATABASE IF EXISTS ${ch_mysql_db}",
-            "CREATE DATABASE ${ch_mysql_db} ENGINE = MySQL('mysql1:3306', '${mysql_db}', 'root', 'clickhouse')"
+            "CREATE DATABASE ${ch_mysql_db} ENGINE = MySQL('mysql57:3306', '${mysql_db}', 'root', 'clickhouse')"
         ], settings=clickhouse_query_settings)
 
         # Validate type
@@ -364,7 +365,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         # Validate type
         assert \
             execute_query(clickhouse_node,
-                          "SELECT toTypeName(value) FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse') LIMIT 1",
+                          "SELECT toTypeName(value) FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse') LIMIT 1",
                           settings=clickhouse_query_settings) \
             == \
             expected_ch_type
@@ -374,5 +375,5 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}") \
             == \
             execute_query(clickhouse_node,
-                          "SELECT value FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
+                          "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)

@@ -100,6 +100,7 @@ class SourceMySQL(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.create_mysql_conn()
         self.execute_mysql_query("create database if not exists test default character set 'utf8'")
+        self.execute_mysql_query("drop table if exists test.{}".format(table_name))
         fields_strs = []
         for field in structure.keys + structure.ordinary_fields + structure.range_fields:
             fields_strs.append(field.name + ' ' + self.TYPE_MAPPING[field.field_type])
