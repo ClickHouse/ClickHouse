@@ -2598,7 +2598,7 @@ Sets the probability that the ClickHouse can start a trace for executed queries 
 
 Possible values:
 
--   0 — The trace for a executed queries is disabled (if no parent trace context is supplied).
+-   0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
 -   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
 -   1 — The trace for all executed queries is enabled.
 
