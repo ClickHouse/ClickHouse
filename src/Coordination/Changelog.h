@@ -12,6 +12,13 @@ namespace DB
 
 using Checksum = CityHash_v1_0_2::uint128;
 
+using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
+using LogEntries = std::vector<LogEntryPtr>;
+using LogEntriesPtr = nuraft::ptr<LogEntries>;
+
+using IndexToOffset = std::unordered_map<size_t, off_t>;
+using IndexToLogEntry = std::map<size_t, LogEntryPtr>;
+
 enum class ChangelogVersion : uint8_t
 {
     V0 = 0,
@@ -20,7 +27,7 @@ enum class ChangelogVersion : uint8_t
 std::string toString(const ChangelogVersion & version);
 ChangelogVersion fromString(const std::string & version_str);
 
-static constexpr auto CURRENT_CHANGELOG_VERSION = ChangeLogVersion::V0;
+static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V0;
 
 struct ChangelogRecordHeader
 {
@@ -38,32 +45,47 @@ struct ChangelogRecord
     nuraft::ptr<nuraft::buffer> blob;
 };
 
-using IndexToOffset = std::unordered_map<size_t, off_t>;
-using IndexToLogEntry = std::map<size_t, nuraft::ptr<nuraft::log_entry>>;
 
-struct Changelog
-{
-public:
-private:
-    IndexToLogEntry logs;
-    size_t start_idx = 0;
-};
 
 class ChangelogWriter;
 
-class ChangelogOnDiskHelper
+class Changelog
 {
 
 public:
-    ChangelogOnDiskHelper(const std::string & changelogs_dir_, size_t rotate_interval_);
+    Changelog(const std::string & changelogs_dir_, size_t rotate_interval_);
 
-    Changelog readChangelogAndInitWriter(size_t from_log_idx);
+    void readChangelogAndInitWriter(size_t from_log_idx);
 
-    void appendRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry);
+    void appendEntry(size_t index, LogEntryPtr log_entry);
 
-    void writeAt(size_t index, nuraft::ptr<nuraft::log_entry> log_entry);
+    void writeAt(size_t index, LogEntryPtr log_entry);
 
     void compact(size_t up_to_log_idx);
+
+    size_t getNextEntryIndex() const
+    {
+        return start_index + logs.size() - 1;
+    }
+
+    size_t getStartIndex() const
+    {
+        return start_index;
+    }
+
+    LogEntryPtr getLastEntry() const;
+
+    LogEntriesPtr getLogEntriesBetween(size_t start_index, size_t end_idx);
+
+    LogEntryPtr entryAt(size_t idx);
+
+    nuraft::ptr<nuraft::buffer> serializeEntriesToBuffer(size_t index, Int32 cnt);
+
+    void applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer);
+
+    void flush();
+
+    ~Changelog();
 
 private:
     void rotate(size_t new_start_log_idex);
@@ -76,6 +98,8 @@ private:
     std::unique_ptr<ChangelogWriter> current_writer;
     IndexToOffset index_to_start_pos;
     const size_t rotate_interval;
+    IndexToLogEntry logs;
+    size_t start_index = 0;
 };
 
 }

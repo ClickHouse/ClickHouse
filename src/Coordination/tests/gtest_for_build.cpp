@@ -22,6 +22,8 @@
 #include <Common/Exception.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <thread>
+#include <Coordination/NuKeeperLogStore.h>
+#include <Coordination/Changelog.h>
 
 
 TEST(CoordinationTest, BuildTest)
@@ -134,7 +136,7 @@ struct SimpliestRaftServer
 
 using SummingRaftServer = SimpliestRaftServer<DB::SummingStateMachine>;
 
-nuraft::ptr<nuraft::buffer> getLogEntry(int64_t number)
+nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 {
     nuraft::ptr<nuraft::buffer> ret = nuraft::buffer::alloc(sizeof(number));
     nuraft::buffer_serializer bs(ret);
@@ -151,7 +153,7 @@ TEST(CoordinationTest, TestSummingRaft1)
     /// Single node is leader
     EXPECT_EQ(s1.raft_instance->get_leader(), 1);
 
-    auto entry1 = getLogEntry(143);
+    auto entry1 = getBuffer(143);
     auto ret = s1.raft_instance->append_entries({entry1});
     EXPECT_TRUE(ret->get_accepted()) << "failed to replicate: entry 1" << ret->get_result_code();
     EXPECT_EQ(ret->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 1" << ret->get_result_code();
@@ -209,7 +211,7 @@ TEST(CoordinationTest, TestSummingRaft3)
     EXPECT_EQ(s3.raft_instance->get_leader(), 2);
 
     std::cerr << "Starting to add entries\n";
-    auto entry = getLogEntry(1);
+    auto entry = getBuffer(1);
     auto ret = s2.raft_instance->append_entries({entry});
     EXPECT_TRUE(ret->get_accepted()) << "failed to replicate: entry 1" << ret->get_result_code();
     EXPECT_EQ(ret->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 1" << ret->get_result_code();
@@ -236,7 +238,7 @@ TEST(CoordinationTest, TestSummingRaft3)
     EXPECT_EQ(s2.state_machine->getValue(), 1);
     EXPECT_EQ(s3.state_machine->getValue(), 1);
 
-    auto non_leader_entry = getLogEntry(3);
+    auto non_leader_entry = getBuffer(3);
     auto ret_non_leader1 = s1.raft_instance->append_entries({non_leader_entry});
 
     EXPECT_FALSE(ret_non_leader1->get_accepted());
@@ -245,7 +247,7 @@ TEST(CoordinationTest, TestSummingRaft3)
 
     EXPECT_FALSE(ret_non_leader3->get_accepted());
 
-    auto leader_entry = getLogEntry(77);
+    auto leader_entry = getBuffer(77);
     auto ret_leader = s2.raft_instance->append_entries({leader_entry});
     EXPECT_TRUE(ret_leader->get_accepted()) << "failed to replicate: entry 78" << ret_leader->get_result_code();
     EXPECT_EQ(ret_leader->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 78" << ret_leader->get_result_code();
@@ -331,6 +333,20 @@ TEST(CoordinationTest, TestStorageSerialization)
     EXPECT_EQ(new_storage.ephemerals.size(), 2);
     EXPECT_EQ(new_storage.ephemerals[3].size(), 2);
     EXPECT_EQ(new_storage.ephemerals[1].size(), 1);
+}
+
+DB::LogEntryPtr getLogEntry(const std::string & s)
+{
+    DB::WriteBufferFromNuraftBuffer bufwriter;
+    writeText(s, bufwriter);
+    return nuraft::cs_new<nuraft::log_entry>(0, bufwriter.getBuffer());
+}
+
+TEST(CoordinationTest, ChangelogTestSimple)
+{
+    DB::Changelog changelog("./logs", 5);
+    auto entry = getLogEntry("hello world");
+    changelog.appendEntry(1, entry);
 }
 
 #endif
