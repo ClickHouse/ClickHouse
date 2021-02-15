@@ -602,10 +602,8 @@ Hello, &quot;world&quot;!
 
 ## decodeXMLComponent {#decode-xml-component}
 
-Replaces XML predefined entities with characters. 
-Predefined entities are `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
-This function also replaces numeric character references with Unicode characters.
-Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+Replaces XML predefined entities with characters. Predefined entities are `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
 
 **Syntax**
 
