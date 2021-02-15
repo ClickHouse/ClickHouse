@@ -131,7 +131,18 @@ void DatabasePostgreSQLReplica<Base>::loadStoredObjects(
         Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
-    startSynchronization();
+
+    try
+    {
+        startSynchronization();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(Base::log, "Cannot load nested database objects for PostgreSQL database engine.");
+
+        if (!force_attach)
+            throw;
+    }
 
 }
 
@@ -207,7 +218,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQLReplica<Base>::getTablesIterator(
     Tables nested_tables;
     for (const auto & [table_name, storage] : tables)
     {
-        auto nested_storage = storage->as<StoragePostgreSQLReplica>()->tryGetNested();
+        auto nested_storage = storage->template as<StoragePostgreSQLReplica>()->tryGetNested();
 
         if (nested_storage)
             nested_tables[table_name] = nested_storage;

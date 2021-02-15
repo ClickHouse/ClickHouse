@@ -66,7 +66,7 @@ void PostgreSQLReplicaMetadata::writeMetadata(bool append_metadata)
 }
 
 
-/// While data is recieved, version is updated. Before table sync, write last version to tmp file.
+/// While data is received, version is updated. Before table sync, write last version to tmp file.
 /// Then sync data to table and rename tmp to non-tmp.
 void PostgreSQLReplicaMetadata::commitMetadata(std::string & lsn, const std::function<String()> & finalizeStreamFunc)
 {
