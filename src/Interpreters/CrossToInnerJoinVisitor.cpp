@@ -326,21 +326,21 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
 
     /// CROSS to INNER
 
-    if (!select.where())
-        return;
-
-    std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-    bool can_move_where = canMoveExpressionToJoinOn(
-        select.where(), joined_tables, data.tables_with_columns, data.aliases, asts_to_join_on);
-    if (can_move_where)
+    if (select.where() && data.cross_to_inner_join_rewrite)
     {
-        for (size_t i = 1; i < joined_tables.size(); ++i)
+        std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
+        bool can_move_where
+            = canMoveExpressionToJoinOn(select.where(), joined_tables, data.tables_with_columns, data.aliases, asts_to_join_on);
+        if (can_move_where)
         {
-            const auto & expr_it = asts_to_join_on.find(i);
-            if (expr_it != asts_to_join_on.end())
+            for (size_t i = 1; i < joined_tables.size(); ++i)
             {
-                if (joined_tables[i].rewriteCrossToInner(makeOnExpression(expr_it->second)))
-                    data.done = true;
+                const auto & expr_it = asts_to_join_on.find(i);
+                if (expr_it != asts_to_join_on.end())
+                {
+                    if (joined_tables[i].rewriteCrossToInner(makeOnExpression(expr_it->second)))
+                        data.done = true;
+                }
             }
         }
     }
