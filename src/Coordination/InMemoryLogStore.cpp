@@ -72,12 +72,12 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> InMemoryLogStore::log_e
 
     ret->resize(end - start);
     size_t cc = 0;
-    for (size_t ii = start; ii < end; ++ii)
+    for (size_t i = start; i < end; ++i)
     {
         nuraft::ptr<nuraft::log_entry> src = nullptr;
         {
             std::lock_guard<std::mutex> l(logs_lock);
-            auto entry = logs.find(ii);
+            auto entry = logs.find(i);
             if (entry == logs.end())
             {
                 entry = logs.find(0);
@@ -152,9 +152,9 @@ void InMemoryLogStore::apply_pack(size_t index, nuraft::buffer & pack)
     pack.pos(0);
     Int32 num_logs = pack.get_int();
 
-    for (Int32 ii = 0; ii < num_logs; ++ii)
+    for (Int32 i = 0; i < num_logs; ++i)
     {
-        size_t cur_idx = index + ii;
+        size_t cur_idx = index + i;
         Int32 buf_size = pack.get_int();
 
         nuraft::ptr<nuraft::buffer> buf_local = nuraft::buffer::alloc(buf_size);
