@@ -45,6 +45,8 @@ HedgedConnections::HedgedConnections(
     active_connection_count = connections.size();
     offsets_with_received_first_data_packet = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
+
+    log = &Poco::Logger::get("HedgedConnections");
 }
 
 void HedgedConnections::Pipeline::add(std::function<void(ReplicaState & replica)> send_function)
@@ -285,6 +287,7 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 
 HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(AsyncCallback async_callback)
 {
+    LOG_DEBUG(log, "getReadyReplicaLocation");
     int event_fd;
     while (true)
     {
@@ -374,6 +377,8 @@ bool HedgedConnections::checkPendingData(ReplicaLocation & location_out)
 
 Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & replica_location, AsyncCallback async_callback)
 {
+    LOG_DEBUG(log, "receivePacketFromReplica");
+
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     replica.receive_timeout.reset();
     Packet packet = replica.connection->receivePacket(std::move(async_callback));
@@ -408,6 +413,8 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 
 void HedgedConnections::processReceivedFirstDataPacket(const ReplicaLocation & replica_location)
 {
+    LOG_DEBUG(log, "processReceivedFirstDataPacket");
+
     /// When we receive first packet of data from replica, we stop working with replicas, that are
     /// responsible for the same offset.
     OffsetState & offset_state = offset_states[replica_location.offset];
@@ -438,6 +445,8 @@ void HedgedConnections::processReceivedFirstDataPacket(const ReplicaLocation & r
 
 void HedgedConnections::tryGetNewReplica(bool start_new_connection)
 {
+    LOG_DEBUG(log, "tryGetNewReplica");
+
     Connection * connection = nullptr;
     HedgedConnectionsFactory::State state = hedged_connections_factory.getNextConnection(start_new_connection, false, connection);
 
@@ -488,6 +497,8 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
 
 void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool disconnect)
 {
+    LOG_DEBUG(log, "finishProcessReplica");
+
     epoll.remove(replica.epoll.getFileDescriptor());
     --offset_states[fd_to_replica_location[replica.epoll.getFileDescriptor()].offset].active_connection_count;
     fd_to_replica_location.erase(replica.epoll.getFileDescriptor());
