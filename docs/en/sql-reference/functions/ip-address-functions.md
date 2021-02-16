@@ -256,7 +256,7 @@ SELECT
 
 An alias to [IPv6StringToNum](#ipv6stringtonums) that takes a string form of IPv6 address and returns value of [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, which is binary equal to value returned by `IPv6StringToNum()`.
 
-If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
+If the IP address is a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
 **Syntax**
 
