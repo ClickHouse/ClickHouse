@@ -104,8 +104,7 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String InterpreterSelectQuery::generateFilterActions(
-    ActionsDAGPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
+String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
 {
     // std::cerr << "----- InterpreterSelectQuery::generateFilterActions\n";
     // for (const auto & name : prerequisite_columns)
@@ -357,7 +356,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ASTSelectQuery & query = getSelectQuery();
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
-    ASTPtr row_policy_filter;
     if (storage)
         row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
 
@@ -457,7 +455,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterDAGInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
+                filter_info->column_name = generateFilterActions(filter_info->actions, required_columns);
                 source_header = metadata_snapshot->getSampleBlockForColumns(
                     filter_info->actions->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
             }
@@ -828,6 +826,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
             if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
             {
+                std::cerr << "----- Moving row level filter to prewhere\n";
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereDAGInfo>(
                     std::move(expressions.filter_info->actions),
@@ -1331,7 +1330,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && (settings.max_parallel_replicas <= 1)
         && storage
         && storage->getName() != "MaterializeMySQL"
-        && !expressions.filter_info
+        && !row_policy_filter
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -1394,9 +1393,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (storage)
     {
         /// Append columns from the table filter to required
-        ActionsDAG * row_policy_filter = nullptr;
-        if (expressions.filter_info)
-            row_policy_filter = expressions.filter_info->actions.get();
+        // ActionsDAG * row_policy_filter = nullptr;
+        // if (expressions.filter_info)
+        //     row_policy_filter = expressions.filter_info->actions.get();
         // else if (expressions.prewhere_info && expressions.prewhere_info->row_level_filter_actions)
         //    row_policy_filter = expressions.prewhere_info->row_level_filter_actions.get();
 
@@ -1651,6 +1650,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (prewhere_info)
         {
+            std::cerr << "-------- filling prewhere info \n";
             query_info.prewhere_info = std::make_shared<PrewhereInfo>();
 
             query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
