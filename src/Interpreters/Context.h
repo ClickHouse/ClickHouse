@@ -746,7 +746,7 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
-    void initMetadataTransaction(MetadataTransactionPtr txn);
+    void initMetadataTransaction(MetadataTransactionPtr txn, bool attach_to_context = false);
     MetadataTransactionPtr getMetadataTransaction() const;
 
     struct MySQLWireContext

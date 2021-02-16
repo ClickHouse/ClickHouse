@@ -460,7 +460,7 @@ void DatabaseOnDisk::renameTable(
 
     if (from_atomic_to_ordinary)
     {
-        auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
+        auto & atomic_db = dynamic_cast<DatabaseAtomic &>(*this);
         /// Special case: usually no actions with symlinks are required when detaching/attaching table,
         /// but not when moving from Atomic database to Ordinary
         if (table->storesDataOnDisk())

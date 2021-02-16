@@ -102,7 +102,7 @@ protected:
     virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
 
     /// Init task node
-    static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
+    void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
     virtual void initializeMainThread();
 
