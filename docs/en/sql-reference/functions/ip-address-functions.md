@@ -113,21 +113,52 @@ LIMIT 10
 └────────────────────────────┴────────┘
 ```
 
-## IPv6StringToNum(s) {#ipv6stringtonums}
+## IPv6StringToNum {#ipv6stringtonums}
 
-The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes. 
+The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
+
 If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
+
 HEX can be uppercase or lowercase.
 
+**Syntax**
+
 ``` sql
-SELECT cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0);
+IPv6StringToNum(string)
 ```
 
-``` text
-┌─cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0)─┐
-│ ::ffff:127.0.0.1                            │
-└─────────────────────────────────────────────┘
+**Parameters** 
+
+-   `string` - IP address. [String](../../sql-reference/data-types/string.md)
+
+
+**Returned value**
+
+-   IPv6 address in binary format. 
+
+Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
 ```
+
+Result:
+
+``` text
+┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
+│ notaddress │ ::                                   │
+│ 127.0.0.1  │ ::ffff:127.0.0.1                     │
+│ 1111::ffff │ 1111::ffff                           │
+└────────────┴──────────────────────────────────────┘
+```
+
+**See also**
+
+-   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
@@ -222,18 +253,37 @@ SELECT
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-## toIPv6(string) {#toipv6string}
+## toIPv6 {#toipv6string}
 
-An alias to `IPv6StringToNum()` that takes a string form of IPv6 address and returns value of [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, which is binary equal to value returned by `IPv6StringToNum()`.
+An alias to [IPv6StringToNum](#ipv6stringtonums) that takes a string form of IPv6 address and returns value of [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, which is binary equal to value returned by `IPv6StringToNum()`.
+
 If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
 
-``` sql
-WITH
-    '2001:438:ffff::407d:1bc1' as IPv6_string
-SELECT
-    toTypeName(IPv6StringToNum(IPv6_string)),
-    toTypeName(toIPv6(IPv6_string))
+**Syntax**
+
+```sql
+toIPv6(string)
 ```
+
+**Parameters**
+
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+-   Converted IP address. If IPv4 passed, returns its representation as IPv6.
+
+Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md)
+
+**Examples**
+
+Query:
+
+``` sql
+WITH '2001:438:ffff::407d:1bc1' as IPv6_string SELECT toTypeName(IPv6StringToNum(IPv6_string)), toTypeName(toIPv6(IPv6_string));
+```
+
+Result:
 
 ``` text
 ┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
@@ -241,13 +291,13 @@ SELECT
 └──────────────────────────────────────────┴─────────────────────────────────┘
 ```
 
+Query:
+
 ``` sql
-WITH
-    '2001:438:ffff::407d:1bc1' as IPv6_string
-SELECT
-    hex(IPv6StringToNum(IPv6_string)),
-    hex(toIPv6(IPv6_string))
+WITH '2001:438:ffff::407d:1bc1' as IPv6_string SELECT hex(IPv6StringToNum(IPv6_string)), hex(toIPv6(IPv6_string));
 ```
+
+Result:
 
 ``` text
 ┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
@@ -255,9 +305,13 @@ SELECT
 └───────────────────────────────────┴──────────────────────────────────┘
 ```
 
+Query:
+
 ``` sql
 SELECT toIPv6('127.0.0.1')
 ```
+
+Result:
 
 ``` text
 ┌─toIPv6('127.0.0.1')─┐
