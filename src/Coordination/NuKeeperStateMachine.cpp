@@ -166,6 +166,8 @@ void NuKeeperStateMachine::create_snapshot(
         }
 
     }
+
+    LOG_DEBUG(log, "Created snapshot {}", s.get_last_log_idx());
     nuraft::ptr<std::exception> except(nullptr);
     bool ret = true;
     when_done(ret, except);
