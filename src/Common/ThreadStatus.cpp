@@ -38,6 +38,7 @@ ThreadStatus::ThreadStatus()
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
 
+    assert(!current_thread);
     current_thread = this;
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
