@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {
@@ -52,6 +54,28 @@ public:
         else
             throw Exception{"Unsupported attribute type.", ErrorCodes::TYPE_MISMATCH};
     }
+};
+
+/// TODO: Remove DictionaryDefaultValueExtractor
+class DefaultValueProvider final
+{
+public:
+    explicit DefaultValueProvider(Field default_value_, ColumnPtr default_values_column_ = nullptr)
+        : default_value(std::move(default_value_))
+        , default_values_column(default_values_column_)
+    {
+    }
+
+    Field getDefaultValue(size_t row) const
+    {
+        if (default_values_column)
+            return (*default_values_column)[row];
+
+        return default_value;
+    }
+private:
+    Field default_value;
+    ColumnPtr default_values_column;
 };
 
 /**
@@ -107,6 +131,86 @@ private:
     DictionaryAttributeType default_value;
     const DefaultColumnType * default_values_column = nullptr;
     bool use_default_value_from_column = false;
+};
+
+template <DictionaryKeyType key_type>
+class DictionaryKeysExtractor
+{
+public:
+    using KeyType = std::conditional_t<key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    static_assert(key_type != DictionaryKeyType::range, "Range key type is not supported by DictionaryKeysExtractor");
+
+    explicit DictionaryKeysExtractor(const Columns & key_columns)
+    {
+        assert(!key_columns.empty());
+
+        if constexpr (key_type == DictionaryKeyType::simple)
+            keys = getColumnVectorData(key_columns.front());
+        else
+            keys = deserializeKeyColumnsInArena(key_columns, complex_keys_temporary_arena);
+    }
+
+    explicit DictionaryKeysExtractor(const Columns & key_columns, Arena & existing_arena)
+    {
+        assert(!key_columns.empty());
+
+        if constexpr (key_type == DictionaryKeyType::simple)
+            keys = getColumnVectorData(key_columns.front());
+        else
+            keys = deserializeKeyColumnsInArena(key_columns, existing_arena);
+    }
+
+
+    const PaddedPODArray<KeyType> & getKeys() const
+    {
+        return keys;
+    }
+
+private:
+    static PaddedPODArray<UInt64> getColumnVectorData(const ColumnPtr column)
+    {
+        PaddedPODArray<UInt64> result;
+
+        auto full_column = column->convertToFullColumnIfConst();
+        const auto *vector_col = checkAndGetColumn<ColumnVector<UInt64>>(full_column.get());
+
+        if (!vector_col)
+            throw Exception{ErrorCodes::TYPE_MISMATCH, "Column type mismatch for simple key expected UInt64"};
+
+        result.assign(vector_col->getData());
+
+        return result;
+    }
+
+    static PaddedPODArray<StringRef> deserializeKeyColumnsInArena(const Columns & key_columns, Arena & temporary_arena)
+    {
+        size_t keys_size = key_columns.front()->size();
+
+        PaddedPODArray<StringRef> result;
+        result.reserve(keys_size);
+
+        PaddedPODArray<StringRef> temporary_column_data(key_columns.size());
+
+        for (size_t key_index = 0; key_index < keys_size; ++key_index)
+        {
+            size_t allocated_size_for_columns = 0;
+            const char * block_start = nullptr;
+
+            for (size_t column_index = 0; column_index < key_columns.size(); ++column_index)
+            {
+                const auto & column = key_columns[column_index];
+                temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_arena, block_start);
+                allocated_size_for_columns += temporary_column_data[column_index].size;
+            }
+
+            result.push_back(StringRef{block_start, allocated_size_for_columns});
+        }
+
+        return result;
+    }
+
+    PaddedPODArray<KeyType> keys;
+    Arena complex_keys_temporary_arena;
 };
 
 /**

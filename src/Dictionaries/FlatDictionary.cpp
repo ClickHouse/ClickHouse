@@ -113,7 +113,7 @@ ColumnPtr FlatDictionary::getColumn(
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes &,
-        const ColumnPtr default_values_column) const
+        const ColumnPtr & default_values_column) const
 {
     ColumnPtr result;
 

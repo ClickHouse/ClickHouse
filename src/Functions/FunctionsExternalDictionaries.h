@@ -31,13 +31,7 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/CacheDictionary.h>
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-#include <Dictionaries/SSDCacheDictionary.h>
-#include <Dictionaries/SSDComplexKeyCacheDictionary.h>
-#endif
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/IPAddressDictionary.h>
 #include <Dictionaries/PolygonDictionaryImplementations.h>
@@ -579,7 +573,7 @@ private:
         if (!((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, result_type, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<CacheDictionary>(arguments, result_type, dict))))
+            || (res = executeDispatch<CacheDictionary<DictionaryKeyType::simple>>(arguments, result_type, dict))))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
 
         return res;
@@ -732,7 +726,7 @@ private:
         if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
-            || (res = executeDispatch<CacheDictionary>(arguments, dict))))
+            || (res = executeDispatch<CacheDictionary<DictionaryKeyType::simple>>(arguments, dict))))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
 
         return res;
