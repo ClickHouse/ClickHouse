@@ -427,7 +427,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
         {
             data.asofToJoinKeys();
         }
-        else if (data.new_where_conditions && data.new_on_expression)
+        else if (data.new_on_expression)
         {
             table_join.on_expression = data.new_on_expression;
             new_where_conditions = data.new_where_conditions;
