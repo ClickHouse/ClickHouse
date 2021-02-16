@@ -275,13 +275,15 @@ option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
 
 if (WITH_COVERAGE)
     if (COMPILER_CLANG)
-        message(STATUS "Attaching code coverage runtime for Clang")
+        message(STATUS "Code coverage runtime: attaching")
 
         set(COMPILER_FLAGS
             "${COMPILER_FLAGS} -fsanitize-coverage-allowlist=${CMAKE_CURRENT_SOURCE_DIR}/base/common/coverage_allowlist.txt -fsanitize-coverage=trace-pc-guard")
     else()
         message(ERROR "As for now, the code coverage is supported in Clang only")
     endif()
+else()
+    message(STATUS "Code coverage runtime: ignored")
 endif()
 
 set(COMPILER_FLAGS "${COMPILER_FLAGS}")

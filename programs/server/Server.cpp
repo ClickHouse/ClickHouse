@@ -19,7 +19,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <common/errnoToString.h>
-#include <common/coverage.h>
+#include <common/coverage.cpp>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>

@@ -1,5 +1,6 @@
 set (SRCS
     argsToConfig.cpp
+    coverage.cpp
     DateLUT.cpp
     DateLUTImpl.cpp
     demangle.cpp
@@ -35,8 +36,6 @@ endif ()
 add_library (common ${SRCS})
 
 if (WITH_COVERAGE)
-    add_compile_definitions(CMAKE_CODE_COV)
-    list (APPEND SRCS coverage.cpp)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)

@@ -40,7 +40,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/argsToConfig.h>
 #include <common/getThreadId.h>
-#include <common/coverage.h>
+#include <common/coverage.cpp>
 #include <common/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
