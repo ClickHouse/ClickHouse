@@ -264,20 +264,12 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             if (is_attach)
             {
-                const String part_path = storage.replica_path + "/parts/" + part->name;
-                const String part_znode = zookeeper->get(part_path);
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
 
-                /// We don't support old parts (that were existent before the ReplicatedMergeTreePartHeader
-                /// introduction), so for them the implementation falls back to fetching from other replica.
-                /// See also ReplicatedMergeTreePartCheckThread.cpp:253
-                if (part_znode.empty())
-                    log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
-                else
-                {
-                    log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
-                    log_entry.part_checksum = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
-                    // TODO
-                }
+                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
+                /// the MutableDataPartPtr here, we already have the data thus being able to
+                /// calculate the checksums.
+                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
             }
             else
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
