@@ -2682,7 +2682,7 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
 
     return JobAndPool{[this, selected_entry] () mutable
     {
-        processQueueEntry(selected_entry);
+        return processQueueEntry(selected_entry);
     }, pool_type};
 }
 
@@ -3699,7 +3699,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     /// We clear all old parts after stopping all background operations. It's
     /// important, because background operations can produce temporary parts
-    /// which will remove themselves in their descrutors. If so, we may have
+    /// which will remove themselves in their destructors. If so, we may have
     /// race condition between our remove call and background process.
     clearOldPartsFromFilesystem(true);
 }
