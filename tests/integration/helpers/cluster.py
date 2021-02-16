@@ -193,6 +193,15 @@ class ClickHouseCluster:
         self.cassandra_host = "cassandra1"
         self.cassandra_port = get_open_port()
 
+        # available when with_rabbitmq == True
+        self.rabbitmq_host = "rabbitmq1"
+        self.rabbitmq_port = get_open_port()
+        self.rabbitmq_http_port = get_open_port()
+
+        # available when with_redis == True
+        self.redis_host = "redis1"
+        self.redis_port = get_open_port()
+
         # available when with_mysql == True
         self.mysql_host = "mysql57"
         self.mysql_port = get_open_port()
@@ -234,6 +243,30 @@ class ClickHouseCluster:
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')]
 
         return self.base_mysql8_cmd
+
+    def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_redis = True
+        env_variables['REDIS_HOST'] = self.redis_host
+        env_variables['REDIS_EXTERNAL_PORT'] = str(self.redis_port)
+        env_variables['REDIS_INTERNAL_PORT'] = "6379"
+
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
+        self.base_redis_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
+        return self.base_redis_cmd
+
+    def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_rabbitmq = True
+        env_variables['RABBITMQ_HOST'] = self.rabbitmq_host
+        env_variables['RABBITMQ_EXTERNAL_PORT'] = str(self.rabbitmq_port)
+        env_variables['RABBITMQ_INTERNAL_PORT'] = "5672"
+        env_variables['RABBITMQ_EXTERNAL_HTTP_PORT'] = str(self.rabbitmq_http_port)
+        env_variables['RABBITMQ_INTERNAL_HTTP_PORT'] = "15672"
+
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
+        self.base_rabbitmq_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
+        return self.base_rabbitmq_cmd
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
@@ -365,11 +398,7 @@ class ClickHouseCluster:
             cmds.append(self.base_kerberized_kafka_cmd)
 
         if with_rabbitmq and not self.with_rabbitmq:
-            self.with_rabbitmq = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
-            self.base_rabbitmq_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
-            cmds.append(self.base_rabbitmq_cmd)
+            cmds.append(self.setup_rabbitmq_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
@@ -401,10 +430,7 @@ class ClickHouseCluster:
                 cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_net.yml')])
 
         if with_redis and not self.with_redis:
-            self.with_redis = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
-            self.base_redis_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
+            cmds.append(self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_minio and not self.with_minio:
             self.with_minio = True

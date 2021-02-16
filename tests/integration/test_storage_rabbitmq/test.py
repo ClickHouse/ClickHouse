@@ -128,14 +128,14 @@ def test_rabbitmq_select(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
-        ''')
+        '''.format(rabbitmq_cluster.rabbitmq_host))
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -164,11 +164,11 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'empty',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
-        ''')
+        '''.format(rabbitmq_cluster.rabbitmq_host))
 
     assert int(instance.query('SELECT count() FROM test.rabbitmq')) == 0
 
@@ -178,13 +178,13 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
-        ''')
+        '''.format(rabbitmq_cluster.rabbitmq_host))
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -227,7 +227,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -262,7 +262,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -304,7 +304,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -347,7 +347,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -397,7 +397,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -445,7 +445,7 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -498,7 +498,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     messages = [json.dumps({'key': i, 'value': 'x' * 100}) * batch_messages for i in range(rabbitmq_messages)]
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -562,7 +562,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     messages_num = 10000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         connection = pika.BlockingConnection(parameters)
@@ -639,7 +639,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
     messages_num = 10000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         connection = pika.BlockingConnection(parameters)
@@ -697,7 +697,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     consumer_connection = pika.BlockingConnection(parameters)
 
     consumer = consumer_connection.channel()
@@ -750,7 +750,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     consumer_connection = pika.BlockingConnection(parameters)
 
     consumer = consumer_connection.channel()
@@ -979,7 +979,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1052,7 +1052,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1138,7 +1138,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1216,7 +1216,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     messages_num = 500
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         # init connection here because otherwise python rabbitmq client might fail
@@ -1295,7 +1295,7 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     messages_num = 500
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         # init connection here because otherwise python rabbitmq client might fail
@@ -1392,7 +1392,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1446,7 +1446,7 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1513,7 +1513,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1591,7 +1591,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         connection = pika.BlockingConnection(parameters)
@@ -1671,7 +1671,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1731,7 +1731,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     messages_num = 150000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
@@ -1803,7 +1803,7 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1889,7 +1889,7 @@ def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
 
     messages_num = 1000
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters('localhost', rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     for i in range(messages_num):
