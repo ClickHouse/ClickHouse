@@ -668,4 +668,40 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog_read.getLastEntry()->get_term(), 5555);
 }
 
+TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
+{
+    ChangelogDirTest test("./logs");
+    DB::Changelog changelog("./logs", 5);
+    changelog.readChangelogAndInitWriter(1);
+
+    for (size_t i = 0; i < 33; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
+        changelog.appendEntry(changelog.getNextEntryIndex(), entry);
+    }
+    EXPECT_EQ(changelog.size(), 33);
+
+    changelog.writeAt(11, getLogEntry("helloworld", 5555));
+    EXPECT_EQ(changelog.size(), 11);
+    EXPECT_EQ(changelog.getStartIndex(), 1);
+    EXPECT_EQ(changelog.getNextEntryIndex(), 12);
+    EXPECT_EQ(changelog.getLastEntry()->get_term(), 5555);
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
+
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_11_25.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
+
+    DB::Changelog changelog_read("./logs", 5);
+    changelog_read.readChangelogAndInitWriter(1);
+    EXPECT_EQ(changelog_read.size(), 11);
+    EXPECT_EQ(changelog_read.getStartIndex(), 1);
+    EXPECT_EQ(changelog_read.getNextEntryIndex(), 12);
+    EXPECT_EQ(changelog_read.getLastEntry()->get_term(), 5555);
+}
+
 #endif
