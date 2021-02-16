@@ -26,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** Stores another column with unique values
