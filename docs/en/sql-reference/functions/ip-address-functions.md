@@ -128,7 +128,7 @@ IPv6StringToNum(string)
 
 **Parameters** 
 
--   `string` — IP address. [String](../../sql-reference/data-types/string.md)
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 
 **Returned value**
@@ -272,7 +272,7 @@ toIPv6(string)
 
 -   Converted IP address. If IPv4 passed, returns its representation as IPv6.
 
-Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md)
+Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
 **Examples**
 
@@ -307,7 +307,7 @@ Result:
 Query:
 
 ``` sql
-SELECT toIPv6('127.0.0.1')
+SELECT toIPv6('127.0.0.1');
 ```
 
 Result:
