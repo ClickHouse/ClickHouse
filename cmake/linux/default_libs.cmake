@@ -39,7 +39,10 @@ find_package(Threads REQUIRED)
 if (NOT OS_ANDROID)
     # Our compatibility layer doesn't build under Android, many errors in musl.
     add_subdirectory(base/glibc-compatibility)
-    add_subdirectory(base/harmful)
+
+    if (NOT WITH_COVERAGE)
+        add_subdirectory(base/harmful)
+    endif()
 endif ()
 
 include (cmake/find/unwind.cmake)

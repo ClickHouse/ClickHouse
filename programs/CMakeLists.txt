@@ -218,11 +218,12 @@ else ()
     add_executable (clickhouse main.cpp)
 
     # A library that prevent usage of several functions from libc.
-    if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
+    if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID AND NOT WITH_COVERAGE)
         set (HARMFUL_LIB harmful)
     endif ()
 
     target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
+
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
     if (ENABLE_CLICKHOUSE_SERVER)
