@@ -276,9 +276,13 @@ Returns the string ‘s’ that was converted from the encoding in ‘from’ to
 
 Encodes ‘s’ string into base64
 
+Alias: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
+
+Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
