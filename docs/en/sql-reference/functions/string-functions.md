@@ -76,7 +76,7 @@ Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running i
 toValidUTF8( input_string )
 ```
 
-Arguments:
+**Arguments**
 
 -   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 

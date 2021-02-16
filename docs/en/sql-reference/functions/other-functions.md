@@ -460,7 +460,7 @@ Allows building a unicode-art diagram.
 
 `bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
-Arguments:
+**Arguments**
 
 -   `x` — Size to display.
 -   `min, max` — Integer constants. The value must fit in `Int64`.
