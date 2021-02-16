@@ -2592,6 +2592,18 @@ Possible values:
 
 Default value: `16`.
 
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
+
+Possible values:
+
+-   0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
+-   1 — The trace for all executed queries is enabled.
+
+Default value: `0`.
+
 ## optimize_on_insert {#optimize-on-insert}
 
 Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
