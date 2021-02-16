@@ -204,3 +204,4 @@
 01683_dist_INSERT_block_structure_mismatch
 01702_bitmap_native_integers
 01686_event_time_microseconds_part_log
+01720_distributed_localhost_different_queries
