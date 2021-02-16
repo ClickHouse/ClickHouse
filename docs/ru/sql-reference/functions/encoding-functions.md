@@ -75,6 +75,8 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 
 Returns a string containing the argument’s hexadecimal representation.
 
+Синоним: `HEX`.
+
 **Syntax**
 
 ``` sql
