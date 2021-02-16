@@ -273,9 +273,13 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 
 Производит кодирование строки s в base64-представление.
 
+Синоним: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
+
+Синоним: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
