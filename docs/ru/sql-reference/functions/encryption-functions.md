@@ -250,7 +250,7 @@ decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 
 **Примеры**
 
-Используется таблица из [encrypt](#encrypt).
+Рассмотрим таблицу из примера для функции [encrypt](#encrypt).
 
 Запрос:
 
