@@ -312,7 +312,7 @@ Enables or disables parsing enum values as enum ids for TSV input format.
 Possible values:
 
 -   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
