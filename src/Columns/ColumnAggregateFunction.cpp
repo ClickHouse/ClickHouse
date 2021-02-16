@@ -553,6 +553,11 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
     return read_buffer.position();
 }
 
+const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
+{
+    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 void ColumnAggregateFunction::popBack(size_t n)
 {
     size_t size = data.size();
