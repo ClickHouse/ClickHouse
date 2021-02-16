@@ -156,7 +156,7 @@ std::optional<size_t> getIdentsMembership(const ASTPtr ast,
 
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
 {
-    if (const auto * func = node->as<ASTFunction>())
+    if (node->as<ASTFunction>())
     {
         auto idents = IdentifiersCollector::collect(node);
         for (const auto * ident : idents)
