@@ -61,7 +61,7 @@ int32samoa: 1546300800
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
 
-Alias: `Year`.
+Alias: `YEAR`.
 
 ## toQuarter {#toquarter}
 
