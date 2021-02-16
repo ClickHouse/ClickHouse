@@ -344,7 +344,6 @@ void Changelog::compact(size_t up_to_log_idx)
         ChangelogName parsed_name = getChangelogName(itr->second);
         if (parsed_name.to_log_idx <= up_to_log_idx)
         {
-
             for (size_t idx = parsed_name.from_log_idx; idx <= parsed_name.to_log_idx; ++idx)
             {
                 auto index_pos = index_to_start_pos.find(idx);

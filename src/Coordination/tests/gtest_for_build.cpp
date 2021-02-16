@@ -643,6 +643,15 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
         changelog.appendEntry(changelog.getNextEntryIndex(), entry);
     }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin"));
+
     EXPECT_EQ(changelog.size(), 33);
 
     changelog.writeAt(7, getLogEntry("helloworld", 5555));
@@ -656,7 +665,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
 
     EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_25.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
@@ -679,6 +688,15 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
         changelog.appendEntry(changelog.getNextEntryIndex(), entry);
     }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin"));
+
     EXPECT_EQ(changelog.size(), 33);
 
     changelog.writeAt(11, getLogEntry("helloworld", 5555));
@@ -692,7 +710,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
 
     EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_25.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
