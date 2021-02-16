@@ -28,7 +28,11 @@ ${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/a.txt'), file('${u
 ${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/c.txt'), * from data";echo ":"$?
-
+${CLICKHOUSE_CLIENT} --multiquery --query "
+	create table filenames(name String) engine=MergeTree() order by tuple();
+	insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
+	select file(name) from filenames format TSV;
+"
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
 # Test non-exists file
