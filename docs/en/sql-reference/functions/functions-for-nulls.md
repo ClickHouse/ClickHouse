@@ -13,6 +13,8 @@ Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal
 isNull(x)
 ```
 
+Alias: `ISNULL`.
+
 **Parameters**
 
 -   `x` — A value with a non-compound data type.
