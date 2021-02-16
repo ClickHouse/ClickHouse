@@ -6,6 +6,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
@@ -28,7 +29,9 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
         if (quotes)
         {
             pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
-            if (pos == in.buffer().end())
+            if (pos > in.buffer().end())
+                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+            else if (pos == in.buffer().end())
                 continue;
             if (*pos == '\\')
             {
@@ -45,9 +48,11 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
         else
         {
             pos = find_first_symbols<'{', '}', '\\', '"'>(pos, in.buffer().end());
-            if (pos == in.buffer().end())
+            if (pos > in.buffer().end())
+                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+            else if (pos == in.buffer().end())
                 continue;
-            if (*pos == '{')
+            else if (*pos == '{')
             {
                 ++balance;
                 ++pos;
