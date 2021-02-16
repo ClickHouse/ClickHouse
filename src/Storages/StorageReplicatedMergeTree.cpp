@@ -1365,6 +1365,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             ReplicatedMergeTreeBlockOutputStream (*this, getInMemoryMetadataPtr() , 0, 0, 0, false, false, false)
                 .writeExistingPart(part);
 
+    const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
+
     if (entry.type == LogEntry::GET_PART ||
         entry.type == LogEntry::ATTACH_PART ||
         entry.type == LogEntry::MERGE_PARTS ||
@@ -1374,25 +1376,22 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         /// The part may be still in the PreCommitted -> Committed transition so we first search
         /// among PreCommitted parts to definitely find the desired part if it exists.
         DataPartPtr existing_part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
+
         if (!existing_part)
             existing_part = getActiveContainingPart(entry.new_part_name);
 
-        const String part_path = replica_path + "/parts/" + existing_part->name;
-
         /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-        if (existing_part && getZooKeeper()->exists(part_path))
+        if (existing_part && getZooKeeper()->exists(replica_path + "/parts/" + existing_part->name))
         {
-            if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
-            {
+            if (!is_get_or_attach || entry.source_replica != replica_name)
                 LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
                     entry.new_part_name, existing_part->name);
-            }
+
             return true;
         }
     }
 
-    if ((entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART) &&
-        entry.source_replica == replica_name)
+    if (is_get_or_attach && entry.source_replica == replica_name)
         LOG_WARNING(log, "Part {} from own log doesn't exist.", entry.new_part_name);
 
     /// Perhaps we don't need this part, because during write with quorum, the quorum has failed
