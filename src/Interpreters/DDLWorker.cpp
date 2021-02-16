@@ -505,7 +505,6 @@ void DDLWorker::processTask(DDLTaskBase & task)
         }
 
         zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);
-
     }
 
     if (!task.was_executed)
