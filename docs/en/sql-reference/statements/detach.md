@@ -17,9 +17,9 @@ This does not delete the table’s data or metadata. On the next server launch, 
 
 Similarly, a “detached” table can be re-attached using the [ATTACH](../../sql-reference/statements/attach.md) query (with the exception of system tables, which do not have metadata stored for them).
 
-## DETACH PERMAMENTLY {#detach-permamently}
+## DETACH PERMANENTLY {#detach-permanently}
 
-Deletes information about `name` table or view from the server. Permamently detached tables won't automatically reappear after the server restart.
+Deletes information about `name` table or view from the server. Permanently detached tables won't automatically reappear after the server restart.
 
 Syntax:
 
@@ -29,6 +29,6 @@ DETACH TABLE/VIEW [IF EXISTS] [db.]name PERMAMENTLY [ON CLUSTER cluster]
 
 This statement does not delete the table’s data or metadata.
 
-Permamently detached table or view can be reattached with [ATTACH](../../sql-reference/statements/attach.md) query and can be shown with [SHOW CREATE TABLE](../../sql-reference/statements/show.md#show-create-table) query.
+Permanently detached table or view can be reattached with [ATTACH](../../sql-reference/statements/attach.md) query and can be shown with [SHOW CREATE TABLE](../../sql-reference/statements/show.md#show-create-table) query.
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/detach/) <!--hide-->
