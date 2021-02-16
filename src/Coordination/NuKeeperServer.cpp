@@ -26,13 +26,16 @@ NuKeeperServer::NuKeeperServer(
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
     , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
-    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, "test_keeper_server.raft_configuration", config))
+    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
 }
 
 void NuKeeperServer::startup()
 {
+
+    state_manager->loadLogStore(state_machine->last_commit_index());
+
     nuraft::raft_params params;
     params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
     params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
@@ -172,6 +175,13 @@ void NuKeeperServer::waitInit()
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag; }))
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
+
+    /// TODO FIXME somehow
+    while (isLeader() && raft_instance->get_committed_log_idx() != raft_instance->get_last_log_idx())
+    {
+        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Loading from log store {}/{}", raft_instance->get_committed_log_idx(), raft_instance->get_last_log_idx());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 std::unordered_set<int64_t> NuKeeperServer::getDeadSessions()
