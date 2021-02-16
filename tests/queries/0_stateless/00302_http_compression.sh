@@ -4,6 +4,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+if ! command -v gzip &> /dev/null; then echo "gzip not found" 1>&2; exit 1; fi
+if ! command -v brotli &> /dev/null; then echo "brotli not found" 1>&2; exit 1; fi
+if ! command -v xz &> /dev/null; then echo "xz not found" 1>&2; exit 1; fi
+if ! command -v zstd &> /dev/null; then echo "zstd not found" 1>&2; exit 1; fi
+
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1"                                     -d 'SELECT number FROM system.numbers LIMIT 10';
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=0" -H 'Accept-Encoding: gzip'          -d 'SELECT number FROM system.numbers LIMIT 10';
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" -H 'Accept-Encoding: gzip'          -d 'SELECT number FROM system.numbers LIMIT 10' | gzip -d;
