@@ -98,6 +98,8 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.
 
+Alias: `REPEAT`.
+
 **Syntax**
 
 ``` sql
