@@ -26,6 +26,26 @@
 #include <Coordination/Changelog.h>
 #include <filesystem>
 
+namespace fs = std::filesystem;
+struct ChangelogDirTest
+{
+    std::string path;
+    bool drop;
+    ChangelogDirTest(std::string path_, bool drop_ = true)
+        : path(path_)
+        , drop(drop_)
+    {
+        if (fs::exists(path))
+            EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
+        fs::create_directory(path);
+    }
+
+    ~ChangelogDirTest()
+    {
+        if (fs::exists(path) && drop)
+            fs::remove_all(path);
+    }
+};
 
 TEST(CoordinationTest, BuildTest)
 {
@@ -70,14 +90,15 @@ TEST(CoordinationTest, BufferSerde)
 template <typename StateMachine>
 struct SimpliestRaftServer
 {
-    SimpliestRaftServer(int server_id_, const std::string & hostname_, int port_)
+    SimpliestRaftServer(int server_id_, const std::string & hostname_, int port_, const std::string & logs_path)
         : server_id(server_id_)
         , hostname(hostname_)
         , port(port_)
         , endpoint(hostname + ":" + std::to_string(port))
         , state_machine(nuraft::cs_new<StateMachine>())
-        , state_manager(nuraft::cs_new<DB::InMemoryStateManager>(server_id, hostname, port))
+        , state_manager(nuraft::cs_new<DB::InMemoryStateManager>(server_id, hostname, port, logs_path))
     {
+        state_manager->loadLogStore(1);
         nuraft::raft_params params;
         params.heart_beat_interval_ = 100;
         params.election_timeout_lower_bound_ = 200;
@@ -126,7 +147,7 @@ struct SimpliestRaftServer
     nuraft::ptr<StateMachine> state_machine;
 
     // State manager.
-    nuraft::ptr<nuraft::state_mgr> state_manager;
+    nuraft::ptr<DB::InMemoryStateManager> state_manager;
 
     // Raft launcher.
     nuraft::raft_launcher launcher;
@@ -141,7 +162,6 @@ nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 {
     nuraft::ptr<nuraft::buffer> ret = nuraft::buffer::alloc(sizeof(number));
     nuraft::buffer_serializer bs(ret);
-    // WARNING: We don't consider endian-safety in this example.
     bs.put_raw(&number, sizeof(number));
     return ret;
 }
@@ -149,7 +169,8 @@ nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 
 TEST(CoordinationTest, TestSummingRaft1)
 {
-    SummingRaftServer s1(1, "localhost", 44444);
+    ChangelogDirTest test("./logs");
+    SummingRaftServer s1(1, "localhost", 44444, "./logs");
 
     /// Single node is leader
     EXPECT_EQ(s1.raft_instance->get_leader(), 1);
@@ -172,9 +193,12 @@ TEST(CoordinationTest, TestSummingRaft1)
 
 TEST(CoordinationTest, TestSummingRaft3)
 {
-    SummingRaftServer s1(1, "localhost", 44444);
-    SummingRaftServer s2(2, "localhost", 44445);
-    SummingRaftServer s3(3, "localhost", 44446);
+    ChangelogDirTest test1("./logs1");
+    SummingRaftServer s1(1, "localhost", 44444, "./logs1");
+    ChangelogDirTest test2("./logs2");
+    SummingRaftServer s2(2, "localhost", 44445, "./logs2");
+    ChangelogDirTest test3("./logs3");
+    SummingRaftServer s3(3, "localhost", 44446, "./logs3");
 
     nuraft::srv_config first_config(1, "localhost:44444");
     auto ret1 = s2.raft_instance->add_srv(first_config);
@@ -343,27 +367,6 @@ DB::LogEntryPtr getLogEntry(const std::string & s, size_t term)
     return nuraft::cs_new<nuraft::log_entry>(term, bufwriter.getBuffer());
 }
 
-namespace fs = std::filesystem;
-struct ChangelogDirTest
-{
-    std::string path;
-    bool drop;
-    ChangelogDirTest(std::string path_, bool drop_ = true)
-        : path(path_)
-        , drop(drop_)
-    {
-        if (fs::exists(path))
-            EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
-        fs::create_directory(path);
-    }
-
-    ~ChangelogDirTest()
-    {
-        if (fs::exists(path) && drop)
-            fs::remove_all(path);
-    }
-};
-
 TEST(CoordinationTest, ChangelogTestSimple)
 {
     ChangelogDirTest test("./logs");
@@ -386,7 +389,7 @@ TEST(CoordinationTest, ChangelogTestFile)
     auto entry = getLogEntry("hello world", 77);
     changelog.appendEntry(1, entry);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
-    for(const auto & p : fs::directory_iterator("./logs"))
+    for (const auto & p : fs::directory_iterator("./logs"))
         EXPECT_EQ(p.path(), "./logs/changelog_1_5.bin");
 
     changelog.appendEntry(2, entry);
@@ -484,7 +487,7 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
 
     size_t logs_count = 0;
-    for(const auto & _ [[maybe_unused]]: fs::directory_iterator("./logs"))
+    for (const auto & _ [[maybe_unused]]: fs::directory_iterator("./logs"))
         logs_count++;
 
     EXPECT_EQ(logs_count, 2);
@@ -497,7 +500,7 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
 
     logs_count = 0;
-    for(const auto & _ [[maybe_unused]]: fs::directory_iterator("./logs"))
+    for (const auto & _ [[maybe_unused]]: fs::directory_iterator("./logs"))
         logs_count++;
 
     EXPECT_EQ(logs_count, 3);

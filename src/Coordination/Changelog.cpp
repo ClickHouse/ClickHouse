@@ -16,9 +16,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
-
 
 std::string toString(const ChangelogVersion & version)
 {
@@ -147,7 +145,6 @@ private:
     size_t start_index;
 };
 
-
 class ChangelogReader
 {
 public:
@@ -202,7 +199,10 @@ Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval
     , rotate_interval(rotate_interval_)
 {
     namespace fs = std::filesystem;
-    for(const auto & p : fs::directory_iterator(changelogs_dir))
+    if (!fs::exists(changelogs_dir))
+        fs::create_directories(changelogs_dir);
+
+    for (const auto & p : fs::directory_iterator(changelogs_dir))
     {
         auto name = getChangelogName(p.path());
         existing_changelogs[name.from_log_idx] = p.path();
@@ -233,7 +233,7 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
     }
     else
     {
-        rotate(from_log_idx);
+        rotate(start_index);
     }
 }
 

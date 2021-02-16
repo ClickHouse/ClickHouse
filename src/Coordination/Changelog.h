@@ -45,8 +45,6 @@ struct ChangelogRecord
     nuraft::ptr<nuraft::buffer> blob;
 };
 
-
-
 class ChangelogWriter;
 
 class Changelog
