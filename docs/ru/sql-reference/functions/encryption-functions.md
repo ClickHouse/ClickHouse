@@ -348,7 +348,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 Запрос:
 
 ``` sql
-SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext
+SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext;
 ```
 
 Результат:
