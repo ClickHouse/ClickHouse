@@ -1,14 +1,22 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include "config_core.h"
+#endif
+
+#if USE_NURAFT
+
 #include <Poco/Net/TCPServerConnection.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <Coordination/ThreadSafeQueue.h>
 #include <unordered_map>
 
 namespace DB
@@ -16,22 +24,24 @@ namespace DB
 
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
-class ThreadSafeResponseQueue;
+
+using ThreadSafeResponseQueue = ThreadSafeQueue<Coordination::ZooKeeperResponsePtr>;
+
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
-class TestKeeperTCPHandler : public Poco::Net::TCPServerConnection
+class NuKeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    TestKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
+    NuKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
 private:
     IServer & server;
     Poco::Logger * log;
     Context global_context;
-    std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+    std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
-    int64_t session_id;
+    int64_t session_id{-1};
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
 
@@ -45,11 +55,11 @@ private:
 
     void runImpl();
 
-    void sendHandshake();
-    void receiveHandshake();
+    void sendHandshake(bool has_leader);
+    Poco::Timespan receiveHandshake();
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
-    void finish();
 };
 
 }
+#endif
