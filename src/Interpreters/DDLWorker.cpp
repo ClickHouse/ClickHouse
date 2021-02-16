@@ -862,7 +862,18 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
         StorageReplicatedMergeTree::Status status;
-        replicated_storage->getStatus(status);
+        // Has to get with zk fields to get active replicas field
+        replicated_storage->getStatus(status, true);
+
+        // Should return as soon as possible if the table is dropped.
+        bool replica_dropped = replicated_storage->is_dropped;
+        bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(replicated_storage->getStorageID(), context);
+        if (replica_dropped || all_replicas_likely_detached)
+        {
+            LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);
+            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
+            return false;
+        }
 
         /// Any replica which is leader tries to take lock
         if (status.is_leader && lock->tryLock())
