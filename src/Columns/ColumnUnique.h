@@ -78,6 +78,7 @@ public:
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
         return getNestedColumn()->updateHashWithValue(n, hash_func);
@@ -371,6 +372,12 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
 
     /// -1 because of terminating zero
     return uniqueInsertData(pos, string_size - 1);
+}
+
+template <typename ColumnType>
+const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
+{
+    throw Exception("Method skipSerializedInArena is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template <typename ColumnType>
