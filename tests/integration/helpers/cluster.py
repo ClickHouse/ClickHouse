@@ -134,6 +134,8 @@ class ClickHouseCluster:
         self.project_name = re.sub(r'[^a-z0-9]', '', project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
+        self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
+        self.env_variables = {}
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
@@ -142,6 +144,7 @@ class ClickHouseCluster:
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
             self.base_cmd += ['--host', custom_dockerd_host]
+        self.base_cmd += ['--env-file', self.env_file]
         self.base_cmd += ['--project-name', self.project_name]
 
         self.base_zookeeper_cmd = None
@@ -154,6 +157,7 @@ class ClickHouseCluster:
         self.instances = {}
         self.with_zookeeper = False
         self.with_mysql = False
+        self.with_mysql8 = False
         self.with_postgres = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
@@ -193,6 +197,10 @@ class ClickHouseCluster:
         self.mysql_host = "mysql57"
         self.mysql_port = get_open_port()
 
+        # available when with_mysql8 == True
+        self.mysql8_host = "mysql80"
+        self.mysql8_port = get_open_port()
+
         self.zookeeper_use_tmpfs = True
 
         self.docker_client = None
@@ -216,9 +224,20 @@ class ClickHouseCluster:
 
         return self.base_mysql_cmd
 
+    def setup_mysql8_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql8 = True
+        env_variables['MYSQL8_HOST'] = self.mysql8_host
+        env_variables['MYSQL8_EXTERNAL_PORT'] = str(self.mysql8_port)
+        env_variables['MYSQL8_INTERNAL_PORT'] = "3306"
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')])
+        self.base_mysql8_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')]
+
+        return self.base_mysql8_cmd
+
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
+                     with_zookeeper=False, with_mysql=False, with_mysql8=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
                      clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -261,6 +280,7 @@ class ClickHouseCluster:
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
             with_mysql=with_mysql,
+            with_mysql8=with_mysql8,
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
@@ -285,8 +305,6 @@ class ClickHouseCluster:
 
         docker_compose_yml_dir = get_docker_compose_path()
 
-        assert instance.env_file is not None
-
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
             self.with_net_trics = True
@@ -308,6 +326,9 @@ class ClickHouseCluster:
 
         if with_mysql and not self.with_mysql:
             cmds.append(self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir))
+
+        if with_mysql8 and not self.with_mysql8:
+            cmds.append(self.setup_mysql8_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
@@ -445,6 +466,9 @@ class ClickHouseCluster:
         node.wait_for_start(start_deadline)
         return node
 
+    def restart_service(self, service_name):
+        run_and_check(self.base_cmd + ["restart", service_name])
+
     def get_instance_ip(self, instance_name):
         print("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
@@ -498,6 +522,7 @@ class ClickHouseCluster:
 
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
+        errors = []
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=self.mysql_port)
@@ -505,11 +530,27 @@ class ClickHouseCluster:
                 print("Mysql Started")
                 return
             except Exception as ex:
-                print("Can't connect to MySQL " + str(ex))
+                errors += [str(ex)]
                 time.sleep(0.5)
 
         subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
+
+    def wait_mysql8_to_start(self, timeout=60):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=self.mysql8_port)
+                conn.close()
+                print("Mysql 8 Started")
+                return
+            except Exception as ex:
+                print("Can't connect to MySQL 8 " + str(ex))
+                time.sleep(0.5)
+
+        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        raise Exception("Cannot wait MySQL 8 container")
 
     def wait_postgres_to_start(self, timeout=60):
         start = time.time()
@@ -671,7 +712,7 @@ class ClickHouseCluster:
 
             self.docker_client = docker.from_env(version=self.docker_api_version)
 
-            common_opts = ['up', '-d', '--force-recreate']
+            common_opts = ['up', '-d', '--force-recreate', '--remove-orphans']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 print('Setup ZooKeeper')
@@ -696,6 +737,11 @@ class ClickHouseCluster:
                 print('Setup MySQL')
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
                 self.wait_mysql_to_start(120)
+
+            if self.with_mysql8 and self.base_mysql8_cmd:
+                print('Setup MySQL 8')
+                subprocess_check_call(self.base_mysql8_cmd + common_opts)
+                self.wait_mysql8_to_start(120)
 
             if self.with_postgres and self.base_postgres_cmd:
                 print('Setup Postgres')
@@ -750,6 +796,8 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
                 self.wait_cassandra_to_start()
 
+            _create_env_file(os.path.join(self.env_file), self.env_variables)
+
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
             subprocess.check_output(clickhouse_start_cmd)
@@ -796,7 +844,7 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_cmd + ['kill'])
 
         try:
-            subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+            subprocess_check_call(self.base_cmd + ['down', '--volumes'])
         except Exception as e:
             print("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
 
@@ -917,7 +965,7 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_mysql8, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
             with_mongo, with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
             hostname=None, env_variables=None,
@@ -945,6 +993,7 @@ class ClickHouseInstance:
         self.odbc_bridge_bin_path = odbc_bridge_bin_path
 
         self.with_mysql = with_mysql
+        self.with_mysql8 = with_mysql8
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
@@ -1339,6 +1388,9 @@ class ClickHouseInstance:
         if self.with_mysql:
             depends_on.append("mysql57")
 
+        if self.with_mysql8:
+            depends_on.append("mysql80")
+
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
@@ -1360,6 +1412,7 @@ class ClickHouseInstance:
         if self.with_minio:
             depends_on.append("minio1")
 
+        self.cluster.env_variables.update(self.env_variables)
         _create_env_file(os.path.join(self.env_file), self.env_variables)
 
         print("Env {} stored in {}".format(self.env_variables, self.env_file))
