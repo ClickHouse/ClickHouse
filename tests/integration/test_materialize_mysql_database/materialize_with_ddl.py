@@ -31,12 +31,12 @@ def check_query(clickhouse_node, query, result_set, retry_count=60, interval_sec
 
 
 def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_dml")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_dml")
+    mysql_node.query("CREATE DATABASE test_database_dml DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
 
-    mysql_node.query("CREATE TABLE test_database.test_table_1 ("
+    mysql_node.query("CREATE TABLE test_database_dml.test_table_1 ("
                      "`key` INT NOT NULL PRIMARY KEY, "
                      "unsigned_tiny_int TINYINT UNSIGNED, tiny_int TINYINT, "
                      "unsigned_small_int SMALLINT UNSIGNED, small_int SMALLINT, "
@@ -53,68 +53,68 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
 
     # it already has some data
     mysql_node.query("""
-        INSERT INTO test_database.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
+        INSERT INTO test_database_dml.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
         '2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', true);
         """)
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_dml ENGINE = MaterializeMySQL('{}:3306', 'test_database_dml', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_database_dml" in clickhouse_node.query("SHOW DATABASES")
 
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+    check_query(clickhouse_node, "SELECT * FROM test_database_dml.test_table_1 ORDER BY key FORMAT TSV",
                 "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
                 "2020-01-01 00:00:00\t2020-01-01 00:00:00\t1\n")
 
     mysql_node.query("""
-        INSERT INTO test_database.test_table_1 VALUES(2, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
+        INSERT INTO test_database_dml.test_table_1 VALUES(2, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
         '2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', false);
         """)
 
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+    check_query(clickhouse_node, "SELECT * FROM test_database_dml.test_table_1 ORDER BY key FORMAT TSV",
                 "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
                 "2020-01-01 00:00:00\t2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
                 "varchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\t0\n")
 
-    mysql_node.query("UPDATE test_database.test_table_1 SET unsigned_tiny_int = 2 WHERE `key` = 1")
+    mysql_node.query("UPDATE test_database_dml.test_table_1 SET unsigned_tiny_int = 2 WHERE `key` = 1")
 
     check_query(clickhouse_node, """
         SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,
          small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer,
          unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col,
          _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */
-         _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV
+         _bool FROM test_database_dml.test_table_1 ORDER BY key FORMAT TSV
         """,
         "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
         "2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
         "varchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t0\n")
 
     # update primary key
-    mysql_node.query("UPDATE test_database.test_table_1 SET `key` = 3 WHERE `unsigned_tiny_int` = 2")
+    mysql_node.query("UPDATE test_database_dml.test_table_1 SET `key` = 3 WHERE `unsigned_tiny_int` = 2")
 
     check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
                                  " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
                                  " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col, "
                                  " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
-                                 " _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+                                 " _bool FROM test_database_dml.test_table_1 ORDER BY key FORMAT TSV",
                 "2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
                 "varchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t0\n3\t2\t-1\t2\t-2\t3\t-3\t"
                 "4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t1\n")
 
-    mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `key` = 2')
+    mysql_node.query('DELETE FROM test_database_dml.test_table_1 WHERE `key` = 2')
     check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
                                  " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
                                  " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col, "
                                  " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
-                                 " _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+                                 " _bool FROM test_database_dml.test_table_1 ORDER BY key FORMAT TSV",
                 "3\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
                 "2020-01-01 00:00:00\t1\n")
 
-    mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `unsigned_tiny_int` = 2')
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV", "")
+    mysql_node.query('DELETE FROM test_database_dml.test_table_1 WHERE `unsigned_tiny_int` = 2')
+    check_query(clickhouse_node, "SELECT * FROM test_database_dml.test_table_1 ORDER BY key FORMAT TSV", "")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_dml")
+    mysql_node.query("DROP DATABASE test_database_dml")
 
 
 def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_node, service_name):
@@ -525,7 +525,7 @@ def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name
 
 
 def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    clickhouse_node.query("DROP DATABASE IF EXISTS priv_err_db")
+    clickhouse_node.query("DROP DATABАASE IF EXISTS priv_err_db")
     mysql_node.query("DROP DATABASE IF EXISTS priv_err_db")
     mysql_node.query("CREATE DATABASE priv_err_db DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE priv_err_db.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
@@ -670,6 +670,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
 
 
 def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS kill_mysql_while_insert")
     mysql_node.query("CREATE DATABASE kill_mysql_while_insert")
     mysql_node.query("CREATE TABLE kill_mysql_while_insert.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
     clickhouse_node.query("CREATE DATABASE kill_mysql_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_mysql_while_insert', 'root', 'clickhouse')".format(service_name))
@@ -684,17 +685,14 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
         t = threading.Thread(target=insert, args=(10000,))
         t.start()
 
-        run_and_check(
-            ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'stop'])
+        clickhouse_node.cluster.restart_service(service_name)
     finally:
         with pytest.raises(QueryRuntimeException) as execption:
             time.sleep(5)
             clickhouse_node.query("SELECT count() FROM kill_mysql_while_insert.test")
         assert "Master maybe lost." in str(execption.value)
 
-        run_and_check(
-            ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'start'])
-        mysql_node.wait_mysql_to_start(120)
+        mysql_node.alloc_connection()
 
         clickhouse_node.query("DETACH DATABASE kill_mysql_while_insert")
         clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
@@ -709,6 +707,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
 
 def clickhouse_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS kill_clickhouse_while_insert")
     mysql_node.query("CREATE DATABASE kill_clickhouse_while_insert")
     mysql_node.query("CREATE TABLE kill_clickhouse_while_insert.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
     clickhouse_node.query("CREATE DATABASE kill_clickhouse_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_clickhouse_while_insert', 'root', 'clickhouse')".format(service_name))

@@ -3,6 +3,8 @@ import time
 import psycopg2
 import pymysql.cursors
 import pytest
+import logging
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -14,6 +16,11 @@ node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True,
                                            'configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml',
                                            'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml',
                                            'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'], stay_alive=True)
+
+
+drop_table_sql_template = """
+    DROP TABLE IF EXISTS `clickhouse`.`{}`
+    """
 
 create_table_sql_template = """
     CREATE TABLE `clickhouse`.`{}` (
@@ -27,9 +34,22 @@ create_table_sql_template = """
 
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
-    return conn
-
+    errors = []
+    conn = None
+    for _ in range(5):
+        try:
+            if conn is None:
+                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
+            else:
+                conn.ping(reconnect=True)
+            logging.debug("MySQL Connection establised: 127.0.0.1:{}".format(cluster.mysql_port))
+            return conn
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
+    
+    raise Exception("Connection not establised, {}".format(errors))
+ 
 
 def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
@@ -39,6 +59,7 @@ def create_mysql_db(conn, name):
 
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
+        cursor.execute(drop_table_sql_template.format(table_name))
         cursor.execute(create_table_sql_template.format(table_name))
 
 
