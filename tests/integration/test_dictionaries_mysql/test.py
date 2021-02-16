@@ -2,6 +2,8 @@
 import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster
+import time
+import logging
 
 CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml',
                 'configs/remote_servers.xml']
@@ -87,11 +89,22 @@ def prepare_mysql_table(table_name, index):
     # Create CH Dictionary tables based on MySQL tables
     query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
 
-
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.10', port=cluster.mysql_port)
-    return conn
-
+    errors = []
+    conn = None
+    for _ in range(5):
+        try:
+            if conn is None:
+                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
+            else:
+                conn.ping(reconnect=True)
+            logging.debug("MySQL Connection establised: 127.0.0.1:{}".format(cluster.mysql_port))
+            return conn
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
+    
+    raise Exception("Connection not establised, {}".format(errors))
 
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
