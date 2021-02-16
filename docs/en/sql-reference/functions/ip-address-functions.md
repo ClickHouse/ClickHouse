@@ -9,9 +9,13 @@ toc_title: IP Addresses
 
 Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
 
+Alias: `INET_NTOA`.
+
 ## IPv4StringToNum(s) {#ipv4stringtonums}
 
 The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it returns 0.
+
+Alias: `INET_ATON`.
 
 ## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
@@ -49,7 +53,11 @@ Since using ‘xxx’ is highly unusual, this may be changed in the future. We r
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
-IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. Examples:
+IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. 
+
+Alias: `INET6_NTOA`.
+
+Examples:
 
 ``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
@@ -118,6 +126,8 @@ LIMIT 10
 The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes. 
 If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
 HEX can be uppercase or lowercase.
+
+Alias: `INET6_ATON`.
 
 ``` sql
 SELECT cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0);
