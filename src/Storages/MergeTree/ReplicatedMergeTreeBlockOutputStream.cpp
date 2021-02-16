@@ -48,11 +48,11 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
+    , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , optimize_on_insert(optimize_on_insert_)
-    , is_attach(is_attach_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)

@@ -1304,7 +1304,7 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         getSettings()->use_minimalistic_checksums_in_zookeeper);
 }
 
-MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry& entry) const
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry& entry) const
 {
     const MergeTreePartInfo target_part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     const String& part_checksum = entry.part_checksum;
@@ -1331,7 +1331,7 @@ MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(co
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
                 getDiskForPart(part_name, detached_dir));
 
-            MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
+            MergeTreeData::MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
 
             if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
                 continue; // TODO if we can, here would be return {};

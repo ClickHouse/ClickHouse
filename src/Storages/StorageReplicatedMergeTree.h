@@ -237,6 +237,8 @@ private:
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
+    using MergeTreeData::MutableDataPartPtr;
+
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
     mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
 
