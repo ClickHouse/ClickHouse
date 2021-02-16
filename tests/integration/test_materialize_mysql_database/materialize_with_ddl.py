@@ -525,7 +525,7 @@ def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name
 
 
 def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    clickhouse_node.query("DROP DATABАSE IF EXISTS priv_err_db")
+    clickhouse_node.query("DROP DATABASE IF EXISTS priv_err_db")
     mysql_node.query("DROP DATABASE IF EXISTS priv_err_db")
     mysql_node.query("CREATE DATABASE priv_err_db DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE priv_err_db.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
