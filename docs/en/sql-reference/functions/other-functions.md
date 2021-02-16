@@ -182,13 +182,102 @@ If `NULL` is passed to the function as input, then it returns the `Nullable(Noth
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
-## byteSize(...) {#function-bytesize}
+## byteSize {#function-bytesize}
 
-Get an estimate of uncompressed byte size of its arguments in memory.
-E.g. for UInt32 argument it will return constant 4, for String argument - the string length + 9 (terminating zero + length).
-The function can take multiple arguments. The typical application is byteSize(*).
+Returns estimation of uncompressed byte size of its arguments in memory.
 
-Use case: Suppose you have a service that stores data for multiple clients in one table. Users will pay per data volume. So, you need to implement accounting of users data volume. The function will allow to calculate the data size on per-row basis.
+**Syntax**
+
+```sql
+byteSize(argument [, ...])
+```
+
+**Parameters**
+
+-   `argument` — Value.
+
+**Returned value**
+
+-   Estimation of byte size of the arguments in memory.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+For [String](../../sql-reference/data-types/string.md) arguments the funtion returns the string length + 9 (terminating zero + length).
+
+Query:
+
+```sql
+SELECT byteSize('string');
+```
+
+Result:
+
+```text
+┌─byteSize('string')─┐
+│                 15 │
+└────────────────────┘
+```
+
+Query:
+
+```sql
+CREATE TABLE test
+(
+    `key` Int32,
+    `u8` UInt8,
+    `u16` UInt16,
+    `u32` UInt32,
+    `u64` UInt64,
+    `i8` Int8,
+    `i16` Int16,
+    `i32` Int32,
+    `i64` Int64,
+    `f32` Float32,
+    `f64` Float64
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
+
+SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+key:               1
+byteSize(UInt8):   1
+byteSize(UInt16):  2
+byteSize(UInt32):  4
+byteSize(UInt64):  8
+byteSize(Int8):    1
+byteSize(Int16):   2
+byteSize(Int32):   4
+byteSize(Int64):   8
+byteSize(Float32): 4
+byteSize(Float64): 8
+```
+
+If the function takes multiple arguments, it returns their combined byte size.
+
+Query:
+
+```sql
+SELECT byteSize(NULL, 1, 0.3, '');
+```
+
+Result:
+
+```text
+┌─byteSize(NULL, 1, 0.3, '')─┐
+│                         19 │
+└────────────────────────────┘
+```
 
 ## materialize(x) {#materializex}
 
@@ -819,6 +908,66 @@ WHERE diff != 1
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
 Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+
+## runningConcurrency {#runningconcurrency}
+
+Given a series of beginning time and ending time of events, this function calculates concurrency of the events at each of the data point, that is, the beginning time.
+
+!!! warning "Warning"
+    Events spanning multiple data blocks will not be processed correctly. The function resets its state for each new data block.
+
+The result of the function depends on the order of data in the block. It assumes the beginning time is sorted in ascending order.
+
+**Syntax**
+
+``` sql
+runningConcurrency(begin, end)
+```
+
+**Parameters**
+
+-   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+Note that two columns `begin` and `end` must have the same type.
+
+**Returned values**
+
+-   The concurrency of events at the data point.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Input table:
+
+``` text
+┌───────────────begin─┬─────────────────end─┐
+│ 2020-12-01 00:00:00 │ 2020-12-01 00:59:59 │
+│ 2020-12-01 00:30:00 │ 2020-12-01 00:59:59 │
+│ 2020-12-01 00:40:00 │ 2020-12-01 01:30:30 │
+│ 2020-12-01 01:10:00 │ 2020-12-01 01:30:30 │
+│ 2020-12-01 01:50:00 │ 2020-12-01 01:59:59 │
+└─────────────────────┴─────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT runningConcurrency(begin, end) FROM example
+```
+
+Result:
+
+``` text
+┌─runningConcurrency(begin, end)─┐
+│                              1 │
+│                              2 │
+│                              3 │
+│                              2 │
+│                              1 │
+└────────────────────────────────┘
+```
 
 ## MACNumToString(num) {#macnumtostringnum}
 

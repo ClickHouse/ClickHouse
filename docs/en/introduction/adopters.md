@@ -46,7 +46,7 @@ toc_title: Adopters
 | <a href="https://www.exness.com" class="favicon">Exness</a> | Trading | Metrics, Logging | — | — | [Talk in Russian, May 2019](https://youtu.be/_rpU-TvSfZ8?t=3215) |
 | <a href="https://fastnetmon.com/" class="favicon">FastNetMon</a> | DDoS Protection | Main Product | | — | [Official website](https://fastnetmon.com/docs-fnm-advanced/fastnetmon-advanced-traffic-persistency/) |
 | <a href="https://www.flipkart.com/" class="favicon">Flipkart</a> | e-Commerce | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=239) |
-| <a href="https://fun.co/rp" class="favicon">FunCorp</a> | Games | | — | — | [Article](https://www.altinity.com/blog/migrating-from-redshift-to-clickhouse) |
+| <a href="https://fun.co/rp" class="favicon">FunCorp</a> | Games | | — | 14 bn records/day as of Jan 2021 | [Article](https://www.altinity.com/blog/migrating-from-redshift-to-clickhouse) |
 | <a href="https://geniee.co.jp" class="favicon">Geniee</a> | Ad network | Main product | — | — | [Blog post in Japanese, July 2017](https://tech.geniee.co.jp/entry/2017/07/20/160100) |
 | <a href="https://www.genotek.ru/" class="favicon">Genotek</a> | Bioinformatics | Main product | — | — | [Video, August 2020](https://youtu.be/v3KyZbz9lEE) |
 | <a href="https://www.huya.com/" class="favicon">HUYA</a> | Video Streaming | Analytics | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/7.%20ClickHouse万亿数据分析实践%20李本旺(sundy-li)%20虎牙.pdf) |
@@ -74,12 +74,14 @@ toc_title: Adopters
 | <a href="https://getnoc.com/" class="favicon">NOC Project</a> | Network Monitoring | Analytics | Main Product | — | [Official Website](https://getnoc.com/features/big-data/) |
 | <a href="https://www.nuna.com/" class="favicon">Nuna Inc.</a> | Health Data Analytics | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=170) |
 | <a href="https://www.oneapm.com/" class="favicon">OneAPM</a> | Monitorings and Data Analysis | Main product | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/8.%20clickhouse在OneAPM的应用%20杜龙.pdf) |
+| <a href="https://panelbear.com/" class="favicon">Panelbear | Analytics | Monitoring and Analytics | — | — | [Tech Stack, November 2020](https://panelbear.com/blog/tech-stack/) |
 | <a href="https://www.percent.cn/" class="favicon">Percent 百分点</a> | Analytics | Main Product | — | — | [Slides in Chinese, June 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup24/4.%20ClickHouse万亿数据双中心的设计与实践%20.pdf) |
 | <a href="https://www.percona.com/" class="favicon">Percona</a> | Performance analysis | Percona Monitoring and Management | — | — | [Official website, Mar 2020](https://www.percona.com/blog/2020/03/30/advanced-query-analysis-in-percona-monitoring-and-management-with-direct-clickhouse-access/) |
 | <a href="https://plausible.io/" class="favicon">Plausible</a> | Analytics | Main Product | — | — | [Blog post, June 2020](https://twitter.com/PlausibleHQ/status/1273889629087969280) |
 | <a href="https://posthog.com/" class="favicon">PostHog</a> | Product Analytics | Main Product | — | — | [Release Notes, Oct 2020](https://posthog.com/blog/the-posthog-array-1-15-0) |
 | <a href="https://postmates.com/" class="favicon">Postmates</a> | Delivery | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=188) |
 | <a href="http://www.pragma-innovation.fr/" class="favicon">Pragma Innovation</a> | Telemetry and Big Data Analysis | Main product | — | — | [Slides in English, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup18/4_pragma_innovation.pdf) |
+| <a href="https://prana-system.com/en/" class="favicon">PRANA</a> | Industrial predictive analytics | Main product | — | — | [News (russian), Feb 2021](https://habr.com/en/news/t/541392/) |
 | <a href="https://www.qingcloud.com/" class="favicon">QINGCLOUD</a> | Cloud services | Main product | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/4.%20Cloud%20%2B%20TSDB%20for%20ClickHouse%20张健%20QingCloud.pdf) |
 | <a href="https://qrator.net" class="favicon">Qrator</a> | DDoS protection | Main product | — | — | [Blog Post, March 2019](https://blog.qrator.net/en/clickhouse-ddos-mitigation_37/) |
 | <a href="https://www.rbinternational.com/" class="favicon">Raiffeisenbank</a> | Banking | Analytics | — | — | [Lecture in Russian, December 2020](https://cs.hse.ru/announcements/421965599.html) |

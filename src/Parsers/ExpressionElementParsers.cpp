@@ -46,6 +46,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -265,7 +266,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
     ParserKeyword all("ALL");
-    ParserExpressionList contents(false);
+    ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
     ParserKeyword over("OVER");
 
@@ -276,6 +277,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr query;
     ASTPtr expr_list_args;
     ASTPtr expr_list_params;
+
+    if (is_table_function)
+    {
+        if (ParserTableFunctionView().parse(pos, node, expected))
+            return true;
+    }
 
     if (!id_parser.parse(pos, identifier, expected))
         return false;
@@ -308,36 +315,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             expected = old_expected;
             has_all = false;
             has_distinct = false;
-        }
-    }
-
-    if (!has_distinct && !has_all)
-    {
-        auto old_pos = pos;
-        auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
-
-        if (select.parse(pos, query, expected))
-        {
-            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
-            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
-            {
-                // It's an subquery. Bail out.
-                pos = old_pos;
-            }
-            else
-            {
-                if (pos->type != TokenType::ClosingRoundBracket)
-                    return false;
-                ++pos;
-                auto function_node = std::make_shared<ASTFunction>();
-                tryGetIdentifierNameInto(identifier, function_node->name);
-                auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
-                expr_list_with_single_query->children.push_back(query);
-                function_node->arguments = expr_list_with_single_query;
-                function_node->children.push_back(function_node->arguments);
-                node = function_node;
-                return true;
-            }
         }
     }
 
@@ -476,6 +453,49 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserKeyword view("VIEW");
+    ParserSelectWithUnionQuery select;
+
+    ASTPtr identifier;
+    ASTPtr query;
+
+    if (!view.ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+
+    ++pos;
+
+    bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    if (!select.parse(pos, query, expected))
+        return false;
+
+    auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+    if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+    {
+        // It's an subquery. Bail out.
+        return false;
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+    auto function_node = std::make_shared<ASTFunction>();
+    tryGetIdentifierNameInto(identifier, function_node->name);
+    auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
+    expr_list_with_single_query->children.push_back(query);
+    function_node->name = "view";
+    function_node->arguments = expr_list_with_single_query;
+    function_node->children.push_back(function_node->arguments);
+    node = function_node;
+    return true;
+}
+
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
@@ -558,7 +578,31 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
-            node->frame.begin_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+            const Field & value = ast_literal->as<ASTLiteral &>().value;
+            if (!isInt64FieldType(value.getType()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    Field::Types::toString(value.getType()));
+            }
+            node->frame.begin_offset = value.get<Int64>();
+            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
+            // We can easily get a UINT64_MAX here, which doesn't even fit into
+            // int64_t. Not sure what checks we are going to need here after we
+            // support floats and dates.
+            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame offset must be between {} and {}, but {} is given",
+                    INT_MAX, INT_MIN, node->frame.begin_offset);
+            }
+
+            if (node->frame.begin_offset < 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start offset must be greater than zero, {} given",
+                    node->frame.begin_offset);
+            }
         }
         else
         {
@@ -567,10 +611,11 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_preceding.ignore(pos, expected))
         {
-            node->frame.begin_offset = - node->frame.begin_offset;
+            node->frame.begin_preceding = true;
         }
         else if (keyword_following.ignore(pos, expected))
         {
+            node->frame.begin_preceding = false;
             if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -604,7 +649,29 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
-                node->frame.end_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+                const Field & value = ast_literal->as<ASTLiteral &>().value;
+                if (!isInt64FieldType(value.getType()))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        Field::Types::toString(value.getType()));
+                }
+                node->frame.end_offset = value.get<Int64>();
+                node->frame.end_type = WindowFrame::BoundaryType::Offset;
+
+                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame offset must be between {} and {}, but {} is given",
+                        INT_MAX, INT_MIN, node->frame.end_offset);
+                }
+
+                if (node->frame.end_offset < 0)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame end offset must be greater than zero, {} given",
+                        node->frame.end_offset);
+                }
             }
             else
             {
@@ -613,16 +680,17 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
             if (keyword_preceding.ignore(pos, expected))
             {
+                node->frame.end_preceding = true;
                 if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Frame end UNBOUNDED PRECEDING is not implemented");
                 }
-
-                node->frame.end_offset = -node->frame.end_offset;
             }
             else if (keyword_following.ignore(pos, expected))
             {
+                // Positive offset or UNBOUNDED FOLLOWING.
+                node->frame.end_preceding = false;
             }
             else
             {

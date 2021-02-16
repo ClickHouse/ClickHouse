@@ -423,6 +423,7 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
@@ -452,6 +453,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
     toDayOfMonth.cpp
