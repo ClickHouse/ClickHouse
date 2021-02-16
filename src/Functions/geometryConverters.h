@@ -11,6 +11,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
@@ -24,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace bg = boost::geometry;
@@ -111,6 +113,9 @@ public:
 #ifndef NDEBUG
         assert(i < size);
 #endif
+        if (isNaN(first[i]) || isNaN(second[i]))
+            throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         boost::geometry::set<0>(container, first[i]);
         boost::geometry::set<1>(container, second[i]);
     }

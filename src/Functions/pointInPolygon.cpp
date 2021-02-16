@@ -540,7 +540,7 @@ private:
         }
     }
 
-    void parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void NO_SANITIZE_UNDEFINED parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (arguments.size() == 2)
             parseConstPolygonFromSingleColumn(arguments, out_polygon);
@@ -550,7 +550,7 @@ private:
         /// Fix orientation and close rings. It's required for subsequent processing.
         boost::geometry::correct(out_polygon);
 
-#if !defined(__clang_analyzer__) /// It does not like boost.
+#if !defined(__clang_analyzer__) && !defined(UNDEFINED_BEHAVIOR_SANITIZER) /// It does not like boost.
         if (validate)
         {
             std::string failure_message;
