@@ -826,7 +826,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
             if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
             {
-                std::cerr << "----- Moving row level filter to prewhere\n";
+                // std::cerr << "----- Moving row level filter to prewhere\n";
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereDAGInfo>(
                     std::move(expressions.filter_info->actions),
@@ -1393,20 +1393,28 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (storage)
     {
         /// Append columns from the table filter to required
-        // ActionsDAG * row_policy_filter = nullptr;
-        // if (expressions.filter_info)
-        //     row_policy_filter = expressions.filter_info->actions.get();
-        // else if (expressions.prewhere_info && expressions.prewhere_info->row_level_filter_actions)
-        //    row_policy_filter = expressions.prewhere_info->row_level_filter_actions.get();
-
-        if (expressions.filter_info)
+        if (row_policy_filter)
         {
-            auto required_columns_from_filter = expressions.filter_info->actions->getRequiredColumns();
-
-            for (const auto & column : required_columns_from_filter)
+            ActionsDAG * row_policy_dag = nullptr;
+            if (expressions.filter_info)
+                row_policy_dag = expressions.filter_info->actions.get();
+            else if (expressions.prewhere_info)
             {
-                if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-                    required_columns.push_back(column.name);
+                if (expressions.prewhere_info->row_level_filter_actions)
+                    row_policy_dag = expressions.prewhere_info->row_level_filter_actions.get();
+                else if (expressions.prewhere_info->prewhere_actions)
+                    row_policy_dag = expressions.prewhere_info->prewhere_actions.get();
+            }
+
+            if (row_policy_dag)
+            {
+                auto required_columns_from_filter = row_policy_dag->getRequiredColumns();
+
+                for (const auto & column : required_columns_from_filter)
+                {
+                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
+                        required_columns.push_back(column.name);
+                }
             }
         }
 
@@ -1650,7 +1658,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (prewhere_info)
         {
-            std::cerr << "-------- filling prewhere info \n";
+            // std::cerr << "-------- filling prewhere info \n";
             query_info.prewhere_info = std::make_shared<PrewhereInfo>();
 
             query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
