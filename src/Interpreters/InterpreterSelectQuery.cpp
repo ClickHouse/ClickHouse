@@ -107,9 +107,9 @@ namespace ErrorCodes
 String InterpreterSelectQuery::generateFilterActions(
     ActionsDAGPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
 {
-    std::cerr << "----- InterpreterSelectQuery::generateFilterActions\n";
-    for (const auto & name : prerequisite_columns)
-        std::cerr << name << std::endl;
+    // std::cerr << "----- InterpreterSelectQuery::generateFilterActions\n";
+    // for (const auto & name : prerequisite_columns)
+    //     std::cerr << name << std::endl;
 
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
@@ -529,9 +529,9 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, input, std::move(input_pipe));
 
-    WriteBufferFromOwnString buf;
-    query_plan.explainPlan(buf, {.header = true, .actions = true});
-    std::cerr << buf.str();
+    // WriteBufferFromOwnString buf;
+    // query_plan.explainPlan(buf, {.header = true, .actions = true});
+    // std::cerr << buf.str();
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
@@ -840,7 +840,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         else
         {
             /// Add row level security actions to prewhere.
-            std::cerr << expressions.filter_info->actions->dumpDAG() << std::endl;
+            // std::cerr << expressions.filter_info->actions->dumpDAG() << std::endl;
             expressions.prewhere_info->row_level_filter_actions = std::move(expressions.filter_info->actions);
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
             expressions.prewhere_info->row_level_filter_actions->projectInput(false);
