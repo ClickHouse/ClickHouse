@@ -241,7 +241,7 @@ Result:
 
 ### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
 
-Returns the first significant subdomain. Accept customs TLD list name.
+Returns the first significant subdomain. Accepts customs TLD list name.
 
 Can be useful if you need fresh TLD list or you have custom.
 
