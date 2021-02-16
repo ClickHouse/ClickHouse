@@ -9,9 +9,13 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u
 
 Принимает число типа UInt32. Интерпретирует его, как IPv4-адрес в big endian. Возвращает строку, содержащую соответствующий IPv4-адрес в формате A.B.C.D (числа в десятичной форме через точки).
 
+Синоним: `INET_NTOA`.
+
 ## IPv4StringToNum(s) {#ipv4stringtonums}
 
 Функция, обратная к IPv4NumToString. Если IPv4 адрес в неправильном формате, то возвращает 0.
+
+Синоним: `INET_ATON`.
 
 ## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
@@ -49,7 +53,11 @@ LIMIT 10
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
-IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. Примеры:
+IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. 
+
+Примеры: `INET6_NTOA`.
+
+Примеры:
 
 ``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
@@ -117,6 +125,8 @@ LIMIT 10
 
 Функция, обратная к IPv6NumToString. Если IPv6 адрес в неправильном формате, то возвращает строку из нулевых байт.
 HEX может быть в любом регистре.
+
+Alias: `INET6_ATON`.
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
