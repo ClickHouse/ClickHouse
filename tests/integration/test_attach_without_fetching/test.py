@@ -31,6 +31,9 @@ def test_attach_without_fetching(start_cluster):
     assert node1.query("SELECT COUNT() FROM test WHERE key % 10 == 0") == "0\n"
     assert node1.query("SELECT COUNT() FROM test") == "0\n"
 
+    # Break the network in the partition manager
+    # The data is not removed from detached/ so it's ok
+
     # to be sure output not empty
     node1.exec_in_container(
         ['bash', '-c', 'find /var/lib/clickhouse/data/default/test/detached -name "checksums.txt" | grep -e ".*" '],
