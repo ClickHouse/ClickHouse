@@ -198,14 +198,15 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
-    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false);
+    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            const Context & context);
+            const Context & context,
+            bool can_replace = false);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -232,6 +233,9 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    /// For apply materialize() function for every output.
+    /// Also add aliases so the result names remain unchanged.
+    void addMaterializingOutputActions();
 
     enum class MatchColumnsMode
     {
@@ -275,7 +279,7 @@ public:
     SplitResult splitActionsForFilter(const std::string & column_name) const;
 
 private:
-    Node & addNode(Node node, bool can_replace = false);
+    Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
     Node & getNode(const std::string & name);
 
     Node & addAlias(Node & child, std::string alias, bool can_replace);
@@ -283,7 +287,8 @@ private:
             const FunctionOverloadResolverPtr & function,
             Inputs children,
             std::string result_name,
-            bool can_replace);
+            bool can_replace,
+            bool add_to_index = true);
 
     ActionsDAGPtr cloneEmpty() const
     {

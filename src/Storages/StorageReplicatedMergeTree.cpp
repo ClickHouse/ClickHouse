@@ -2682,7 +2682,7 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
 
     return JobAndPool{[this, selected_entry] () mutable
     {
-        processQueueEntry(selected_entry);
+        return processQueueEntry(selected_entry);
     }, pool_type};
 }
 

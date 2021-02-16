@@ -715,7 +715,6 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
             writeChar('\n', *used_output.out_maybe_compressed);
 
             used_output.out_maybe_compressed->next();
-            used_output.out->next();
             used_output.out->finalize();
         }
     }
@@ -775,6 +774,9 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
+
+    if (used_output.out)
+        used_output.out->finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
@@ -800,7 +802,6 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
 
 std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
-
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
