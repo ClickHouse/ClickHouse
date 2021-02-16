@@ -328,6 +328,8 @@ void DDLWorker::scheduleTasks()
         LOG_TRACE(log, "No tasks to schedule");
         return;
     }
+    else if (max_tasks_in_queue < queue_nodes.size())
+        cleanup_event->set();
 
     bool server_startup = current_tasks.empty();
     auto begin_node = queue_nodes.begin();
@@ -489,9 +491,8 @@ void DDLWorker::processTask(DDLTaskBase & task)
 
         if (create_active_res == Coordination::Error::ZNODEEXISTS)
         {
-            /// Connection has been lost and now we are retrying to write query status,
+            /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            assert(task.was_executed);
             zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
             String dummy;
             if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
@@ -826,6 +827,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             ops.emplace_back(zkutil::makeRemoveRequest(fs::path(node_path) / "finished", -1));
             ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
             auto rm_entry_res = zookeeper->tryMulti(ops, res);
+
             if (rm_entry_res == Coordination::Error::ZNONODE)
             {
                 /// Most likely both node_path/finished and node_path were removed concurrently.
@@ -888,8 +890,11 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
         return;
 
     if (is_currently_deleting)
+    {
+        cleanup_event->set();
         throw Exception(ErrorCodes::UNFINISHED, "Cannot create status dirs for {}, "
                         "most likely because someone is deleting it concurrently", node_path);
+    }
 
     /// Connection lost or entry was removed
     assert(Coordination::isHardwareError(code) || code == Coordination::Error::ZNONODE);

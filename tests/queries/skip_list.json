@@ -103,9 +103,16 @@
         "00738_lock_for_inner_table"
     ],
     "database-replicated": [
+        /// Tests with DETACH TABLE (it's not allowed)
+        /// and tests with SET (session and query settings are not supported)
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "00152_insert_different_granularity",
+        "01715_background_checker_blather_zookeeper",
+        "01714_alter_drop_version",
+        "01114_materialize_clear_index_compact_parts",
+        "00814_replicated_minimalistic_part_header_zookeeper",
         "01188_attach_table_from_pat",
         "01415_sticking_mutations",
         "01130_in_memory_parts",

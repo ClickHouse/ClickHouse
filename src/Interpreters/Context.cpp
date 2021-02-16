@@ -2553,10 +2553,10 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     return StorageID::createEmpty();
 }
 
-void Context::initMetadataTransaction(MetadataTransactionPtr txn)
+void Context::initMetadataTransaction(MetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
 {
     assert(!metadata_transaction);
-    assert(query_context == this);
+    assert(attach_existing || query_context == this);
     metadata_transaction = std::move(txn);
 }
 
