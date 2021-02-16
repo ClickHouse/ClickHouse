@@ -44,15 +44,14 @@ static constexpr auto DEFAULT_PREFIX = "changelog";
 struct ChangelogName
 {
     std::string prefix;
-    ChangelogVersion version;
     size_t from_log_idx;
     size_t to_log_idx;
 };
 
-std::string formatChangelogPath(const std::string & prefix, const ChangelogVersion & version, const ChangelogName & name)
+std::string formatChangelogPath(const std::string & prefix, const ChangelogName & name)
 {
     std::filesystem::path path(prefix);
-    path /= std::filesystem::path(name.prefix + "_" + toString(version) + "_" + std::to_string(name.from_log_idx) + "_" + std::to_string(name.to_log_idx) + ".log");
+    path /= std::filesystem::path(name.prefix + "_" + std::to_string(name.from_log_idx) + "_" + std::to_string(name.to_log_idx) + ".bin");
     return path;
 }
 
@@ -62,14 +61,13 @@ ChangelogName getChangelogName(const std::string & path_str)
     std::string filename = path.stem();
     Strings filename_parts;
     boost::split(filename_parts, filename, boost::is_any_of("_"));
-    if (filename_parts.size() < 4)
+    if (filename_parts.size() < 3)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path_str);
 
     ChangelogName result;
     result.prefix = filename_parts[0];
-    result.version = fromString(filename_parts[1]);
-    result.from_log_idx = parse<size_t>(filename_parts[2]);
-    result.to_log_idx = parse<size_t>(filename_parts[3]);
+    result.from_log_idx = parse<size_t>(filename_parts[1]);
+    result.to_log_idx = parse<size_t>(filename_parts[2]);
     return result;
 }
 
@@ -114,6 +112,7 @@ public:
     {
         flush();
         plain_buf.truncate(new_length);
+        plain_buf.seek(new_length, SEEK_SET);
     }
 
     void flush()
@@ -190,6 +189,7 @@ public:
             if (!logs.try_emplace(record.header.index, log_entry).second)
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated index id {} in log {}", record.header.index, filepath);
         }
+
         return total_read;
     }
 private:
@@ -203,13 +203,16 @@ Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval
 {
     namespace fs = std::filesystem;
     for(const auto & p : fs::directory_iterator(changelogs_dir))
-        existing_changelogs.push_back(p.path());
+    {
+        auto name = getChangelogName(p.path());
+        existing_changelogs[name.from_log_idx] = p.path();
+    }
 }
 
 void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
 {
     size_t read_from_last = 0;
-    for (const std::string & changelog_file : existing_changelogs)
+    for (const auto & [start_id, changelog_file] : existing_changelogs)
     {
         ChangelogName parsed_name = getChangelogName(changelog_file);
         if (parsed_name.to_log_idx >= from_log_idx)
@@ -223,8 +226,9 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
 
     if (existing_changelogs.size() > 0 && read_from_last < rotate_interval)
     {
-        auto parsed_name = getChangelogName(existing_changelogs.back());
-        current_writer = std::make_unique<ChangelogWriter>(existing_changelogs.back(), WriteMode::Append, parsed_name.from_log_idx);
+        auto str_name = existing_changelogs.rbegin()->second;
+        auto parsed_name = getChangelogName(str_name);
+        current_writer = std::make_unique<ChangelogWriter>(str_name, WriteMode::Append, parsed_name.from_log_idx);
         current_writer->setEntriesWritten(read_from_last);
     }
     else
@@ -240,13 +244,12 @@ void Changelog::rotate(size_t new_start_log_idx)
 
     ChangelogName new_name;
     new_name.prefix = DEFAULT_PREFIX;
-    new_name.version = CURRENT_CHANGELOG_VERSION;
     new_name.from_log_idx = new_start_log_idx;
-    new_name.to_log_idx = new_start_log_idx;
+    new_name.to_log_idx = new_start_log_idx + rotate_interval - 1;
 
-    auto new_log_path = formatChangelogPath(changelogs_dir, CURRENT_CHANGELOG_VERSION, new_name);
-    existing_changelogs.push_back(new_log_path);
-    current_writer = std::make_unique<ChangelogWriter>(existing_changelogs.back(), WriteMode::Rewrite, new_start_log_idx);
+    auto new_log_path = formatChangelogPath(changelogs_dir, new_name);
+    existing_changelogs[new_start_log_idx] = new_log_path;
+    current_writer = std::make_unique<ChangelogWriter>(new_log_path, WriteMode::Rewrite, new_start_log_idx);
 }
 
 ChangelogRecord Changelog::buildRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry) const
@@ -275,41 +278,61 @@ void Changelog::appendEntry(size_t index, nuraft::ptr<nuraft::log_entry> log_ent
     if (!current_writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
 
+    if (logs.empty())
+        start_index = index;
+
     if (current_writer->getEntriesWritten() == rotate_interval)
         rotate(index);
 
     auto offset = current_writer->appendRecord(buildRecord(index, log_entry), true);
     if (!index_to_start_pos.try_emplace(index, offset).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
+
     logs[index] = makeClone(log_entry);
 }
 
 void Changelog::writeAt(size_t index, nuraft::ptr<nuraft::log_entry> log_entry)
 {
-    if (index < current_writer->getStartIndex())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Currently cannot overwrite index from previous file");
-
     if (index_to_start_pos.count(index) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
 
+    bool need_rollback = index < current_writer->getStartIndex();
+    if (need_rollback)
+    {
+        auto index_changelog = existing_changelogs.lower_bound(index);
+        std::string fname;
+        if (index_changelog->first == index)
+            fname = index_changelog->second;
+        else
+            fname = std::prev(index_changelog)->second;
+
+        current_writer = std::make_unique<ChangelogWriter>(fname, WriteMode::Append, index_changelog->first);
+        auto formated_name = getChangelogName(fname);
+        current_writer->setEntriesWritten(formated_name.to_log_idx - formated_name.from_log_idx + 1);
+    }
+
     auto entries_written = current_writer->getEntriesWritten();
     current_writer->truncateToLength(index_to_start_pos[index]);
-    for (auto itr = index_to_start_pos.begin(); itr != index_to_start_pos.end();)
+
+    if (need_rollback)
     {
-        if (itr->first >= index)
+        auto to_remove_itr = existing_changelogs.upper_bound(index);
+        for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
         {
-            entries_written--;
-            itr = index_to_start_pos.erase(itr);
+            std::filesystem::remove(itr->second);
+            itr = existing_changelogs.erase(itr);
         }
-        else
-            itr++;
+    }
+
+    /// Rollback in memory state
+    for (auto itr = logs.lower_bound(index); itr != logs.end();)
+    {
+        index_to_start_pos.erase(itr->first);
+        itr = logs.erase(itr);
+        entries_written--;
     }
 
     current_writer->setEntriesWritten(entries_written);
-
-    auto itr = logs.lower_bound(index);
-    while (itr != logs.end())
-        itr = logs.erase(itr);
 
     appendEntry(index, log_entry);
 }
@@ -318,22 +341,27 @@ void Changelog::compact(size_t up_to_log_idx)
 {
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
-        ChangelogName parsed_name = getChangelogName(*itr);
+        ChangelogName parsed_name = getChangelogName(itr->second);
         if (parsed_name.to_log_idx <= up_to_log_idx)
         {
-            std::filesystem::remove(*itr);
-            itr = existing_changelogs.erase(itr);
+
             for (size_t idx = parsed_name.from_log_idx; idx <= parsed_name.to_log_idx; ++idx)
             {
-                auto logs_itr = logs.find(idx);
-                if (logs_itr != logs.end())
-                    logs.erase(idx);
-                else
+                auto index_pos = index_to_start_pos.find(idx);
+                if (index_pos == index_to_start_pos.end())
                     break;
-                index_to_start_pos.erase(idx);
+                index_to_start_pos.erase(index_pos);
             }
+            std::filesystem::remove(itr->second);
+            itr = existing_changelogs.erase(itr);
         }
+        else
+            break;
     }
+    auto start = logs.begin();
+    auto end = logs.upper_bound(up_to_log_idx);
+    logs.erase(start, end);
+    start_index = up_to_log_idx + 1;
 }
 
 LogEntryPtr Changelog::getLastEntry() const

@@ -65,7 +65,7 @@ public:
 
     size_t getNextEntryIndex() const
     {
-        return start_index + logs.size() - 1;
+        return start_index + logs.size();
     }
 
     size_t getStartIndex() const
@@ -79,22 +79,28 @@ public:
 
     LogEntryPtr entryAt(size_t idx);
 
-    nuraft::ptr<nuraft::buffer> serializeEntriesToBuffer(size_t index, Int32 cnt);
+    nuraft::ptr<nuraft::buffer> serializeEntriesToBuffer(size_t index, int32_t cnt);
 
     void applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer);
 
     void flush();
 
+    size_t size() const
+    {
+        return logs.size();
+    }
+
     ~Changelog();
 
 private:
+
     void rotate(size_t new_start_log_idex);
 
     ChangelogRecord buildRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry) const;
 
 private:
     std::string changelogs_dir;
-    std::deque<std::string> existing_changelogs;
+    std::map<size_t, std::string> existing_changelogs;
     std::unique_ptr<ChangelogWriter> current_writer;
     IndexToOffset index_to_start_pos;
     const size_t rotate_interval;
