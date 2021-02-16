@@ -34,6 +34,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 
 namespace fs = std::filesystem;
@@ -427,7 +428,12 @@ Pipe StorageFile::read(
         paths = {""};   /// when use fd, paths are empty
     else
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
-            throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+        {
+            if (context.getSettingsRef().engine_file_empty_if_not_exists)
+                return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+            else
+                throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+        }
 
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
@@ -547,6 +553,10 @@ BlockOutputStreamPtr StorageFile::write(
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
     std::string path;
+    if (context.getSettingsRef().engine_file_truncate_on_insert)
+        if (0 != ::truncate(paths[0].c_str(), 0))
+            throwFromErrnoWithPath("Cannot truncate file " + paths[0], paths[0], ErrorCodes::CANNOT_TRUNCATE_FILE);
+
     if (!paths.empty())
     {
         path = paths[0];
