@@ -74,6 +74,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
+    LOG_DEBUG(log, "disconnect");
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
@@ -160,6 +161,7 @@ void Connection::prepare(const ConnectionTimeouts & timeouts)
 
 void Connection::sendHello()
 {
+    LOG_DEBUG(log_wrapper.get(), "sendHello");
     try
     {
         /** Disallow control characters in user controlled parameters
@@ -233,6 +235,8 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
+    LOG_DEBUG(log_wrapper.get(), "receiveHello");
+
     try
     {
         /// Receive hello packet.
@@ -430,6 +434,8 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
 void Connection::sendTablesStatusRequest(const TablesStatusRequest & request)
 {
+    LOG_DEBUG(log_wrapper.get(), "sendTablesStatusRequest");
+
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
     out->next();
@@ -437,6 +443,8 @@ void Connection::sendTablesStatusRequest(const TablesStatusRequest & request)
 
 TablesStatusResponse Connection::receiveTablesStatusResponse()
 {
+    LOG_DEBUG(log_wrapper.get(), "receiveTablesStatusResponse");
+
     UInt64 response_type = 0;
     readVarUInt(response_type, *in);
 
@@ -459,6 +467,8 @@ void Connection::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
+    LOG_DEBUG(log_wrapper.get(), "sendQuery");
+
     if (!connected)
         connect(timeouts);
 
@@ -556,6 +566,8 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    LOG_DEBUG(log_wrapper.get(), "sendCancel");
+
     /// If we already disconnected.
     if (!out)
         return;
@@ -806,6 +818,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
 Packet Connection::receivePacket(AsyncCallback async_callback)
 {
+    LOG_DEBUG(log_wrapper.get(), "receivePacket");
+
     in->setAsyncCallback(std::move(async_callback));
     SCOPE_EXIT(in->setAsyncCallback({}));
 
@@ -883,6 +897,8 @@ Packet Connection::receivePacket(AsyncCallback async_callback)
 
 Block Connection::receiveData()
 {
+    LOG_DEBUG(log_wrapper.get(), "receiveData");
+
     initBlockInput();
     return receiveDataImpl(block_in);
 }

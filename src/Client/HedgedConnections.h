@@ -163,6 +163,8 @@ private:
     bool cancelled = false;
 
     mutable std::mutex cancel_mutex;
+
+    Poco::Logger * log;
 };
 
 }
