@@ -117,7 +117,7 @@ LIMIT 10
 
 The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
 
-If the IP address is a valid IPv4 address then the IPv6 equivalent of the IPv4 address is returned.
+If the IP address is a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
 HEX can be uppercase or lowercase.
 
@@ -129,7 +129,7 @@ IPv6StringToNum(string)
 
 **Parameters** 
 
--   `string` - IP address. [String](../../sql-reference/data-types/string.md)
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md)
 
 
 **Returned value**
