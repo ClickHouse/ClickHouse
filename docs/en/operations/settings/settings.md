@@ -1872,6 +1872,18 @@ Possible values:
 
 Default value: `0`.
 
+## insert_shard_id {#insert_shard_id}
+
+Enables insertion of data into specific shards from [Distributed](../../engines/table-engines/special/distributed.md#distributed) tables.
+
+This setting allows to insert data into specific shard from distributed table without perceiving local tables.
+
+Possible values:
+
+-   Any number from `0` (disabled) to `shards_number` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+Defauld value: `0`
+
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
 Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
