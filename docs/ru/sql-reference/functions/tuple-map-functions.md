@@ -5,6 +5,66 @@ toc_title: Работа с контейнерами map
 
 # Функции для работы с контейнерами map {#functions-for-working-with-tuple-maps}
 
+## map {#function-map}
+
+Преобразовывает пары `ключ:значение` в тип данных [Map(key, value)](../../sql-reference/data-types/map.md).
+
+**Синтаксис** 
+
+``` sql
+map(key1, value1[, key2, value2, ...])
+```
+
+**Параметры** 
+
+-   `key` — ключ. [String](../../sql-reference/data-types/string.md) или [Integer](../../sql-reference/data-types/int-uint.md).
+-   `value` — значение. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) или [Array](../../sql-reference/data-types/array.md).
+
+**Возвращаемое значение**
+
+-   Структура данных в виде пар `ключ:значение`.
+
+Тип: [Map(key, value)](../../sql-reference/data-types/map.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
+```
+
+Результат:
+
+``` text
+┌─map('key1', number, 'key2', multiply(number, 2))─┐
+│ {'key1':0,'key2':0}                              │
+│ {'key1':1,'key2':2}                              │
+│ {'key1':2,'key2':4}                              │
+└──────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+CREATE TABLE table_map (a Map(String, UInt64)) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO table_map SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
+SELECT a['key2'] FROM table_map;
+```
+
+Результат:
+
+``` text
+┌─arrayElement(a, 'key2')─┐
+│                       0 │
+│                       2 │
+│                       4 │
+└─────────────────────────┘
+```
+
+**См. также** 
+
+-   тип данных [Map(key, value)](../../sql-reference/data-types/map.md)
 ## mapAdd {#function-mapadd}
 
 Собирает все ключи и суммирует соответствующие значения.
