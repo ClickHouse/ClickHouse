@@ -32,6 +32,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 	create table filenames(name String) engine=MergeTree() order by tuple();
 	insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
 	select file(name) from filenames format TSV;
+	drop table if exists filenames;
 "
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
