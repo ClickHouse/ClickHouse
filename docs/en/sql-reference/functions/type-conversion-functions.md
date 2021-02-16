@@ -701,20 +701,18 @@ parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
 
 **Parameters**
 
--   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`). [String](../../sql-reference/data-types/string.md).
+-   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`, etc). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Supported non-standard formats**
 
 -   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
 -   A string with a date and a time components: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
+-   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY`, etc.
 -   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case, `YYYY-MM` are substituted with `2000-01`.
 -   A string that includes date and time along with timezone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
 
 **Returned values**
-
-Possible values:
 
 -   `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
 -   `NULL` if the input string cannot be converted to the `DateTime` data type.
@@ -789,23 +787,21 @@ parseDateTimeBestEffortUSOrZero(time_string[, time_zone])
 
 **Parameters**
 
--   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`). [String](../../sql-reference/data-types/string.md).
+-   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`, etc). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Supported non-standard formats**
 
 -   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
 -   A string with a date and a time components: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
+-   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY`, etc.
 -   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case, `YYYY-MM` are substituted with `2000-01`.
 -   A string that includes date and time along with timezone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
 
 **Returned values**
 
-Possible values:
-
 -   `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
--   `zero date time`.
+-   Zero date or zero date with time if the input string cannot be converted to the `DateTime` data type.
 
 **Examples**
 
