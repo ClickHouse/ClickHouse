@@ -133,7 +133,12 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     }
 
     chunk.clear();
-    data->finish_event.tryWait(milliseconds);
+
+    if (milliseconds)
+        data->finish_event.tryWait(milliseconds);
+    else
+        data->finish_event.wait();
+
     return true;
 }
 
