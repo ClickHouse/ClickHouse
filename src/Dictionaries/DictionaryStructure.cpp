@@ -223,24 +223,26 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     }
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name) const
+size_t DictionaryStructure::getAttributeIndex(const std::string & attribute_name) const
 {
-    auto find_iter
-        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-    if (find_iter != attributes.end())
-        return *find_iter;
+    auto it = attribute_name_to_index.find(attribute_name);
 
-    if (key && access_to_key_from_attributes)
-    {
-        find_iter = std::find_if(key->begin(), key->end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-        if (find_iter != key->end())
-            return *find_iter;
-    }
+    if (it == attribute_name_to_index.end())
+        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
-    throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    size_t index = it->second;
+
+    return index;
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name, const DataTypePtr & type) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const
+{
+    size_t index = getAttributeIndex(attribute_name);
+
+    return attributes[index];
+}
+
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name, const DataTypePtr & type) const
 {
     const auto & attribute = getAttribute(attribute_name);
 
@@ -249,6 +251,14 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const String & att
             ErrorCodes::TYPE_MISMATCH};
 
     return attribute;
+}
+
+size_t DictionaryStructure::getKeysSize() const
+{
+    if (id)
+        return 1;
+    else
+        return key->size();
 }
 
 std::string DictionaryStructure::getKeyDescription() const
@@ -418,6 +428,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
+        attribute_name_to_index[name] = res_attributes.size();
         res_attributes.emplace_back(DictionaryAttribute{
             name,
             underlying_type,

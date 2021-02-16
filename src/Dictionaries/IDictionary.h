@@ -120,7 +120,7 @@ struct IDictionaryBase : public IExternalLoadable
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const = 0;
+        const ColumnPtr & default_values_column) const = 0;
 
     /** Subclass must validate key columns and key types and return ColumnUInt8 that
       * is bitmask representation of is key in dictionary or not.
