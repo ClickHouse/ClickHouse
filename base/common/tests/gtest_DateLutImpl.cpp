@@ -25,18 +25,6 @@ cctz::civil_day YYYYMMDDToDay(unsigned value)
         value % 100);          // day
 }
 
-cctz::civil_second YYYYMMDDHMMSSToSecond(std::uint64_t value)
-{
-    return cctz::civil_second(
-            value / 10000000000,
-            value / 100000000 % 100,
-            value / 1000000 % 100,
-            value / 10000 % 100,
-            value / 100 % 100,
-            value % 100);
-}
-
-
 std::vector<const char*> allTimezones()
 {
     std::vector<const char*> result;
@@ -82,14 +70,17 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
 
 }
 
-TEST(YYYYMMDDToDay, Test)
+TEST(DateLUTTest, Test_makeDayNum)
 {
-    std::cerr << YYYYMMDDHMMSSToSecond(19700101'00'00'00) << std::endl;
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+    EXPECT_EQ(0, lut.makeDayNum(2500, 12, 25));
+    EXPECT_EQ(0, lut.makeDayNum(1924, 12, 31));
 }
+
 
 TEST(DateLUTTest, TimeValuesInMiddleOfRange)
 {
-    const DateLUTImpl lut("Europe/Minsk");
+    const DateLUTImpl & lut = DateLUT::instance("Europe/Minsk");
     const time_t time = 1568650811; // 2019-09-16 19:20:11 (Monday)
 
     EXPECT_EQ(lut.getTimeZone(), "Europe/Minsk");
@@ -151,7 +142,7 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
 
 TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
 {
-    const DateLUTImpl lut("UTC");
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
     const time_t time = 0; // 1970-01-01 00:00:00 (Thursday)
 
     EXPECT_EQ(lut.getTimeZone(), "UTC");
@@ -212,7 +203,7 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
 TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOLDLut)
 {
     // Value is at the right border of the OLD (small) LUT, and provides meaningful values where OLD LUT would provide garbage.
-    const DateLUTImpl lut("UTC");
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
 
     const time_t time = 4294343873; // 2106-01-31T01:17:53 (Sunday)
 
@@ -276,11 +267,11 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOLDLut)
 class DateLUT_TimeZone : public ::testing::TestWithParam<const char * /* timezone name */>
 {};
 
-TEST_P(DateLUT_TimeZone, DISABLED_LoadAllTimeZones)
+TEST_P(DateLUT_TimeZone, DISABLED_LoadLut)
 {
     // There are some assumptions and assertions about TZ data made in DateLUTImpl which are verified upon loading,
     // to make sure that those assertions are true for all timezones we are going to load all of them one by one.
-    DateLUTImpl{GetParam()};
+    DateLUT::instance(GetParam());
 }
 
 // Another long running test, shouldn't be run to often
@@ -292,7 +283,7 @@ TEST_P(DateLUT_TimeZone, VaidateTimeComponentsAroundEpoch)
     const auto timezone_name = GetParam();
 
     const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
-    const auto lut = DateLUTImpl(timezone_name);
+    const DateLUTImpl & lut = DateLUT::instance(timezone_name);
 
     for (time_t i = -856147870; i < 86400 * 10000; i += 11 * 13 * 17 * 19)
     {
@@ -376,22 +367,7 @@ struct TimeRangeParam
 
 std::ostream & operator<<(std::ostream & ostr, const TimeRangeParam & param)
 {
-    const auto approximate_step = [](const int step) -> std::string
-    {
-        // Convert seconds to a string of seconds or fractional count of minutes/hours/days.
-        static const size_t multipliers[] = {1 /*seconds to seconds*/, 60 /*seconds to minutes*/, 60 /*minutes to hours*/, 24 /*hours to days*/, 0 /*terminator*/};
-        static const char* names[] = {"s", "m", "h", "d", nullptr};
-        double result = step;
-        size_t i = 0;
-        for (; i < sizeof(multipliers)/sizeof(multipliers[0]) && result > multipliers[i]; ++i)
-            result /= multipliers[i];
-
-        char buffer[256] = {'\0'};
-        std::snprintf(buffer, sizeof(buffer), "%.1f%s", result, names[i - 1]);
-        return std::string{buffer};
-    };
-
-    return ostr << param.begin << " : " << param.end << " step: " << param.step_in_seconds << "s (" << approximate_step(param.step_in_seconds) << ")";
+    return ostr << param.begin << " : " << param.end << " step: " << param.step_in_seconds << "s";
 }
 
 class DateLUT_Timezone_TimeRange : public ::testing::TestWithParam<std::tuple<const char* /*timezone_name*/, TimeRangeParam>>

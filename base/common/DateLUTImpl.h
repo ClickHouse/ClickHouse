@@ -850,10 +850,6 @@ public:
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(0);
 
-        // The day after 2283 are not stored fully as struct Values, so just overflow it as 0
-        if (unlikely(year > DATE_LUT_MAX_YEAR))
-            return ExtendedDayNum(0);
-
         return toDayNum(makeLUTIndex(year, month, day_of_month));
     }
 
