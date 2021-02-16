@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -64,6 +64,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 
 namespace ProfileEvents
@@ -304,8 +305,10 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+#if USE_NURAFT
+    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+#endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -330,6 +333,7 @@ struct ContextShared
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
+    String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -447,8 +451,7 @@ struct ContextShared
         trace_collector.reset();
         /// Stop zookeeper connection
         zookeeper.reset();
-        /// Stop test_keeper storage
-        test_keeper_storage_dispatcher.reset();
+
     }
 
     bool hasTraceCollector() const
@@ -1137,12 +1140,6 @@ String Context::getCurrentDatabase() const
 }
 
 
-String Context::getCurrentQueryId() const
-{
-    return client_info.current_query_id;
-}
-
-
 String Context::getInitialQueryId() const
 {
     return client_info.initial_query_id;
@@ -1300,6 +1297,13 @@ Context & Context::getGlobalContext()
     if (!global_context)
         throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
     return *global_context;
+}
+
+const Context & Context::getBufferContext() const
+{
+    if (!buffer_context)
+        throw Exception("Logical error: there is no buffer context", ErrorCodes::LOGICAL_ERROR);
+    return *buffer_context;
 }
 
 
@@ -1580,14 +1584,47 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
-{
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
-    if (!shared->test_keeper_storage_dispatcher)
-        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    return shared->test_keeper_storage_dispatcher;
+void Context::initializeNuKeeperStorageDispatcher() const
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+
+    if (shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
+
+    const auto & config = getConfigRef();
+    if (config.has("test_keeper_server"))
+    {
+        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher->initialize(config);
+    }
+#endif
 }
+
+#if USE_NURAFT
+std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
+{
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (!shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
+
+    return shared->nu_keeper_storage_dispatcher;
+}
+#endif
+
+void Context::shutdownNuKeeperStorageDispatcher() const
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (shared->nu_keeper_storage_dispatcher)
+    {
+        shared->nu_keeper_storage_dispatcher->shutdown();
+        shared->nu_keeper_storage_dispatcher.reset();
+    }
+#endif
+}
+
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
@@ -2224,6 +2261,10 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
+
+    shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
+    buffer_context = std::make_shared<Context>(*this);
+    buffer_context->setProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -2508,6 +2549,24 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
+}
+
+PartUUIDsPtr Context::getPartUUIDs()
+{
+    auto lock = getLock();
+    if (!part_uuids)
+        part_uuids = std::make_shared<PartUUIDs>();
+
+    return part_uuids;
+}
+
+PartUUIDsPtr Context::getIgnoredPartUUIDs()
+{
+    auto lock = getLock();
+    if (!ignored_part_uuids)
+        ignored_part_uuids = std::make_shared<PartUUIDs>();
+
+    return ignored_part_uuids;
 }
 
 }
