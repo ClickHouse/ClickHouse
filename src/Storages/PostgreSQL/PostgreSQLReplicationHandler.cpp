@@ -309,19 +309,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_)
 {
-    auto publication_exist = [&]()
-    {
-        auto tx = std::make_shared<pqxx::work>(*connection_);
-        bool exist = isPublicationExist(tx);
-        tx->commit();
-        return exist;
-    };
-
-    if (publication_exist())
-    {
-        return fetchTablesFromPublication(connection_);
-    }
-    else if (tables_list.empty())
+    if (tables_list.empty())
     {
         return fetchPostgreSQLTablesList(connection_);
     }
