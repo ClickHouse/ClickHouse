@@ -1312,17 +1312,18 @@ MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(co
     MergeTreePartInfo part_iter;
     const Poco::DirectoryIterator dir_end;
 
-    const String detached_dir = "detached";
+    const String detached_dir = "detached/";
 
     for (const String& path : getDataPaths())
     {
         for (Poco::DirectoryIterator it{path + detached_dir}; it != dir_end; ++it)
         {
-            if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_iter, format_version) || // this line is correct
-                part_iter.partition_id != target_part.partition_id ||
-                entry.new_part_name != part_iter.getPartName()) // TODO check if the last statement is valid,
-                // Maybe we can't compare by names
+            if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_iter, format_version) ||
+                part_iter.partition_id != target_part.partition_id)
                 continue;
+
+            // TODO Check if we can compare by entry.new_part_name ?== part_iter.getPartName(),
+            // mostly sure we can't, but if we can, all this thing would work faster.
 
             const String& part_name = part_iter.getPartName();
             const String part_to_path = detached_dir + part_name;
@@ -1330,12 +1331,10 @@ MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(co
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
                 getDiskForPart(part_name, detached_dir));
 
-            //createPart uses part name as arg 1, "detached/" as arg 2 so maybe we need "detached/" too
             MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
 
             if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
-                /// the part with same name and partition id has different checksum, so it is corrupt.
-                return {};
+                continue; // TODO if we can, here would be return {};
 
             return iter_part_ptr;
         }
@@ -1363,7 +1362,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     if (entry.type == LogEntry::ATTACH_PART)
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
             // no need to call checkAlterPartitionIsPossible as we already parsed the part name
-            /// TODO Allow to use quorum here.
             ReplicatedMergeTreeBlockOutputStream (*this, getInMemoryMetadataPtr() , 0, 0, 0, false, false, false)
                 .writeExistingPart(part);
 
