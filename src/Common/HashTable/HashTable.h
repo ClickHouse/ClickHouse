@@ -539,7 +539,8 @@ protected:
           *    after transferring all the elements from the old halves you need to     [         o   x    ]
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
-        for (; !buf[i].isZero(*this); ++i)
+        size_t new_size = grower.bufSize();
+        for (; i < new_size && !buf[i].isZero(*this); ++i)
         {
             size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
 
