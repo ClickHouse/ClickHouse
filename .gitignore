@@ -137,3 +137,9 @@ website/package-lock.json
 /prof
 
 *.iml
+
+# data store
+/programs/server/data
+/programs/server/metadata
+/programs/server/store
+
