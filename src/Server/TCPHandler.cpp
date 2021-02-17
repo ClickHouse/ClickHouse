@@ -717,16 +717,18 @@ void TCPHandler::processTablesStatusRequest()
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
 
+
+    writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
+
     /// For testing hedged requests
     const Settings & settings = query_context->getSettingsRef();
-    if (settings.sleep_before_send_tables_status)
+    if (settings.sleep_in_send_tables_status)
     {
-        std::chrono::seconds sec(settings.sleep_before_send_tables_status);
+        out->next();
+        std::chrono::seconds sec(settings.sleep_in_send_tables_status);
         std::this_thread::sleep_for(sec);
     }
 
-
-    writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
     response.write(*out, client_tcp_protocol_version);
 }
 
@@ -940,14 +942,6 @@ void TCPHandler::receiveUnexpectedHello()
 
 void TCPHandler::sendHello()
 {
-    /// For testing hedged requests
-    const Settings & settings = query_context->getSettingsRef();
-    if (settings.sleep_before_send_hello)
-    {
-        std::chrono::seconds sec(settings.sleep_before_send_hello);
-        std::this_thread::sleep_for(sec);
-    }
-
     writeVarUInt(Protocol::Server::Hello, *out);
     writeStringBinary(DBMS_NAME, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
@@ -1405,19 +1399,20 @@ bool TCPHandler::isQueryCancelled()
 
 void TCPHandler::sendData(const Block & block)
 {
-    /// For testing hedged requests
-    const Settings & settings = query_context->getSettingsRef();
-    if (settings.sleep_before_send_data)
-    {
-        std::chrono::seconds sec(settings.sleep_before_send_data);
-        std::this_thread::sleep_for(sec);
-    }
-
     initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
+
+    /// For testing hedged requests
+    const Settings & settings = query_context->getSettingsRef();
+    if (settings.sleep_in_send_data)
+    {
+        out->next();
+        std::chrono::seconds sec(settings.sleep_in_send_data);
+        std::this_thread::sleep_for(sec);
+    }
 
     state.block_out->write(block);
     state.maybe_compressed_out->next();

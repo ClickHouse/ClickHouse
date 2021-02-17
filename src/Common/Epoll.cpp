@@ -21,20 +21,16 @@ Epoll::Epoll() : events_count(0)
         throwFromErrno("Cannot open epoll descriptor", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-Epoll::Epoll(Epoll && other)
+Epoll::Epoll(Epoll && other) : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
 {
-    epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
-    int count = other.events_count;
-    events_count = count;
 }
 
 Epoll & Epoll::operator=(Epoll && other)
 {
     epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
-    int count = other.events_count;
-    events_count = count;
+    events_count.store(other.events_count.load());
     return *this;
 }
 

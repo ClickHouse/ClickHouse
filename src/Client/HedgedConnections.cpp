@@ -29,24 +29,26 @@ HedgedConnections::HedgedConnections(
     if (connections.empty())
         return;
 
+    offset_states.reserve(connections.size());
     for (size_t i = 0; i != connections.size(); ++i)
     {
-        ReplicaState replica;
-        replica.connection = connections[i];
-        replica.connection->setThrottler(throttler_);
-        replica.epoll.add(replica.connection->getSocket()->impl()->sockfd());
-        epoll.add(replica.epoll.getFileDescriptor());
-        fd_to_replica_location[replica.epoll.getFileDescriptor()] = ReplicaLocation{i, 0};
         offset_states.emplace_back();
-        offset_states[i].replicas.emplace_back(std::move(replica));
+        offset_states[i].replicas.emplace_back(connections[i]);
         offset_states[i].active_connection_count = 1;
+
+        ReplicaState & replica = offset_states[i].replicas.back();
+        replica.connection->setThrottler(throttler_);
+
+        epoll.add(replica.packet_receiver.getFileDescriptor());
+        fd_to_replica_location[replica.packet_receiver.getFileDescriptor()] = ReplicaLocation{i, 0};
+
+        epoll.add(replica.change_replica_timeout.getDescriptor());
+        timeout_fd_to_replica_location[replica.change_replica_timeout.getDescriptor()] = ReplicaLocation{i, 0};
     }
 
     active_connection_count = connections.size();
     offsets_with_received_first_data_packet = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
-
-    log = &Poco::Logger::get("HedgedConnections");
 }
 
 void HedgedConnections::Pipeline::add(std::function<void(ReplicaState & replica)> send_function)
@@ -155,11 +157,10 @@ void HedgedConnections::sendQuery(
         if (offset_states.size() > 1)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
-            modified_settings.parallel_replica_offset = fd_to_replica_location[replica.epoll.getFileDescriptor()].offset;
+            modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver.getFileDescriptor()].offset;
         }
 
         replica.connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
-        replica.receive_timeout.setRelative(timeouts.receive_timeout);
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
     };
 
@@ -281,75 +282,60 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
     if (epoll.empty())
         throw Exception("No pending events in epoll.", ErrorCodes::LOGICAL_ERROR);
 
-    ReplicaLocation location = getReadyReplicaLocation(async_callback);
-    return receivePacketFromReplica(location, std::move(async_callback));
+    ReplicaLocation location = getReadyReplicaLocation(std::move(async_callback));
+    return receivePacketFromReplica(location);
 }
 
 HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(AsyncCallback async_callback)
 {
-    LOG_DEBUG(log, "getReadyReplicaLocation");
     int event_fd;
     while (true)
     {
-        /// Check connections for pending data.
+        /// Check connections for pending data in buffer.
         ReplicaLocation location;
         if (checkPendingData(location))
-            return location;
+        {
+            ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
+
+            replica_state.packet_receiver.resume();
+            if (replica_state.packet_receiver.isPacketReady())
+                return location;
+            continue;
+        }
 
         /// Get ready file descriptor from epoll and process it.
         event_fd = getReadyFileDescriptor(async_callback);
 
         if (event_fd == hedged_connections_factory.getFileDescriptor())
-        {
             tryGetNewReplica(false);
-            continue;
-        }
-
-        if (!fd_to_replica_location.contains(event_fd))
-            throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
-
-        location = fd_to_replica_location[event_fd];
-
-        /// Read all events from replica epoll.
-        /// If socket is ready and timeout is alarmed simultaneously, skip timeout.
-        bool is_socket_ready = false;
-        bool is_change_replica_timeout_alarmed = false;
-        bool is_receive_timeout_alarmed = false;
-
-        epoll_event events[3];
-        events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
-        ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
-        size_t ready_count = replica_state.epoll.getManyReady(3, events, true);
-
-        for (size_t i = 0; i != ready_count; ++i)
+        else if (fd_to_replica_location.contains(event_fd))
         {
-            if (events[i].data.fd == replica_state.connection->getSocket()->impl()->sockfd())
-                is_socket_ready = true;
-            if (events[i].data.fd == replica_state.change_replica_timeout.getDescriptor())
-                is_change_replica_timeout_alarmed = true;
-            if (events[i].data.fd == replica_state.receive_timeout.getDescriptor())
-                is_receive_timeout_alarmed = true;
+            location = fd_to_replica_location[event_fd];
+            ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
+            replica_state.packet_receiver.resume();
+
+            if (replica_state.packet_receiver.isPacketReady())
+                return location;
+
+            if (replica_state.packet_receiver.isReceiveTimeoutExpired())
+            {
+                finishProcessReplica(replica_state, true);
+
+                /// Check if there is no more active connections with the same offset and there is no new replica in process.
+                if (offset_states[location.offset].active_connection_count == 0 && !offset_states[location.offset].next_replica_in_process)
+                    throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
+            }
         }
-
-        if (is_socket_ready)
-            return location;
-
-        /// We reach this point only if there is an alarmed timeout.
-
-        if (is_change_replica_timeout_alarmed)
+        else if (timeout_fd_to_replica_location.contains(event_fd))
         {
-            replica_state.change_replica_timeout.reset();
+            location = timeout_fd_to_replica_location[event_fd];
+            offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
+            offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(location.offset);
             tryGetNewReplica(true);
         }
-        if (is_receive_timeout_alarmed)
-        {
-            finishProcessReplica(replica_state, true);
-
-            /// Check if there is no more active connections with the same offset and there is no new replica in process.
-            if (offset_states[location.offset].active_connection_count == 0 && !next_replica_in_process)
-                throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
-        }
+        else
+            throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -375,19 +361,15 @@ bool HedgedConnections::checkPendingData(ReplicaLocation & location_out)
     return false;
 }
 
-Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & replica_location, AsyncCallback async_callback)
+Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & replica_location)
 {
-    LOG_DEBUG(log, "receivePacketFromReplica");
-
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
-    replica.receive_timeout.reset();
-    Packet packet = replica.connection->receivePacket(std::move(async_callback));
+    Packet packet = replica.packet_receiver.getPacket();
     switch (packet.type)
     {
         case Protocol::Server::Data:
             if (!offset_states[replica_location.offset].first_packet_of_data_received)
                 processReceivedFirstDataPacket(replica_location);
-            replica.receive_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
             break;
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Progress:
@@ -395,7 +377,6 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
-            replica.receive_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
             break;
 
         case Protocol::Server::EndOfStream:
@@ -413,8 +394,6 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 
 void HedgedConnections::processReceivedFirstDataPacket(const ReplicaLocation & replica_location)
 {
-    LOG_DEBUG(log, "processReceivedFirstDataPacket");
-
     /// When we receive first packet of data from replica, we stop working with replicas, that are
     /// responsible for the same offset.
     OffsetState & offset_state = offset_states[replica_location.offset];
@@ -445,8 +424,6 @@ void HedgedConnections::processReceivedFirstDataPacket(const ReplicaLocation & r
 
 void HedgedConnections::tryGetNewReplica(bool start_new_connection)
 {
-    LOG_DEBUG(log, "tryGetNewReplica");
-
     Connection * connection = nullptr;
     HedgedConnectionsFactory::State state = hedged_connections_factory.getNextConnection(start_new_connection, false, connection);
 
@@ -461,14 +438,18 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
         size_t offset = offsets_queue.front();
         offsets_queue.pop();
 
-        ReplicaState replica;
-        replica.connection = connection;
-        replica.epoll.add(replica.connection->getSocket()->impl()->sockfd());
-        epoll.add(replica.epoll.getFileDescriptor());
-        fd_to_replica_location[replica.epoll.getFileDescriptor()] = ReplicaLocation{offset, offset_states[offset].replicas.size()};
+        offset_states[offset].replicas.emplace_back(connection);
+        ++offset_states[offset].active_connection_count;
+        offset_states[offset].next_replica_in_process = false;
         ++active_connection_count;
+
+        ReplicaState & replica = offset_states[offset].replicas.back();
+        epoll.add(replica.packet_receiver.getFileDescriptor());
+        fd_to_replica_location[replica.packet_receiver.getFileDescriptor()] = ReplicaLocation{offset, offset_states[offset].replicas.size() - 1};
+        epoll.add(replica.change_replica_timeout.getDescriptor());
+        timeout_fd_to_replica_location[replica.change_replica_timeout.getDescriptor()] = ReplicaLocation{offset, offset_states[offset].replicas.size() - 1};
+
         pipeline_for_new_replicas.run(replica);
-        offset_states[offset].replicas.push_back(std::move(replica));
     }
     else if (state == HedgedConnectionsFactory::State::NOT_READY && !next_replica_in_process)
     {
@@ -483,6 +464,7 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
         {
             if (offset_states[offsets_queue.front()].active_connection_count == 0)
                 throw Exception("Cannot find enough connections to replicas", ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+            offset_states[offsets_queue.front()].next_replica_in_process = false;
             offsets_queue.pop();
         }
     }
@@ -497,11 +479,16 @@ void HedgedConnections::tryGetNewReplica(bool start_new_connection)
 
 void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool disconnect)
 {
-    LOG_DEBUG(log, "finishProcessReplica");
+    replica.packet_receiver.cancel();
+    replica.change_replica_timeout.reset();
 
-    epoll.remove(replica.epoll.getFileDescriptor());
-    --offset_states[fd_to_replica_location[replica.epoll.getFileDescriptor()].offset].active_connection_count;
-    fd_to_replica_location.erase(replica.epoll.getFileDescriptor());
+    epoll.remove(replica.packet_receiver.getFileDescriptor());
+    --offset_states[fd_to_replica_location[replica.packet_receiver.getFileDescriptor()].offset].active_connection_count;
+    fd_to_replica_location.erase(replica.packet_receiver.getFileDescriptor());
+
+    epoll.remove(replica.change_replica_timeout.getDescriptor());
+    timeout_fd_to_replica_location.erase(replica.change_replica_timeout.getDescriptor());
+
     --active_connection_count;
 
     if (disconnect)

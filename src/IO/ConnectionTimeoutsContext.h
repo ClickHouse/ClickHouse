@@ -23,8 +23,7 @@ inline ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const S
         settings.tcp_keep_alive_timeout,
         0,
         settings.connect_timeout_with_failover_secure_ms,
-        settings.receive_hello_timeout,
-        settings.receive_tables_status_timeout,
+        settings.hedged_connection_timeout,
         settings.receive_data_timeout);
 }
 

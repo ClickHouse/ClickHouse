@@ -265,7 +265,11 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket(std::move(async_callback));
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        packet = current_connection->receivePacket();
+    }
 
     switch (packet.type)
     {
