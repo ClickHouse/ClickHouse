@@ -27,20 +27,28 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
+ /** CacheDictionary store keys in cache storage and can asynchronous and synchronous updates during keys fetch.
 
-/*
- *
- * This dictionary is stored in a cache that has a fixed number of cells.
- * These cells contain frequently used elements.
- * When searching for a dictionary, the cache is searched first and special heuristic is used:
- * while looking for the key, we take a look only at max_collision_length elements.
- * So, our cache is not perfect. It has errors like "the key is in cache, but the cache says that it does not".
- * And in this case we simply ask external source for the key which is faster.
- * You have to keep this logic in mind.
- * */
+    If keys are not found in storage during fetch, dictionary start update operation with update queue.
+
+    During update operation necessary keys are fetched from source and inserted into storage.
+
+    After that data from storage and source are aggregated and returned to the client.
+
+    Typical flow:
+
+    1. Client request data during for example getColumn function call.
+    2. CacheDictionary request data from storage and if all data is found in storage it returns result to client.
+    3. If some data is not in storage cache dictionary try to perform update.
+
+    If all keys are just expired and allow_read_expired_keys option is set dictionary starts asynchronous update and
+    return result to client.
+
+    If there are not found keys dictionary start synchronous update and wait for result.
+
+    4. After getting result from synchronous update dictionary aggregates data that was previously fetched from
+    storage and data that was fetched during update and return result to client.
+ */
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionary final : public IDictionary
 {
@@ -143,6 +151,7 @@ public:
         PaddedPODArray<UInt8> & out) const override;
 
 private:
+    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
     Columns getColumnsImpl(
         const Strings & attribute_names,
@@ -162,8 +171,6 @@ private:
     void setupHierarchicalAttribute();
 
     void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr);
-
-    using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
 
     /// Update dictionary source pointer if required and return it. Thread safe.
     /// MultiVersion is not used here because it works with constant pointers.

@@ -24,13 +24,24 @@ namespace CurrentMetrics
 namespace DB
 {
 
+/** This class is passed between update queue and update queue client during update.
+
+    For simple keys we pass simple keys.
+
+    For complex keys we pass complex keys columns and requested rows to update.
+
+    During update cache dictionary should fill requested_keys_to_fetched_columns_during_update_index and
+    fetched_columns_during_update.
+
+    For complex key to extend lifetime of key complex key arena should be used.
+*/
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryUpdateUnit
 {
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryUpdateUnit");
 
+    /// Constructor for simple keys update request
     explicit CacheDictionaryUpdateUnit(
         PaddedPODArray<UInt64> && requested_simple_keys_,
         const DictionaryStorageFetchRequest & request_)
@@ -41,6 +52,7 @@ public:
         fetched_columns_during_update = request.makeAttributesResultColumns();
     }
 
+    /// Constructor for complex keys update request
     explicit CacheDictionaryUpdateUnit(
         const Columns & requested_complex_key_columns_,
         const std::vector<size_t> && requested_complex_key_rows_,
@@ -65,9 +77,9 @@ public:
 
     const DictionaryStorageFetchRequest request;
 
-    /// This should be filled by the client during update
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
     MutableColumns fetched_columns_during_update;
+    /// Complex keys are serialized in this arena and added to map
     const std::shared_ptr<Arena> complex_key_arena;
 
 private:
@@ -90,17 +102,25 @@ extern template class CacheDictionaryUpdateUnit<DictionaryKeyType::complex>;
 
 struct CacheDictionaryUpdateQueueConfiguration
 {
+    /// Size of update queue
     const size_t max_update_queue_size;
-    const size_t update_queue_push_timeout_milliseconds;
-    const size_t query_wait_timeout_milliseconds;
+    /// Size in thead pool of update queue
     const size_t max_threads_for_updates;
+    /// Timeout for trying to push update unit into queue
+    const size_t update_queue_push_timeout_milliseconds;
+    /// Timeout during sync waititing of update unit
+    const size_t query_wait_timeout_milliseconds;
 };
 
+/** Responsibility of this class is to provide asynchronous and synchronous update support for CacheDictionary
+
+    It is responsibility of CacheDictionary to perform update with UpdateUnit using UpdateFunction.
+*/
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryUpdateQueue
 {
 public:
-
+    /// Client of update queue must provide this function in constructor and perform update using update unit.
     using UpdateFunction = std::function<void (CacheDictionaryUpdateUnitPtr<dictionary_key_type> &)>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryUpdateQueue");
 
@@ -111,20 +131,33 @@ public:
 
     ~CacheDictionaryUpdateQueue();
 
-    const CacheDictionaryUpdateQueueConfiguration & getConfiguration() const
-    {
-        return configuration;
-    }
+    /// Get configuration that was passed to constructor
+    const CacheDictionaryUpdateQueueConfiguration & getConfiguration() const { return configuration; }
 
-    bool isFinished() const
-    {
-        return finished;
-    }
+    /// Is queue finished
+    bool isFinished() const { return finished; }
 
+    /// Synchronous wait for update queue to stop
     void stopAndWait();
 
+    /** Try to add update unit into queue.
+
+        If queue is full and oush cannot be performed in update_queue_push_timeout_milliseconds from configuration
+        an exception will be thrown.
+
+        If queue already finished an exception will be thrown.
+    */
     void tryPushToUpdateQueueOrThrow(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr);
 
+    /** Try to synchronously wait for update completion.
+
+        If exception was passed from update function during update it will be rethrowed.
+
+        If update will not be finished in query_wait_timeout_milliseconds from configuration
+        an exception will be thrown.
+
+        If queue already finished an exception will be thrown.
+    */
     void waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const;
 
 private:

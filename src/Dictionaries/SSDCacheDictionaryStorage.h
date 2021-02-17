@@ -810,6 +810,8 @@ public:
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
 
+    bool returnFetchedColumnsDuringFetchInOrderOfRequestedKeys() const override { return false; }
+
     bool supportsSimpleKeys() const override
     {
         return dictionary_key_type == DictionaryKeyType::simple;
@@ -817,7 +819,7 @@ public:
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) const override
+        const DictionaryStorageFetchRequest & fetch_request) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
         {
@@ -852,7 +854,7 @@ public:
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & column_fetch_requests) const override
+        const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         {
@@ -1240,6 +1242,7 @@ private:
         cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
     }
 
+    /// TODO: Reuse
     static void deserializeAndInsertIntoColumns(MutableColumns & columns, const DictionaryStorageFetchRequest & fetch_request, const char * place_for_serialized_columns)
     {
         for (size_t column_index = 0; column_index < columns.size(); ++column_index)

@@ -17,6 +17,89 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/** Support class for dictionary storages.
+
+    The main idea is that during fetch we create all columns, but fill only columns that client requested.
+
+    We need to create other columns during fetch, because in case of serialized storage we can skip
+    unnecessary columns serialized in cache with skipSerializedInArena method.
+
+    When result is fetched from the storage client of storage can filterOnlyNecessaryColumns
+    and get only columns that match attributes_names_to_fetch.
+ */
+class DictionaryStorageFetchRequest
+{
+public:
+    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch)
+        : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
+        , attributes_to_fetch_filter(structure.attributes.size(), false)
+    {
+        size_t attributes_size = structure.attributes.size();
+        attributes_to_fetch_types.reserve(attributes_size);
+
+        for (size_t i = 0; i < attributes_size; ++i)
+        {
+            const auto & name = structure.attributes[i].name;
+            const auto & type = structure.attributes[i].type;
+            attributes_to_fetch_types.emplace_back(type);
+
+            if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
+            {
+                attributes_to_fetch_filter[i] = true;
+            }
+        }
+    }
+
+    DictionaryStorageFetchRequest() = default;
+
+    /// Check requested attributes size
+    size_t attributesSize() const
+    {
+        return attributes_to_fetch_types.size();
+    }
+
+    /// Check if attribute with attribute_name was requested to fetch
+    bool containsAttribute(const String & attribute_name) const
+    {
+        return attributes_to_fetch_names_set.find(attribute_name) != attributes_to_fetch_names_set.end();
+    }
+
+    /// Check if attribute with attribute_index should be filled during fetch
+    bool shouldFillResultColumnWithIndex(size_t attribute_index) const
+    {
+        return attributes_to_fetch_filter[attribute_index];
+    }
+
+    /// Create columns for each of dictionary attributes
+    MutableColumns makeAttributesResultColumns() const
+    {
+        MutableColumns result;
+        result.reserve(attributes_to_fetch_types.size());
+
+        for (const auto & type : attributes_to_fetch_types)
+            result.emplace_back(type->createColumn());
+
+        return result;
+    }
+
+    /// Filter only requested colums
+    Columns filterRequestedColumns(MutableColumns & fetched_mutable_columns) const
+    {
+        Columns result;
+        result.reserve(attributes_to_fetch_types.size());
+
+        for (size_t fetch_request_index = 0; fetch_request_index < attributes_to_fetch_types.size(); ++fetch_request_index)
+            if (shouldFillResultColumnWithIndex(fetch_request_index))
+                result.emplace_back(std::move(fetched_mutable_columns[fetch_request_index]));
+
+        return result;
+    }
+private:
+    std::unordered_set<String> attributes_to_fetch_names_set;
+    std::vector<bool> attributes_to_fetch_filter;
+    DataTypes attributes_to_fetch_types;
+};
+
 /**
  * In Dictionaries implementation String attribute is stored in arena and StringRefs are pointing to it.
  */

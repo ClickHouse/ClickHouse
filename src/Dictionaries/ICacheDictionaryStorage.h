@@ -8,18 +8,23 @@
 namespace DB
 {
 
+/// Result of fetch from CacheDictionaryStorage
 template <typename KeyType>
 struct KeysStorageFetchResult
 {
-
+    /// Fetched column values
     MutableColumns fetched_columns;
 
+    /// Found key to index in fetched_columns
     HashMap<KeyType, size_t> found_keys_to_fetched_columns_index;
 
+    /// Expired key to index in fetched_columns
     HashMap<KeyType, size_t> expired_keys_to_fetched_columns_index;
 
+    /// Keys that are not found in storage
     PaddedPODArray<KeyType> not_found_or_expired_keys;
 
+    /// Indexes of requested keys that are not found in storage
     PaddedPODArray<size_t> not_found_or_expired_keys_indexes;
 
 };
@@ -27,90 +32,47 @@ struct KeysStorageFetchResult
 using SimpleKeysStorageFetchResult = KeysStorageFetchResult<UInt64>;
 using ComplexKeysStorageFetchResult = KeysStorageFetchResult<StringRef>;
 
-class DictionaryStorageFetchRequest
-{
-public:
-    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch)
-        : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
-        , attributes_to_fetch_filter(structure.attributes.size(), false)
-    {
-        size_t attributes_size = structure.attributes.size();
-        attributes_to_fetch_types.reserve(attributes_size);
-
-        for (size_t i = 0; i < attributes_size; ++i)
-        {
-            const auto & name = structure.attributes[i].name;
-            const auto & type = structure.attributes[i].type;
-            attributes_to_fetch_types.emplace_back(type);
-
-            if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
-            {
-                attributes_to_fetch_filter[i] = true;
-            }
-        }
-    }
-
-    DictionaryStorageFetchRequest() = default;
-
-    size_t attributesSize() const
-    {
-        return attributes_to_fetch_types.size();
-    }
-
-    bool containsAttribute(const String & attribute_name) const
-    {
-        return attributes_to_fetch_names_set.find(attribute_name) != attributes_to_fetch_names_set.end();
-    }
-
-    bool shouldFillResultColumnWithIndex(size_t attribute_index) const
-    {
-        return attributes_to_fetch_filter[attribute_index];
-    }
-
-    MutableColumns makeAttributesResultColumns() const
-    {
-        MutableColumns result;
-        result.reserve(attributes_to_fetch_types.size());
-
-        for (const auto & type : attributes_to_fetch_types)
-            result.emplace_back(type->createColumn());
-
-        return result;
-    }
-private:
-    std::unordered_set<String> attributes_to_fetch_names_set;
-    std::vector<bool> attributes_to_fetch_filter;
-    DataTypes attributes_to_fetch_types;
-};
-
 class ICacheDictionaryStorage
 {
 public:
 
     virtual ~ICacheDictionaryStorage() = default;
 
+    /// Necessary if all keys are found we can return result to client without additional aggregation
+    virtual bool returnFetchedColumnsDuringFetchInOrderOfRequestedKeys() const = 0;
+
+    /// Does storage support simple keys
     virtual bool supportsSimpleKeys() const = 0;
 
+    /// Fetch columns for keys, this method is not write thread safe
     virtual SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) const = 0;
+        const DictionaryStorageFetchRequest & fetch_request) = 0;
 
+    /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) = 0;
 
+    /// Return cached simple keys
     virtual PaddedPODArray<UInt64> getCachedSimpleKeys() const = 0;
 
+    /// Does storage support complex keys
     virtual bool supportsComplexKeys() const = 0;
 
+    /// Fetch columns for keys, this method is not write thread safe
     virtual ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & column_fetch_requests) const = 0;
+        const DictionaryStorageFetchRequest & column_fetch_requests) = 0;
 
+    /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) = 0;
 
+    /// Return cached simple keys
     virtual PaddedPODArray<StringRef> getCachedComplexKeys() const = 0;
 
+    /// Return size of keys in storage
     virtual size_t getSize() const = 0;
 
+    /// Return bytes allocated in storage
     virtual size_t getBytesAllocated() const = 0;
 
 };
