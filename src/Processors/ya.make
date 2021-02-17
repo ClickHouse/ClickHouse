@@ -114,6 +114,7 @@ SRCS(
     QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
+    QueryPlan/Optimizations/filterPushDown.cpp
     QueryPlan/Optimizations/liftUpArrayJoin.cpp
     QueryPlan/Optimizations/limitPushDown.cpp
     QueryPlan/Optimizations/mergeExpressions.cpp
