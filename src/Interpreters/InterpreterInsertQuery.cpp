@@ -403,15 +403,9 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
     else if (query.data)
-    {
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, query.tail, query_sample_block, context, nullptr);
-        res.out = std::move(out_streams.at(0));
-    }
-    else
-    {
-        assert(false);
-        __builtin_unreachable();
-    }
+
+    res.out = std::move(out_streams.at(0));
 
     res.pipeline.addStorageHolder(table);
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
