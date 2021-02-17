@@ -211,8 +211,11 @@ void PostgreSQLReplicaConsumer::readTupleData(
             value += readInt8(message, pos, size);
         }
 
-        /// TODO: Check for null values and use insertDefaultValue
-        insertValue(buffer, value, column_idx);
+        /// For arrays default for null is inserted when converted to clickhouse array
+        if (value == "NULL")
+            insertDefaultValue(buffer, column_idx);
+        else
+            insertValue(buffer, value, column_idx);
 
         LOG_DEBUG(log, "Identifier: {}, column length: {}, value: {}", identifier, col_len, value);
     }

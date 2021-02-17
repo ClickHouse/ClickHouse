@@ -62,7 +62,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
-        LOG_ERROR(log, "Unable to set up connection. Reconnection attempt continue. Error message: {}",
+        LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}",
                 pqxx_error.what());
 
         startup_task->scheduleAfter(reschedule_ms);
