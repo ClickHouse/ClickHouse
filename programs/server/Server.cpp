@@ -759,7 +759,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->updateStorageConfiguration(*config);
         },
-        /* already_loaded = */ true);
+        /* already_loaded = */ false);
 
     auto & access_control = global_context->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
