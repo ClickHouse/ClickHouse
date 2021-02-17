@@ -27,6 +27,8 @@ public:
 
     void loadLogStore(size_t start_log_index);
 
+    void flushLogStore();
+
     nuraft::ptr<nuraft::cluster_config> load_config() override { return cluster_config; }
 
     void save_config(const nuraft::cluster_config & config) override;

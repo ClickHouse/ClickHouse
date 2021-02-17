@@ -467,6 +467,17 @@ void Changelog::flush()
     current_writer->flush();
 }
 
-Changelog::~Changelog() = default;
+Changelog::~Changelog()
+{
+    try
+    {
+        if (current_writer)
+            current_writer->flush();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 }
