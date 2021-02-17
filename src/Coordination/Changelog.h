@@ -45,6 +45,15 @@ struct ChangelogRecord
     nuraft::ptr<nuraft::buffer> blob;
 };
 
+struct ChangelogFileDescription
+{
+    std::string prefix;
+    size_t from_log_idx;
+    size_t to_log_idx;
+
+    std::string path;
+};
+
 class ChangelogWriter;
 
 class Changelog
@@ -98,7 +107,7 @@ private:
 
 private:
     std::string changelogs_dir;
-    std::map<size_t, std::string> existing_changelogs;
+    std::map<size_t, ChangelogFileDescription> existing_changelogs;
     std::unique_ptr<ChangelogWriter> current_writer;
     IndexToOffset index_to_start_pos;
     const size_t rotate_interval;
