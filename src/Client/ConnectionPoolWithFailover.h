@@ -31,7 +31,6 @@ enum class PoolMode
     GET_ALL
 };
 
-
 class ConnectionPoolWithFailover : public IConnectionPool, private PoolWithFailoverBase<IConnectionPool>
 {
 public:
