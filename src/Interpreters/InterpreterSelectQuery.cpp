@@ -784,7 +784,7 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
-            ///NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
+            /// NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
             /// and after normalization, the height of the AST tree is at most 2
             for (const auto & elem : ast_union->list_of_selects->children)
             {
