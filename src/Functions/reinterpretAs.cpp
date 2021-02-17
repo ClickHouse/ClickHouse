@@ -93,6 +93,10 @@ public:
                     + " because only Numeric, String or FixedString can be reinterpreted in Numeric",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+        else
+            throw Exception("Cannot reinterpret " + from_type->getName() + " as " + to_type->getName()
+                    + " because only reinterpretation in String, FixedString and Numeric types is supported",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return to_type;
     }
