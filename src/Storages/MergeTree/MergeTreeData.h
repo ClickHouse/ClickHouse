@@ -415,7 +415,9 @@ public:
     size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
+    size_t getMaxPartsCountForPartitionWithState(DataPartState state) const;
     size_t getMaxPartsCountForPartition() const;
+    size_t getMaxInactivePartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.

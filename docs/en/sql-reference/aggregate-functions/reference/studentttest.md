@@ -16,7 +16,7 @@ studentTTest(sample_data, sample_index)
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
 The null hypothesis is that means of populations are equal. Normal distribution with equal variances is assumed.
 
-**Parameters**
+**Arguments**
 
 -   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 -   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).

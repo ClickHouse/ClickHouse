@@ -56,7 +56,7 @@ $ echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
 20.12.3.3
 ```
 
-### Volumes 
+### Volumes
 
 Typically you may want to mount the following folders inside your container to archieve persistency:
 
@@ -76,7 +76,7 @@ You may also want to mount:
 * `/etc/clickhouse-server/usert.d/*.xml` - files with use settings adjustmenets
 * `/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
 
-### Linux capabilities 
+### Linux capabilities
 
 ClickHouse has some advanced functionality which requite enabling several [linux capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html).
 
@@ -113,10 +113,10 @@ $ docker run --rm -e CLICKHOUSE_UID=0 -e CLICKHOUSE_GID=0 --name clickhouse-serv
 
 ### How to create default database and user on starting
 
-Sometimes you may want to create user (user named `default` is used by default) and database on image starting. You can do it using environment variables `CLICKHOUSE_DB`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`:
+Sometimes you may want to create user (user named `default` is used by default) and database on image starting. You can do it using environment variables `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` and `CLICKHOUSE_PASSWORD`:
 
 ```
-$ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp yandex/clickhouse-server
+$ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp yandex/clickhouse-server
 ```
 
 ## How to extend this image

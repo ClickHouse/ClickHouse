@@ -13,7 +13,7 @@ Turns a subquery into a table. The function implements views (see [CREATE VIEW](
 view(subquery)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `subquery` — `SELECT` query.
 
