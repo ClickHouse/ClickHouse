@@ -11,9 +11,9 @@ node1 = cluster.add_instance('node1', main_configs=[], with_postgres=True)
 
 def get_postgres_conn(database=False):
     if database == True:
-        conn_string = "host='localhost' dbname='clickhouse' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port='{}' dbname='clickhouse' user='postgres' password='mysecretpassword'".format(cluster.postgres_port)
     else:
-        conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port='{}' user='postgres' password='mysecretpassword'".format(cluster.postgres_port)
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     conn.autocommit = True

@@ -38,6 +38,7 @@ SANITIZER_SIGN = "=================="
 
 
 def _create_env_file(path, variables):
+    logging.debug("Env {} stored in {}".format(variables, path))
     with open(path, 'w') as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -71,7 +72,7 @@ def get_open_port():
 
 def subprocess_check_call(args):
     # Uncomment for debugging
-    # print('run:', ' ' . join(args))
+    print('run:', ' '.join(args))
     run_and_check(args)
 
 
@@ -136,6 +137,7 @@ class ClickHouseCluster:
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
+        self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
@@ -202,6 +204,10 @@ class ClickHouseCluster:
         self.redis_host = "redis1"
         self.redis_port = get_open_port()
 
+        # available when with_postgres == True
+        self.postgres_host = "postgres1"
+        self.postgres_port = get_open_port()
+
         # available when with_mysql == True
         self.mysql_host = "mysql57"
         self.mysql_port = get_open_port()
@@ -267,6 +273,16 @@ class ClickHouseCluster:
         self.base_rabbitmq_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
         return self.base_rabbitmq_cmd
+
+    def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
+        env_variables['POSTGRES_HOST'] = self.postgres_host
+        env_variables['POSTGRES_EXTERNAL_PORT'] = str(self.postgres_port)
+        env_variables['POSTGRES_INTERNAL_PORT'] = "5432"
+        self.with_postgres = True
+        self.base_postgres_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+        return self.base_postgres_cmd
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
@@ -364,11 +380,7 @@ class ClickHouseCluster:
             cmds.append(self.setup_mysql8_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_postgres and not self.with_postgres:
-            self.with_postgres = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-            self.base_postgres_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
-            cmds.append(self.base_postgres_cmd)
+            cmds.append(self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
@@ -376,11 +388,7 @@ class ClickHouseCluster:
                 cmds.append(self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir))
 
             if not self.with_postgres:
-                self.with_postgres = True
-                self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-                self.base_postgres_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                          '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
-                cmds.append(self.base_postgres_cmd)
+                cmds.append(self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
@@ -582,8 +590,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
-                conn = psycopg2.connect(conn_string)
+                conn = psycopg2.connect(host='127.0.0.1', port=self.postgres_port, user='postgres', password='mysecretpassword')
                 conn.close()
                 print("Postgres Started")
                 return
@@ -738,7 +745,7 @@ class ClickHouseCluster:
 
             self.docker_client = docker.from_env(version=self.docker_api_version)
 
-            common_opts = ['up', '-d', '--force-recreate', '--remove-orphans']
+            common_opts = ['up', '-d', '--force-recreate']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 print('Setup ZooKeeper')
@@ -772,7 +779,7 @@ class ClickHouseCluster:
             if self.with_postgres and self.base_postgres_cmd:
                 print('Setup Postgres')
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
-                self.wait_postgres_to_start(120)
+                self.wait_postgres_to_start(30)
 
             if self.with_kafka and self.base_kafka_cmd:
                 print('Setup Kafka')
@@ -826,6 +833,7 @@ class ClickHouseCluster:
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
+            self.up_called = True
             subprocess.check_output(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
@@ -850,29 +858,30 @@ class ClickHouseCluster:
 
     def shutdown(self, kill=True):
         sanitizer_assert_instance = None
-        with open(self.docker_logs_path, "w+") as f:
-            try:
-                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            except Exception as e:
-                print("Unable to get logs from docker.")
-            f.seek(0)
-            for line in f:
-                if SANITIZER_SIGN in line:
-                    sanitizer_assert_instance = line.split('|')[0].strip()
-                    break
+        if self.up_called:
+            with open(self.docker_logs_path, "w+") as f:
+                try:
+                    subprocess.check_call(self.base_cmd + ['logs'], stdout=f)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                except Exception as e:
+                    print("Unable to get logs from docker.")
+                f.seek(0)
+                for line in f:
+                    if SANITIZER_SIGN in line:
+                        sanitizer_assert_instance = line.split('|')[0].strip()
+                        break
 
-        if kill:
-            try:
-                subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
-            except Exception as e:
-                print("Kill command failed during shutdown. {}".format(repr(e)))
-                print("Trying to kill forcefully")
-                subprocess_check_call(self.base_cmd + ['kill'])
+            if kill:
+                try:
+                    subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
+                except Exception as e:
+                    print("Kill command failed during shutdown. {}".format(repr(e)))
+                    print("Trying to kill forcefully")
+                    subprocess_check_call(self.base_cmd + ['kill'])
 
-        try:
-            subprocess_check_call(self.base_cmd + ['down', '--volumes'])
-        except Exception as e:
-            print("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
+            try:
+                subprocess_check_call(self.base_cmd + ['down', '--volumes'])
+            except Exception as e:
+                print("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
 
         self.is_up = False
 
@@ -1308,7 +1317,7 @@ class ClickHouseInstance:
                     "UserName": "postgres",
                     "Password": "mysecretpassword",
                     "Port": "5432",
-                    "Servername": "postgres1",
+                    "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",
                     "ReadOnly": "No",
                     "RowVersioning": "No",
@@ -1440,8 +1449,6 @@ class ClickHouseInstance:
 
         self.cluster.env_variables.update(self.env_variables)
         _create_env_file(os.path.join(self.env_file), self.env_variables)
-
-        print("Env {} stored in {}".format(self.env_variables, self.env_file))
 
         odbc_ini_path = ""
         if self.odbc_ini_path:

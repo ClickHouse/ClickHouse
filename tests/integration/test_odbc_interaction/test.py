@@ -4,13 +4,14 @@ import psycopg2
 import pymysql.cursors
 import pytest
 import logging
+import os.path
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True,
+node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, with_postgres=True,
                              main_configs=['configs/openssl.xml', 'configs/odbc_logging.xml',
                                            'configs/enable_dictionaries.xml',
                                            'configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml',
@@ -36,7 +37,7 @@ create_table_sql_template = """
 def get_mysql_conn():
     errors = []
     conn = None
-    for _ in range(5):
+    for _ in range(15):
         try:
             if conn is None:
                 conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
@@ -64,11 +65,20 @@ def create_mysql_table(conn, table_name):
 
 
 def get_postgres_conn():
-    conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
-    conn = psycopg2.connect(conn_string)
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    conn.autocommit = True
-    return conn
+    conn_string = "host='localhost' port={} user='postgres' password='mysecretpassword'".format(cluster.postgres_port)
+    errors = []
+    for _ in range(15):
+        try:
+            conn = psycopg2.connect(conn_string)
+            logging.debug("Postgre Connection establised: {}".format(conn_string))
+            conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+            conn.autocommit = True
+            return conn
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
+    
+    raise Exception("Postgre connection not establised DSN={}, {}".format(conn_string, errors))
 
 
 def create_postgres_db(conn, name):
@@ -319,12 +329,13 @@ def test_postgres_insert(started_cluster):
         "create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')")
     node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
     assert node1.query("select * from pg_insert") == '1\thello\n2\tworld\n'
-    node1.query("insert into table function odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table') format CSV 3,test")
+    node1.query("insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,test")
     node1.query(
-        "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table') select number, 's' || toString(number) from numbers (4, 7)")
+        "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')" \
+        " select number, 's' || toString(number) from numbers (4, 7)")
     assert node1.query("select sum(column1), count(column1) from pg_insert") == "55\t10\n"
     assert node1.query(
-        "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table')))") == "55\t10\n"
+        "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))") == "55\t10\n"
 
 
 def test_bridge_dies_with_parent(started_cluster):
