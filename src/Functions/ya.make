@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -423,6 +424,7 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
