@@ -975,6 +975,7 @@ void executeQuery(
     {
         if (streams.out)
         {
+            assert(streams.in);
             copyData(*streams.in, *streams.out);
         }
         else if (streams.in)
