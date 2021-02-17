@@ -39,6 +39,8 @@ public:
 
     bool flush() override;
 
+    size_t size() const;
+
 private:
     mutable std::mutex changelog_lock;
     Changelog changelog;

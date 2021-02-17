@@ -94,4 +94,10 @@ void NuKeeperLogStore::apply_pack(size_t index, nuraft::buffer & pack)
     changelog.applyEntriesFromBuffer(index, pack);
 }
 
+size_t NuKeeperLogStore::size() const
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.size();
+}
+
 }
