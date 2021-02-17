@@ -305,13 +305,11 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
 {
     DictionaryStorageFetchRequest request(dict_struct, attribute_names);
 
-    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
-
     FetchResult result_of_fetch_from_storage;
 
     {
-        /// Read lock on storage
-        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+        /// Write lock on storage
+        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         auto fetch_result = cache_storage_ptr->fetchColumnsForKeys(keys, request);
         result_of_fetch_from_storage = std::move(fetch_result);
@@ -405,13 +403,11 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
 
     DictionaryStorageFetchRequest request(dict_struct, {});
 
-    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
-
     FetchResult result_of_fetch_from_storage;
 
     {
-        /// Read lock on storage
-        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+        /// Write lock on storage
+        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         auto fetch_result = cache_storage_ptr->fetchColumnsForKeys(keys, request);
         result_of_fetch_from_storage = std::move(fetch_result);
@@ -488,6 +484,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     return result;
 }
 
+/// TODO: Remove before merge
 // namespace {
 
 //     String convertKeyToString(UInt64 key)
@@ -520,6 +517,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
         const std::vector<DefaultValueProvider> & default_value_providers)
 {
+    /// TODO: Remove before merge
     // std::cerr << "CacheDictionary::aggregateColumns" << std::endl;
     // std::cerr << "Fetched keys from storage" << std::endl;
     // for (auto & node : found_keys_to_fetched_columns_from_storage_index)

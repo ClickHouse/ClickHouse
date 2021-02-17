@@ -21,31 +21,22 @@ namespace ErrorCodes
 
 struct CacheDictionaryStorageConfiguration
 {
+    /// Max size of storage in cells
     const size_t max_size_in_cells;
+    /// Needed to perform check if cell is expired or not found. Default value is dictionary max lifetime.
     const size_t strict_max_lifetime_seconds;
+    /// Lifetime of dictionary. Cell deadline is random value between lifetime min and max seconds.
     const DictionaryLifetime lifetime;
 };
 
-template <typename CacheDictionaryStorage>
-class ArenaCellDisposer
-{
-public:
-    CacheDictionaryStorage & storage;
+/** Keys are stored in LRUCache and column values are serialized into arena.
 
-    template <typename Key, typename Value>
-    void operator()(const Key & key, const Value & value) const
-    {
-        /// In case of complex key we keep it in arena
-        if constexpr (std::is_same_v<Key, StringRef>)
-        {
-            storage.arena.free(const_cast<char *>(key.data), key.size);
-        }
+    Cell in LRUCache consists of allocated size and place in arena were columns serialized data is stored.
 
-        storage.arena.free(value.place_for_serialized_columns, value.allocated_size_for_columns);
-    }
-};
+    When cell is removed from LRUCache data associated with it is also removed from arena.
 
-/// TODO: Fix name
+    In case of complex key we also store key data in arena and it is removed from arena.
+*/
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
 {
@@ -56,8 +47,13 @@ public:
     explicit CacheDictionaryStorage(CacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
         , rnd_engine(randomSeed())
-        , cache(configuration.max_size_in_cells, false, ArenaCellDisposer<CacheDictionaryStorage<dictionary_key_type>> { *this })
+        , cache(configuration.max_size_in_cells, false, { *this })
     {
+    }
+
+    bool returnFetchedColumnsDuringFetchInOrderOfRequestedKeys() const override
+    {
+        return true;
     }
 
     bool supportsSimpleKeys() const override
@@ -67,7 +63,7 @@ public:
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) const override
+        const DictionaryStorageFetchRequest & fetch_request) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
         {
@@ -102,7 +98,7 @@ public:
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & column_fetch_requests) const override
+        const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         {
@@ -145,7 +141,7 @@ private:
     void fetchColumnsForKeysImpl(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
-        KeysStorageFetchResult & result) const
+        KeysStorageFetchResult & result)
     {
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
         result.found_keys_to_fetched_columns_index.reserve(keys.size());
@@ -287,7 +283,7 @@ private:
 
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
-        /// TODO: Fix deadlines
+        /// TODO: Fix zero dictionary lifetime deadlines
 
         size_t min_sec_lifetime = configuration.lifetime.min_sec;
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
@@ -305,8 +301,26 @@ private:
 
     pcg64 rnd_engine;
 
-    using SimpleKeyLRUHashMap = LRUHashMap<UInt64, Cell, ArenaCellDisposer<CacheDictionaryStorage<dictionary_key_type>>>;
-    using ComplexKeyLRUHashMap = LRUHashMapWithSavedHash<StringRef, Cell, ArenaCellDisposer<CacheDictionaryStorage<dictionary_key_type>>>;
+    class ArenaCellDisposer
+    {
+    public:
+        CacheDictionaryStorage<dictionary_key_type> & storage;
+
+        template <typename Key, typename Value>
+        void operator()(const Key & key, const Value & value) const
+        {
+            /// In case of complex key we keep it in arena
+            if constexpr (std::is_same_v<Key, StringRef>)
+            {
+                storage.arena.free(const_cast<char *>(key.data), key.size);
+            }
+
+            storage.arena.free(value.place_for_serialized_columns, value.allocated_size_for_columns);
+        }
+    };
+
+    using SimpleKeyLRUHashMap = LRUHashMap<UInt64, Cell, ArenaCellDisposer>;
+    using ComplexKeyLRUHashMap = LRUHashMapWithSavedHash<StringRef, Cell, ArenaCellDisposer>;
 
     using CacheLRUHashMap = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::simple,

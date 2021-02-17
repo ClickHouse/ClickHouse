@@ -30,15 +30,19 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
 {
     for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
         update_pool.scheduleOrThrowOnError([this] { updateThreadFunction(); });
-
-    std::cerr << "Constructor finished" << std::endl;
 }
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
 {
-    if (!finished)
-        stopAndWait();
+    try {
+        if (!finished)
+            stopAndWait();
+    }
+    catch (...)
+    {
+        /// TODO: Write log
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -55,8 +59,6 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThro
             dictionary_name_for_logs,
             std::to_string(configuration.update_queue_push_timeout_milliseconds),
             std::to_string(update_queue.size()));
-
-    std::cerr << "CacheDictionaryUpdateQueue::tryPushToUpdateQueueOrThrow finished" << std::endl;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -126,12 +128,8 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 
     while (!finished)
     {
-        std::cerr << "CacheDictionary::updateThreadFunction wait for task " << std::endl;
-
         CacheDictionaryUpdateUnitPtr<dictionary_key_type> unit_to_update;
         update_queue.pop(unit_to_update);
-
-        std::cerr << "CacheDictionary::updateThreadFunction got task " << std::endl;
 
         if (finished)
             break;
