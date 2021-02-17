@@ -971,16 +971,16 @@ void executeQuery(
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
 
-    assert(streams.in || pipeline.initialized());
-
     try
     {
         if (streams.out)
         {
             copyData(*streams.in, *streams.out);
         }
-        else if (!pipeline.initialized())
+        else if (streams.in)
         {
+            assert(!pipeline.initialized());
+
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
@@ -1017,7 +1017,7 @@ void executeQuery(
 
             copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
-        else
+        else if (pipeline.initialized())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
@@ -1072,6 +1072,10 @@ void executeQuery(
                 auto executor = pipeline.execute();
                 executor->execute(pipeline.getNumThreads());
             }
+        }
+        else
+        {
+            /// It's possible to have queries without input and output.
         }
     }
     catch (...)
