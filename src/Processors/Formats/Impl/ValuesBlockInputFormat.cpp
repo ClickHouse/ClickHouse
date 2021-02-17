@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 
@@ -184,29 +186,52 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
 namespace
 {
-    void tryToReplaceNullFieldsInTupleWithDefaultValues(Field & value, const IDataType & type)
+    void tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(Field & value, const IDataType & type, size_t stack_depth)
     {
+        if (stack_depth > 1000)
+            throw Exception("Stack overflow for replacing null fields in Tuple or Array", ErrorCodes::UNSUPPORTED_METHOD);
+
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
+        const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type);
 
-        if (!type_tuple || value.getType() != Field::Types::Tuple)
-            return;
-
-        Tuple & tuple_value = value.get<Tuple>();
-
-        size_t src_tuple_size = tuple_value.size();
-        size_t dst_tuple_size = type_tuple->getElements().size();
-
-        if (src_tuple_size != dst_tuple_size)
-            throw Exception("Bad size of tuple. Expected size: " + std::to_string(src_tuple_size) + ", actual size: " + std::to_string(dst_tuple_size), ErrorCodes::TYPE_MISMATCH);
-
-        for (size_t i = 0; i < src_tuple_size; ++i)
+        if (type_tuple && value.getType() == Field::Types::Tuple)
         {
-            const auto & element_type = *(type_tuple->getElements()[i]);
+            Tuple & tuple_value = value.get<Tuple>();
 
-            if (tuple_value[i].isNull() && !element_type.isNullable())
-                tuple_value[i] = element_type.getDefault();
+            size_t src_tuple_size = tuple_value.size();
+            size_t dst_tuple_size = type_tuple->getElements().size();
 
-            tryToReplaceNullFieldsInTupleWithDefaultValues(tuple_value[i], element_type);
+            if (src_tuple_size != dst_tuple_size)
+                throw Exception(fmt::format("Bad size of tuple. Expected size: {}, actual size: {}.",
+                    std::to_string(src_tuple_size), std::to_string(dst_tuple_size)), ErrorCodes::TYPE_MISMATCH);
+
+            for (size_t i = 0; i < src_tuple_size; ++i)
+            {
+                const auto & element_type = *(type_tuple->getElements()[i]);
+
+                if (tuple_value[i].isNull() && !element_type.isNullable())
+                    tuple_value[i] = element_type.getDefault();
+
+                tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(tuple_value[i], element_type, stack_depth + 1);
+            }
+        }
+        else if (type_array && value.getType() == Field::Types::Array)
+        {
+            const auto & element_type = *(type_array->getNestedType());
+
+            if (element_type.isNullable())
+                return;
+
+            Array & array_value = value.get<Array>();
+            size_t array_value_size = array_value.size();
+
+            for (size_t i = 0; i < array_value_size; ++i)
+            {
+                if (array_value[i].isNull())
+                    array_value[i] = element_type.getDefault();
+
+                tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(array_value[i], element_type, stack_depth + 1);
+            }
         }
     }
 }
@@ -330,7 +355,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
 
     if (format_settings.null_as_default)
-        tryToReplaceNullFieldsInTupleWithDefaultValues(value_raw.first, type);
+    {
+        size_t initial_stack_depth = 0;
+        tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(value_raw.first, type, initial_stack_depth);
+    }
 
     Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 

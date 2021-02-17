@@ -1,2 +1,9 @@
+Tuple
 (0,1)
 (0,1)
+Tuple nested in Array
+[(0,1)]
+[(0,1)]
+Tuple nested in Array nested in Tuple
+(0,[(0,1)])
+(0,[(0,1)])
