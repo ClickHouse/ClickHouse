@@ -1315,7 +1315,7 @@ Type: [Int](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-ref
 Query:
 
 ``` sql
-SELECT arrayMin([1, 2, 4]) AS res
+SELECT arrayMin([1, 2, 4]) AS res;
 ```
 
 Result:
@@ -1329,7 +1329,7 @@ Result:
 Query:
 
 ``` sql
-SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res
+SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 ```
 
 Result:
@@ -1367,7 +1367,7 @@ Type: [Int](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-ref
 Query:
 
 ```sql
-SELECT arrayMax([1, 2, 4]) AS res
+SELECT arrayMax([1, 2, 4]) AS res;
 ```
 
 Result:
@@ -1381,7 +1381,7 @@ Result:
 Query:
 
 ``` sql
-SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res
+SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
 ```
 
 Result:
@@ -1419,7 +1419,7 @@ Type: [Int](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-ref
 Query:
 
 ```sql
-SELECT arraySum([2,3]) AS res
+SELECT arraySum([2,3]) AS res;
 ```
 
 Result:
@@ -1433,7 +1433,7 @@ Result:
 Query:
 
 ``` sql
-SELECT arraySum(x -> x*x, [2, 3]) AS res
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
 ```
 
 Result:

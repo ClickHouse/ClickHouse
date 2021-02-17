@@ -1162,7 +1162,7 @@ arrayMin(arr)
 Запрос:
 
 ``` sql
-SELECT arrayMin([1, 2, 4]) AS res
+SELECT arrayMin([1, 2, 4]) AS res;
 ```
 
 Результат:
@@ -1176,7 +1176,7 @@ SELECT arrayMin([1, 2, 4]) AS res
 Запрос:
 
 ``` sql
-SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res
+SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 ```
 
 Результат:
@@ -1214,7 +1214,7 @@ arrayMax(arr)
 Запрос:
 
 ```sql
-SELECT arrayMax([1, 2, 4]) AS res
+SELECT arrayMax([1, 2, 4]) AS res;
 ```
 
 Результат:
@@ -1228,7 +1228,7 @@ SELECT arrayMax([1, 2, 4]) AS res
 Запрос:
 
 ``` sql
-SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res
+SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
 ```
 
 Результат:
@@ -1266,7 +1266,7 @@ arraySum(arr)
 Запрос:
 
 ```sql
-SELECT arraySum([2,3]) AS res
+SELECT arraySum([2,3]) AS res;
 ```
 
 Результат:
@@ -1280,7 +1280,7 @@ SELECT arraySum([2,3]) AS res
 Запрос:
 
 ``` sql
-SELECT arraySum(x -> x*x, [2, 3]) AS res
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
 ```
 
 Результат:
