@@ -71,7 +71,7 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, db_name, 
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ShowDatabases_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowDatabases_Query("1.0"),
 )
 def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=None):
     """Check that user is only able to see a database in SHOW DATABASES when they have a privilege on that database.
@@ -114,7 +114,7 @@ def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=Non
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_UseDatabase_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_UseDatabase("1.0"),
 )
 def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
     """Check that user is able to execute EXISTS on a database if and only if the user has SHOW DATABASE privilege
@@ -158,7 +158,7 @@ def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ShowCreateDatabase_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowCreateDatabase("1.0"),
 )
 def show_create(self, privilege, on, grant_target_name, user_name, db_name, node=None):
     """Check that user is able to execute EXISTS on a database if and only if the user has SHOW DATABASE privilege
@@ -203,7 +203,7 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
 @TestFeature
 @Name("show databases")
 @Requirements(
-    RQ_SRS_006_RBAC_ShowDatabases_Privilege("1.0")
+    RQ_SRS_006_RBAC_Privileges_ShowDatabases("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW DATABASES.

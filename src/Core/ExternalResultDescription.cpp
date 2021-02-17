@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -36,53 +35,49 @@ void ExternalResultDescription::init(const Block & sample_block_)
         DataTypePtr type_not_nullable = removeNullable(elem.type);
         const IDataType * type = type_not_nullable.get();
 
-        WhichDataType which(type);
-
-        if (which.isUInt8())
+        if (typeid_cast<const DataTypeUInt8 *>(type))
             types.emplace_back(ValueType::vtUInt8, is_nullable);
-        else if (which.isUInt16())
+        else if (typeid_cast<const DataTypeUInt16 *>(type))
             types.emplace_back(ValueType::vtUInt16, is_nullable);
-        else if (which.isUInt32())
+        else if (typeid_cast<const DataTypeUInt32 *>(type))
             types.emplace_back(ValueType::vtUInt32, is_nullable);
-        else if (which.isUInt64())
+        else if (typeid_cast<const DataTypeUInt64 *>(type))
             types.emplace_back(ValueType::vtUInt64, is_nullable);
-        else if (which.isInt8())
+        else if (typeid_cast<const DataTypeInt8 *>(type))
             types.emplace_back(ValueType::vtInt8, is_nullable);
-        else if (which.isInt16())
+        else if (typeid_cast<const DataTypeInt16 *>(type))
             types.emplace_back(ValueType::vtInt16, is_nullable);
-        else if (which.isInt32())
+        else if (typeid_cast<const DataTypeInt32 *>(type))
             types.emplace_back(ValueType::vtInt32, is_nullable);
-        else if (which.isInt64())
+        else if (typeid_cast<const DataTypeInt64 *>(type))
             types.emplace_back(ValueType::vtInt64, is_nullable);
-        else if (which.isFloat32())
+        else if (typeid_cast<const DataTypeFloat32 *>(type))
             types.emplace_back(ValueType::vtFloat32, is_nullable);
-        else if (which.isFloat64())
+        else if (typeid_cast<const DataTypeFloat64 *>(type))
             types.emplace_back(ValueType::vtFloat64, is_nullable);
-        else if (which.isString())
+        else if (typeid_cast<const DataTypeString *>(type))
             types.emplace_back(ValueType::vtString, is_nullable);
-        else if (which.isDate())
+        else if (typeid_cast<const DataTypeDate *>(type))
             types.emplace_back(ValueType::vtDate, is_nullable);
-        else if (which.isDateTime())
+        else if (typeid_cast<const DataTypeDateTime *>(type))
             types.emplace_back(ValueType::vtDateTime, is_nullable);
-        else if (which.isUUID())
+        else if (typeid_cast<const DataTypeUUID *>(type))
             types.emplace_back(ValueType::vtUUID, is_nullable);
-        else if (which.isEnum8())
+        else if (typeid_cast<const DataTypeEnum8 *>(type))
             types.emplace_back(ValueType::vtString, is_nullable);
-        else if (which.isEnum16())
+        else if (typeid_cast<const DataTypeEnum16 *>(type))
             types.emplace_back(ValueType::vtString, is_nullable);
-        else if (which.isDateTime64())
+        else if (typeid_cast<const DataTypeDateTime64 *>(type))
             types.emplace_back(ValueType::vtDateTime64, is_nullable);
-        else if (which.isDecimal32())
+        else if (typeid_cast<const DataTypeDecimal<Decimal32> *>(type))
             types.emplace_back(ValueType::vtDecimal32, is_nullable);
-        else if (which.isDecimal64())
+        else if (typeid_cast<const DataTypeDecimal<Decimal64> *>(type))
             types.emplace_back(ValueType::vtDecimal64, is_nullable);
-        else if (which.isDecimal128())
+        else if (typeid_cast<const DataTypeDecimal<Decimal128> *>(type))
             types.emplace_back(ValueType::vtDecimal128, is_nullable);
-        else if (which.isDecimal256())
+        else if (typeid_cast<const DataTypeDecimal<Decimal256> *>(type))
             types.emplace_back(ValueType::vtDecimal256, is_nullable);
-        else if (which.isArray())
-            types.emplace_back(ValueType::vtArray, is_nullable);
-        else if (which.isFixedString())
+        else if (typeid_cast<const DataTypeFixedString *>(type))
             types.emplace_back(ValueType::vtFixedString, is_nullable);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};

@@ -37,7 +37,6 @@ SRCS(
     ClusterProxy/SelectStreamFactory.cpp
     ClusterProxy/executeQuery.cpp
     CollectJoinOnKeysVisitor.cpp
-    ColumnAliasesVisitor.cpp
     Context.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
@@ -129,8 +128,6 @@ SRCS(
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
-    RewriteCountVariantsVisitor.cpp
-    RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
@@ -146,7 +143,6 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
-    WindowDescription.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp
@@ -162,7 +158,6 @@ SRCS(
     join_common.cpp
     loadMetadata.cpp
     processColumnTransformers.cpp
-    replaceAliasColumnsInQuery.cpp
     sortBlock.cpp
 
 )

@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -188,14 +187,14 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 void WriteBufferFromHTTPServerResponse::finalize()
 {
-    next();
-    if (out)
+    if (offset())
     {
-        out->next();
-        out.reset();
-    }
+        next();
 
-    if (!offset())
+        if (out)
+            out.reset();
+    }
+    else
     {
         /// If no remaining data, just send headers.
         std::lock_guard lock(mutex);
@@ -207,9 +206,14 @@ void WriteBufferFromHTTPServerResponse::finalize()
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    finalize();
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

@@ -8,23 +8,21 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/DumpASTNode.h>
 
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
-#include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/IAST.h>
-#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTColumnsTransformers.h>
 
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
@@ -46,10 +44,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -265,13 +261,11 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
-    ParserKeyword all("ALL");
     ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
     ParserKeyword over("OVER");
 
-    bool has_all = false;
-    bool has_distinct = false;
+    bool has_distinct_modifier = false;
 
     ASTPtr identifier;
     ASTPtr query;
@@ -291,32 +285,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    auto pos_after_bracket = pos;
-    auto old_expected = expected;
-
-    if (all.ignore(pos, expected))
-        has_all = true;
 
     if (distinct.ignore(pos, expected))
-        has_distinct = true;
+        has_distinct_modifier = true;
 
-    if (!has_all && all.ignore(pos, expected))
-        has_all = true;
-
-    if (has_all && has_distinct)
-        return false;
-
-    if (has_all || has_distinct)
-    {
-        /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
-        if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
-        {
-            pos = pos_after_bracket;
-            expected = old_expected;
-            has_all = false;
-            has_distinct = false;
-        }
-    }
 
     const char * contents_begin = pos->begin;
     if (!contents.parse(pos, expr_list_args, expected))
@@ -376,37 +348,14 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
 
         /// Parametric aggregate functions cannot have DISTINCT in parameters list.
-        if (has_distinct)
+        if (has_distinct_modifier)
             return false;
 
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
 
-        pos_after_bracket = pos;
-        old_expected = expected;
-
-        if (all.ignore(pos, expected))
-            has_all = true;
-
         if (distinct.ignore(pos, expected))
-            has_distinct = true;
-
-        if (!has_all && all.ignore(pos, expected))
-            has_all = true;
-
-        if (has_all && has_distinct)
-            return false;
-
-        if (has_all || has_distinct)
-        {
-            /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
-            if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
-            {
-                pos = pos_after_bracket;
-                expected = old_expected;
-                has_distinct = false;
-            }
-        }
+            has_distinct_modifier = true;
 
         if (!contents.parse(pos, expr_list_args, expected))
             return false;
@@ -420,7 +369,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     tryGetIdentifierNameInto(identifier, function_node->name);
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
-    if (has_distinct)
+    if (has_distinct_modifier)
         function_node->name += "Distinct";
 
     function_node->arguments = expr_list_args;
@@ -442,8 +391,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         // of a different type, hence this workaround with a temporary pointer.
         ASTPtr function_node_as_iast = function_node;
 
-        ParserWindowReference window_reference;
-        if (!window_reference.parse(pos, function_node_as_iast, expected))
+        ParserWindowDefinition window_definition;
+        if (!window_definition.parse(pos, function_node_as_iast, expected))
         {
             return false;
         }
@@ -496,7 +445,8 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+
+bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
 
@@ -511,7 +461,8 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserIdentifier window_name_parser;
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
-            function->window_name = getIdentifierName(window_name_ast);
+            function->children.push_back(window_name_ast);
+            function->window_name = window_name_ast;
             return true;
         }
         else
@@ -519,204 +470,10 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
         }
     }
+    ++pos;
 
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
-    ParserWindowDefinition parser_definition;
-    return parser_definition.parse(pos, function->window_definition, expected);
-}
-
-static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
-    Expected & expected)
-{
-    ParserKeyword keyword_rows("ROWS");
-    ParserKeyword keyword_groups("GROUPS");
-    ParserKeyword keyword_range("RANGE");
-
-    if (keyword_rows.ignore(pos, expected))
-    {
-        node->frame.type = WindowFrame::FrameType::Rows;
-    }
-    else if (keyword_groups.ignore(pos, expected))
-    {
-        node->frame.type = WindowFrame::FrameType::Groups;
-    }
-    else if (keyword_range.ignore(pos, expected))
-    {
-        node->frame.type = WindowFrame::FrameType::Range;
-    }
-    else
-    {
-        /* No frame clause. */
-        return true;
-    }
-
-    ParserKeyword keyword_between("BETWEEN");
-    ParserKeyword keyword_unbounded("UNBOUNDED");
-    ParserKeyword keyword_preceding("PRECEDING");
-    ParserKeyword keyword_following("FOLLOWING");
-    ParserKeyword keyword_and("AND");
-    ParserKeyword keyword_current_row("CURRENT ROW");
-
-    // There are two variants of grammar for the frame:
-    // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-    // 2) ROWS UNBOUNDED PRECEDING
-    // When the frame end is not specified (2), it defaults to CURRENT ROW.
-    const bool has_frame_end = keyword_between.ignore(pos, expected);
-
-    if (keyword_current_row.ignore(pos, expected))
-    {
-        node->frame.begin_type = WindowFrame::BoundaryType::Current;
-    }
-    else
-    {
-        ParserLiteral parser_literal;
-        ASTPtr ast_literal;
-        if (keyword_unbounded.ignore(pos, expected))
-        {
-            node->frame.begin_type = WindowFrame::BoundaryType::Unbounded;
-        }
-        else if (parser_literal.parse(pos, ast_literal, expected))
-        {
-            const Field & value = ast_literal->as<ASTLiteral &>().value;
-            if (!isInt64FieldType(value.getType()))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Only integer frame offsets are supported, '{}' is not supported.",
-                    Field::Types::toString(value.getType()));
-            }
-            node->frame.begin_offset = value.get<Int64>();
-            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
-            // We can easily get a UINT64_MAX here, which doesn't even fit into
-            // int64_t. Not sure what checks we are going to need here after we
-            // support floats and dates.
-            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame offset must be between {} and {}, but {} is given",
-                    INT_MAX, INT_MIN, node->frame.begin_offset);
-            }
-
-            if (node->frame.begin_offset < 0)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame start offset must be greater than zero, {} given",
-                    node->frame.begin_offset);
-            }
-        }
-        else
-        {
-            return false;
-        }
-
-        if (keyword_preceding.ignore(pos, expected))
-        {
-            node->frame.begin_preceding = true;
-        }
-        else if (keyword_following.ignore(pos, expected))
-        {
-            node->frame.begin_preceding = false;
-            if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Frame start UNBOUNDED FOLLOWING is not implemented");
-            }
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (has_frame_end)
-    {
-        if (!keyword_and.ignore(pos, expected))
-        {
-            return false;
-        }
-
-        if (keyword_current_row.ignore(pos, expected))
-        {
-            node->frame.end_type = WindowFrame::BoundaryType::Current;
-        }
-        else
-        {
-            ParserLiteral parser_literal;
-            ASTPtr ast_literal;
-            if (keyword_unbounded.ignore(pos, expected))
-            {
-                node->frame.end_type = WindowFrame::BoundaryType::Unbounded;
-            }
-            else if (parser_literal.parse(pos, ast_literal, expected))
-            {
-                const Field & value = ast_literal->as<ASTLiteral &>().value;
-                if (!isInt64FieldType(value.getType()))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Only integer frame offsets are supported, '{}' is not supported.",
-                        Field::Types::toString(value.getType()));
-                }
-                node->frame.end_offset = value.get<Int64>();
-                node->frame.end_type = WindowFrame::BoundaryType::Offset;
-
-                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame offset must be between {} and {}, but {} is given",
-                        INT_MAX, INT_MIN, node->frame.end_offset);
-                }
-
-                if (node->frame.end_offset < 0)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame end offset must be greater than zero, {} given",
-                        node->frame.end_offset);
-                }
-            }
-            else
-            {
-                return false;
-            }
-
-            if (keyword_preceding.ignore(pos, expected))
-            {
-                node->frame.end_preceding = true;
-                if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Frame end UNBOUNDED PRECEDING is not implemented");
-                }
-            }
-            else if (keyword_following.ignore(pos, expected))
-            {
-                // Positive offset or UNBOUNDED FOLLOWING.
-                node->frame.end_preceding = false;
-            }
-            else
-            {
-                return false;
-            }
-        }
-    }
-
-    if (!(node->frame == WindowFrame{}))
-    {
-        node->frame.is_default = false;
-    }
-
-    return true;
-}
-
-bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto result = std::make_shared<ASTWindowDefinition>();
-
-    ParserToken parser_openging_bracket(TokenType::OpeningRoundBracket);
-    if (!parser_openging_bracket.ignore(pos, expected))
-    {
-        return false;
-    }
-
     ParserKeyword keyword_partition_by("PARTITION BY");
     ParserNotEmptyExpressionList columns_partition_by(
         false /* we don't allow declaring aliases here*/);
@@ -728,8 +485,8 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ASTPtr partition_by_ast;
         if (columns_partition_by.parse(pos, partition_by_ast, expected))
         {
-            result->children.push_back(partition_by_ast);
-            result->partition_by = partition_by_ast;
+            function->children.push_back(partition_by_ast);
+            function->window_partition_by = partition_by_ast;
         }
         else
         {
@@ -742,8 +499,8 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ASTPtr order_by_ast;
         if (columns_order_by.parse(pos, order_by_ast, expected))
         {
-            result->children.push_back(order_by_ast);
-            result->order_by = order_by_ast;
+            function->children.push_back(order_by_ast);
+            function->window_order_by = order_by_ast;
         }
         else
         {
@@ -751,61 +508,13 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
     }
 
-    if (!tryParseFrameDefinition(result.get(), pos, expected))
+    if (pos->type != TokenType::ClosingRoundBracket)
     {
-        /* Broken frame definition. */
+        expected.add(pos, "')'");
         return false;
     }
+    ++pos;
 
-    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
-    if (!parser_closing_bracket.ignore(pos, expected))
-    {
-        return false;
-    }
-
-    node = result;
-    return true;
-}
-
-bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto result = std::make_shared<ASTExpressionList>();
-
-    for (;;)
-    {
-        auto elem = std::make_shared<ASTWindowListElement>();
-
-        ParserIdentifier parser_window_name;
-        ASTPtr window_name_identifier;
-        if (!parser_window_name.parse(pos, window_name_identifier, expected))
-        {
-            return false;
-        }
-        elem->name = getIdentifierName(window_name_identifier);
-
-        ParserKeyword keyword_as("AS");
-        if (!keyword_as.ignore(pos, expected))
-        {
-            return false;
-        }
-
-        ParserWindowDefinition parser_window_definition;
-        if (!parser_window_definition.parse(pos, elem->definition, expected))
-        {
-            return false;
-        }
-
-        result->children.push_back(elem);
-
-        // If the list countinues, there should be a comma.
-        ParserToken parser_comma(TokenType::Comma);
-        if (!parser_comma.ignore(pos))
-        {
-            break;
-        }
-    }
-
-    node = result;
     return true;
 }
 
@@ -1580,42 +1289,41 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 const char * ParserAlias::restricted_keywords[] =
 {
-    "ALL",
-    "ANTI",
-    "ANY",
-    "ARRAY",
-    "ASOF",
-    "BETWEEN",
-    "CROSS",
-    "FINAL",
-    "FORMAT",
     "FROM",
-    "FULL",
-    "GLOBAL",
-    "GROUP",
-    "HAVING",
-    "ILIKE",
-    "INNER",
-    "INTO",
-    "JOIN",
-    "LEFT",
-    "LIKE",
-    "LIMIT",
-    "NOT",
-    "OFFSET",
-    "ON",
-    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
-    "ORDER",
-    "PREWHERE",
-    "RIGHT",
+    "FINAL",
     "SAMPLE",
+    "ARRAY",
+    "LEFT",
+    "RIGHT",
+    "INNER",
+    "FULL",
+    "CROSS",
+    "JOIN",
+    "GLOBAL",
+    "ANY",
+    "ALL",
+    "ASOF",
     "SEMI",
-    "SETTINGS",
-    "UNION",
+    "ANTI",
+    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
+    "ON",
     "USING",
+    "PREWHERE",
     "WHERE",
-    "WINDOW",
+    "GROUP",
     "WITH",
+    "HAVING",
+    "ORDER",
+    "LIMIT",
+    "OFFSET",
+    "SETTINGS",
+    "FORMAT",
+    "UNION",
+    "INTO",
+    "NOT",
+    "BETWEEN",
+    "LIKE",
+    "ILIKE",
     nullptr
 };
 
@@ -2217,11 +1925,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
-    ParserExpressionList parser_keys_list(false);
+    ParserExpressionList parser_expression_list(false);
     ParserCodec parser_codec;
-
-    ParserList parser_assignment_list(
-        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -2256,9 +1961,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     ASTPtr where_expr;
-    ASTPtr group_by_key;
+    ASTPtr ast_group_by_key;
     ASTPtr recompression_codec;
-    ASTPtr group_by_assignments;
+    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     if (mode == TTLMode::MOVE)
     {
@@ -2270,13 +1975,30 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (mode == TTLMode::GROUP_BY)
     {
-        if (!parser_keys_list.parse(pos, group_by_key, expected))
+        if (!parser_expression_list.parse(pos, ast_group_by_key, expected))
             return false;
 
         if (s_set.ignore(pos))
         {
-            if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
-                return false;
+            while (true)
+            {
+                if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
+                    break;
+
+                ASTPtr name;
+                ASTPtr value;
+                if (!parser_identifier.parse(pos, name, expected))
+                    return false;
+                if (!s_eq.ignore(pos))
+                    return false;
+                if (!parser_exp.parse(pos, value, expected))
+                    return false;
+
+                String name_str;
+                if (!tryGetIdentifierNameInto(name, name_str))
+                    return false;
+                group_by_aggregations.emplace_back(name_str, std::move(value));
+            }
         }
     }
     else if (mode == TTLMode::DELETE && s_where.ignore(pos))
@@ -2300,9 +2022,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::GROUP_BY)
     {
-        ttl_element->group_by_key = std::move(group_by_key->children);
-        if (group_by_assignments)
-            ttl_element->group_by_assignments = std::move(group_by_assignments->children);
+        ttl_element->group_by_key = std::move(ast_group_by_key->children);
+        ttl_element->group_by_aggregations = std::move(group_by_aggregations);
     }
 
     if (mode == TTLMode::RECOMPRESS)
@@ -2335,33 +2056,6 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     }
 
     return false;
-}
-
-bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto assignment = std::make_shared<ASTAssignment>();
-    node = assignment;
-
-    ParserIdentifier p_identifier;
-    ParserToken s_equals(TokenType::Equals);
-    ParserExpression p_expression;
-
-    ASTPtr column;
-    if (!p_identifier.parse(pos, column, expected))
-        return false;
-
-    if (!s_equals.ignore(pos, expected))
-        return false;
-
-    ASTPtr expression;
-    if (!p_expression.parse(pos, expression, expected))
-        return false;
-
-    tryGetIdentifierNameInto(column, assignment->column_name);
-    if (expression)
-        assignment->children.push_back(expression);
-
-    return true;
 }
 
 }

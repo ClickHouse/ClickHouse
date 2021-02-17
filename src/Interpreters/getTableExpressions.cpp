@@ -73,18 +73,14 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
-static NamesAndTypesList getColumnsFromTableExpression(
-    const ASTTableExpression & table_expression,
-    const Context & context,
-    NamesAndTypesList & materialized,
-    NamesAndTypesList & aliases,
-    NamesAndTypesList & virtuals)
+static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context,
+                                                NamesAndTypesList & materialized, NamesAndTypesList & aliases, NamesAndTypesList & virtuals)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
     {
         const auto & subquery = table_expression.subquery->children.at(0);
-        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true).getNamesAndTypesList();
+        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context).getNamesAndTypesList();
     }
     else if (table_expression.table_function)
     {

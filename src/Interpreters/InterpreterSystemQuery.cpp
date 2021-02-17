@@ -467,11 +467,8 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
-    for (auto & replica : replica_names)
-    {
-        LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
-    }
+    for (auto & table : replica_names)
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context, false); });
     pool.wait();
 }
 
@@ -606,7 +603,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, context).get()))
-        storage_distributed->flushClusterNodesAllData(context);
+        storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }

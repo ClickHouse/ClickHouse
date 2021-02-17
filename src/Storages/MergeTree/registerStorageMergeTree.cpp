@@ -716,18 +716,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
         ++arg_num;
-
-        if (args.storage_def->ttl_table && !args.attach)
-            throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
-    }
-
-    DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
-    {
-        for (size_t i = 0; i < data_types.size(); ++i)
-            if (isFloat(data_types[i]))
-                throw Exception(
-                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (arg_num != arg_cnt)
