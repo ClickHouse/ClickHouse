@@ -28,3 +28,7 @@ SELECT 'Integer and String types';
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt8('1') as a;
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt8('11') as a;
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt16('11') as a;
+SELECT 'ReinterpretErrors';
+SELECT reinterpret(toDecimal64(1, 2), 'UInt8'); -- {serverError 43}
+SELECT reinterpret('123', 'FixedString(1)'); -- {serverError 43}
+SELECT reinterpret(toDateTime('9922337203.6854775808', 1), 'Decimal64(1)'); -- {serverError 43}
