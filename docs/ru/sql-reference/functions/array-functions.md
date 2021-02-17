@@ -1135,39 +1135,42 @@ SELECT
 
 Функция `arrayFirstIndex` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayMin(\[func,\] arr1, …) {#array-min}
+## arrayMin {#array-min}
 
-Возвращает минимальное значение функции `func`. Если функция не указана, возвращает минимальный из элементов массива.
+Возвращает значение минимального элемента в исходном массиве. 
 
-Функция `arrayMin` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию.
+Если передана функция `func`, возвращается минимум из элементов массива, преобразованных этой функцией.
 
-**Синтаксис** 
+Функция `arrayMin` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей можно передать лямбда-функцию.
 
-``` sql
-arrayMin(arr)
+**Синтаксис**
+
+```sql
+arrayMin([func,] arr)
 ```
+
+**Параметры**
+
+-   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 
--   Число.
+-   Минимальное значение функции (или минимальный элемент массива).
 
-Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
-
-**Параметры** 
-
--   `arr` — [Массив](../../sql-reference/data-types/array.md).
+Тип: если передана `func`, соответствует типу ее возвращаемого значения, иначе соответствует типу элементов массива.
 
 **Примеры**
 
 Запрос:
 
-``` sql
+```sql
 SELECT arrayMin([1, 2, 4]) AS res;
 ```
 
 Результат:
 
-``` text
+```text
 ┌─res─┐
 │   1 │
 └─────┘
@@ -1175,39 +1178,42 @@ SELECT arrayMin([1, 2, 4]) AS res;
 
 Запрос:
 
-``` sql
+```sql
 SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 ```
 
 Результат:
 
-``` text
+```text
 ┌─res─┐
 │  -4 │
 └─────┘
 ```
 
-## arrayMax(\[func,\] arr1, …) {#array-max}
+## arrayMax {#array-max}
 
-Возвращает максимальное значение функции `func`. Если функция не указана, возвращает максимальный из элементов массива.
+Возвращает значение максимального элемента в исходном массиве. 
 
-Функция `arrayMax` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию.
+Если передана функция `func`, возвращается максимум из элементов массива, преобразованных этой функцией.
 
-**Синтаксис** 
+Функция `arrayMax` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей можно передать лямбда-функцию.
 
-``` sql
-arrayMax(arr)
+**Синтаксис**
+
+```sql
+arrayMax([func,] arr)
 ```
+
+**Параметры**
+
+-   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 
--   Число.
+-   Максимальное значение функции (или максимальный элемент массива).
 
-Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
-
-**Параметры** 
-
--   `arr` — [Массив](../../sql-reference/data-types/array.md).
+Тип: если передана `func`, соответствует типу ее возвращаемого значения, иначе соответствует типу элементов массива.
 
 **Примеры**
 
@@ -1219,7 +1225,7 @@ SELECT arrayMax([1, 2, 4]) AS res;
 
 Результат:
 
-``` text
+```text
 ┌─res─┐
 │   4 │
 └─────┘
@@ -1227,23 +1233,127 @@ SELECT arrayMax([1, 2, 4]) AS res;
 
 Запрос:
 
-``` sql
+```sql
 SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
 ```
 
 Результат:
 
-``` text
+```text
 ┌─res─┐
 │  -1 │
 └─────┘
 ```
 
-## arraySum(\[func,\] arr1, …) {#array-sum}
+## arraySum {#array-sum}
 
-Возвращает сумму значений функции `func`. Если функция не указана - просто возвращает сумму элементов массива.
+Возвращает сумму элементов в исходном массиве. 
 
-Функция `arraySum` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) - в качестве первого аргумента ей можно передать лямбда-функцию.
+Если передана функция `func`, возвращается сумма элементов массива, преобразованных этой функцией.
+
+Функция `arraySum` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей можно передать лямбда-функцию.
+
+**Синтаксис**
+
+```sql
+arraySum([func,] arr)
+```
+
+**Параметры**
+
+-   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).   
+
+**Возвращаемое значение**
+
+-   Сумма значений функции (или сумма элементов массива).
+
+Тип: для Decimal чисел в исходном массиве (если функция `func` была передана, то для чисел, преобразованных ею) — [Decimal128](../../sql-reference/data-types/decimal.md), для чисел с плавающей точкой — [Float64](../../sql-reference/data-types/float.md), для беззнаковых целых чисел — [UInt64](../../sql-reference/data-types/int-uint.md), для целых чисел со знаком — [Int64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT arraySum([2, 3]) AS res;
+```
+
+Результат:
+
+```text
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+Запрос:
+
+```sql
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
+```
+
+Результат:
+
+```text
+┌─res─┐
+│  13 │
+└─────┘
+```
+
+## arrayAvg {#array-avg}
+
+Возвращает среднее значение элементов в исходном массиве. 
+
+Если передана функция `func`, возвращается среднее значение элементов массива, преобразованных этой функцией.
+
+Функция `arrayAvg` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей можно передать лямбда-функцию.
+
+**Синтаксис**
+
+```sql
+arrayAvg([func,] arr)
+```
+
+**Параметры**
+
+-   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).   
+
+**Возвращаемое значение**
+
+-   Среднее значение функции (или среднее значение элементов массива).
+
+Тип: [Float64](../../sql-reference/data-types/float.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT arrayAvg([1, 2, 4]) AS res;
+```
+
+Результат:
+
+```text
+┌────────────────res─┐
+│ 2.3333333333333335 │
+└────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
+```
+
+Результат:
+
+```text
+┌─res─┐
+│  10 │
+└─────┘
+```
 
 **Синтаксис** 
 
