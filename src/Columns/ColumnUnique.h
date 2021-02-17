@@ -28,6 +28,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+/** Stores another column with unique values
+  * and also an index that allows to find position by value.
+  *
+  * This column is not used on it's own but only as implementation detail of ColumnLowCardinality.
+  */
 template <typename ColumnType>
 class ColumnUnique final : public COWHelper<IColumnUnique, ColumnUnique<ColumnType>>
 {
