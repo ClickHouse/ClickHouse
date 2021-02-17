@@ -8,8 +8,9 @@
 #include <Formats/FormatFactory.h>
 #include <Common/FieldVisitors.h>
 #include <Core/Block.h>
-#include <Common/typeid_cast.h>
 #include <common/find_symbols.h>
+#include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -186,10 +187,9 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
 namespace
 {
-    void tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(Field & value, const IDataType & type, size_t stack_depth)
+    void tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(Field & value, const IDataType & type)
     {
-        if (stack_depth > 1000)
-            throw Exception("Stack overflow for replacing null fields in Tuple or Array", ErrorCodes::UNSUPPORTED_METHOD);
+        checkStackSize();
 
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
         const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type);
@@ -212,7 +212,7 @@ namespace
                 if (tuple_value[i].isNull() && !element_type.isNullable())
                     tuple_value[i] = element_type.getDefault();
 
-                tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(tuple_value[i], element_type, stack_depth + 1);
+                tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(tuple_value[i], element_type);
             }
         }
         else if (type_array && value.getType() == Field::Types::Array)
@@ -230,7 +230,7 @@ namespace
                 if (array_value[i].isNull())
                     array_value[i] = element_type.getDefault();
 
-                tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(array_value[i], element_type, stack_depth + 1);
+                tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(array_value[i], element_type);
             }
         }
     }
@@ -355,10 +355,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
 
     if (format_settings.null_as_default)
-    {
-        size_t initial_stack_depth = 0;
-        tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(value_raw.first, type, initial_stack_depth);
-    }
+        tryToReplaceNullFieldsInTupleOrArrayWithDefaultValues(value_raw.first, type);
 
     Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
