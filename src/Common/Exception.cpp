@@ -35,8 +35,9 @@ namespace ErrorCodes
 }
 
 
-Exception::Exception(const std::string & msg, int code)
+Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
+    , remote(remote_)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
