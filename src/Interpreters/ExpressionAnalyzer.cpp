@@ -658,7 +658,12 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
-    auto filter_type = step.actions()->getIndex().find(prewhere_column_name)->second->result_type;
+    const auto & index = step.actions()->getIndex();
+    auto it = index.find(prewhere_column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", prewhere_column_name);
+
+    auto filter_type = it->second->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -755,7 +760,12 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     step.required_output.push_back(where_column_name);
     step.can_remove_required_output = {true};
 
-    auto filter_type = step.actions()->getIndex().find(where_column_name)->second->result_type;
+    const auto & index = step.actions()->getIndex();
+    auto it = index.find(where_column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", where_column_name);
+
+    auto filter_type = it->second->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
