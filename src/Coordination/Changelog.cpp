@@ -298,7 +298,7 @@ void Changelog::appendEntry(size_t index, nuraft::ptr<nuraft::log_entry> log_ent
     if (current_writer->getEntriesWritten() == rotate_interval)
         rotate(index);
 
-    auto offset = current_writer->appendRecord(buildRecord(index, log_entry), true);
+    auto offset = current_writer->appendRecord(buildRecord(index, log_entry), false);
     if (!index_to_start_pos.try_emplace(index, offset).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
 
