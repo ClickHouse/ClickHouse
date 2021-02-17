@@ -6,8 +6,15 @@ services:
         environment:
             POSTGRES_PASSWORD: mysecretpassword
         ports:
-          - 5432:5432
+          - ${POSTGRES_EXTERNAL_PORT}:${POSTGRES_INTERNAL_PORT}
+        healthcheck:
+          test: ["CMD-SHELL", "pg_isready -U postgres"]
+          interval: 10s
+          timeout: 5s
+          retries: 5
         networks:
           default:
             aliases:
               - postgre-sql.local
+        environment:
+          POSTGRES_HOST_AUTH_METHOD: "trust"

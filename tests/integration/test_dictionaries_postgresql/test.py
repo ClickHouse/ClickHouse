@@ -18,11 +18,11 @@ click_dict_table_template = """
     ) ENGINE = Dictionary({})
     """
 
-def get_postgres_conn(database=False):
+def get_postgres_conn(database, port):
     if database == True:
-        conn_string = "host='localhost' dbname='clickhouse' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port='{}' dbname='clickhouse' user='postgres' password='mysecretpassword'".format(port)
     else:
-        conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port='{}' user='postgres' password='mysecretpassword'".format(port)
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     conn.autocommit = True
@@ -36,8 +36,8 @@ def create_postgres_table(conn, table_name):
     cursor = conn.cursor()
     cursor.execute(postgres_dict_table_template.format(table_name))
 
-def create_and_fill_postgres_table(table_name):
-    conn = get_postgres_conn(True)
+def create_and_fill_postgres_table(table_name, port):
+    conn = get_postgres_conn(True, port)
     create_postgres_table(conn, table_name)
     # Fill postgres table using clickhouse postgres table function and check
     table_func = '''postgresql('postgres1:5432', 'clickhouse', '{}', 'postgres', 'mysecretpassword')'''.format(table_name)
@@ -54,7 +54,7 @@ def create_dict(table_name, index=0):
 def started_cluster():
     try:
         cluster.start()
-        postgres_conn = get_postgres_conn()
+        postgres_conn = get_postgres_conn(False, cluster.postgres_port)
         node1.query("CREATE DATABASE IF NOT EXISTS test")
         print("postgres connected")
         create_postgres_db(postgres_conn, 'clickhouse')
@@ -65,10 +65,10 @@ def started_cluster():
 
 
 def test_load_dictionaries(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(True, started_cluster.postgres_port)
     cursor = conn.cursor()
     table_name = 'test0'
-    create_and_fill_postgres_table(table_name)
+    create_and_fill_postgres_table(table_name, started_cluster.postgres_port)
     create_dict(table_name)
     dict_name = 'dict0'
 
@@ -80,10 +80,10 @@ def test_load_dictionaries(started_cluster):
 
 
 def test_invalidate_query(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(True, started_cluster.postgres_port)
     cursor = conn.cursor()
     table_name = 'test0'
-    create_and_fill_postgres_table(table_name)
+    create_and_fill_postgres_table(table_name, started_cluster.postgres_port)
 
     # invalidate query: SELECT value FROM test0 WHERE id = 0
     dict_name = 'dict0'
