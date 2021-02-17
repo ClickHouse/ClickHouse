@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 
