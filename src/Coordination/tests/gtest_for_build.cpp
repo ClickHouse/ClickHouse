@@ -36,7 +36,9 @@ struct ChangelogDirTest
         , drop(drop_)
     {
         if (fs::exists(path))
+        {
             EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
+        }
         fs::create_directory(path);
     }
 
@@ -808,6 +810,61 @@ TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin"));
     EXPECT_TRUE(fs::exists("./logs/changelog_36_40.bin"));
+}
+
+
+TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
+{
+    ChangelogDirTest test("./logs");
+
+    DB::NuKeeperLogStore changelog("./logs", 5);
+    changelog.init(1);
+
+    for (size_t i = 0; i < 35; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
+        changelog.append(entry);
+    }
+    EXPECT_EQ(changelog.size(), 35);
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin"));
+
+    DB::WriteBufferFromFile plain_buf("./logs/changelog_11_15.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    plain_buf.truncate(0);
+
+    DB::NuKeeperLogStore changelog_reader("./logs", 5);
+    changelog_reader.init(1);
+
+    EXPECT_EQ(changelog_reader.size(), 10);
+    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 90);
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
+
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
+
+    auto entry = getLogEntry("h", 7777);
+    changelog_reader.append(entry);
+    EXPECT_EQ(changelog_reader.size(), 11);
+    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin"));
+
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 }
 
 #endif
