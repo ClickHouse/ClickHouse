@@ -76,7 +76,7 @@ Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running i
 toValidUTF8( input_string )
 ```
 
-Parameters:
+**Arguments**
 
 -   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
@@ -104,7 +104,7 @@ Repeats a string as many times as specified and concatenates the replicated valu
 repeat(s, n)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
 -   `n` — The number of times to repeat the string. [UInt](../../sql-reference/data-types/int-uint.md).
@@ -173,7 +173,7 @@ Concatenates the strings listed in the arguments, without a separator.
 concat(s1, s2, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 Values of type String or FixedString.
 
@@ -211,7 +211,7 @@ The function is named “injective” if it always returns different result for 
 concatAssumeInjective(s1, s2, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 Values of type String or FixedString.
 
@@ -328,7 +328,7 @@ By default removes all consecutive occurrences of common whitespace (ASCII chara
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `trim_character` — specified characters for trim. [String](../../sql-reference/data-types/string.md).
 -   `input_string` — string for trim. [String](../../sql-reference/data-types/string.md).
@@ -367,7 +367,7 @@ trimLeft(input_string)
 
 Alias: `ltrim(input_string)`.
 
-**Parameters**
+**Arguments**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -405,7 +405,7 @@ trimRight(input_string)
 
 Alias: `rtrim(input_string)`.
 
-**Parameters**
+**Arguments**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -443,7 +443,7 @@ trimBoth(input_string)
 
 Alias: `trim(input_string)`.
 
-**Parameters**
+**Arguments**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -496,7 +496,7 @@ Replaces literals, sequences of literals and complex aliases with placeholders.
 normalizeQuery(x)
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -532,7 +532,7 @@ Returns identical 64bit hash values without the values of literals for similar q
 normalizedQueryHash(x)
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -570,7 +570,7 @@ The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`,
 encodeXMLComponent(x)
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
