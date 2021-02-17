@@ -60,12 +60,12 @@ static size_t tryAddNewFilterStep(
                             "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
                             filter_column_name, expression->dumpDAG());
 
-        std::cerr << "replacing to expr because filter " << filter_column_name << " was removed\n";
+        // std::cerr << "replacing to expr because filter " << filter_column_name << " was removed\n";
         parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
     }
     else if ((*it)->column && isColumnConst(*(*it)->column))
     {
-        std::cerr << "replacing to expr because filter is const\n";
+        // std::cerr << "replacing to expr because filter is const\n";
         parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
     }
 
