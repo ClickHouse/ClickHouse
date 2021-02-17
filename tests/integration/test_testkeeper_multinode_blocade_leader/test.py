@@ -55,7 +55,6 @@ def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
     def reset_listener(state):
         nonlocal _fake_zk_instance
-        print("Fake zk callback called for state", state)
         if state != KazooState.CONNECTED:
             _fake_zk_instance._reset()
 
@@ -247,8 +246,8 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(100):
             try:
-
                 restart_replica_for_sure(node3, "ordinary.t2", "/clickhouse/t2/replicas/3")
+                node3.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
                 node3.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -263,6 +262,10 @@ def test_blocade_leader_twice(started_cluster):
                 dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node3"
 
+        node2.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
+
+        assert node2.query("SELECT COUNT() FROM ordinary.t2") == "210\n"
+        assert node3.query("SELECT COUNT() FROM ordinary.t2") == "210\n"
 
         # Total network partition
         pm.partition_instances(node3, node2)
@@ -280,7 +283,6 @@ def test_blocade_leader_twice(started_cluster):
                 assert False, "Node2 became leader?"
             except Exception as ex:
                 time.sleep(0.5)
-
 
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
@@ -313,24 +315,29 @@ def test_blocade_leader_twice(started_cluster):
                 dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
-    for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
-            try:
-                restart_replica_for_sure(node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1))
-                node.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
-                break
-            except Exception as ex:
+            all_done = True
+            for n, node in enumerate([node1, node2, node3]):
                 try:
-                    node.query("ATTACH TABLE ordinary.t2")
-                except Exception as attach_ex:
-                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
+                    restart_replica_for_sure(node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1))
+                    node.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
+                    break
+                except Exception as ex:
+                    all_done = False
+                    try:
+                        node.query("ATTACH TABLE ordinary.t2")
+                    except Exception as attach_ex:
+                        print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
 
-                print("Got exception node{}".format(n + 1), smaller_exception(ex))
-                time.sleep(0.5)
+                    print("Got exception node{}".format(n + 1), smaller_exception(ex))
+                    time.sleep(0.5)
+
+            if all_done:
+                break
         else:
             for num, node in enumerate([node1, node2, node3]):
                 dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
-            assert False, "Cannot reconnect for node{}".format(n + 1)
+            assert False, "Cannot reconnect in i {} retries".format(i)
 
     assert node1.query("SELECT COUNT() FROM ordinary.t2") == "510\n"
     if node2.query("SELECT COUNT() FROM ordinary.t2") != "510\n":
