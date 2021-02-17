@@ -35,13 +35,13 @@ public:
         , attributes_to_fetch_filter(structure.attributes.size(), false)
     {
         size_t attributes_size = structure.attributes.size();
-        attributes_to_fetch_types.reserve(attributes_size);
+        dictionary_attributes_types.reserve(attributes_size);
 
         for (size_t i = 0; i < attributes_size; ++i)
         {
             const auto & name = structure.attributes[i].name;
             const auto & type = structure.attributes[i].type;
-            attributes_to_fetch_types.emplace_back(type);
+            dictionary_attributes_types.emplace_back(type);
 
             if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
             {
@@ -55,7 +55,7 @@ public:
     /// Check requested attributes size
     size_t attributesSize() const
     {
-        return attributes_to_fetch_types.size();
+        return dictionary_attributes_types.size();
     }
 
     /// Check if attribute with attribute_name was requested to fetch
@@ -74,9 +74,9 @@ public:
     MutableColumns makeAttributesResultColumns() const
     {
         MutableColumns result;
-        result.reserve(attributes_to_fetch_types.size());
+        result.reserve(dictionary_attributes_types.size());
 
-        for (const auto & type : attributes_to_fetch_types)
+        for (const auto & type : dictionary_attributes_types)
             result.emplace_back(type->createColumn());
 
         return result;
@@ -86,9 +86,9 @@ public:
     Columns filterRequestedColumns(MutableColumns & fetched_mutable_columns) const
     {
         Columns result;
-        result.reserve(attributes_to_fetch_types.size());
+        result.reserve(dictionary_attributes_types.size());
 
-        for (size_t fetch_request_index = 0; fetch_request_index < attributes_to_fetch_types.size(); ++fetch_request_index)
+        for (size_t fetch_request_index = 0; fetch_request_index < dictionary_attributes_types.size(); ++fetch_request_index)
             if (shouldFillResultColumnWithIndex(fetch_request_index))
                 result.emplace_back(std::move(fetched_mutable_columns[fetch_request_index]));
 
@@ -97,8 +97,27 @@ public:
 private:
     std::unordered_set<String> attributes_to_fetch_names_set;
     std::vector<bool> attributes_to_fetch_filter;
-    DataTypes attributes_to_fetch_types;
+    /// TODO: Fix name
+    DataTypes dictionary_attributes_types;
 };
+
+/// Deserialize column value and insert it in columns.
+/// Skip unnecessary columns that were not requested from deserialization.
+static inline void deserializeAndInsertIntoColumns(
+    MutableColumns & columns,
+    const DictionaryStorageFetchRequest & fetch_request,
+    const char * place_for_serialized_columns)
+{
+    for (size_t column_index = 0; column_index < columns.size(); ++column_index)
+    {
+        const auto & column = columns[column_index];
+
+        if (fetch_request.shouldFillResultColumnWithIndex(column_index))
+            place_for_serialized_columns = column->deserializeAndInsertFromArena(place_for_serialized_columns);
+        else
+            place_for_serialized_columns = column->skipSerializedInArena(place_for_serialized_columns);
+    }
+}
 
 /**
  * In Dictionaries implementation String attribute is stored in arena and StringRefs are pointing to it.
