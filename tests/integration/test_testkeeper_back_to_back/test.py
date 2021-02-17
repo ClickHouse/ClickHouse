@@ -29,8 +29,8 @@ def get_fake_zk():
         def reset_last_zxid_listener(state):
             print("Fake zk callback called for state", state)
             global _fake_zk_instance
-            # reset last_zxid -- fake server doesn't support it
-            _fake_zk_instance.last_zxid = 0
+            if state != KazooState.CONNECTED:
+                _fake_zk_instance._reset()
 
         _fake_zk_instance.add_listener(reset_last_zxid_listener)
         _fake_zk_instance.start()
