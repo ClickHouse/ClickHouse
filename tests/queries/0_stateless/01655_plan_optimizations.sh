@@ -16,45 +16,75 @@ $CLICKHOUSE_CLIENT -q "
         select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0
     settings enable_optimize_predicate_expression=0" | grep -o "Aggregating\|Filter"
+$CLICKHOUSE_CLIENT -q "
+    select s, y from (select sum(x) as s, y from (
+        select number as x, number + 1 as y from numbers(10)) group by y
+    ) where y != 0 order by s, y
+    settings enable_optimize_predicate_expression=0"
 
 echo "> filter should be pushed down after aggregating, column after aggregation is const"
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select *, y != 0 from (select sum(x), y from (
+    explain actions = 1 select s, y, y != 0 from (select sum(x) as s, y from (
         select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0
     settings enable_optimize_predicate_expression=0" | grep -o "Aggregating\|Filter\|COLUMN Const(UInt8) -> notEquals(y, 0)"
+$CLICKHOUSE_CLIENT -q "
+    select s, y, y != 0 from (select sum(x) as s, y from (
+        select number as x, number + 1 as y from numbers(10)) group by y
+    ) where y != 0 order by s, y, y != 0
+    settings enable_optimize_predicate_expression=0"
 
 echo "> one condition of filter should be pushed down after aggregating, other condition is aliased"
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select * from (
+    explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 4
     settings enable_optimize_predicate_expression=0" |
     grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|ALIAS notEquals(s, 4) :: 1 -> and(notEquals(y, 0), notEquals(s, 4))"
+$CLICKHOUSE_CLIENT -q "
+    select s, y from (
+        select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
+    ) where y != 0 and s != 4 order by s, y
+    settings enable_optimize_predicate_expression=0"
 
 echo "> one condition of filter should be pushed down after aggregating, other condition is casted"
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select * from (
+    explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
     grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))"
+$CLICKHOUSE_CLIENT -q "
+    select s, y from (
+        select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
+    ) where y != 0 and s - 4 order by s, y
+    settings enable_optimize_predicate_expression=0"
 
 echo "> one condition of filter should be pushed down after aggregating, other two conditions are ANDed"
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select * from (
+    explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
     settings enable_optimize_predicate_expression=0" |
     grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 4) :: 2, minus(s, 8) :: 1) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))"
+$CLICKHOUSE_CLIENT -q "
+    select s, y from (
+        select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
+    ) where y != 0 and s - 8 and s - 4 order by s, y
+    settings enable_optimize_predicate_expression=0"
 
 echo "> two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased"
 $CLICKHOUSE_CLIENT -q "
-    explain optimize = 1, actions = 1 select * from (
+    explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 8 and y - 4
     settings enable_optimize_predicate_expression=0" |
     grep -o "Aggregating\|Filter column\|Filter column: and(minus(y, 4), notEquals(y, 0))\|ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))"
+$CLICKHOUSE_CLIENT -q "
+    select s, y from (
+        select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
+    ) where y != 0 and s != 8 and y - 4 order by s, y
+    settings enable_optimize_predicate_expression=0"
 
 echo "> filter is split, one part is filtered before ARRAY JOIN"
 $CLICKHOUSE_CLIENT -q "
@@ -62,3 +92,46 @@ $CLICKHOUSE_CLIENT -q "
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0" |
     grep -o "Filter column: and(notEquals(y, 2), notEquals(x, 0))\|ARRAY JOIN x\|Filter column: notEquals(y, 2)"
+$CLICKHOUSE_CLIENT -q "
+    select x, y from (
+        select range(number) as x, number + 1 as y from numbers(3)
+    ) array join x where y != 2 and x != 0 order by x, y"
+
+# echo "> filter is split, one part is filtered before Aggregating and Cube"
+# $CLICKHOUSE_CLIENT -q "
+#     explain actions = 1 select * from (
+#         select sum(x) as s, x, y from (select number as x, number + 1 as y from numbers(10)) group by x, y　with cube
+#     ) where y != 0 and s != 4
+#     settings enable_optimize_predicate_expression=0" |
+#     grep -o "Cube\|Aggregating\|Filter column: notEquals(y, 0)"
+# $CLICKHOUSE_CLIENT -q "
+#     select s, x, y from (
+#         select sum(x) as s, x, y from (select number as x, number + 1 as y from numbers(10)) group by x, y　with cube
+#     ) where y != 0 and s != 4 order by s, x, y
+#     settings enable_optimize_predicate_expression=0"
+
+echo "> filter is pushed down before Distinct"
+$CLICKHOUSE_CLIENT -q "
+    explain actions = 1 select x, y from (
+        select distinct x, y from (select number % 2 as x, number % 3 as y from numbers(10))
+    ) where y != 2
+    settings enable_optimize_predicate_expression=0" |
+    grep -o "Distinct\|Filter column: notEquals(y, 2)"
+$CLICKHOUSE_CLIENT -q "
+    select x, y from (
+        select distinct x, y from (select number % 2 as x, number % 3 as y from numbers(10))
+    ) where y != 2 order by x, y
+    settings enable_optimize_predicate_expression=0"
+
+echo "> filter is pushed down before sorting steps"
+$CLICKHOUSE_CLIENT -q "
+    explain actions = 1 select x, y from (
+        select number % 2 as x, number % 3 as y from numbers(6) order by y desc
+    ) where x != 0 and y != 0
+    settings enable_optimize_predicate_expression = 0" |
+    grep -o "MergingSorted\|MergeSorting\|PartialSorting\|Filter column: and(notEquals(x, 0), notEquals(y, 0))"
+$CLICKHOUSE_CLIENT -q "
+    select x, y from (
+        select number % 2 as x, number % 3 as y from numbers(6) order by y desc
+    ) where x != 0 and y != 0
+    settings enable_optimize_predicate_expression = 0"
