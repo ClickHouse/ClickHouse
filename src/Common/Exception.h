@@ -24,7 +24,7 @@ class Exception : public Poco::Exception
 {
 public:
     Exception() = default;
-    Exception(const std::string & msg, int code);
+    Exception(const std::string & msg, int code, bool remote_ = false);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
@@ -59,12 +59,17 @@ public:
         extendedMessage(message);
     }
 
+    /// Used to distinguish local exceptions from the one that was received from remote node.
+    void setRemoteException(bool remote_ = true) { remote = remote_; }
+    bool isRemoteException() const { return remote; }
+
     std::string getStackTraceString() const;
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
+    bool remote = false;
 
     const char * className() const throw() override { return "DB::Exception"; }
 };
