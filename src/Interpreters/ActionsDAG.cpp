@@ -1389,7 +1389,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
             for (const auto * predicate : selected_predicates)
                 args.emplace_back(nodes_mapping[predicate]);
 
-            result_predicate = &actions->addFunction(func_builder_and, args, {}, true);
+            result_predicate = &actions->addFunction(func_builder_and, args, {}, true, false);
         }
 
         actions->index.insert(result_predicate);

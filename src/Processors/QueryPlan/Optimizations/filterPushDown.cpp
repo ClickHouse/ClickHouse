@@ -4,9 +4,15 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Common/typeid_cast.h>
+#include "Processors/QueryPlan/FinishSortingStep.h"
+#include "Processors/QueryPlan/MergeSortingStep.h"
+#include "Processors/QueryPlan/MergingSortedStep.h"
+#include "Processors/QueryPlan/PartialSortingStep.h"
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Columns/IColumn.h>
 
 namespace DB::ErrorCodes
@@ -79,6 +85,30 @@ static size_t tryAddNewFilterStep(
     return 3;
 }
 
+static Names getAggregatinKeys(const Aggregator::Params & params)
+{
+    Names keys;
+    keys.reserve(params.keys.size());
+    for (auto pos : params.keys)
+        keys.push_back(params.src_header.getByPosition(pos).name);
+
+    return keys;
+}
+
+// static NameSet getColumnNamesFromSortDescription(const SortDescription & sort_desc, const Block & header)
+// {
+//     NameSet names;
+//     for (const auto & column : sort_desc)
+//     {
+//         if (!column.column_name.empty())
+//             names.insert(column.column_name);
+//         else
+//             names.insert(header.safeGetByPosition(column.column_number).name);
+//     }
+
+//     return names;
+// }
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
     if (parent_node->children.size() != 1)
@@ -96,11 +126,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
         const auto & params = aggregating->getParams();
-
-        Names keys;
-        keys.reserve(params.keys.size());
-        for (auto pos : params.keys)
-            keys.push_back(params.src_header.getByPosition(pos).name);
+        Names keys = getAggregatinKeys(params);
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
             return updated_steps;
@@ -120,6 +146,38 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         // for (const auto & name : allowed_inputs)
         //     std::cerr << name << std::endl;
 
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
+
+    if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
+    {
+        Names allowed_inputs = distinct->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
+
+    /// TODO.
+    /// We can filter earlier if expression does not depend on WITH FILL columns.
+    /// But we cannot just push down condition, because other column may be filled with defaults.
+    ///
+    /// It is possible to filter columns before and after WITH FILL, but such change is not idempotent.
+    /// So, appliying this to pair (Filter -> Filling) several times will create several similar filters.
+    // if (auto * filling = typeid_cast<FillingStep *>(child.get()))
+    // {
+    // }
+
+    /// Same reason for Cube
+    // if (auto * cube = typeid_cast<CubeStep *>(child.get()))
+    // {
+    // }
+
+    if (typeid_cast<PartialSortingStep *>(child.get())
+        || typeid_cast<MergeSortingStep *>(child.get())
+        || typeid_cast<MergingSortedStep *>(child.get())
+        || typeid_cast<FinishSortingStep *>(child.get()))
+    {
+        Names allowed_inputs = child->getOutputStream().header.getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
             return updated_steps;
     }
