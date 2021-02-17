@@ -6,6 +6,7 @@
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
+#include <Core/BigInt.h>
 #include <Common/assert_cast.h>
 
 
@@ -106,7 +107,10 @@ private:
 
 public:
     using ValueType = T;
-    using Container = PaddedPODArray<ValueType>;
+    static constexpr bool is_POD = !is_big_int_v<T>;
+    using Container = std::conditional_t<is_POD,
+                                         PaddedPODArray<ValueType>,
+                                         std::vector<ValueType>>;
 
 private:
     ColumnVector() {}
@@ -132,7 +136,10 @@ public:
 
     void insertData(const char * pos, size_t) override
     {
-        data.emplace_back(unalignedLoad<T>(pos));
+        if constexpr (is_POD)
+            data.emplace_back(unalignedLoad<T>(pos));
+        else
+            data.emplace_back(BigInt<T>::deserialize(pos));
     }
 
     void insertDefault() override
@@ -142,12 +149,18 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        data.resize_fill(data.size() + length, T());
+        if constexpr (is_POD)
+            data.resize_fill(data.size() + length, T());
+        else
+            data.resize(data.size() + length, T());
     }
 
     void popBack(size_t n) override
     {
-        data.resize_assume_reserved(data.size() - n);
+        if constexpr (is_POD)
+            data.resize_assume_reserved(data.size() - n);
+        else
+            data.resize(data.size() - n);
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -165,19 +178,18 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return sizeof(data[0]);
-    }
-
     size_t allocatedBytes() const override
     {
-        return data.allocated_bytes();
+        if constexpr (is_POD)
+            return data.allocated_bytes();
+        else
+            return data.capacity() * sizeof(data[0]);
     }
 
     void protect() override
     {
-        data.protect();
+        if constexpr (is_POD)
+            data.protect();
     }
 
     void insertValue(const T value)
@@ -206,6 +218,8 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                               IColumn::SpecialSort) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 

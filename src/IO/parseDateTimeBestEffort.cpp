@@ -99,7 +99,7 @@ ReturnType parseDateTimeBestEffortImpl(
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(message, code);
+            throw Exception(message, code);
         else
             return false;
     };
@@ -119,7 +119,6 @@ ReturnType parseDateTimeBestEffortImpl(
     UInt8 time_zone_offset_hour = 0;
     UInt8 time_zone_offset_minute = 0;
 
-    bool is_am = false;
     bool is_pm = false;
 
     auto read_alpha_month = [&month] (const auto & alpha)
@@ -487,7 +486,6 @@ ReturnType parseDateTimeBestEffortImpl(
                     {
                         if (alpha[0] == 'A' || alpha[0] == 'a')
                         {
-                            is_am = true;
                         }
                         else if (alpha[0] == 'P' || alpha[0] == 'p')
                         {
@@ -535,10 +533,6 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     }
 
-    /// If neither Date nor Time is parsed successfully, it should fail
-    if (!year && !month && !day_of_month && !has_time)
-        return on_error("Cannot read DateTime: neither Date nor Time was parsed successfully", ErrorCodes::CANNOT_PARSE_DATETIME);
-
     if (!year)
         year = 2000;
     if (!month)
@@ -561,9 +555,6 @@ ReturnType parseDateTimeBestEffortImpl(
 
     if (!check_date(is_leap_year, month, day_of_month))
         return on_error("Cannot read DateTime: unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::CANNOT_PARSE_DATETIME);
-
-    if (is_am && hour == 12)
-        hour = 0;
 
     if (is_pm && hour < 12)
         hour += 12;

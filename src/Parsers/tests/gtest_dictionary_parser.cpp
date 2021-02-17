@@ -1,4 +1,4 @@
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -8,7 +8,6 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <gtest/gtest.h>
 
@@ -18,9 +17,9 @@ using namespace DB;
 
 static String astToString(IAST * ast)
 {
-    WriteBufferFromOwnString buf;
-    dumpAST(*ast, buf);
-    return buf.str();
+    std::ostringstream oss;
+    dumpAST(*ast, oss);
+    return oss.str();
 }
 
 /// Tests for external dictionaries DDL parser
@@ -87,7 +86,7 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     auto * primary_key = create->dictionary->primary_key;
 
     EXPECT_EQ(primary_key->children.size(), 1);
-    EXPECT_EQ(primary_key->children[0]->as<ASTIdentifier>()->name(), "key_column");
+    EXPECT_EQ(primary_key->children[0]->as<ASTIdentifier>()->name, "key_column");
 
     /// range test
     auto * range = create->dictionary->range;

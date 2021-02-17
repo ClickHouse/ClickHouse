@@ -51,9 +51,9 @@ inline auto checkedDivision(A a, B b)
     throwIfDivisionLeadsToFPE(a, b);
 
     if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
-        return static_cast<B>(a) / b;
+        return bigint_cast<B>(a) / b;
     else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
-        return a / static_cast<A>(b);
+        return a / bigint_cast<A>(b);
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
@@ -84,10 +84,10 @@ struct DivideIntegralImpl
             using SignedCastA = make_signed_t<CastA>;
             using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
 
-            return static_cast<Result>(checkedDivision(static_cast<SignedCastA>(a), static_cast<SignedCastB>(b)));
+            return bigint_cast<Result>(checkedDivision(bigint_cast<SignedCastA>(a), bigint_cast<SignedCastB>(b)));
         }
         else
-            return static_cast<Result>(checkedDivision(CastA(a), CastB(b)));
+            return bigint_cast<Result>(checkedDivision(CastA(a), CastB(b)));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -110,7 +110,7 @@ struct ModuloImpl
         if constexpr (std::is_floating_point_v<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
-            return static_cast<ResultType>(a) - trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
+            return bigint_cast<ResultType>(a) - trunc(bigint_cast<ResultType>(a) / bigint_cast<ResultType>(b)) * bigint_cast<ResultType>(b);
         }
         else
         {
@@ -125,9 +125,9 @@ struct ModuloImpl
                 CastB int_b(b);
 
                 if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
-                    return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
+                    return bigint_cast<Result>(bigint_cast<CastB>(int_a) % int_b);
                 else
-                    return static_cast<Result>(int_a % static_cast<CastA>(int_b));
+                    return bigint_cast<Result>(int_a % bigint_cast<CastA>(int_b));
             }
             else
                 return IntegerAType(a) % IntegerBType(b);

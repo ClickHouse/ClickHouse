@@ -19,6 +19,7 @@
 #include <Dictionaries/BucketCache.h>
 #include <ext/scope_guard.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferAIO.h>
 #include <list>
 #include <pcg_random.hpp>
 #include <Poco/Logger.h>
@@ -426,8 +427,9 @@ private:
 using SSDComplexKeyCachePartitionPtr = std::shared_ptr<SSDComplexKeyCachePartition>;
 
 
-/** Class for managing SSDCachePartition and getting data from source.
-  */
+/*
+    Class for managing SSDCachePartition and getting data from source.
+*/
 class SSDComplexKeyCacheStorage
 {
 public:
@@ -513,8 +515,9 @@ private:
 };
 
 
-/** Dictionary interface
-  */
+/*
+    Dictionary interface
+*/
 class SSDComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:

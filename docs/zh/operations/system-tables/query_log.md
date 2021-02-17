@@ -3,18 +3,18 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# system.query_log {#system_tables-query_log}
+# 系统。query\_log {#system_tables-query_log}
 
 包含有关已执行查询的信息，例如，开始时间、处理持续时间、错误消息。
 
 !!! note "注"
     此表不包含以下内容的摄取数据 `INSERT` 查询。
 
-您可以更改查询日志记录的设置 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器配置部分。
+您可以更改查询日志记录的设置 [query\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器配置部分。
 
-您可以通过设置禁用查询日志记录 [log_queries=0](../../operations/settings/settings.md#settings-log-queries). 我们不建议关闭日志记录，因为此表中的信息对于解决问题很重要。
+您可以通过设置禁用查询日志记录 [log\_queries=0](../../operations/settings/settings.md#settings-log-queries). 我们不建议关闭日志记录，因为此表中的信息对于解决问题很重要。
 
-数据的冲洗周期设置在 `flush_interval_milliseconds` 的参数 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器设置部分。 要强制冲洗，请使用 [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) 查询。
+数据的冲洗周期设置在 `flush_interval_milliseconds` 的参数 [query\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器设置部分。 要强制冲洗，请使用 [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) 查询。
 
 ClickHouse不会自动从表中删除数据。 看 [导言](../../operations/system-tables/index.md#system-tables-introduction) 欲了解更多详情。
 
@@ -140,4 +140,4 @@ Settings.Values:      ['0','random','1','10000000000']
 
 **另请参阅**
 
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [系统。query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.

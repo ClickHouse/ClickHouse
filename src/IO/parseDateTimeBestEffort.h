@@ -1,4 +1,3 @@
-#pragma once
 #include <stddef.h>
 #include <time.h>
 
@@ -50,7 +49,7 @@ class ReadBuffer;
   *
   * single whitespace can be used as a separator
   *
-  * AM/PM - AM means: subtract 12 hours if a value is 12 and PM means: add 12 hours if a value is less than 12.
+  * AM/PM - AM is ignored and PM means: add 12 hours if value is less than 12.
   *
   * Jan/Feb/Mar/Apr/May/Jun/Jul/Aug/Sep/Oct/Nov/Dec - allowed to specify month
   * Mon/Tue/Wed/Thu/Fri/Sat/Sun - simply ignored.

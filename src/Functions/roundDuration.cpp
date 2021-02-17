@@ -3,8 +3,6 @@
 
 namespace DB
 {
-namespace
-{
 
 template <typename A>
 struct RoundDurationImpl
@@ -39,8 +37,6 @@ struct RoundDurationImpl
 
 struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
 using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;
-
-}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundDuration> : PositiveMonotonicity {};
 

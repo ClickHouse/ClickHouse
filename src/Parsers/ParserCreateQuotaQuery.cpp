@@ -63,13 +63,11 @@ namespace
             boost::replace_all(name, " ", "_");
 
             for (auto kt : ext::range(Quota::KeyType::MAX))
-            {
                 if (KeyTypeInfo::get(kt).name == name)
                 {
                     key_type = kt;
                     return true;
                 }
-            }
 
             String all_types_str;
             for (auto kt : ext::range(Quota::KeyType::MAX))

@@ -9,7 +9,7 @@ toc_title: Exigence
 
 ## CPU {#cpu}
 
-Pour l'installation à partir de paquets deb prédéfinis, utilisez un processeur avec l'architecture x86_64 et la prise en charge des instructions SSE 4.2. Pour exécuter ClickHouse avec des processeurs qui ne prennent pas en charge SSE 4.2 ou qui ont une architecture AArch64 ou PowerPC64LE, vous devez créer ClickHouse à partir de sources.
+Pour l'installation à partir de paquets deb prédéfinis, utilisez un processeur avec l'architecture x86\_64 et la prise en charge des instructions SSE 4.2. Pour exécuter ClickHouse avec des processeurs qui ne prennent pas en charge SSE 4.2 ou qui ont une architecture AArch64 ou PowerPC64LE, vous devez créer ClickHouse à partir de sources.
 
 ClickHouse implémente le traitement parallèle des données et utilise toutes les ressources matérielles disponibles. Lors du choix d'un processeur, tenez compte du fait que ClickHouse fonctionne plus efficacement dans les configurations avec un grand nombre de cœurs mais une fréquence d'horloge plus faible que dans les configurations avec moins de cœurs et une fréquence d'horloge plus élevée. Par exemple, 16 cœurs avec 2600 MHz est préférable à 8 cœurs avec 3600 MHz.
 
