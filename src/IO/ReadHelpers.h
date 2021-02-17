@@ -1073,7 +1073,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-Exception readException(ReadBuffer & buf, const String & additional_message = "");
+Exception readException(ReadBuffer & buf, const String & additional_message = "", bool remote_exception = false);
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 

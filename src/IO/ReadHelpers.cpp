@@ -1017,7 +1017,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message)
+Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
 {
     int code = 0;
     String name;
@@ -1044,7 +1044,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message)
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code);
+    return Exception(out.str(), code, remote_exception);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

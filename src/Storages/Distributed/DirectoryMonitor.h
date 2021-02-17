@@ -70,7 +70,6 @@ private:
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
-    static bool isFileBrokenErrorCode(int code);
     void markAsBroken(const std::string & file_path) const;
     bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
 
