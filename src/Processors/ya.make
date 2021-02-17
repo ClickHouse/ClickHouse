@@ -92,9 +92,7 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
-    QueryPlan/AddingConstColumnStep.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
-    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
     QueryPlan/CreatingSetsStep.cpp
@@ -122,6 +120,7 @@ SRCS(
     QueryPlan/Optimizations/optimizeTree.cpp
     QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadNothingStep.cpp
@@ -137,7 +136,6 @@ SRCS(
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
-    Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp

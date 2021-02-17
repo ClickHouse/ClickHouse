@@ -468,6 +468,14 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 }
 
 
+bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (ParserTableFunctionView().parse(pos, node, expected))
+        return true;
+    return elem_parser.parse(pos, node, expected);
+}
+
+
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// try to find any of the valid operators
@@ -570,9 +578,10 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
-    : impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                     allow_alias_without_as_keyword))
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
+    : impl(std::make_unique<ParserWithOptionalAlias>(
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
+        allow_alias_without_as_keyword))
 {
 }
 
@@ -580,7 +589,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
