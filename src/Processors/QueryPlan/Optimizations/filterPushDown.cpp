@@ -123,6 +123,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (!filter)
         return 0;
 
+    if (filter->getExpression()->hasStatefulFunctions())
+        return 0;
+
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
         const auto & params = aggregating->getParams();
