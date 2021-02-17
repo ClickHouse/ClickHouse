@@ -64,7 +64,7 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" && echo "OK" > /test_output/script_exit_code.txt || echo "FAIL" > /test_output/script_exit_code.txt
+./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" && echo "OK" > /test_output/script_exit_code.txt || echo "FAIL" > /test_output/script_exit_code.txt
 
 stop
 start
