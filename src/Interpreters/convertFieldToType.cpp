@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Core/AccurateComparison.h>
 #include <Common/FieldVisitors.h>
@@ -271,6 +272,40 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                  * will throw if it detects incompatibility.
                  */
                 have_unconvertible_element = true;
+            }
+
+            return have_unconvertible_element ? Field(Null()) : Field(res);
+        }
+    }
+    else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (src.getType() == Field::Types::Map)
+        {
+            const auto & src_map = src.get<Map>();
+
+            const auto & key_type = *type_map->getKeyType();
+            const auto & value_type = *type_map->getValueType();
+            
+            bool have_unconvertible_element = false;
+            Map res(src_map.size());
+
+            for (size_t i = 0; i < src_map.size(); ++i)
+            {
+                const auto & src_tuple = src_map[i].safeGet<const Tuple &>();
+                assert(src_tuple.size() == 2);
+                Tuple res_tuple(2);
+
+                res_tuple[0] = convertFieldToType(src_tuple[0], key_type);
+                res_tuple[1] = convertFieldToType(src_tuple[1], value_type);
+
+                if ((res_tuple[0].isNull() && !key_type.isNullable())
+                    || (res_tuple[1].isNull() && !value_type.isNullable()))
+                {
+                    // See the comment for Tuples above.
+                    have_unconvertible_element = true;
+                }
+
+                res[i] = std::move(res_tuple);
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);

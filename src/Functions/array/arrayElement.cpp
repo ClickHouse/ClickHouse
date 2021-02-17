@@ -872,7 +872,7 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64)
+    if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64 && index.getType() != Field::Types::Int128)
         return false;
 
     MatcherNumberConst<DataType> matcher{data_numeric->getData(), get<DataType>(index)};
@@ -910,6 +910,7 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<Int16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
 }
 
@@ -925,6 +926,7 @@ bool FunctionArrayElement::matchKeyToIndexConst(
         || matchKeyToIndexNumberConst<Int16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int128>(data, offsets, index, matched_idxs)
         || matchKeyToIndexStringConst(data, offsets, index, matched_idxs);
 }
 
@@ -945,11 +947,14 @@ ColumnPtr FunctionArrayElement::executeMap(
     indices_column->reserve(input_rows_count);
     auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
 
+    std::cerr << "types: " << arguments[0].type->getName() << " " << arguments[1].type->getName() << "\n";
+    std::cerr << "columns: " << arguments[0].column->dumpStructure() << " " << arguments[1].column->dumpStructure() << "\n";
+
     if (!isColumnConst(*arguments[1].column))
     {
         if (input_rows_count > 0 && !matchKeyToIndex(keys_data, offsets, arguments, indices_data))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments: {}, {} for function ",
+                "Illegal types of arguments: {}, {} for function {}",
                 arguments[0].type->getName(), arguments[1].type->getName(), getName());
     }
     else

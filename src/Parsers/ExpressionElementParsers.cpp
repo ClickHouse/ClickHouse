@@ -1979,7 +1979,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     return ParserSubquery().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
-        || ParserMapOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)

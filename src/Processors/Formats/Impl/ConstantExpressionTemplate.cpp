@@ -203,12 +203,6 @@ private:
                 if (not_null == array.end())
                     return true;
             }
-            else if (literal->value.getType() == Field::Types::Map)
-            {
-                const Map & map = literal->value.get<Map>();
-                if (map.size() % 2)
-                    return false;
-            }
 
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
@@ -481,14 +475,12 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
-        ParserMapOfLiterals parser_map;
 
         Tokens tokens_number(istr.position(), istr.buffer().end());
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected)
-            && !parser_map.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
             return false;
 
         istr.position() = const_cast<char *>(iterator->begin);
