@@ -12,7 +12,7 @@ uniqCombined(HLL_precision)(x[, ...])
 
 The `uniqCombined` function is a good choice for calculating the number of different values.
 
-**Parameters**
+**Arguments**
 
 The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
