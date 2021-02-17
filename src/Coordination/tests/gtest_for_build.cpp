@@ -31,7 +31,7 @@ struct ChangelogDirTest
 {
     std::string path;
     bool drop;
-    ChangelogDirTest(std::string path_, bool drop_ = true)
+    explicit ChangelogDirTest(std::string path_, bool drop_ = true)
         : path(path_)
         , drop(drop_)
     {
