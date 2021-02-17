@@ -406,14 +406,6 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
-</structure>
-<layout>
-    <ip_trie>
-        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
-        <!-- This option increases memory usage. -->
-        <access_to_key_from_attributes>true</access_to_key_from_attributes>
-    </ip_trie>
-</layout>
 ```
 
 or
@@ -443,6 +435,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
-Data must completely fit into RAM.
+Data is stored in a `trie`. It must completely fit into RAM.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

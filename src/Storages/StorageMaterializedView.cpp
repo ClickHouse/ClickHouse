@@ -11,7 +11,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -25,7 +24,6 @@
 #include <Common/checkStackSize.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 
 
 namespace DB
@@ -132,7 +130,7 @@ Pipe StorageMaterializedView::read(
 void StorageMaterializedView::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -141,27 +139,15 @@ void StorageMaterializedView::read(
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
 
-    storage->read(query_plan, column_names, target_metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    storage->read(query_plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream().header;
-        if (!blocksHaveEqualStructure(mv_header, target_header))
-        {
-            auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
-                                                                        mv_header.getColumnsWithTypeAndName(),
-                                                                        ActionsDAG::MatchColumnsMode::Name);
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
-            converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
-            query_plan.addStep(std::move(converting_step));
-        }
-
         StreamLocalLimits limits;
         SizeLimits leaf_limits;
 
@@ -175,7 +161,7 @@ void StorageMaterializedView::read(
                 nullptr,
                 nullptr);
 
-        adding_limits_and_quota->setStepDescription("Lock destination table for MaterializedView");
+        adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
         query_plan.addStep(std::move(adding_limits_and_quota));
     }
 }
@@ -247,13 +233,12 @@ bool StorageMaterializedView::optimize(
     const ASTPtr & partition,
     bool final,
     bool deduplicate,
-    const Names & deduplicate_by_columns,
     const Context & context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
+    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
 }
 
 void StorageMaterializedView::alter(

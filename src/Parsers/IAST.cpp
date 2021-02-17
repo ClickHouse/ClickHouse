@@ -13,7 +13,6 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
 
@@ -109,14 +108,6 @@ String IAST::getColumnName() const
 }
 
 
-String IAST::getColumnNameWithoutAlias() const
-{
-    WriteBufferFromOwnString write_buffer;
-    appendColumnNameWithoutAlias(write_buffer);
-    return write_buffer.str();
-}
-
-
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
     switch (identifier_quoting_style)
@@ -163,17 +154,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writePointerHex(this, ostr);
     writeChar('\n', ostr);
     for (const auto & child : children)
-    {
-        if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
         child->dumpTree(ostr, indent + 1);
-    }
-}
-
-std::string IAST::dumpTree(size_t indent) const
-{
-    WriteBufferFromOwnString wb;
-    dumpTree(wb, indent);
-    return wb.str();
 }
 
 }

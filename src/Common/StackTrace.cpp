@@ -195,8 +195,7 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -261,9 +260,6 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     tryCapture();
 
-    /// This variable from signal handler is not instrumented by Memory Sanitizer.
-    __msan_unpoison(&signal_context, sizeof(signal_context));
-
     void * caller_address = getCallerAddress(signal_context);
 
     if (size == 0 && caller_address)
@@ -320,8 +316,7 @@ static void toStringEveryLineImpl(
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM

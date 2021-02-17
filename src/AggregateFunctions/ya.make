@@ -10,7 +10,6 @@ PEERDIR(
 
 SRCS(
     AggregateFunctionAggThrow.cpp
-    AggregateFunctionAny.cpp
     AggregateFunctionArray.cpp
     AggregateFunctionAvg.cpp
     AggregateFunctionAvgWeighted.cpp
@@ -30,11 +29,9 @@ SRCS(
     AggregateFunctionHistogram.cpp
     AggregateFunctionIf.cpp
     AggregateFunctionMLMethod.cpp
-    AggregateFunctionMannWhitney.cpp
-    AggregateFunctionMax.cpp
     AggregateFunctionMaxIntersections.cpp
     AggregateFunctionMerge.cpp
-    AggregateFunctionMin.cpp
+    AggregateFunctionMinMaxAny.cpp
     AggregateFunctionNull.cpp
     AggregateFunctionOrFill.cpp
     AggregateFunctionQuantile.cpp
@@ -43,18 +40,16 @@ SRCS(
     AggregateFunctionRetention.cpp
     AggregateFunctionSequenceMatch.cpp
     AggregateFunctionSimpleLinearRegression.cpp
-    AggregateFunctionSimpleState.cpp
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
-    AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
     AggregateFunctionSumMap.cpp
+    AggregateFunctionTimeSeriesGroupSum.cpp
     AggregateFunctionTopK.cpp
     AggregateFunctionUniq.cpp
     AggregateFunctionUniqCombined.cpp
     AggregateFunctionUniqUpTo.cpp
-    AggregateFunctionWelchTTest.cpp
     AggregateFunctionWindowFunnel.cpp
     UniqCombinedBiasData.cpp
     UniqVariadicHash.cpp

@@ -1,4 +1,4 @@
-# system.table_name {#system-tables_table-name}
+## system.table_name {#system-tables_table-name}
 
 Description.
 

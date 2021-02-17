@@ -31,7 +31,6 @@ public:
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
-    bool canBeInsideLowCardinality() const override { return false; }
 
     bool canBePromoted() const override { return false; }
 };
