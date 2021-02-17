@@ -280,6 +280,7 @@ TESTS_TO_SKIP=(
 
      # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
     01504_rocksdb
+    01686_rocksdb
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01460_DistributedFilesToInsert
