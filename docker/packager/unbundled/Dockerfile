@@ -21,8 +21,6 @@ RUN apt-get update \
         libboost-thread-dev \
         libboost-iostreams-dev \
         libboost-regex-dev \
-        libboost-context-dev \
-        libboost-coroutine-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \
@@ -58,7 +56,6 @@ RUN apt-get update \
         libprotoc-dev \
         libgrpc++-dev \
         protobuf-compiler-grpc \
-        libc-ares-dev \
         rapidjson-dev \
         libsnappy-dev \
         libparquet-dev \

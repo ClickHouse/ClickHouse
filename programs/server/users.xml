@@ -77,7 +77,7 @@
                      Strongly recommended that regexp is ends with $
                  All results of DNS requests are cached till server restart.
             -->
-            <networks>
+            <networks incl="networks" replace="replace">
                 <ip>::/0</ip>
             </networks>
 

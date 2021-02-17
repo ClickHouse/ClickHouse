@@ -3,7 +3,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/QueryLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/IStorage.h>
@@ -57,9 +56,8 @@ BlockIO InterpreterAlterQuery::execute()
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
     LiveViewCommands live_view_commands;
-    for (const auto & child : alter.command_list->children)
+    for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
-        auto * command_ast = child->as<ASTAlterCommand>();
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
@@ -126,8 +124,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    for (const auto & child : alter.command_list->children)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.database, alter.table));
+    for (ASTAlterCommand * command : alter.command_list->commands)
+        boost::range::push_back(required_access, getRequiredAccessForCommand(*command, alter.database, alter.table));
     return required_access;
 }
 
@@ -300,51 +298,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
     }
 
     return required_access;
-}
-
-void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
-{
-    const auto & alter = ast->as<const ASTAlterQuery &>();
-
-    elem.query_kind = "Alter";
-    if (alter.command_list != nullptr)
-    {
-        // Alter queries already have their target table inserted into `elem`.
-        if (elem.query_tables.size() != 1)
-            throw Exception("Alter query should have target table recorded already", ErrorCodes::LOGICAL_ERROR);
-
-        String prefix = *elem.query_tables.begin() + ".";
-        for (const auto & child : alter.command_list->children)
-        {
-            const auto * command = child->as<ASTAlterCommand>();
-
-            if (command->column)
-                elem.query_columns.insert(prefix + command->column->getColumnName());
-
-            if (command->rename_to)
-                elem.query_columns.insert(prefix + command->rename_to->getColumnName());
-
-            // ADD COLUMN
-            if (command->col_decl)
-            {
-                elem.query_columns.insert(prefix + command->col_decl->as<ASTColumnDeclaration &>().name);
-            }
-
-            if (!command->from_table.empty())
-            {
-                String database = command->from_database.empty() ? context.getCurrentDatabase() : command->from_database;
-                elem.query_databases.insert(database);
-                elem.query_tables.insert(database + "." + command->from_table);
-            }
-
-            if (!command->to_table.empty())
-            {
-                String database = command->to_database.empty() ? context.getCurrentDatabase() : command->to_database;
-                elem.query_databases.insert(database);
-                elem.query_tables.insert(database + "." + command->to_table);
-            }
-        }
-    }
 }
 
 }

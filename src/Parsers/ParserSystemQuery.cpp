@@ -120,7 +120,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
             {
                 /// FLUSH DISTRIBUTED requires table
-                /// START/STOP DISTRIBUTED SENDS does not require table
+                /// START/STOP DISTRIBUTED SENDS does not requires table
                 if (res->type == Type::FLUSH_DISTRIBUTED)
                     return false;
             }
@@ -168,20 +168,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
             parseDatabaseAndTableName(pos, expected, res->database, res->table);
             break;
-
-        case Type::SUSPEND:
-        {
-            ASTPtr seconds;
-            if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
-                && ParserUnsignedInteger().parse(pos, seconds, expected)
-                && ParserKeyword{"SECOND"}.ignore(pos, expected)))   /// SECOND, not SECONDS to be consistent with INTERVAL parsing in SQL
-            {
-                return false;
-            }
-
-            res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
-            break;
-        }
 
         default:
             /// There are no [db.table] after COMMAND NAME

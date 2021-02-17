@@ -14,12 +14,10 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
 #include "registerAggregateFunctions.h"
 
-#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -109,16 +107,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
         found = jt->second;
 
-    const Context * query_context = nullptr;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
     if (found.creator)
     {
         out_properties = found.properties;
-
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
@@ -136,9 +127,6 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (combinator->isForInternalUsageOnly())
             throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator->getName());
-
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -147,17 +135,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
 
-
-    String extra_info;
-    if (FunctionFactory::instance().hasNameOrAlias(name))
-        extra_info = ". There is an ordinary function with the same name, but aggregate function is expected here";
-
     auto hints = this->getHints(name);
     if (!hints.empty())
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                        "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
+        throw Exception(fmt::format("Unknown aggregate function {}. Maybe you meant: {}", name, toString(hints)),
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
     else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
+        throw Exception(fmt::format("Unknown aggregate function {}", name), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 

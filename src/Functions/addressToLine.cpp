@@ -106,18 +106,16 @@ private:
 
     StringRef impl(uintptr_t addr) const
     {
-        auto symbol_index_ptr = SymbolIndex::instance();
-        const SymbolIndex & symbol_index = *symbol_index_ptr;
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
-            auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
+            auto dwarf_it = cache.dwarfs.try_emplace(object->name, *object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
 
             Dwarf::LocationInfo location;
-            std::vector<Dwarf::SymbolizedFrame> frames;  // NOTE: not used in FAST mode.
-            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST, frames))
+            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST))
             {
                 const char * arena_begin = nullptr;
                 WriteBufferFromArena out(cache.arena, arena_begin);
