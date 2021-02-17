@@ -188,14 +188,14 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 void WriteBufferFromHTTPServerResponse::finalize()
 {
-    if (offset())
+    next();
+    if (out)
     {
-        next();
-
-        if (out)
-            out.reset();
+        out->next();
+        out.reset();
     }
-    else
+
+    if (!offset())
     {
         /// If no remaining data, just send headers.
         std::lock_guard lock(mutex);
