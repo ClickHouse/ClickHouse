@@ -87,7 +87,7 @@ def test_blocade_leader(started_cluster):
 
         for i in range(100):
             try:
-                node2.query("SYSTEM RESTART REPLICA ordinary.t1")
+                restart_replica_for_sure(node2, "ordinary.t1", "/clickhouse/t1/replicas/2")
                 node2.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -104,7 +104,7 @@ def test_blocade_leader(started_cluster):
 
         for i in range(100):
             try:
-                node3.query("SYSTEM RESTART REPLICA ordinary.t1")
+                restart_replica_for_sure(node3, "ordinary.t1", "/clickhouse/t1/replicas/3")
                 node3.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -122,7 +122,7 @@ def test_blocade_leader(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("SYSTEM RESTART REPLICA ordinary.t1")
+                restart_replica_for_sure(node, "ordinary.t1", "/clickhouse/t1/replicas/{}".format(n + 1))
                 break
             except Exception as ex:
                 try:
@@ -150,7 +150,7 @@ def test_blocade_leader(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("SYSTEM RESTART REPLICA ordinary.t1")
+                restart_replica_for_sure(node, "ordinary.t1", "/clickhouse/t1/replicas/{}".format(n + 1))
                 node.query("SYSTEM SYNC REPLICA ordinary.t1", timeout=10)
                 break
             except Exception as ex:
@@ -188,6 +188,25 @@ def dump_zk(node, zk_path, replica_path):
     print("Parts")
     print(node.query("SELECT name FROM system.zookeeper WHERE path = '{}/parts' FORMAT Vertical".format(replica_path)))
 
+def restart_replica_for_sure(node, table_name, zk_replica_path):
+    fake_zk = None
+    try:
+        node.query("DETACH TABLE {}".format(table_name))
+        fake_zk = get_fake_zk(node.name)
+        if fake_zk.exists(zk_replica_path + "/is_active") is not None:
+            fake_zk.delete(zk_replica_path + "/is_active")
+
+        node.query("ATTACH TABLE {}".format(table_name))
+    except Exception as ex:
+        print("Exception", ex)
+        raise ex
+    finally:
+        if fake_zk:
+            fake_zk.stop()
+            fake_zk.close()
+
+
+
 # in extremely rare case it can take more than 5 minutes in debug build with sanitizer
 @pytest.mark.timeout(600)
 def test_blocade_leader_twice(started_cluster):
@@ -211,7 +230,7 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(100):
             try:
-                node2.query("SYSTEM RESTART REPLICA ordinary.t2")
+                restart_replica_for_sure(node2, "ordinary.t2", "/clickhouse/t2/replicas/2")
                 node2.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -228,7 +247,8 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(100):
             try:
-                node3.query("SYSTEM RESTART REPLICA ordinary.t2")
+
+                restart_replica_for_sure(node3, "ordinary.t2", "/clickhouse/t2/replicas/3")
                 node3.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -265,7 +285,7 @@ def test_blocade_leader_twice(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("SYSTEM RESTART REPLICA ordinary.t2")
+                restart_replica_for_sure(node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1))
                 break
             except Exception as ex:
                 try:
@@ -296,7 +316,7 @@ def test_blocade_leader_twice(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("SYSTEM RESTART REPLICA ordinary.t2")
+                restart_replica_for_sure(node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1))
                 node.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
                 break
             except Exception as ex:
