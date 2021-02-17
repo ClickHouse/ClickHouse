@@ -29,7 +29,7 @@ std::vector<const char*> allTimezones()
 {
     std::vector<const char*> result;
 
-    auto timezone_name = auto_time_zones;
+    const auto * timezone_name = auto_time_zones;
     while (*timezone_name)
     {
         result.push_back(*timezone_name);
@@ -70,7 +70,7 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
 
 }
 
-TEST(DateLUTTest, Test_makeDayNum)
+TEST(DateLUTTest, makeDayNumTest)
 {
     const DateLUTImpl & lut = DateLUT::instance("UTC");
     EXPECT_EQ(0, lut.makeDayNum(2500, 12, 25));
@@ -264,10 +264,10 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOLDLut)
 }
 
 
-class DateLUT_TimeZone : public ::testing::TestWithParam<const char * /* timezone name */>
+class DateLUTWithTimeZone : public ::testing::TestWithParam<const char * /* timezone name */>
 {};
 
-TEST_P(DateLUT_TimeZone, DISABLED_LoadLut)
+TEST_P(DateLUTWithTimeZone, DISABLED_LoadLut)
 {
     // There are some assumptions and assertions about TZ data made in DateLUTImpl which are verified upon loading,
     // to make sure that those assertions are true for all timezones we are going to load all of them one by one.
@@ -275,12 +275,12 @@ TEST_P(DateLUT_TimeZone, DISABLED_LoadLut)
 }
 
 // Another long running test, shouldn't be run to often
-TEST_P(DateLUT_TimeZone, VaidateTimeComponentsAroundEpoch)
+TEST_P(DateLUTWithTimeZone, VaidateTimeComponentsAroundEpoch)
 {
     // Converting time around 1970-01-01 to hour-minute-seconds time components
     // could be problematic.
     const size_t max_failures_per_tz = 3;
-    const auto timezone_name = GetParam();
+    const auto * timezone_name = GetParam();
 
     const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
     const DateLUTImpl & lut = DateLUT::instance(timezone_name);
@@ -311,14 +311,14 @@ TEST_P(DateLUT_TimeZone, VaidateTimeComponentsAroundEpoch)
     }
 }
 
-TEST_P(DateLUT_TimeZone, getTimeZone)
+TEST_P(DateLUTWithTimeZone, getTimeZone)
 {
     const auto & lut = DateLUT::instance(GetParam());
 
     EXPECT_EQ(GetParam(), lut.getTimeZone());
 }
 
-TEST_P(DateLUT_TimeZone, ZeroTime)
+TEST_P(DateLUTWithTimeZone, ZeroTime)
 {
     const auto & lut = DateLUT::instance(GetParam());
 
@@ -329,7 +329,7 @@ TEST_P(DateLUT_TimeZone, ZeroTime)
 
 // Group of tests for timezones that have or had some time ago an offset which is not multiple of 15 minutes.
 INSTANTIATE_TEST_SUITE_P(ExoticTimezones,
-    DateLUT_TimeZone,
+    DateLUTWithTimeZone,
     ::testing::ValuesIn(std::initializer_list<const char*>{
             "Africa/El_Aaiun",
             "Pacific/Apia",
@@ -340,7 +340,7 @@ INSTANTIATE_TEST_SUITE_P(ExoticTimezones,
 );
 
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimeZones,
-    DateLUT_TimeZone,
+    DateLUTWithTimeZone,
     ::testing::ValuesIn(allTimezones())
 );
 
@@ -370,11 +370,11 @@ std::ostream & operator<<(std::ostream & ostr, const TimeRangeParam & param)
     return ostr << param.begin << " : " << param.end << " step: " << param.step_in_seconds << "s";
 }
 
-class DateLUT_Timezone_TimeRange : public ::testing::TestWithParam<std::tuple<const char* /*timezone_name*/, TimeRangeParam>>
+class DateLUTWithTimeZoneAndTimeRange : public ::testing::TestWithParam<std::tuple<const char* /*timezone_name*/, TimeRangeParam>>
 {};
 
 // refactored test from tests/date_lut3.cpp
-TEST_P(DateLUT_Timezone_TimeRange, InRange)
+TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
 {
     // for a time_t values in range [begin, end) to match with reference obtained from cctz:
     // compare date and time components: year, month, day, hours, minutes, seconds, formatted time string.
@@ -425,7 +425,7 @@ TEST_P(DateLUT_Timezone_TimeRange, InRange)
  *  So it would be tricky to skip knonw failures to allow all unit tests to pass.
  */
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010,
-    DateLUT_Timezone_TimeRange,
+    DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
@@ -436,7 +436,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010,
 );
 
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970_WHOLE,
-    DateLUT_Timezone_TimeRange,
+    DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
@@ -446,7 +446,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970_WHOLE,
 );
 
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010_WHOLE,
-    DateLUT_Timezone_TimeRange,
+    DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
@@ -456,7 +456,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010_WHOLE,
 );
 
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2020_WHOLE,
-    DateLUT_Timezone_TimeRange,
+    DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
@@ -466,7 +466,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2020_WHOLE,
 );
 
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_PreEpoch,
-    DateLUT_Timezone_TimeRange,
+    DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
@@ -476,7 +476,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_PreEpoch,
 );
 
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970,
-    DateLUT_Timezone_TimeRange,
+    DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
