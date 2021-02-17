@@ -1,5 +1,6 @@
 #pragma once
-#include <Server/TestKeeperTCPHandler.h>
+
+#include <Server/NuKeeperTCPHandler.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
@@ -8,7 +9,7 @@
 namespace DB
 {
 
-class TestKeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
+class NuKeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 {
 private:
     IServer & server;
@@ -20,9 +21,9 @@ private:
         void run() override {}
     };
 public:
-    TestKeeperTCPHandlerFactory(IServer & server_)
+    NuKeeperTCPHandlerFactory(IServer & server_)
         : server(server_)
-        , log(&Poco::Logger::get("TestKeeperTCPHandlerFactory"))
+        , log(&Poco::Logger::get("NuKeeperTCPHandlerFactory"))
     {
     }
 
@@ -30,8 +31,8 @@ public:
     {
         try
         {
-            LOG_TRACE(log, "Test keeper request. Address: {}", socket.peerAddress().toString());
-            return new TestKeeperTCPHandler(server, socket);
+            LOG_TRACE(log, "NuKeeper request. Address: {}", socket.peerAddress().toString());
+            return new NuKeeperTCPHandler(server, socket);
         }
         catch (const Poco::Net::NetException &)
         {
