@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 ADDINCL(
@@ -17,7 +15,6 @@ PEERDIR(
 
 SRCS(
     CachedCompressedReadBuffer.cpp
-    CheckingCompressedReadBuffer.cpp
     CompressedReadBuffer.cpp
     CompressedReadBufferBase.cpp
     CompressedReadBufferFromFile.cpp

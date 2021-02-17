@@ -6,9 +6,7 @@
 #include <Common/HashTable/Hash.h>
 
 #include <common/unaligned.h>
-#include <common/sort.h>
 #include <ext/scope_guard.h>
-
 
 #include <IO/WriteHelpers.h>
 
@@ -29,12 +27,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
-
-template class DecimalPaddedPODArray<Decimal32>;
-template class DecimalPaddedPODArray<Decimal64>;
-template class DecimalPaddedPODArray<Decimal128>;
-template class DecimalPaddedPODArray<Decimal256>;
-template class DecimalPaddedPODArray<DateTime64>;
 
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
@@ -153,10 +145,10 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
     {
         const auto& [first, last] = equal_ranges[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last,
+            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::sort(res.begin() + first, res.begin() + last,
+            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
 
         auto new_first = first;
@@ -184,11 +176,12 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
         /// Since then we are working inside the interval.
 
         if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
+
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
@@ -375,6 +368,4 @@ template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
-template class ColumnDecimal<DateTime64>;
-
 }

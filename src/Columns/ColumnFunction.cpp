@@ -140,15 +140,6 @@ size_t ColumnFunction::byteSize() const
     return total_size;
 }
 
-size_t ColumnFunction::byteSizeAt(size_t n) const
-{
-    size_t total_size = 0;
-    for (const auto & column : captured_columns)
-        total_size += column.column->byteSizeAt(n);
-
-    return total_size;
-}
-
 size_t ColumnFunction::allocatedBytes() const
 {
     size_t total_size = 0;

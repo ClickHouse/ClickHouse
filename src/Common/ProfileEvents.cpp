@@ -45,6 +45,9 @@
     M(CreatedReadBufferAIOFailed, "") \
     M(CreatedReadBufferMMap, "") \
     M(CreatedReadBufferMMapFailed, "") \
+    M(CreatedWriteBufferOrdinary, "") \
+    M(CreatedWriteBufferAIO, "") \
+    M(CreatedWriteBufferAIOFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "") \
@@ -93,6 +96,9 @@
     M(DistributedConnectionMissingTable, "") \
     M(DistributedConnectionStaleReplica, "") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
+    \
+    M(CompileAttempt, "Number of times a compilation of generated C++ code was initiated.") \
+    M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \

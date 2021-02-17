@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
@@ -17,7 +15,6 @@ SRCS(
     Executors/ExecutingGraph.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
-    Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
@@ -43,10 +40,9 @@ SRCS(
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp
     Formats/Impl/MySQLOutputFormat.cpp
+    Formats/Impl/NativeFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
-    Formats/Impl/ParallelFormattingOutputFormat.cpp
-    Formats/Impl/ParallelParsingInputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
@@ -95,6 +91,7 @@ SRCS(
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
+    QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -108,38 +105,30 @@ SRCS(
     QueryPlan/ITransformingStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
-    QueryPlan/MaterializingStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
-    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
-    QueryPlan/Optimizations/liftUpArrayJoin.cpp
-    QueryPlan/Optimizations/limitPushDown.cpp
-    QueryPlan/Optimizations/mergeExpressions.cpp
-    QueryPlan/Optimizations/optimizeTree.cpp
-    QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
-    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp
-    QueryPlan/ReverseRowsStep.cpp
     QueryPlan/RollupStep.cpp
-    QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
-    QueryPlan/WindowStep.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
     Sources/RemoteSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
+    Transforms/ConvertingTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
@@ -161,7 +150,6 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-    Transforms/WindowTransform.cpp
     printPipeline.cpp
 
 )

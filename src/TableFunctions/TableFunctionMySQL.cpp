@@ -10,7 +10,6 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
-#    include <Interpreters/Context.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ASTLiteral.h>

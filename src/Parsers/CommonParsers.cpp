@@ -1,7 +1,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Parsers/CommonParsers.h>
 #include <common/find_symbols.h>
-#include <IO/Operators.h>
 
 #include <string.h>        /// strncmp, strncasecmp
 

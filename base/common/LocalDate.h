@@ -168,6 +168,14 @@ public:
 static_assert(sizeof(LocalDate) == 4);
 
 
+inline std::ostream & operator<< (std::ostream & ostr, const LocalDate & date)
+{
+    return ostr << date.year()
+        << '-' << (date.month() / 10) << (date.month() % 10)
+        << '-' << (date.day() / 10) << (date.day() % 10);
+}
+
+
 namespace std
 {
 inline string to_string(const LocalDate & date)

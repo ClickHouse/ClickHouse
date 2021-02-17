@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
+#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -53,22 +54,12 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-    void read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -76,24 +67,23 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
-
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
-    bool optimize(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & partition,
-        bool final,
-        bool deduplicate,
-        const Names & deduplicate_by_columns,
-        const Context & context) override;
+    bool optimize(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override;
+    bool supportsPrewhere() const override
+    {
+        if (!destination_id)
+            return false;
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
+        if (dest && dest.get() != this)
+            return dest->supportsPrewhere();
+        return false;
+    }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
@@ -112,7 +102,7 @@ public:
 
 
 private:
-    const Context & buffer_context;
+    Context global_context;
 
     struct Buffer
     {
@@ -151,7 +141,7 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void backgroundFlush();
+    void flushBack();
     void reschedule();
 
     BackgroundSchedulePool & bg_pool;
@@ -165,7 +155,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
+        Context & context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,

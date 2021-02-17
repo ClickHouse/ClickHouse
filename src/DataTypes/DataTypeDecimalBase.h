@@ -120,17 +120,14 @@ public:
         return DecimalUtils::getFractionalPart(x, scale);
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(precision - scale) - T(1); }
+    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
 
-    template<typename U>
-    bool canStoreWhole(U x) const
+    bool canStoreWhole(T x) const
     {
-        static_assert(std::is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (std::is_signed_v<U>)
-            return -max <= x && x <= max;
-        else
-            return x <= static_cast<std::make_unsigned_t<typename T::NativeType>>(max.value);
+        if (x > max || x < -max)
+            return false;
+        return true;
     }
 
     /// @returns multiplier for U to become T with correct scale
@@ -153,45 +150,39 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
-    inline DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
-    {
-        return {precision, scale};
-    }
-
 protected:
     const UInt32 precision;
     const UInt32 scale;
 };
 
 
-template <typename T>
-inline const DataTypeDecimalBase<T> * checkDecimalBase(const IDataType & data_type)
-{
-    if (isColumnedAsDecimalT<T>(data_type))
-        return static_cast<const DataTypeDecimalBase<T> *>(&data_type);
-
-    return nullptr;
-}
-
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
 inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    UInt32 scale{};
+    if constexpr (is_multiply)
+        scale = tx.getScale() + ty.getScale();
+    else if constexpr (is_division)
+        scale = tx.getScale();
+    else
+        scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+
+    if constexpr (sizeof(T) < sizeof(U))
+        return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
+    else
+        return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 template <template <typename> typename DecimalType>

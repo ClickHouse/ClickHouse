@@ -303,30 +303,9 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpretAs(x, T) {#type_conversion_function-cast}
+## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}
 
-Performs byte reinterpretation of ‘x’ as ‘t’ data type.
-
-Following reinterpretations are allowed:
-1. Any type that has fixed size and value of that type can be represented continuously into FixedString.
-2. Any type that if value of that type can be represented continuously into String. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
-3. FixedString, String, types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
-
-``` sql
-SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpretAs(toInt8(1), 'Float32') as int_to_float,
-    reinterpretAs('1', 'UInt32') as string_to_int;
-```
-
-``` text
-┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
-│         255 │        1e-45 │            49 │
-└─────────────┴──────────────┴───────────────┘
-```
-
-## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretasuint8163264256}
-
-## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretasint8163264128256}
+## reinterpretAsInt(8\|16\|32\|64) {#reinterpretasint8163264}
 
 ## reinterpretAsFloat(32\|64) {#reinterpretasfloat3264}
 
@@ -334,13 +313,19 @@ SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
 
 ## reinterpretAsDateTime {#reinterpretasdatetime}
 
+These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn’t long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
+
 ## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
+
+This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
 ## reinterpretAsFixedString {#reinterpretasfixedstring}
 
+This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
+
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-These functions are aliases for `reinterpretAs`function.
+This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
@@ -392,63 +377,6 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 **See also**
 
 -   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
-
-## accurateCast(x, T) {#type_conversion_function-accurate-cast}
-
-Converts ‘x’ to the ‘t’ data type. The differente from cast(x, T) is that accurateCast
-does not allow overflow of numeric types during cast if type value x does not fit
-bounds of type T.
-
-Example
-``` sql
-SELECT cast(-1, 'UInt8') as uint8; 
-```
-
-
-``` text
-┌─uint8─┐
-│   255 │
-└───────┘
-```
-
-```sql
-SELECT accurateCast(-1, 'UInt8') as uint8;
-```
-
-``` text
-Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
-
-```
-
-## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
-
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
-if the casted value is not representable in the target type.
-
-Example:
-
-``` sql
-SELECT
-    accurateCastOrNull(-1, 'UInt8') as uint8,
-    accurateCastOrNull(128, 'Int8') as int8,
-    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string
-```
-
-``` text
-┌─uint8─┬─int8─┬─fixed_string─┐
-│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
-└───────┴──────┴──────────────┘┘
-```
-
-``` sql
-SELECT toTypeName(accurateCastOrNull(5, 'UInt8'))
-```
-
-``` text
-┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
-│ Nullable(UInt8)                            │
-└────────────────────────────────────────────┘
-```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 

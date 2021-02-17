@@ -1,5 +1,4 @@
 #include <IO/LimitReadBuffer.h>
-
 #include <Common/Exception.h>
 
 
@@ -14,8 +13,6 @@ namespace ErrorCodes
 
 bool LimitReadBuffer::nextImpl()
 {
-    assert(position() >= in.position());
-
     /// Let underlying buffer calculate read bytes in `next()` call.
     in.position() = position();
 
@@ -28,10 +25,7 @@ bool LimitReadBuffer::nextImpl()
     }
 
     if (!in.next())
-    {
-        working_buffer = in.buffer();
         return false;
-    }
 
     working_buffer = in.buffer();
 
@@ -56,7 +50,7 @@ LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exc
 LimitReadBuffer::~LimitReadBuffer()
 {
     /// Update underlying buffer's position in case when limit wasn't reached.
-    if (!working_buffer.empty())
+    if (working_buffer.size() != 0)
         in.position() = position();
 }
 
