@@ -401,10 +401,14 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         {
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
-            auto result = function->execute({}, {}, 0);
+            function->prepare({});
+
+            size_t input_rows_count = 1;
+            auto result = function->execute({}, function->getResultType(), input_rows_count);
 
             Field value;
             result->get(0, value);
+
             AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
             current_xml_element->appendChild(text_value);
         }
