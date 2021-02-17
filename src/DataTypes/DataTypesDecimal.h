@@ -138,6 +138,11 @@ convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale
 
     result = static_cast<typename ToFieldType::NativeType>(converted_value);
 
+    if constexpr (std::is_same_v<ToFieldType, DateTime64>)
+    {
+        DecimalUtils::clamp<DateTime64>(result, scale_to, 0, 0xFFFFFFFF);
+    }
+
     return ReturnType(true);
 }
 
