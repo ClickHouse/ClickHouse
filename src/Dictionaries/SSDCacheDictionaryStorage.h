@@ -144,8 +144,8 @@ public:
     }
 
     /// Write key and returns offset in ssd cache block where data is written
-    /// It is client responsibility to check if there is enought place in block to write key
-    /// Returns true if key was written and false if there was not enought place to write key
+    /// It is client responsibility to check if there is enough place in block to write key
+    /// Returns true if key was written and false if there was not enough place to write key
     bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
     {
         assert(cache_key.size > 0);
@@ -1116,6 +1116,7 @@ private:
                 const char * partition_data = current_memory_buffer_partition.getData();
 
                 bool flush_to_file_result = file_buffer.writeBuffer(partition_data, configuration.write_buffer_blocks_size);
+                std::cerr << "Flushed to file " << flush_to_file_result << std::endl;
 
                 if (flush_to_file_result)
                 {

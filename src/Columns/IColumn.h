@@ -208,7 +208,7 @@ public:
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    /// Retuns a pointer to the position after the deserialized data.
+    /// Returns a pointer to the position after the deserialized data.
     virtual const char * skipSerializedInArena(const char *) const = 0;
 
     /// Update state of hash function with value of n-th element.
