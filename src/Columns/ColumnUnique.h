@@ -39,7 +39,7 @@ class ColumnUnique final : public COWHelper<IColumnUnique, ColumnUnique<ColumnTy
     friend class COWHelper<IColumnUnique, ColumnUnique<ColumnType>>;
 
 private:
-    explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
+    ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
     explicit ColumnUnique(const IDataType & type);
     ColumnUnique(const ColumnUnique & other);
 
