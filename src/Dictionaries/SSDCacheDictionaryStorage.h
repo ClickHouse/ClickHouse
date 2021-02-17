@@ -450,11 +450,13 @@ public:
         , file_blocks_size(file_blocks_size_)
         , read_from_file_buffer_blocks_size(read_from_file_buffer_blocks_size_)
     {
-        // if (std::filesystem::exists(std::filesystem::path{file_path}))
-        //         LOG_INFO(&Poco::Logger::get("SSDCacheFileBuffer::Constructor"), "Using existing file '{}' for ssd cache", file_path_);
-        // else
-        //     if (!std::filesystem::create_directories(std::filesystem::path{file_path}))
-        //         throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
+        auto path = std::filesystem::path{file_path};
+        auto parent_path_directory = path.parent_path();
+
+        /// If cache file is in directory that does not exists create it
+        if (!std::filesystem::exists(parent_path_directory))
+            if (!std::filesystem::create_directories(parent_path_directory))
+                throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -1134,13 +1136,11 @@ private:
 
                         cell_to_update.in_memory = false;
                         cell_to_update.index.block_index = block_index_in_file_before_write;
-
-                        // std::cerr << "Key to update " << key_to_update << " block index " << block_index_in_file_before_write << std::endl;
                     }
 
                     /// Memory buffer partition flushed to disk start reusing it
                     current_memory_buffer_partition.resetToPartitionStart();
-                    // memset(const_cast<char *>(current_memory_buffer_partition.getData()), 0, current_memory_buffer_partition.getSizeInBytes());
+                    memset(const_cast<char *>(current_memory_buffer_partition.getData()), 0, current_memory_buffer_partition.getSizeInBytes());
 
                     write_into_memory_buffer_result = current_memory_buffer_partition.writeKey(ssd_cache_key, cache_index);
                     assert(write_into_memory_buffer_result);
