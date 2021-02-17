@@ -5,7 +5,7 @@ toc_title: Brown University Benchmark
 
 # Brown University Benchmark
 
-`MgBench` — это новый аналитический бенчмарк для данных журнала событий, сгенерированных машиной. Бенчмарк разработан [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
+`MgBench` — это аналитический тест производительности для данных журнала событий, сгенерированных машиной. Бенчмарк разработан [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
 
 Скачать данные:
 ```
@@ -74,7 +74,7 @@ ENGINE = MergeTree()
 ORDER BY (event_type, log_time);
 ```
 
-Insert data:
+Вставка данных:
 
 ```
 clickhouse-client --query "INSERT INTO mgbench.logs1 FORMAT CSVWithNames" < mgbench1.csv
@@ -82,7 +82,7 @@ clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbe
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-Run benchmark queries:
+Запуск тестов производительности:
 ```
 -- Q1.1: What is the CPU/network utilization for each web server since midnight?
 
