@@ -10,7 +10,6 @@
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
@@ -26,7 +25,6 @@
         "memory_profiler",
         "odbc_roundtrip",
         "01103_check_cpu_instructions_at_startup",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
@@ -37,7 +35,6 @@
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
         "00900_orc_load",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
@@ -49,7 +46,6 @@
         "01103_check_cpu_instructions_at_startup",
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
@@ -61,7 +57,6 @@
         "00980_alter_settings_race",
         "00834_kill_mutation_replicated_zookeeper",
         "00834_kill_mutation",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01200_mutations_memory_consumption",
         "01103_check_cpu_instructions_at_startup",
         "01037_polygon_dicts_",
@@ -87,7 +82,6 @@
         "00505_secure",
         "00505_shard_secure",
         "odbc_roundtrip",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01103_check_cpu_instructions_at_startup",
         "01114_mysql_database_engine_segfault",
         "00834_cancel_http_readonly_queries_on_client_close",
@@ -101,19 +95,16 @@
         "01455_time_zones"
     ],
     "release-build": [
-        "00992_system_parts_race_condition_zookeeper" /// TODO remove me (alesapin)
     ],
     "database-ordinary": [
         "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        "00738_lock_for_inner_table",
-        "00992_system_parts_race_condition_zookeeper" /// TODO remove me (alesapin)
+        "00738_lock_for_inner_table"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
-        "01482_move_to_prewhere_and_cast", /// bug, shoud be fixed
-        "00992_system_parts_race_condition_zookeeper" /// TODO remove me (alesapin)
+        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
     ],
     "antlr": [
         "00186_very_long_arrays",
@@ -153,7 +144,6 @@
         "00982_array_enumerate_uniq_ranked",
         "00984_materialized_view_to_columns",
         "00988_constraints_replication_zookeeper",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "00995_order_by_with_fill",
         "01001_enums_in_in_section",
         "01011_group_uniq_array_memsan",
@@ -584,6 +574,7 @@
         "01676_dictget_in_default_expression",
         "01715_background_checker_blather_zookeeper",
         "01700_system_zookeeper_path_in",
+        "01669_columns_declaration_serde",
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -591,6 +582,7 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn"
     ]
 }
