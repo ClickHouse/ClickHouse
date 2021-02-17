@@ -39,12 +39,12 @@ namespace
  * 3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
  * String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
  */
-class FunctionReinterpretAs : public IFunction
+class FunctionReinterpret : public IFunction
 {
 public:
-    static constexpr auto name = "reinterpretAs";
+    static constexpr auto name = "reinterpret";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAs>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpret>(); }
 
     String getName() const override { return name; }
 
@@ -308,11 +308,11 @@ private:
 };
 
 template <typename ToDataType, typename Name>
-class FunctionReinterpretAsTyped : public IFunction
+class FunctionReinterpretAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsTyped>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAs>(); }
 
     String getName() const override { return name; }
 
@@ -365,7 +365,7 @@ public:
         return impl.executeImpl(arguments_with_type, return_type, input_rows_count);
     }
 
-    FunctionReinterpretAs impl;
+    FunctionReinterpret impl;
 };
 
 struct NameReinterpretAsUInt8       { static constexpr auto name = "reinterpretAsUInt8"; };
@@ -387,26 +387,26 @@ struct NameReinterpretAsUUID        { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsString      { static constexpr auto name = "reinterpretAsString"; };
 struct NameReinterpretAsFixedString { static constexpr auto name = "reinterpretAsFixedString"; };
 
-using FunctionReinterpretAsUInt8 = FunctionReinterpretAsTyped<DataTypeUInt8, NameReinterpretAsUInt8>;
-using FunctionReinterpretAsUInt16 = FunctionReinterpretAsTyped<DataTypeUInt16, NameReinterpretAsUInt16>;
-using FunctionReinterpretAsUInt32 = FunctionReinterpretAsTyped<DataTypeUInt32, NameReinterpretAsUInt32>;
-using FunctionReinterpretAsUInt64 = FunctionReinterpretAsTyped<DataTypeUInt64, NameReinterpretAsUInt64>;
-using FunctionReinterpretAsUInt256 = FunctionReinterpretAsTyped<DataTypeUInt256, NameReinterpretAsUInt256>;
-using FunctionReinterpretAsInt8 = FunctionReinterpretAsTyped<DataTypeInt8, NameReinterpretAsInt8>;
-using FunctionReinterpretAsInt16 = FunctionReinterpretAsTyped<DataTypeInt16, NameReinterpretAsInt16>;
-using FunctionReinterpretAsInt32 = FunctionReinterpretAsTyped<DataTypeInt32, NameReinterpretAsInt32>;
-using FunctionReinterpretAsInt64 = FunctionReinterpretAsTyped<DataTypeInt64, NameReinterpretAsInt64>;
-using FunctionReinterpretAsInt128 = FunctionReinterpretAsTyped<DataTypeInt128, NameReinterpretAsInt128>;
-using FunctionReinterpretAsInt256 = FunctionReinterpretAsTyped<DataTypeInt256, NameReinterpretAsInt256>;
-using FunctionReinterpretAsFloat32 = FunctionReinterpretAsTyped<DataTypeFloat32, NameReinterpretAsFloat32>;
-using FunctionReinterpretAsFloat64 = FunctionReinterpretAsTyped<DataTypeFloat64, NameReinterpretAsFloat64>;
-using FunctionReinterpretAsDate = FunctionReinterpretAsTyped<DataTypeDate, NameReinterpretAsDate>;
-using FunctionReinterpretAsDateTime = FunctionReinterpretAsTyped<DataTypeDateTime, NameReinterpretAsDateTime>;
-using FunctionReinterpretAsUUID = FunctionReinterpretAsTyped<DataTypeUUID, NameReinterpretAsUUID>;
+using FunctionReinterpretAsUInt8 = FunctionReinterpretAs<DataTypeUInt8, NameReinterpretAsUInt8>;
+using FunctionReinterpretAsUInt16 = FunctionReinterpretAs<DataTypeUInt16, NameReinterpretAsUInt16>;
+using FunctionReinterpretAsUInt32 = FunctionReinterpretAs<DataTypeUInt32, NameReinterpretAsUInt32>;
+using FunctionReinterpretAsUInt64 = FunctionReinterpretAs<DataTypeUInt64, NameReinterpretAsUInt64>;
+using FunctionReinterpretAsUInt256 = FunctionReinterpretAs<DataTypeUInt256, NameReinterpretAsUInt256>;
+using FunctionReinterpretAsInt8 = FunctionReinterpretAs<DataTypeInt8, NameReinterpretAsInt8>;
+using FunctionReinterpretAsInt16 = FunctionReinterpretAs<DataTypeInt16, NameReinterpretAsInt16>;
+using FunctionReinterpretAsInt32 = FunctionReinterpretAs<DataTypeInt32, NameReinterpretAsInt32>;
+using FunctionReinterpretAsInt64 = FunctionReinterpretAs<DataTypeInt64, NameReinterpretAsInt64>;
+using FunctionReinterpretAsInt128 = FunctionReinterpretAs<DataTypeInt128, NameReinterpretAsInt128>;
+using FunctionReinterpretAsInt256 = FunctionReinterpretAs<DataTypeInt256, NameReinterpretAsInt256>;
+using FunctionReinterpretAsFloat32 = FunctionReinterpretAs<DataTypeFloat32, NameReinterpretAsFloat32>;
+using FunctionReinterpretAsFloat64 = FunctionReinterpretAs<DataTypeFloat64, NameReinterpretAsFloat64>;
+using FunctionReinterpretAsDate = FunctionReinterpretAs<DataTypeDate, NameReinterpretAsDate>;
+using FunctionReinterpretAsDateTime = FunctionReinterpretAs<DataTypeDateTime, NameReinterpretAsDateTime>;
+using FunctionReinterpretAsUUID = FunctionReinterpretAs<DataTypeUUID, NameReinterpretAsUUID>;
 
-using FunctionReinterpretAsString = FunctionReinterpretAsTyped<DataTypeString, NameReinterpretAsString>;
+using FunctionReinterpretAsString = FunctionReinterpretAs<DataTypeString, NameReinterpretAsString>;
 
-using FunctionReinterpretAsFixedString = FunctionReinterpretAsTyped<DataTypeFixedString, NameReinterpretAsFixedString>;
+using FunctionReinterpretAsFixedString = FunctionReinterpretAs<DataTypeFixedString, NameReinterpretAsFixedString>;
 
 }
 
@@ -433,7 +433,7 @@ void registerFunctionsReinterpretAs(FunctionFactory & factory)
 
     factory.registerFunction<FunctionReinterpretAsFixedString>();
 
-    factory.registerFunction<FunctionReinterpretAs>();
+    factory.registerFunction<FunctionReinterpret>();
 }
 
 }
