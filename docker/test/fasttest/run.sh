@@ -361,7 +361,7 @@ function run_tests
         stop_server ||:
 
         # Clean the data so that there is no interference from the previous test run.
-        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files} ||:
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
 
         start_server
 
