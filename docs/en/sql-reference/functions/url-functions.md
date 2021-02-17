@@ -25,7 +25,7 @@ Extracts the hostname from a URL.
 domain(url)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
@@ -76,7 +76,7 @@ Extracts the the top-level domain from a URL.
 topLevelDomain(url)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
@@ -370,7 +370,7 @@ Extracts network locality (`username:password@host:port`) from a URL.
 netloc(URL)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `url` — URL. [String](../../sql-reference/data-types/string.md).
 
