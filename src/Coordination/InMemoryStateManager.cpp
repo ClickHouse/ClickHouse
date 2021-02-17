@@ -66,6 +66,11 @@ void InMemoryStateManager::loadLogStore(size_t start_log_index)
     log_store->init(start_log_index);
 }
 
+void InMemoryStateManager::flushLogStore()
+{
+    log_store->flush();
+}
+
 void InMemoryStateManager::save_config(const nuraft::cluster_config & config)
 {
     // Just keep in memory in this example.
