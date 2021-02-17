@@ -261,7 +261,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
-    ParserExpressionList contents(false);
+    ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
 
     bool has_distinct_modifier = false;
@@ -270,6 +270,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr query;
     ASTPtr expr_list_args;
     ASTPtr expr_list_params;
+
+    if (is_table_function)
+    {
+        if (ParserTableFunctionView().parse(pos, node, expected))
+            return true;
+    }
 
     if (!id_parser.parse(pos, identifier, expected))
         return false;
@@ -281,35 +287,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (distinct.ignore(pos, expected))
         has_distinct_modifier = true;
-    else
-    {
-        auto old_pos = pos;
-        auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
-
-        if (select.parse(pos, query, expected))
-        {
-            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
-            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
-            {
-                // It's an subquery. Bail out.
-                pos = old_pos;
-            }
-            else
-            {
-                if (pos->type != TokenType::ClosingRoundBracket)
-                    return false;
-                ++pos;
-                auto function_node = std::make_shared<ASTFunction>();
-                tryGetIdentifierNameInto(identifier, function_node->name);
-                auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
-                expr_list_with_single_query->children.push_back(query);
-                function_node->arguments = expr_list_with_single_query;
-                function_node->children.push_back(function_node->arguments);
-                node = function_node;
-                return true;
-            }
-        }
-    }
 
     const char * contents_begin = pos->begin;
     if (!contents.parse(pos, expr_list_args, expected))
@@ -382,6 +359,49 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
+    node = function_node;
+    return true;
+}
+
+bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserKeyword view("VIEW");
+    ParserSelectWithUnionQuery select;
+
+    ASTPtr identifier;
+    ASTPtr query;
+
+    if (!view.ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+
+    ++pos;
+
+    bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    if (!select.parse(pos, query, expected))
+        return false;
+
+    auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+    if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+    {
+        // It's an subquery. Bail out.
+        return false;
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+    auto function_node = std::make_shared<ASTFunction>();
+    tryGetIdentifierNameInto(identifier, function_node->name);
+    auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
+    expr_list_with_single_query->children.push_back(query);
+    function_node->name = "view";
+    function_node->arguments = expr_list_with_single_query;
+    function_node->children.push_back(function_node->arguments);
     node = function_node;
     return true;
 }
