@@ -64,3 +64,5 @@ SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) 
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;
 SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10;
+
+DROP TABLE nested;

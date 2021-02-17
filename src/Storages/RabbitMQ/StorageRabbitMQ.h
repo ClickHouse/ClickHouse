@@ -94,6 +94,7 @@ private:
     String address;
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
+    String vhost;
 
     std::unique_ptr<uv_loop_t> loop;
     std::shared_ptr<RabbitMQHandler> event_handler;

@@ -21,7 +21,7 @@ Build a bitmap from unsigned integer array.
 bitmapBuild(array)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – unsigned integer array.
 
@@ -45,7 +45,7 @@ Convert bitmap to integer array.
 bitmapToArray(bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -69,7 +69,7 @@ Return subset in specified range (not include the range_end).
 bitmapSubsetInRange(bitmap, range_start, range_end)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
 -   `range_start` – range start point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
@@ -97,7 +97,7 @@ Creates a subset of bitmap with n elements taken between `range_start` and `card
 bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
 -   `range_start` – The subset starting point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
@@ -133,7 +133,7 @@ Checks whether the bitmap contains an element.
 bitmapContains(haystack, needle)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
 -   `needle` – Value that the function searches. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
@@ -167,7 +167,7 @@ bitmapHasAny(bitmap1, bitmap2)
 
 If you are sure that `bitmap2` contains strictly one element, consider using the [bitmapContains](#bitmap_functions-bitmapcontains) function. It works more efficiently.
 
-**Parameters**
+**Arguments**
 
 -   `bitmap*` – bitmap object.
 
@@ -197,7 +197,7 @@ If the second argument is an empty bitmap then returns 1.
 bitmapHasAll(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -221,7 +221,7 @@ Retrun bitmap cardinality of type UInt64.
 bitmapCardinality(bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -243,7 +243,7 @@ Retrun the smallest value of type UInt64 in the set, UINT32_MAX if the set is em
 
     bitmapMin(bitmap)
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -263,7 +263,7 @@ Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
 
     bitmapMax(bitmap)
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -283,7 +283,7 @@ Transform an array of values in a bitmap to another array of values, the result 
 
     bitmapTransform(bitmap, from_array, to_array)
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 -   `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
@@ -307,7 +307,7 @@ Two bitmap and calculation, the result is a new bitmap.
 bitmapAnd(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -331,7 +331,7 @@ Two bitmap or calculation, the result is a new bitmap.
 bitmapOr(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -355,7 +355,7 @@ Two bitmap xor calculation, the result is a new bitmap.
 bitmapXor(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -379,7 +379,7 @@ Two bitmap andnot calculation, the result is a new bitmap.
 bitmapAndnot(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -403,7 +403,7 @@ Two bitmap and calculation, return cardinality of type UInt64.
 bitmapAndCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -427,7 +427,7 @@ Two bitmap or calculation, return cardinality of type UInt64.
 bitmapOrCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -451,7 +451,7 @@ Two bitmap xor calculation, return cardinality of type UInt64.
 bitmapXorCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 
@@ -475,7 +475,7 @@ Two bitmap andnot calculation, return cardinality of type UInt64.
 bitmapAndnotCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – bitmap object.
 

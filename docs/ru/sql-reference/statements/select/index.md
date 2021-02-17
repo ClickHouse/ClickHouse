@@ -162,6 +162,112 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Подробнее смотрите в разделе «Настройки». Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию.
 
+## Модификаторы запроса SELECT {#select-modifiers}
+
+Вы можете использовать следующие модификаторы в запросах `SELECT`.
+
+### APPLY {#apply-modifier}
+
+Вызывает указанную функцию для каждой строки, возвращаемой внешним табличным выражением запроса. 
+
+**Синтаксис:**
+
+``` sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+**Пример:** 
+
+``` sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
+
+### EXCEPT {#except-modifier}
+
+Исключает из результата запроса один или несколько столбцов.
+
+**Синтаксис:**
+
+``` sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+**Пример:**
+
+``` sql
+SELECT * EXCEPT (i) from columns_transformers;
+```
+
+```
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```
+
+### REPLACE {#replace-modifier}
+
+Определяет одно или несколько [выражений алиасов](../../../sql-reference/syntax.md#syntax-expression_aliases). Каждый алиас должен соответствовать имени столбца из запроса `SELECT *`. В списке столбцов результата запроса имя столбца, соответствующее алиасу, заменяется выражением в модификаторе `REPLACE`.
+
+Этот модификатор не изменяет имена или порядок столбцов. Однако он может изменить значение и тип значения.
+
+**Синтаксис:**
+
+``` sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Пример:**
+
+``` sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```
+
+### Комбинации модификаторов {#modifier-combinations}
+
+Вы можете использовать каждый модификатор отдельно или комбинировать их.
+
+**Примеры:**
+
+Использование одного и того же модификатора несколько раз.
+
+``` sql
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
+```
+
+```
+┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
+│                        2 │                        3 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+Использование нескольких модификаторов в одном запросе.
+
+``` sql
+SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
+```
+
+```
+┌─sum(plus(i, 1))─┬─sum(k)─┐
+│             222 │    347 │
+└─────────────────┴────────┘
+```
+
 ## SETTINGS в запросе SELECT {#settings-in-select}
 
 Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
@@ -174,5 +280,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/)
-<!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/)<!--hide-->

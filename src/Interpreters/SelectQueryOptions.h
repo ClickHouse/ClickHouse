@@ -33,9 +33,10 @@ struct SelectQueryOptions
     bool ignore_quota = false;
     bool ignore_limits = false;
     bool is_internal = false;
+    bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
 
-    SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
-        : to_stage(stage), subquery_depth(depth)
+    SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0, bool is_subquery_ = false)
+        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_)
     {
     }
 
@@ -46,6 +47,7 @@ struct SelectQueryOptions
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
         ++out.subquery_depth;
+        out.is_subquery = true;
         return out;
     }
 
