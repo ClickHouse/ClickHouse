@@ -54,17 +54,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Настройки форматов данных также могут быть добавлены в списке RabbitMQ настроек.
 
-Требуемая конфигурация:
-
-Конфигурация сервера RabbitMQ добавляется с помощью конфигурационного файла ClickHouse.
-
-``` xml
- <rabbitmq>
-    <username>root</username>
-    <password>clickhouse</password>
- </rabbitmq>
-```
-
 Example:
 
 ``` sql
@@ -77,6 +66,25 @@ Example:
                             rabbitmq_format = 'JSONEachRow',
                             rabbitmq_num_consumers = 5,
                             date_time_input_format = 'best_effort';
+```
+
+Конфигурация сервера RabbitMQ добавляется с помощью конфигурационного файла ClickHouse.
+
+Требуемая конфигурация:
+
+``` xml
+ <rabbitmq>
+    <username>root</username>
+    <password>clickhouse</password>
+ </rabbitmq>
+```
+
+Дополнительная конфигурация:
+
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
+ </rabbitmq>
 ```
 
 ## Описание {#description}

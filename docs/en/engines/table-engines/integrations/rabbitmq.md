@@ -61,17 +61,6 @@ Optional parameters:
 
 Also format settings can be added along with rabbitmq-related settings.
 
-Required configuration:
-
-The RabbitMQ server configuration should be added using the ClickHouse config file.
-
-``` xml
- <rabbitmq>
-    <username>root</username>
-    <password>clickhouse</password>
- </rabbitmq>
-```
-
 Example:
 
 ``` sql
@@ -84,6 +73,25 @@ Example:
                             rabbitmq_format = 'JSONEachRow',
                             rabbitmq_num_consumers = 5,
                             date_time_input_format = 'best_effort';
+```
+
+The RabbitMQ server configuration should be added using the ClickHouse config file.
+
+Required configuration:
+
+``` xml
+ <rabbitmq>
+    <username>root</username>
+    <password>clickhouse</password>
+ </rabbitmq>
+```
+
+Additional configuration:
+
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
+ </rabbitmq>
 ```
 
 ## Description {#description}

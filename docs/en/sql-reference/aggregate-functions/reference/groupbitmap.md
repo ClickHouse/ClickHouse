@@ -10,7 +10,7 @@ Bitmap or Aggregate calculations from a unsigned integer column, return cardinal
 groupBitmap(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` – An expression that results in `UInt*` type.
 
