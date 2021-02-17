@@ -1,6 +1,7 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Databases/IDatabase.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/IDisk.h>
 
 #include <DataTypes/DataTypeFactory.h>

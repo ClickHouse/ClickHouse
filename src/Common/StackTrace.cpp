@@ -261,9 +261,6 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     tryCapture();
 
-    /// This variable from signal handler is not instrumented by Memory Sanitizer.
-    __msan_unpoison(&signal_context, sizeof(signal_context));
-
     void * caller_address = getCallerAddress(signal_context);
 
     if (size == 0 && caller_address)
