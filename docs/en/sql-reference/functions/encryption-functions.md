@@ -31,7 +31,7 @@ This function encrypts data using these modes:
 encrypt('mode', 'plaintext', 'key' [, iv, aad])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text thats need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
@@ -127,7 +127,7 @@ Supported encryption modes:
 aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text that needs to be encrypted. [String](../../sql-reference/data-types/string.md#string).
@@ -238,7 +238,7 @@ This function decrypts ciphertext into a plaintext using these modes:
 decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
@@ -317,7 +317,7 @@ Supported decryption modes:
 aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).

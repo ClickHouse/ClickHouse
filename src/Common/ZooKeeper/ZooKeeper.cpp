@@ -602,7 +602,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::removeChildrenRecursive(const std::string & path)
+void ZooKeeper::removeChildrenRecursive(const std::string & path, const String & keep_child_node)
 {
     Strings children = getChildren(path);
     while (!children.empty())
@@ -611,14 +611,15 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path)
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
-            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
     }
 }
 
-void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
+void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
@@ -629,14 +630,14 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            batch.push_back(path + "/" + children.back());
+            String child_path = path + "/" + children.back();
+            tryRemoveChildrenRecursive(child_path);
+            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            {
+                batch.push_back(child_path);
+                ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
+            }
             children.pop_back();
-            tryRemoveChildrenRecursive(batch.back());
-
-            Coordination::RemoveRequest request;
-            request.path = batch.back();
-
-            ops.emplace_back(std::make_shared<Coordination::RemoveRequest>(std::move(request)));
         }
 
         /// Try to remove the children with a faster method - in bulk. If this fails,
