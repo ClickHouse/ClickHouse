@@ -17,12 +17,12 @@ argMax(arg, val)
 or
 
 ``` sql
-argMax(tuple(arg, val))
+argMax(tuple(arg1, arg2), val)
 ```
 
 **Arguments**
 
--   `arg` — Argument.
+-   `arg{i}` — Argument.
 -   `val` — Value.
 
 **Returned value**
@@ -33,7 +33,7 @@ Type: matches `arg` type.
 
 For tuple in the input:
 
--   Tuple `(arg, val)`, where `val` is the maximum value and `arg` is a corresponding value.
+-   Tuple `(arg1, arg2)`, where `arg1` and `arg2` are the corresponding values.
 
 Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 
@@ -52,13 +52,13 @@ Input table:
 Query:
 
 ``` sql
-SELECT argMax(user, salary), argMax(tuple(user, salary)) FROM salary;
+SELECT argMax(user, salary), argMax(tuple(user, salary), salary) FROM salary;
 ```
 
 Result:
 
 ``` text
-┌─argMax(user, salary)─┬─argMax(tuple(user, salary))─┐
+┌─argMax(user, salary)─┬─argMax(tuple(user, salary), salary)─┐
 │ director             │ ('director',5000)           │
 └──────────────────────┴─────────────────────────────┘
 ```
