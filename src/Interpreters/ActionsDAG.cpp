@@ -1245,14 +1245,14 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
     {
         struct Frame
         {
-            const Node * node;
+            Node * node;
             bool is_predicate = false;
             size_t next_child_to_visit = 0;
             size_t num_allowed_children = 0;
         };
 
         std::stack<Frame> stack;
-        std::unordered_set<const Node *> visited_nodes;
+        std::unordered_set<Node *> visited_nodes;
 
         stack.push(Frame{.node = *it, .is_predicate = true});
         visited_nodes.insert(*it);
@@ -1290,12 +1290,12 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
                 else if (is_conjunction)
                 {
                     for (auto * child : cur.node->children)
-                    {
                         if (allowed_nodes.count(child))
                             selected_predicates.insert(child);
-                        else
-                            other_predicates.insert(child);
-                    }
+                }
+                else if (cur.is_predicate)
+                {
+                    other_predicates.insert(cur.node);
                 }
 
                 stack.pop();
@@ -1310,6 +1310,14 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
         else
             return nullptr;
     }
+
+    // std::cerr << "************* Selectecd predicates\n";
+    // for (const auto * p : selected_predicates)
+    //     std::cerr << p->result_name << std::endl;
+
+    // std::cerr << "............. Other predicates\n";
+    // for (const auto * p : other_predicates)
+    //     std::cerr << p->result_name << std::endl;
 
     auto actions = cloneEmpty();
     actions->settings.project_input = false;

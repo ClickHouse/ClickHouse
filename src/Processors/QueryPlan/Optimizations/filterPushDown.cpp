@@ -117,8 +117,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (keys.count(column.name) == 0)
                 allowed_inputs.push_back(column.name);
 
-        for (const auto & name : allowed_inputs)
-            std::cerr << name << std::endl;
+        // for (const auto & name : allowed_inputs)
+        //     std::cerr << name << std::endl;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
             return updated_steps;
