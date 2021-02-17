@@ -26,8 +26,7 @@
 
 namespace DB
 {
-
- /** CacheDictionary store keys in cache storage and can asynchronous and synchronous updates during keys fetch.
+/** CacheDictionary store keys in cache storage and can asynchronous and synchronous updates during keys fetch.
 
     If keys are not found in storage during fetch, dictionary start update operation with update queue.
 

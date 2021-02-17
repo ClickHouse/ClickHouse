@@ -82,7 +82,7 @@ public:
         return result;
     }
 
-    /// Filter only requested colums
+    /// Filter only requested columns
     Columns filterRequestedColumns(MutableColumns & fetched_mutable_columns) const
     {
         Columns result;
