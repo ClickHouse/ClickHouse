@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <random>
+
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -7,6 +10,8 @@ static bool startsWith(const std::string & s, const char * prefix)
     return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
 }
 
+/// This is thread-safe
+std::random_device rd;
 
 using namespace mysqlxx;
 
@@ -32,6 +37,13 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & con
                 replicas_by_priority[priority].emplace_back(
                     std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
             }
+        }
+
+        static thread_local std::mt19937 rnd_generator(rd());
+        for (auto & [_, replicas] : replicas_by_priority)
+        {
+            if (replicas.size() > 1)
+                std::shuffle(replicas.begin(), replicas.end(), rnd_generator);
         }
     }
     else
