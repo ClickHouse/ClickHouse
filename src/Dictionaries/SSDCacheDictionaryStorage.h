@@ -784,13 +784,11 @@ public:
     CacheDictionaryStorage & storage;
 
     template <typename Key, typename Value>
-    void operator()(const Key &, const Value &) const
+    void operator()(const Key & key, const Value &) const
     {
         /// In case of complex key we keep it in arena
-        // if constexpr (std::is_same_v<Key, StringRef>)
-        // {
-        //     storage.complex_key_arena.free(const_cast<char *>(key.data), key.size);
-        // }
+        if constexpr (std::is_same_v<Key, StringRef>)
+            storage.complex_key_arena.free(const_cast<char *>(key.data), key.size);
     }
 };
 
@@ -1210,9 +1208,9 @@ private:
         SimpleKeyLRUHashMap,
         ComplexKeyLRUHashMap>;
 
-    CacheLRUHashMap index;
-
     ArenaWithFreeLists complex_key_arena;
+
+    CacheLRUHashMap index;
 
     size_t current_partition_index = 0;
 

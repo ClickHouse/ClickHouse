@@ -62,4 +62,6 @@ dictGet
 1
 2
 dictIsIn
-Check [1] in [0, 1, 2]
+dictGetHierarchy
+[1]
+[4,2,1]
