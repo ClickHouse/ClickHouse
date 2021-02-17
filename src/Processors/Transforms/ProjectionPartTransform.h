@@ -28,6 +28,7 @@ protected:
         for (const auto & elem : projection)
         {
             ColumnWithTypeAndName column = block.getByName(elem.name);
+            column.column = column.column->convertToFullColumnIfConst();
             new_block.insert(std::move(column));
         }
         block.swap(new_block);

@@ -282,7 +282,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 auto where_column_name = where->getColumnName();
                 auto syntax_result = TreeRewriter(context).analyze(where, filter_block.getNamesAndTypesList());
                 const auto actions = ExpressionAnalyzer(where, syntax_result, context).getActions(false);
-                // const auto required_columns = actions->getRequiredColumns();
 
                 pipe.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType)
                 {
@@ -296,6 +295,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             {
                 return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block, std::move(parent_parts));
             });
+
             pipes.push_back(std::move(pipe));
         }
     }
