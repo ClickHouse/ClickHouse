@@ -106,7 +106,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
 
         for (const auto & identifier : identifiers)
         {
-            const auto & column_name = identifier->shortName();
+            const auto & column_name = identifier->name();
             const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
 
             /// For lambda functions, we can't always find them in the list of columns
