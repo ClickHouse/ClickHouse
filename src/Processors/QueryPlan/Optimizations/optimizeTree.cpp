@@ -23,6 +23,9 @@ void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
     std::stack<Frame> stack;
     stack.push(Frame{.node = &root});
 
+    size_t max_optimizations_to_apply = 0;
+    size_t total_applied_optimizations = 0;
+
     while (!stack.empty())
     {
         auto & frame = stack.top();
@@ -54,8 +57,13 @@ void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
             if (!optimization.apply)
                 continue;
 
+            if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
+                continue;
+
             /// Try to apply optimization.
             auto update_depth = optimization.apply(frame.node, nodes);
+            if (update_depth)
+                ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
         }
 
