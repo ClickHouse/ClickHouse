@@ -202,7 +202,6 @@ ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery(const std::function<P
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
 
-        //TODO: check for nullable
         for (const auto & column : primary_key_columns)
             order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
     }
