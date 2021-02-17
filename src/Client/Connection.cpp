@@ -66,10 +66,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             disconnect();
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
-                  default_database.empty() ? "(not specified)" : default_database,
-                  user,
-                  static_cast<bool>(secure) ? ". Secure" : "",
-                  static_cast<bool>(compression) ? "" : ". Uncompressed");
+            default_database.empty() ? "(not specified)" : default_database,
+            user,
+            static_cast<bool>(secure) ? ". Secure" : "",
+            static_cast<bool>(compression) ? "" : ". Uncompressed");
 
         if (static_cast<bool>(secure))
         {
@@ -103,7 +103,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #if defined(TCP_KEEPALIVE)
                 TCP_KEEPALIVE
 #else
-                              TCP_KEEPIDLE  // __APPLE__
+                TCP_KEEPIDLE  // __APPLE__
 #endif
                 , timeouts.tcp_keep_alive_timeout);
         }
@@ -120,7 +120,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         receiveHello();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
-                  server_name, server_version_major, server_version_minor, server_version_patch);
+            server_name, server_version_major, server_version_minor, server_version_patch);
     }
     catch (Poco::Net::NetException & e)
     {
@@ -150,6 +150,7 @@ void Connection::disconnect()
     socket = nullptr;
     connected = false;
 }
+
 
 void Connection::sendHello()
 {
@@ -205,6 +206,7 @@ void Connection::sendHello()
 
     out->next();
 }
+
 
 void Connection::receiveHello()
 {
@@ -337,6 +339,8 @@ void Connection::sendClusterNameAndSalt()
 
 bool Connection::ping()
 {
+    // LOG_TRACE(log_wrapper.get(), "Ping");
+
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
