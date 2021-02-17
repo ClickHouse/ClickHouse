@@ -166,7 +166,11 @@ def test_load_balancing_priority_round_robin(dist_table):
 
 def test_distributed_replica_max_ignored_errors():
     settings = {
+<<<<<<< Updated upstream
         'use_hedged_requests' : 0,
+=======
+        'use_hedged_requests': 0,
+>>>>>>> Stashed changes
         'load_balancing': 'in_order',
         'prefer_localhost_replica': 0,
         'connect_timeout': 2,

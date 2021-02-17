@@ -31,51 +31,6 @@ enum class PoolMode
     GET_ALL
 };
 
-/// Class for establishing connection with replica without blocking using different stages.
-class ConnectionEstablisher
-{
-public:
-    enum Stage
-    {
-        CONNECT = 0,
-        RECEIVE_HELLO = 1,
-        START_CHECK_TABLE = 2,
-        RECEIVE_TABLES_STATUS = 3,
-        FINISHED = 4,
-        FAILED = 5,
-    };
-
-    using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
-
-    ConnectionEstablisher(IConnectionPool * pool_,
-                     const ConnectionTimeouts * timeouts_,
-                     const Settings * settings_,
-                     const QualifiedTableName * table_to_check = nullptr,
-                     Poco::Logger * log_ = nullptr);
-
-    /// Continue connecting to replica from previous stage. Initial stage is CONNECT.
-    void run();
-
-    void resetResult();
-
-    /// Reset class to initial stage.
-    void reset();
-
-    /// If action_before_disconnect is set, action_before_disconnect(socket_fd) will be called before
-    /// disconnect. It may be useful for removing file descriptor from epoll.
-    void setActionBeforeDisconnect(std::function<void(int)> action) { action_before_disconnect = action; }
-
-    IConnectionPool * pool;
-    const ConnectionTimeouts * timeouts;
-    std::string fail_message;
-    const Settings * settings;
-    const QualifiedTableName * table_to_check;
-    Poco::Logger * log;
-    TryResult result;
-    Stage stage;
-    int socket_fd;
-    std::function<void(int)> action_before_disconnect;
-};
 
 class ConnectionPoolWithFailover : public IConnectionPool, private PoolWithFailoverBase<IConnectionPool>
 {

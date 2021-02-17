@@ -3,16 +3,17 @@
 #if defined(OS_LINUX)
 
 #include <Common/TimerDescriptor.h>
+#include <Common/Epoll.h>
+#include <Common/FiberStack.h>
+#include <Common/Fiber.h>
+#include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Core/Settings.h>
-#include <Common/Epoll.h>
 #include <unordered_map>
 #include <memory>
 
 namespace DB
 {
-
-using TimerDescriptorPtr = std::shared_ptr<TimerDescriptor>;
 
 /** Class for establishing hedged connections with replicas.
   * The process of establishing connection is divided on stages, on each stage if
@@ -25,27 +26,22 @@ class HedgedConnectionsFactory
 public:
     using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
 
-    struct ReplicaStatus
-    {
-        ReplicaStatus(const ConnectionEstablisher & establisher) : connection_establisher(establisher)
-        {
-            epoll.add(receive_timeout.getDescriptor());
-            epoll.add(change_replica_timeout.getDescriptor());
-        }
-
-        ConnectionEstablisher connection_establisher;
-        TimerDescriptor receive_timeout;
-        TimerDescriptor change_replica_timeout;
-        bool is_ready = false;
-        bool is_in_process = false;
-        Epoll epoll;
-    };
-
     enum class State
     {
         READY,
         NOT_READY,
         CANNOT_CHOOSE,
+    };
+
+    struct ReplicaStatus
+    {
+        ReplicaStatus(ConnectionEstablisher connection_stablisher_) : connection_establisher(std::move(connection_stablisher_))
+        {
+        }
+
+        ConnectionEstablisher connection_establisher;
+        TimerDescriptor change_replica_timeout;
+        bool is_ready = false;
     };
 
     HedgedConnectionsFactory(const ConnectionPoolWithFailoverPtr & pool_,
@@ -64,12 +60,12 @@ public:
     State getNextConnection(bool start_new_connection, bool blocking, Connection *& connection_out);
 
     /// Check if we can try to produce new READY replica.
-    bool canGetNewConnection() const { return ready_replicas_count + failed_pools_count < shuffled_pools.size(); }
+//    bool canGetNewConnection() const { return ready_replicas_count + failed_pools_count < shuffled_pools.size(); }
 
     /// Stop working with all replicas that are not READY.
     void stopChoosingReplicas();
 
-    bool hasEventsInProcess() const { return epoll.size() > 0; }
+    bool hasEventsInProcess() const { return !epoll.empty(); }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
@@ -90,17 +86,11 @@ private:
 
     int getReadyFileDescriptor(bool blocking);
 
-    int checkPendingData();
-
-    void addTimeouts(int replica_index);
-
-    void resetReplicaTimeouts(int replica_index);
-
     void processFailedConnection(int replica_index, bool remove_from_epoll);
 
-    void processSocketEvent(int replica_index, Connection *& connection_out);
+    void processConnectionEstablisherEvent(int replica_index, Connection *& connection_out);
 
-    void processReceiveTimeout(int replica_index);
+    void removeReplicaFromEpoll(int index);
 
     /// Return NOT_READY state if there is no ready events, READY if replica is ready
     /// and CANNOT_CHOOSE if there is no more events in epoll.
@@ -111,19 +101,22 @@ private:
     const ConnectionPoolWithFailoverPtr pool;
     const Settings * settings;
     const ConnectionTimeouts timeouts;
-    std::shared_ptr<QualifiedTableName> table_to_check;
 
-    std::vector<ReplicaStatus> replicas;
     std::vector<ShuffledPool> shuffled_pools;
+    std::vector<ReplicaStatus> replicas;
 
     /// Map socket file descriptor to replica index.
     std::unordered_map<int, int> fd_to_replica_index;
+
+    /// Map timeout for changing replica to replica index.
+    std::unordered_map<int, int> timeout_fd_to_replica_index;
 
     /// Indexes of replicas, that are in process of connection.
     size_t replicas_in_process_count = 0;
     /// Indexes of ready replicas.
     size_t ready_replicas_count = 0;
 
+    std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
     bool fallback_to_stale_replicas;
     Epoll epoll;

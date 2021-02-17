@@ -60,42 +60,16 @@ namespace ErrorCodes
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
-    if (connected)
-        disconnect();
-
-    prepare(timeouts);
-    sendHello();
-    receiveHello();
-
-    LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
-        server_name, server_version_major, server_version_minor, server_version_patch);
-}
-
-
-void Connection::disconnect()
-{
-    LOG_DEBUG(log, "disconnect");
-    maybe_compressed_out = nullptr;
-    in = nullptr;
-    last_input_packet_type.reset();
-    out = nullptr; // can write to socket
-    if (socket)
-        socket->close();
-    socket = nullptr;
-    connected = false;
-}
-
-void Connection::prepare(const ConnectionTimeouts & timeouts)
-{
     try
     {
-        LOG_TRACE(
-            log_wrapper.get(),
-            "Connecting. Database: {}. User: {}{}{}",
-            default_database.empty() ? "(not specified)" : default_database,
-            user,
-            static_cast<bool>(secure) ? ". Secure" : "",
-            static_cast<bool>(compression) ? "" : ". Uncompressed");
+        if (connected)
+            disconnect();
+
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+                  default_database.empty() ? "(not specified)" : default_database,
+                  user,
+                  static_cast<bool>(secure) ? ". Secure" : "",
+                  static_cast<bool>(compression) ? "" : ". Uncompressed");
 
         if (static_cast<bool>(secure))
         {
@@ -105,7 +79,7 @@ void Connection::prepare(const ConnectionTimeouts & timeouts)
             /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
             /// work we need to pass host name separately. It will be send into TLS Hello packet to let
             /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->setPeerHostName(host);
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -125,21 +99,28 @@ void Connection::prepare(const ConnectionTimeouts & timeouts)
         if (timeouts.tcp_keep_alive_timeout.totalSeconds())
         {
             socket->setKeepAlive(true);
-            socket->setOption(
-                IPPROTO_TCP,
+            socket->setOption(IPPROTO_TCP,
 #if defined(TCP_KEEPALIVE)
                 TCP_KEEPALIVE
 #else
-                TCP_KEEPIDLE // __APPLE__
+                              TCP_KEEPIDLE  // __APPLE__
 #endif
-                ,
-                timeouts.tcp_keep_alive_timeout);
+                , timeouts.tcp_keep_alive_timeout);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        if (async_callback)
+            in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
+
+        sendHello();
+        receiveHello();
+
+        LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
+                  server_name, server_version_major, server_version_minor, server_version_patch);
     }
     catch (Poco::Net::NetException & e)
     {
@@ -158,12 +139,21 @@ void Connection::prepare(const ConnectionTimeouts & timeouts)
 }
 
 
+void Connection::disconnect()
+{
+    maybe_compressed_out = nullptr;
+    in = nullptr;
+    last_input_packet_type.reset();
+    out = nullptr; // can write to socket
+    if (socket)
+        socket->close();
+    socket = nullptr;
+    connected = false;
+}
+
 void Connection::sendHello()
 {
-    LOG_DEBUG(log_wrapper.get(), "sendHello");
-    try
-    {
-        /** Disallow control characters in user controlled parameters
+    /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
       * The user may do server side requests with 'remote' table function.
       * Malicious user with full r/w access to ClickHouse
@@ -172,119 +162,84 @@ void Connection::sendHello()
       * Limiting number of possible characters in user-controlled part of handshake
       *  will mitigate this possibility but doesn't solve it completely.
       */
-        auto has_control_character = [](const std::string & s)
-        {
-            for (auto c : s)
-                if (isControlASCII(c))
-                    return true;
-            return false;
-        };
+    auto has_control_character = [](const std::string & s)
+    {
+        for (auto c : s)
+            if (isControlASCII(c))
+                return true;
+        return false;
+    };
 
-        if (has_control_character(default_database) || has_control_character(user) || has_control_character(password))
-            throw Exception(
-                "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters",
-                ErrorCodes::BAD_ARGUMENTS);
+    if (has_control_character(default_database)
+        || has_control_character(user)
+        || has_control_character(password))
+        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
-        writeVarUInt(Protocol::Client::Hello, *out);
-        writeStringBinary((DBMS_NAME " ") + client_name, *out);
-        writeVarUInt(DBMS_VERSION_MAJOR, *out);
-        writeVarUInt(DBMS_VERSION_MINOR, *out);
-        // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-        writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
-        writeStringBinary(default_database, *out);
-        /// If interserver-secret is used, one do not need password
-        /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
-        if (!cluster_secret.empty())
-        {
-            writeStringBinary(USER_INTERSERVER_MARKER, *out);
-            writeStringBinary("" /* password */, *out);
+    writeVarUInt(Protocol::Client::Hello, *out);
+    writeStringBinary((DBMS_NAME " ") + client_name, *out);
+    writeVarUInt(DBMS_VERSION_MAJOR, *out);
+    writeVarUInt(DBMS_VERSION_MINOR, *out);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
+    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    writeStringBinary(default_database, *out);
+    /// If interserver-secret is used, one do not need password
+    /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
+    if (!cluster_secret.empty())
+    {
+        writeStringBinary(USER_INTERSERVER_MARKER, *out);
+        writeStringBinary("" /* password */, *out);
 
 #if USE_SSL
-            sendClusterNameAndSalt();
+        sendClusterNameAndSalt();
 #else
-            throw Exception(
-                "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-                ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
-        }
-        else
-        {
-            writeStringBinary(user, *out);
-            writeStringBinary(password, *out);
-        }
-
-        out->next();
     }
-    catch (Poco::Net::NetException & e)
+    else
     {
-        disconnect();
-
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        writeStringBinary(user, *out);
+        writeStringBinary(password, *out);
     }
-    catch (Poco::TimeoutException & e)
-    {
-        disconnect();
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
-    }
+    out->next();
 }
-
 
 void Connection::receiveHello()
 {
-    LOG_DEBUG(log_wrapper.get(), "receiveHello");
+    /// Receive hello packet.
+    UInt64 packet_type = 0;
 
-    try
+    /// Prevent read after eof in readVarUInt in case of reset connection
+    /// (Poco should throw such exception while reading from socket but
+    /// sometimes it doesn't for unknown reason)
+    if (in->eof())
+        throw Poco::Net::NetException("Connection reset by peer");
+
+    readVarUInt(packet_type, *in);
+    if (packet_type == Protocol::Server::Hello)
     {
-        /// Receive hello packet.
-        UInt64 packet_type = 0;
-
-        /// Prevent read after eof in readVarUInt in case of reset connection
-        /// (Poco should throw such exception while reading from socket but
-        /// sometimes it doesn't for unknown reason)
-        if (in->eof())
-            throw Poco::Net::NetException("Connection reset by peer");
-
-        readVarUInt(packet_type, *in);
-        if (packet_type == Protocol::Server::Hello)
-        {
-            readStringBinary(server_name, *in);
-            readVarUInt(server_version_major, *in);
-            readVarUInt(server_version_minor, *in);
-            readVarUInt(server_revision, *in);
-            if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-                readStringBinary(server_timezone, *in);
-            if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-                readStringBinary(server_display_name, *in);
-            if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-                readVarUInt(server_version_patch, *in);
-            else
-                server_version_patch = server_revision;
-        }
-        else if (packet_type == Protocol::Server::Exception)
-            receiveException()->rethrow();
+        readStringBinary(server_name, *in);
+        readVarUInt(server_version_major, *in);
+        readVarUInt(server_version_minor, *in);
+        readVarUInt(server_revision, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+            readStringBinary(server_timezone, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+            readStringBinary(server_display_name, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+            readVarUInt(server_version_patch, *in);
         else
-        {
-            /// Close connection, to not stay in unsynchronised state.
-            disconnect();
-            throwUnexpectedPacket(packet_type, "Hello or Exception");
-        }
+            server_version_patch = server_revision;
     }
-    catch (Poco::Net::NetException & e)
+    else if (packet_type == Protocol::Server::Exception)
+        receiveException()->rethrow();
+    else
     {
+        /// Close connection, to not stay in unsynchronised state.
         disconnect();
-
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
-    }
-    catch (Poco::TimeoutException & e)
-    {
-        disconnect();
-
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throwUnexpectedPacket(packet_type, "Hello or Exception");
     }
 }
 
@@ -425,24 +380,9 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
-    sendTablesStatusRequest(request);
-    TablesStatusResponse response = receiveTablesStatusResponse();
-
-    return response;
-}
-
-void Connection::sendTablesStatusRequest(const TablesStatusRequest & request)
-{
-    LOG_DEBUG(log_wrapper.get(), "sendTablesStatusRequest");
-
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
     out->next();
-}
-
-TablesStatusResponse Connection::receiveTablesStatusResponse()
-{
-    LOG_DEBUG(log_wrapper.get(), "receiveTablesStatusResponse");
 
     UInt64 response_type = 0;
     readVarUInt(response_type, *in);
@@ -457,6 +397,7 @@ TablesStatusResponse Connection::receiveTablesStatusResponse()
     return response;
 }
 
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -466,8 +407,6 @@ void Connection::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
-    LOG_DEBUG(log_wrapper.get(), "sendQuery");
-
     if (!connected)
         connect(timeouts);
 
@@ -565,8 +504,6 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
-    LOG_DEBUG(log_wrapper.get(), "sendCancel");
-
     /// If we already disconnected.
     if (!out)
         return;
@@ -815,13 +752,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(AsyncCallback async_callback)
+Packet Connection::receivePacket()
 {
-    LOG_DEBUG(log_wrapper.get(), "receivePacket");
-
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT(in->setAsyncCallback({}));
-
     try
     {
         Packet res;
@@ -896,8 +828,6 @@ Packet Connection::receivePacket(AsyncCallback async_callback)
 
 Block Connection::receiveData()
 {
-    LOG_DEBUG(log_wrapper.get(), "receiveData");
-
     initBlockInput();
     return receiveDataImpl(block_in);
 }

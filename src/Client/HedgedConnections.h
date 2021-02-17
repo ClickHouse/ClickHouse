@@ -5,6 +5,9 @@
 #include <queue>
 #include <Client/HedgedConnectionsFactory.h>
 #include <Client/IConnections.h>
+#include <Client/PacketReceiver.h>
+#include <Common/FiberStack.h>
+#include <Common/Fiber.h>
 
 namespace DB
 {
@@ -20,18 +23,13 @@ class HedgedConnections : public IConnections
 public:
     struct ReplicaState
     {
-        ReplicaState()
+        ReplicaState(Connection * connection_) : connection(connection_), packet_receiver(connection_)
         {
-            epoll.add(receive_timeout.getDescriptor());
-            epoll.add(change_replica_timeout.getDescriptor());
         }
 
         Connection * connection = nullptr;
-        TimerDescriptor receive_timeout;
+        PacketReceiver packet_receiver;
         TimerDescriptor change_replica_timeout;
-        /// We store socket and timeout descriptors in epoll
-        /// and use it's fd outside.
-        Epoll epoll;
     };
 
     struct OffsetState
@@ -43,6 +41,12 @@ public:
         /// other replicas when we receive first data packet from one of them)
         size_t active_connection_count = 0;
         bool first_packet_of_data_received = false;
+
+        /// This flag is true when this offset is in queue for
+        /// new replicas. It's needed to process receive timeout
+        /// (throw an exception when receive timeout expired and there is no
+        /// new replica in process)
+        bool next_replica_in_process = false;
     };
 
     /// We process events in epoll, so we need to determine replica by it's
@@ -109,7 +113,7 @@ private:
         std::vector<std::function<void(ReplicaState &)>> pipeline;
     };
 
-    Packet receivePacketFromReplica(const ReplicaLocation & replica_location, AsyncCallback async_callback = {});
+    Packet receivePacketFromReplica(const ReplicaLocation & replica_location);
 
     ReplicaLocation getReadyReplicaLocation(AsyncCallback async_callback = {});
 
@@ -132,6 +136,9 @@ private:
 
     /// Map socket file descriptor to replica location (it's offset and index in OffsetState.replicas).
     std::unordered_map<int, ReplicaLocation> fd_to_replica_location;
+
+    /// Map receive data timeout file descriptor to replica location.
+    std::unordered_map<int, ReplicaLocation> timeout_fd_to_replica_location;
 
     /// A queue of offsets for new replicas. When we get RECEIVE_DATA_TIMEOUT from
     /// the replica, we push it's offset to this queue and start trying to get
@@ -163,8 +170,6 @@ private:
     bool cancelled = false;
 
     mutable std::mutex cancel_mutex;
-
-    Poco::Logger * log;
 };
 
 }

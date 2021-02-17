@@ -175,8 +175,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
-    Packet receivePacket(AsyncCallback async_callback = {});
+    Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -195,18 +194,14 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
-    /// Make preparation before sending Hello in connect
-    void prepare(const ConnectionTimeouts & timeouts);
-
-    void sendHello();
-
-    void receiveHello();
-
-    void sendTablesStatusRequest(const TablesStatusRequest & request);
-
-    TablesStatusResponse receiveTablesStatusResponse();
-
     Poco::Net::Socket * getSocket() { return socket.get(); }
+
+    void setAsyncCallback(AsyncCallback async_callback_)
+    {
+        async_callback = std::move(async_callback_);
+        if (in)
+            in->setAsyncCallback(std::move(async_callback));
+    }
 
 private:
     String host;
@@ -295,7 +290,11 @@ private:
 
     LoggerWrapper log_wrapper;
 
+    AsyncCallback async_callback;
+
     void connect(const ConnectionTimeouts & timeouts);
+    void sendHello();
+    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
@@ -316,6 +315,22 @@ private:
     void initBlockLogsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+};
+
+class AsyncCallbackSetter
+{
+public:
+    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
+    {
+        connection->setAsyncCallback(std::move(async_callback));
+    }
+
+    ~AsyncCallbackSetter()
+    {
+        connection->setAsyncCallback({});
+    }
+private:
+    Connection * connection;
 };
 
 }

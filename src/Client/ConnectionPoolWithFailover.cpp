@@ -1,4 +1,5 @@
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionEstablisher.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
@@ -249,77 +250,10 @@ ConnectionPoolWithFailover::tryGetEntry(
         const Settings * settings,
         const QualifiedTableName * table_to_check)
 {
-    TryResult result;
-    try
-    {
-        result.entry = pool.get(timeouts, settings, /* force_connected = */ false);
-
-        UInt64 server_revision = 0;
-        if (table_to_check)
-            server_revision = result.entry->getServerRevision(timeouts);
-
-        if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-        {
-            result.entry->forceConnected(timeouts);
-            result.is_usable = true;
-            result.is_up_to_date = true;
-            return result;
-        }
-
-        /// Only status of the remote table corresponding to the Distributed table is taken into account.
-        /// TODO: request status for joined tables also.
-        TablesStatusRequest status_request;
-        status_request.tables.emplace(*table_to_check);
-
-        TablesStatusResponse status_response = result.entry->getTablesStatus(timeouts, status_request);
-        auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
-        if (table_status_it == status_response.table_states_by_id.end())
-        {
-            const char * message_pattern = "There is no table {}.{} on server: {}";
-            fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-            LOG_WARNING(log, fail_message);
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-
-            return result;
-        }
-
-        result.is_usable = true;
-
-        UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
-        if (!max_allowed_delay)
-        {
-            result.is_up_to_date = true;
-            return result;
-        }
-
-        UInt32 delay = table_status_it->second.absolute_delay;
-
-        if (delay < max_allowed_delay)
-            result.is_up_to_date = true;
-        else
-        {
-            result.is_up_to_date = false;
-            result.staleness = delay;
-
-            LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        }
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-            throw;
-
-        fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
-
-        if (!result.entry.isNull())
-        {
-            result.entry->disconnect();
-            result.reset();
-        }
-    }
-    return result;
+    ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, table_to_check);
+    connection_establisher.establishConnection();
+    fail_message = connection_establisher.getFailMessage();
+    return connection_establisher.getResult();
 }
 
 std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> ConnectionPoolWithFailover::getShuffledPools(const Settings * settings)
@@ -327,143 +261,6 @@ std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> ConnectionPoolWithFa
     GetPriorityFunc get_priority = makeGetPriorityFunc(settings);
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
     return Base::getShuffledPools(max_ignored_errors, get_priority);
-}
-
-ConnectionEstablisher::ConnectionEstablisher(
-    IConnectionPool * pool_,
-    const ConnectionTimeouts * timeouts_,
-    const Settings * settings_,
-    const QualifiedTableName * table_to_check_,
-    Poco::Logger * log_) :
-        pool(pool_), timeouts(timeouts_), settings(settings_),
-        table_to_check(table_to_check_), log(log_), stage(Stage::CONNECT), socket_fd(-1)
-{
-}
-
-void ConnectionEstablisher::reset()
-{
-    resetResult();
-    stage = Stage::CONNECT;
-    action_before_disconnect = nullptr;
-    socket_fd = -1;
-    fail_message.clear();
-}
-
-void ConnectionEstablisher::resetResult()
-{
-    if (!result.entry.isNull())
-    {
-        result.entry->disconnect();
-        result.reset();
-    }
-}
-
-void ConnectionEstablisher::run()
-{
-    try
-    {
-        if (stage == Stage::CONNECT)
-        {
-            result.entry = pool->get(*timeouts, settings, /* force_connected = */ false);
-
-            if (!result.entry->isConnected())
-            {
-                result.entry->prepare(*timeouts);
-                socket_fd = result.entry->getSocket()->impl()->sockfd();
-                result.entry->sendHello();
-                stage = Stage::RECEIVE_HELLO;
-                /// We are waiting for hello from replica.
-                return;
-            }
-
-            socket_fd = result.entry->getSocket()->impl()->sockfd();
-            stage = Stage::START_CHECK_TABLE;
-        }
-
-        if (stage == Stage::RECEIVE_HELLO)
-        {
-            result.entry->receiveHello();
-            stage = Stage::START_CHECK_TABLE;
-        }
-
-        if (stage == Stage::START_CHECK_TABLE)
-        {
-            UInt64 server_revision = 0;
-            if (table_to_check)
-                server_revision = result.entry->getServerRevision(*timeouts);
-
-            if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-            {
-                result.entry->forceConnected(*timeouts);
-                result.is_usable = true;
-                result.is_up_to_date = true;
-                stage = FINISHED;
-                return;
-            }
-
-            TablesStatusRequest status_request;
-            status_request.tables.emplace(*table_to_check);
-
-            result.entry->sendTablesStatusRequest(status_request);
-            stage = Stage::RECEIVE_TABLES_STATUS;
-            /// We are waiting for tables status response.
-            return;
-        }
-
-        if (stage == Stage::RECEIVE_TABLES_STATUS)
-        {
-            TablesStatusResponse status_response = result.entry->receiveTablesStatusResponse();
-            auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
-            if (table_status_it == status_response.table_states_by_id.end())
-            {
-                const char * message_pattern = "There is no table {}.{} on server: {}";
-                fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-                LOG_WARNING(log, fail_message);
-                ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-                stage = Stage::FINISHED;
-                return;
-            }
-
-            result.is_usable = true;
-
-            UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
-            if (!max_allowed_delay)
-            {
-                result.is_up_to_date = true;
-                stage = Stage::FINISHED;
-                return;
-            }
-
-            UInt32 delay = table_status_it->second.absolute_delay;
-
-            if (delay < max_allowed_delay)
-                result.is_up_to_date = true;
-            else
-            {
-                result.is_up_to_date = false;
-                result.staleness = delay;
-
-                LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
-                ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-            }
-        }
-
-        stage = Stage::FINISHED;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-            throw;
-
-        if (action_before_disconnect)
-            action_before_disconnect(socket_fd);
-
-        fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
-        resetResult();
-        socket_fd = -1;
-        stage = Stage::FAILED;
-    }
 }
 
 }

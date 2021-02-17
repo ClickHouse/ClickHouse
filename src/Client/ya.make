@@ -11,6 +11,7 @@ PEERDIR(
 
 SRCS(
     Connection.cpp
+    ConnectionEstablisher.cpp
     ConnectionPoolWithFailover.cpp
     HedgedConnections.cpp
     HedgedConnectionsFactory.cpp
