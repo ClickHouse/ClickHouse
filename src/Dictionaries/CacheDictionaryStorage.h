@@ -10,6 +10,7 @@
 #include <Common/HashTable/LRUHashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 namespace DB
 {
@@ -51,15 +52,9 @@ public:
     {
     }
 
-    bool returnFetchedColumnsDuringFetchInOrderOfRequestedKeys() const override
-    {
-        return true;
-    }
+    bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
 
-    bool supportsSimpleKeys() const override
-    {
-        return dictionary_key_type == DictionaryKeyType::simple;
-    }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
@@ -91,10 +86,7 @@ public:
             throw Exception("Method getCachedSimpleKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    bool supportsComplexKeys() const override
-    {
-        return dictionary_key_type == DictionaryKeyType::complex;
-    }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
@@ -126,15 +118,12 @@ public:
             throw Exception("Method getCachedSimpleKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    size_t getSize() const override
-    {
-        return cache.size();
-    }
+    size_t getSize() const override { return cache.size(); }
 
-    size_t getBytesAllocated() const override
-    {
-        return arena.size() + cache.getSizeInBytes();
-    }
+    size_t getMaxSize() const override { return cache.getMaxSize(); }
+
+    size_t getBytesAllocated() const override { return arena.size() + cache.getSizeInBytes(); }
+
 private:
 
     template <typename KeysStorageFetchResult>
@@ -176,16 +165,7 @@ private:
                 ++fetched_columns_index;
 
                 const char * place_for_serialized_columns = cell.place_for_serialized_columns;
-
-                for (size_t column_index = 0; column_index < result.fetched_columns.size(); ++column_index)
-                {
-                    auto & column = result.fetched_columns[column_index];
-
-                    if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-                        place_for_serialized_columns = column->deserializeAndInsertFromArena(place_for_serialized_columns);
-                    else
-                        place_for_serialized_columns = column->skipSerializedInArena(place_for_serialized_columns);
-                }
+                deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, place_for_serialized_columns);
             }
             else
             {

@@ -107,6 +107,13 @@ size_t CacheDictionary<dictionary_key_type>::getBytesAllocated() const
 }
 
 template <DictionaryKeyType dictionary_key_type>
+double CacheDictionary<dictionary_key_type>::getLoadFactor() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+    return static_cast<double>(cache_storage_ptr->getSize()) / cache_storage_ptr->getMaxSize();
+}
+
+template <DictionaryKeyType dictionary_key_type>
 std::exception_ptr CacheDictionary<dictionary_key_type>::getLastException() const
 {
     const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
@@ -259,9 +266,9 @@ void CacheDictionary<dictionary_key_type>::isInConstantVector(const UInt64 child
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionary<dictionary_key_type>::setupHierarchicalAttribute()
 {
+    /// TODO: Move this to DictionaryStructure
     for (const auto & attribute : dict_struct.attributes)
     {
-
         if (attribute.hierarchical)
         {
             hierarchical_attribute = &attribute;
@@ -346,17 +353,46 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
     MutableColumns fetched_columns_during_update = request.makeAttributesResultColumns();
 
+    bool source_returns_fetched_columns_in_order_of_keys = cache_storage_ptr->returnsFetchedColumnsInOrderOfRequestedKeys();
+
     if (not_found_keys_size == 0 && expired_keys_size == 0)
     {
         /// All keys were found in storage
-        return filterResultColumnsForRequest(fetched_columns_from_storage, request);
+
+        if (source_returns_fetched_columns_in_order_of_keys)
+            return request.filterRequestedColumns(fetched_columns_from_storage);
+        else
+        {
+            /// Reorder result from storage to requested keys indexes
+            MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
+                keys,
+                request,
+                fetched_columns_from_storage,
+                result_of_fetch_from_storage.found_keys_to_fetched_columns_index,
+                result_of_fetch_from_storage.expired_keys_to_fetched_columns_index);
+
+            return request.filterRequestedColumns(aggregated_columns);
+        }
     }
     else if (not_found_keys_size == 0 && expired_keys_size > 0 && allow_read_expired_keys)
     {
         /// Start async update only if allow read expired keys and all keys are found
         update_queue.tryPushToUpdateQueueOrThrow(update_unit);
 
-        return filterResultColumnsForRequest(fetched_columns_from_storage, request);
+        if (source_returns_fetched_columns_in_order_of_keys)
+            return request.filterRequestedColumns(fetched_columns_from_storage);
+        else
+        {
+            /// Reorder result from storage to requested keys indexes
+            MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
+                keys,
+                request,
+                fetched_columns_from_storage,
+                result_of_fetch_from_storage.found_keys_to_fetched_columns_index,
+                result_of_fetch_from_storage.expired_keys_to_fetched_columns_index);
+
+            return request.filterRequestedColumns(aggregated_columns);
+        }
     }
     else
     {
@@ -392,7 +428,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
         requested_keys_to_fetched_columns_during_update_index,
         default_value_providers);
 
-    return filterResultColumnsForRequest(aggregated_columns, request);
+    return request.filterRequestedColumns(aggregated_columns);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -484,28 +520,51 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     return result;
 }
 
-/// TODO: Remove before merge
-// namespace {
+template <DictionaryKeyType dictionary_key_type>
+MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKeys(
+    const PaddedPODArray<KeyType> & keys,
+    const DictionaryStorageFetchRequest & request,
+    const MutableColumns & fetched_columns,
+    const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_index,
+    const HashMap<KeyType, size_t> & expired_keys_to_fetched_columns_index)
+{
+    MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
-//     String convertKeyToString(UInt64 key)
-//     {
-//         return std::to_string(key);
-//     }
+    for (size_t fetch_request_index = 0; fetch_request_index < request.attributesSize(); ++fetch_request_index)
+    {
+        if (!request.shouldFillResultColumnWithIndex(fetch_request_index))
+            continue;
 
-//     String convertKeyToString(const StringRef & ref)
-//     {
-//         String res;
+        const auto & aggregated_column = aggregated_columns[fetch_request_index];
+        const auto & fetched_column = fetched_columns[fetch_request_index];
 
-//         for (size_t i = 0; i < ref.size; ++i)
-//         {
-//             std::string to_insert = std::to_string(static_cast<int>(ref.data[i]));
-//             res.insert(res.end(), to_insert.begin(), to_insert.end());
-//         }
+        size_t column_index = 0;
 
-//         return res;
-//     }
+        for (auto key : keys)
+        {
+            auto * expired_key_iterator = expired_keys_to_fetched_columns_index.find(key);
 
-// }
+            if (expired_key_iterator)
+            {
+                /// Check and insert value if key was fetched from cache
+                aggregated_column->insertFrom(*fetched_column, expired_key_iterator->getMapped());
+                ++column_index;
+                continue;
+            }
+
+            /// Check and insert value if key was not in cache and was fetched during update
+            auto * found_key_iterator = found_keys_to_fetched_columns_index.find(key);
+            if (found_key_iterator)
+            {
+                aggregated_column->insertFrom(*fetched_column, found_key_iterator->getMapped());
+                ++column_index;
+                continue;
+            }
+        }
+    }
+
+    return aggregated_columns;
+}
 
 template <DictionaryKeyType dictionary_key_type>
 MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
@@ -517,18 +576,6 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
         const std::vector<DefaultValueProvider> & default_value_providers)
 {
-    /// TODO: Remove before merge
-    // std::cerr << "CacheDictionary::aggregateColumns" << std::endl;
-    // std::cerr << "Fetched keys from storage" << std::endl;
-    // for (auto & node : found_keys_to_fetched_columns_from_storage_index)
-    //     std::cerr << "Node key " << convertKeyToString(node.getKey()) << " index " << node.getMapped() << std::endl;
-    // std::cerr << std::endl;
-
-    // std::cerr << "Fetched keys during update" << std::endl;
-    // for (auto & node : found_keys_to_fetched_columns_during_update_index)
-    //     std::cerr << "Node key " << convertKeyToString(node.getKey()) << " index " << node.getMapped() << std::endl;
-    // std::cerr << std::endl;
-
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
     for (size_t fetch_request_index = 0; fetch_request_index < request.attributesSize(); ++fetch_request_index)
@@ -545,16 +592,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         {
             auto key = keys[key_index];
 
-            // std::cerr << "Key " << convertKeyToString(key) << " column index " << fetch_request_index << std::endl;
-
             const auto * find_iterator_in_cache = found_keys_to_fetched_columns_from_storage_index.find(key);
             if (find_iterator_in_cache)
             {
                 /// Check and insert value if key was fetched from cache
-                Field res;
-                fetched_column_from_storage->get(find_iterator_in_cache->getMapped(), res);
-
-                // std::cerr << "Insert from cache " << res.dump() << std::endl;
                 aggregated_column->insertFrom(*fetched_column_from_storage, find_iterator_in_cache->getMapped());
                 continue;
             }
@@ -563,31 +604,16 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
             const auto * find_iterator_in_fetch_during_update = found_keys_to_fetched_columns_during_update_index.find(key);
             if (find_iterator_in_fetch_during_update)
             {
-                // std::cerr << "Insert from fetch during update" << std::endl;
                 aggregated_column->insertFrom(*fetched_column_during_update, find_iterator_in_fetch_during_update->getMapped());
                 continue;
             }
 
-            // std::cerr << "Insert default value" << std::endl;
             /// Insert default value
             aggregated_column->insert(default_value_provider.getDefaultValue(key_index));
         }
     }
 
     return aggregated_columns;
-}
-
-template <DictionaryKeyType dictionary_key_type>
-Columns CacheDictionary<dictionary_key_type>::filterResultColumnsForRequest(MutableColumns & mutable_columns, const DictionaryStorageFetchRequest & request)
-{
-    Columns result;
-    result.reserve(mutable_columns.size());
-
-    for (size_t fetch_request_index = 0; fetch_request_index < request.attributesSize(); ++fetch_request_index)
-        if (request.shouldFillResultColumnWithIndex(fetch_request_index))
-            result.emplace_back(std::move(mutable_columns[fetch_request_index]));
-
-    return result;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -876,9 +902,9 @@ namespace
 
         CacheDictionaryUpdateQueueConfiguration update_queue_configuration {
             max_update_queue_size,
+            max_threads_for_updates,
             update_queue_push_timeout_milliseconds,
-            query_wait_timeout_milliseconds,
-            max_threads_for_updates };
+            query_wait_timeout_milliseconds };
 
         return update_queue_configuration;
     }

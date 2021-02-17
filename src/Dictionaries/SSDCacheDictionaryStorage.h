@@ -16,7 +16,7 @@
 #include <IO/AIO.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
-#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 
 namespace ProfileEvents
@@ -810,12 +810,9 @@ public:
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
 
-    bool returnFetchedColumnsDuringFetchInOrderOfRequestedKeys() const override { return false; }
+    bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
 
-    bool supportsSimpleKeys() const override
-    {
-        return dictionary_key_type == DictionaryKeyType::simple;
-    }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
@@ -847,10 +844,7 @@ public:
             throw Exception("Method getCachedSimpleKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    bool supportsComplexKeys() const override
-    {
-        return dictionary_key_type == DictionaryKeyType::complex;
-    }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
@@ -883,6 +877,8 @@ public:
     }
 
     size_t getSize() const override { return index.size(); }
+
+    size_t getMaxSize() const override {return index.getMaxSize(); }
 
     size_t getBytesAllocated() const override
     {
@@ -1015,53 +1011,6 @@ private:
                 ++fetched_columns_index;
             }
         });
-
-        /// TODO: Update it into CacheDictionary interface
-        MutableColumns aggregated_columns = fetch_request.makeAttributesResultColumns();
-
-        for (size_t fetch_request_index = 0; fetch_request_index < fetch_request.attributesSize(); ++fetch_request_index)
-        {
-            if (!fetch_request.shouldFillResultColumnWithIndex(fetch_request_index))
-                continue;
-
-            Field res;
-
-            const auto & aggregated_column = aggregated_columns[fetch_request_index];
-            const auto & fetched_column = result.fetched_columns[fetch_request_index];
-
-            size_t column_index = 0;
-
-            for (auto key : keys)
-            {
-                auto * expired_key_iterator = result.expired_keys_to_fetched_columns_index.find(key);
-
-                if (expired_key_iterator)
-                {
-                    fetched_column->get(expired_key_iterator->getMapped(), res);
-                    std::cerr << "Key " << key << " result " <<  res.dump() << std::endl;
-                    /// Check and insert value if key was fetched from cache
-                    aggregated_column->insertFrom(*fetched_column, expired_key_iterator->getMapped());
-                    expired_key_iterator->getMapped() = column_index;
-                    ++column_index;
-                    continue;
-                }
-
-                /// Check and insert value if key was not in cache and was fetched during update
-                auto * found_key_iterator = result.found_keys_to_fetched_columns_index.find(key);
-                if (found_key_iterator)
-                {
-                    fetched_column->get(found_key_iterator->getMapped(), res);
-                    std::cerr << "Key " << key << " result " <<  res.dump() << std::endl;
-
-                    aggregated_column->insertFrom(*fetched_column, found_key_iterator->getMapped());
-                    found_key_iterator->getMapped() = column_index;
-                    ++column_index;
-                    continue;
-                }
-            }
-        }
-
-        result.fetched_columns = std::move(aggregated_columns);
     }
 
     void insertColumnsForKeysImpl(const PaddedPODArray<KeyType> & keys, Columns columns)
@@ -1233,27 +1182,13 @@ private:
 
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
-        /// TODO: Fix deadlines
+        /// TODO: Fix zero dictionary lifetime deadlines
 
         size_t min_sec_lifetime = configuration.lifetime.min_sec;
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
 
         std::uniform_int_distribution<UInt64> distribution{min_sec_lifetime, max_sec_lifetime};
         cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
-    }
-
-    /// TODO: Reuse
-    static void deserializeAndInsertIntoColumns(MutableColumns & columns, const DictionaryStorageFetchRequest & fetch_request, const char * place_for_serialized_columns)
-    {
-        for (size_t column_index = 0; column_index < columns.size(); ++column_index)
-        {
-            const auto & column = columns[column_index];
-
-            if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-                place_for_serialized_columns = column->deserializeAndInsertFromArena(place_for_serialized_columns);
-            else
-                place_for_serialized_columns = column->skipSerializedInArena(place_for_serialized_columns);
-        }
     }
 
     template <typename>

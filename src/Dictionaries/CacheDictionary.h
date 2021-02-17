@@ -73,14 +73,14 @@ public:
 
     size_t getBytesAllocated() const override;
 
+    double getLoadFactor() const override;
+
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override
     {
         return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
     }
-
-    double getLoadFactor() const override { return static_cast<double>(getElementCount()) / size; }
 
     bool supportUpdates() const override { return false; }
 
@@ -159,6 +159,13 @@ private:
         const PaddedPODArray<KeyType> & keys,
         const Columns & default_values_columns) const;
 
+    static MutableColumns aggregateColumnsInOrderOfKeys(
+        const PaddedPODArray<KeyType> & keys,
+        const DictionaryStorageFetchRequest & request,
+        const MutableColumns & fetched_columns,
+        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_index,
+        const HashMap<KeyType, size_t> & expired_keys_to_fetched_columns_index);
+
     static MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
@@ -193,8 +200,6 @@ private:
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
-    static Columns filterResultColumnsForRequest(MutableColumns & mutable_columns, const DictionaryStorageFetchRequest & request);
-
     const DictionaryStructure dict_struct;
 
     /// Dictionary source should be used with mutex
@@ -207,8 +212,6 @@ private:
     const DictionaryLifetime dict_lifetime;
 
     Poco::Logger * log;
-
-    size_t size;
 
     const bool allow_read_expired_keys;
 

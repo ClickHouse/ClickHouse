@@ -39,7 +39,7 @@ public:
     virtual ~ICacheDictionaryStorage() = default;
 
     /// Necessary if all keys are found we can return result to client without additional aggregation
-    virtual bool returnFetchedColumnsDuringFetchInOrderOfRequestedKeys() const = 0;
+    virtual bool returnsFetchedColumnsInOrderOfRequestedKeys() const = 0;
 
     /// Does storage support simple keys
     virtual bool supportsSimpleKeys() const = 0;
@@ -71,6 +71,9 @@ public:
 
     /// Return size of keys in storage
     virtual size_t getSize() const = 0;
+
+    /// Return maximum size of keys in storage
+    virtual size_t getMaxSize() const = 0;
 
     /// Return bytes allocated in storage
     virtual size_t getBytesAllocated() const = 0;
