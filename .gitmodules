@@ -184,7 +184,7 @@
 	url = https://github.com/ClickHouse-Extras/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
-	url = https://github.com/cyrusimap/cyrus-sasl
+	url = https://github.com/ClickHouse-Extras/cyrus-sasl
 	branch = cyrus-sasl-2.1
 [submodule "contrib/croaring"]
 	path = contrib/croaring
@@ -220,4 +220,4 @@
 	url = https://github.com/ClickHouse-Extras/boringssl.git
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
-	url = https://github.com/eBay/NuRaft.git
+	url = https://github.com/ClickHouse-Extras/NuRaft.git

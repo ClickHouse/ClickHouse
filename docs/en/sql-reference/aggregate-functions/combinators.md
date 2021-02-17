@@ -72,7 +72,7 @@ If an aggregate function doesn’t have input values, with this combinator it re
 <aggFunction>OrDefault(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Aggregate function parameters.
 
@@ -132,7 +132,7 @@ This combinator converts a result of an aggregate function to the [Nullable](../
 <aggFunction>OrNull(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Aggregate function parameters.
 
@@ -189,7 +189,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `start` — Starting value of the whole required interval for `resampling_key` values.
 -   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.

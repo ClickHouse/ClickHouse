@@ -477,6 +477,61 @@ template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Na
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
+/** Conversion of numeric to DateTime64
+  */
+
+template <typename FromType>
+struct ToDateTime64TransformUnsigned
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    ToDateTime64TransformUnsigned(UInt32 scale = 0)
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    {
+        from = std::min(time_t(from), time_t(0xFFFFFFFF));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+    }
+};
+template <typename FromType>
+struct ToDateTime64TransformSigned
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    ToDateTime64TransformSigned(UInt32 scale = 0)
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    {
+        if (from < 0)
+            return 0;
+        from = std::min(time_t(from), time_t(0xFFFFFFFF));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+    }
+};
+
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime64, ToDateTime64TransformSigned<Int16>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime64, ToDateTime64TransformSigned<Int32>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime64, ToDateTime64TransformSigned<Int64>> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64>> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformSigned<Float32>> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformSigned<Float64>> {};
+
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
  */
 template <typename Transform>
@@ -1294,7 +1349,12 @@ public:
     bool useDefaultImplementationForNulls() const override { return checked_return_type; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            return {2};
+        return {1};
+    }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -2313,7 +2373,7 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !std::is_same_v<DataTypeDateTime64, RightDataType>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
