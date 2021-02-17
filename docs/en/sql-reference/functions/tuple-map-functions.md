@@ -15,7 +15,7 @@ Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types
 map(key1, value1[, key2, value2, ...])
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
@@ -77,7 +77,7 @@ Collect all the keys and sum corresponding values.
 mapAdd(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
-**Parameters** 
+**Arguments** 
 
 Arguments are [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
@@ -111,7 +111,7 @@ Collect all the keys and subtract corresponding values.
 mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
-**Parameters** 
+**Arguments** 
 
 Arguments are [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
@@ -149,7 +149,7 @@ Generates a map, where keys are a series of numbers, from minimum to maximum key
 
 The number of elements in `keys` and `values` must be the same for each row.
 
-**Parameters**
+**Arguments**
 
 -   `keys` — Array of keys. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#uint-ranges)).
 -   `values` — Array of values. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#uint-ranges)).
