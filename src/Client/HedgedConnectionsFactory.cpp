@@ -238,7 +238,7 @@ void HedgedConnectionsFactory::processConnectionEstablisherStage(int index, bool
 void HedgedConnectionsFactory::processFailedConnection(int index, bool remove_from_epoll)
 {
     ConnectionEstablisher & connection_establisher = replicas[index].connection_establisher;
-    
+
     if (remove_from_epoll)
         removeReplicaFromEpoll(index);
 
