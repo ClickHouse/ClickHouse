@@ -212,6 +212,8 @@ Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval
 void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
 {
     size_t read_from_last = 0;
+    start_index = from_log_idx == 0 ? 1 : from_log_idx;
+    size_t total_read = 0;
     for (const auto & [start_id, changelog_file] : existing_changelogs)
     {
         ChangelogName parsed_name = getChangelogName(changelog_file);
@@ -219,10 +221,9 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
         {
             ChangelogReader reader(changelog_file);
             read_from_last = reader.readChangelog(logs, from_log_idx, index_to_start_pos);
+            total_read += read_from_last;
         }
     }
-
-    start_index = from_log_idx == 0 ? 1 : from_log_idx;
 
     if (existing_changelogs.size() > 0 && read_from_last < rotate_interval)
     {
@@ -233,7 +234,7 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
     }
     else
     {
-        rotate(start_index);
+        rotate(start_index + total_read);
     }
 }
 
