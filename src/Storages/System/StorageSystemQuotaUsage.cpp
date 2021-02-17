@@ -137,6 +137,9 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_quota_name.insertData(quota_name.data(), quota_name.length());
         column_quota_key.insertData(quota_key.data(), quota_key.length());
 
+        if (add_column_is_current)
+            column_is_current->push_back(quota_id == current_quota_id);
+
         if (!interval)
         {
             column_start_time.insertDefault();
@@ -171,9 +174,6 @@ void StorageSystemQuotaUsage::fillDataImpl(
             addValue(*column_max[resource_type], *column_max_null_map[resource_type], interval->max[resource_type], type_info);
             addValue(*column_usage[resource_type], *column_usage_null_map[resource_type], interval->used[resource_type], type_info);
         }
-
-        if (add_column_is_current)
-            column_is_current->push_back(quota_id == current_quota_id);
     };
 
     auto add_rows = [&](const String & quota_name, const UUID & quota_id, const String & quota_key, const std::vector<QuotaUsage::Interval> & intervals)
