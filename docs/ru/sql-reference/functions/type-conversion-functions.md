@@ -660,7 +660,7 @@ AS parseDateTimeBestEffortUS;
 
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
-Похожа на функцию [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но разница состоит в том, что возвращает `NULL`, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
+Работает аналогично функции [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но в отличие от нее возвращает `NULL`, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Синтаксис**
 
