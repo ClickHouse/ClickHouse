@@ -338,18 +338,29 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     return true;
 }
 
-bool TableJoin::inferJoinKeyCommonType(const ColumnsWithTypeAndName & left, const ColumnsWithTypeAndName & right)
+bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
-    NamesAndTypesList left_list;
-    NamesAndTypesList right_list;
+    bool need_convert = needConvert();
+    if (!need_convert && !hasUsing())
+    {
+        /// For `USING` we already inferred common type an syntax analyzer stage
+        NamesAndTypesList left_list;
+        NamesAndTypesList right_list;
+        for (const auto & col : left_sample_columns)
+            left_list.emplace_back(col.name, col.type);
+        for (const auto & col : right_sample_columns)
+            right_list.emplace_back(col.name, col.type);
 
-    for (const auto & col : left)
-        left_list.emplace_back(col.name, col.type);
+        need_convert = inferJoinKeyCommonType(left_list, right_list);
+    }
 
-    for (const auto & col : right)
-        right_list.emplace_back(col.name, col.type);
+    if (need_convert)
+    {
+        left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
+        right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
+    }
 
-    return inferJoinKeyCommonType(left_list, right_list);
+    return need_convert;
 }
 
 bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right)
@@ -403,17 +414,33 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
     return !left_type_map.empty();
 }
 
-void TableJoin::applyKeyColumnRename(const NameToNameMap & name_map, TableJoin::TableSide side)
+ActionsDAGPtr
+TableJoin::applyKeyConvertToTable(const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename)
 {
-    assert(!hasUsing() || name_map.empty());
-
-    Names & names = side == TableSide::Left ? key_names_left : key_names_right;
-    for (auto & name : names)
+    ColumnsWithTypeAndName cols_dst = cols_src;
+    for (auto & col : cols_dst)
     {
-        const auto it = name_map.find(name);
-        if (it != name_map.end())
+        if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+        {
+            col.type = it->second;
+            col.column = nullptr;
+        }
+    }
+
+    NameToNameMap key_column_rename;
+    /// Returns converting actions for tables that need to be performed before join
+    auto dag = ActionsDAG::makeConvertingActions(
+        cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !hasUsing(), &key_column_rename);
+
+    assert(!hasUsing() || key_column_rename.empty());
+
+    for (auto & name : names_to_rename)
+    {
+        const auto it = key_column_rename.find(name);
+        if (it != key_column_rename.end())
             name = it->second;
     }
+    return dag;
 }
 
 }
