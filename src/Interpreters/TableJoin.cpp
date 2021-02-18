@@ -110,14 +110,6 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
     columns_from_joined_table.swap(dedup_columns);
 }
 
-NameSet TableJoin::getQualifiedColumnsSet() const
-{
-    NameSet out;
-    for (const auto & names : original_names)
-        out.insert(names.first);
-    return out;
-}
-
 NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
     NamesWithAliases out;
@@ -228,13 +220,21 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
     DataTypePtr type = joined_column.type;
 
-    if (auto it = right_type_map.find(joined_column.name); it != right_type_map.end())
-        type = it->second;
+    if (hasUsing())
+    {
+        if (auto it = right_type_map.find(joined_column.name); it != right_type_map.end())
+            type = it->second;
+    }
 
     if (rightBecomeNullable(type))
         type = makeNullable(joined_column.type);
 
     columns_added_by_join.emplace_back(joined_column.name, type);
+}
+
+void TableJoin::addRequiredLeftColumn(const String & left_column)
+{
+    required_left_keys.emplace(left_column);
 }
 
 void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
@@ -254,8 +254,11 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
 {
     for (auto & col : columns)
     {
-        if (auto it = left_type_map.find(col.name); it != left_type_map.end())
-            col.type = it->second;
+        if (hasUsing())
+        {
+            if (auto it = left_type_map.find(col.name); it != left_type_map.end())
+                col.type = it->second;
+        }
         if (correct_nullability && leftBecomeNullable(col.type))
         {
             /// No need to nullify constants
@@ -268,20 +271,6 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
     /// Types in columns_added_by_join already converted and set nullable if needed
     for (const auto & col : columns_added_by_join)
         columns.emplace_back(nullptr, col.type, col.name);
-}
-
-bool TableJoin::sameJoin(const TableJoin * x, const TableJoin * y)
-{
-    if (!x && !y)
-        return true;
-    if (!x || !y)
-        return false;
-
-    return x->table_join.kind == y->table_join.kind
-        && x->table_join.strictness == y->table_join.strictness
-        && x->key_names_left == y->key_names_left
-        && x->key_names_right == y->key_names_right
-        && x->columns_added_by_join == y->columns_added_by_join;
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
@@ -354,21 +343,35 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     return true;
 }
 
+bool TableJoin::inferJoinKeyCommonType(const ColumnsWithTypeAndName & left, const ColumnsWithTypeAndName & right)
+{
+    NamesAndTypesList left_list;
+    NamesAndTypesList right_list;
+
+    for (const auto & col : left)
+        left_list.emplace_back(col.name, col.type);
+
+    for (const auto & col : right)
+        right_list.emplace_back(col.name, col.type);
+
+    return inferJoinKeyCommonType(left_list, right_list);
+}
+
 bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right)
 {
     std::unordered_map<String, DataTypePtr> left_types;
-    for (const auto & pair : left)
+    for (const auto & col : left)
     {
-        left_types[pair.name] = pair.type;
+        left_types[col.name] = col.type;
     }
 
     std::unordered_map<String, DataTypePtr> right_types;
-    for (const auto & pair : right)
+    for (const auto & col : right)
     {
-        if (auto it = renames.find(pair.name); it != renames.end())
-            right_types[it->second] = pair.type;
+        if (auto it = renames.find(col.name); it != renames.end())
+            right_types[it->second] = col.type;
         else
-            right_types[pair.name] = pair.type;
+            right_types[col.name] = col.type;
     }
 
     for (size_t i = 0; i < key_names_left.size(); ++i)
@@ -403,6 +406,25 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
     }
 
     return !left_type_map.empty();
+}
+
+void TableJoin::applyKeyColumnRename(const NameToNameMap & name_map, TableJoin::TableSide side)
+{
+    assert(!hasUsing() || name_map.empty());
+
+    Names & names = side == TableSide::Left ? key_names_left : key_names_right;
+    for (auto & name : names)
+    {
+        const auto it = name_map.find(name);
+        if (it != name_map.end())
+        {
+//            if (side == TableSide::Left && required_left_keys.contains(name))
+//            {
+//                columns_added_by_join.emplace_back(name, nullptr);
+//            }
+            name = it->second;
+        }
+    }
 }
 
 }
