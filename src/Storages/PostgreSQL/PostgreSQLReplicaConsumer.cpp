@@ -203,7 +203,8 @@ void PostgreSQLReplicaConsumer::readTupleData(
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        LOG_DEBUG(log, "Identifier: {}", identifier);
+        char id = identifier;
+        LOG_DEBUG(log, "Identifier: {}", id);
         switch (identifier)
         {
             case 'n': /// NULL
@@ -216,7 +217,7 @@ void PostgreSQLReplicaConsumer::readTupleData(
                 Int32 col_len = readInt32(message, pos, size);
                 String value;
 
-                for (int i = 0; i < col_len; ++i)
+                for (Int16 i = 0; i < col_len; ++i)
                     value += readInt8(message, pos, size);
 
                 insertValue(buffer, value, column_idx);
@@ -299,11 +300,10 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 
-            /// TODO: Save relation id (unique to tables) and check if they might be shuffled in current block.
-            /// If shuffled, store tables based on those id's and insert accordingly.
             table_to_insert = relation_name;
             tables_to_sync.insert(table_to_insert);
 
+            /// TODO: Add replica identity settings to metadata (needed for update)
             Int8 replica_identity = readInt8(replication_message, pos, size);
             Int16 num_columns = readInt16(replication_message, pos, size);
 
@@ -311,10 +311,30 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
                     "INFO: relation id: {}, namespace: {}, relation name: {}, replica identity: {}, columns number: {}",
                     relation_id, relation_namespace, relation_name, replica_identity, num_columns);
 
-            Int8 key;
-            Int32 data_type_id, type_modifier;
+            /// Cache table schema data to be able to detect schema changes, because ddl is not
+            /// replicated with postgresql logical replication protocol, but some table schema info
+            /// is received if it is the first time we received dml message for given relation in current session or
+            /// if relation definition has changed since the last relation definition message.
+            Int8 key; /// Flags. 0 or 1 (if part of the key). Not needed for now.
+            Int32 data_type_id;
+            Int32 type_modifier; /// For example, n in varchar(n)
 
-            /// TODO: Check here if table structure has changed and, if possible, change table structure and redump table.
+            bool new_relation_definition = false;
+            if (relation_id_to_name.find(relation_id) == relation_id_to_name.end())
+            {
+                relation_id_to_name.emplace(relation_id, relation_name);
+                schema_data.emplace(relation_id, SchemaData(num_columns));
+                new_relation_definition = true;
+            }
+
+            auto & current_schema_data = schema_data.find(relation_id)->second;
+
+            if (current_schema_data.number_of_columns != num_columns)
+            {
+                markTableAsSkippedUntilReload(relation_id, relation_name);
+                break;
+            }
+
             for (uint16_t i = 0; i < num_columns; ++i)
             {
                 String column_name;
@@ -327,6 +347,20 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
                 LOG_DEBUG(log,
                         "Key: {}, column name: {}, data type id: {}, type modifier: {}",
                         key, column_name, data_type_id, type_modifier);
+
+                if (new_relation_definition)
+                {
+                    current_schema_data.column_identifiers.emplace_back(std::make_tuple(data_type_id, type_modifier));
+                }
+                else
+                {
+                    if (current_schema_data.column_identifiers[i].first != data_type_id
+                            || current_schema_data.column_identifiers[i].second != type_modifier)
+                    {
+                        markTableAsSkippedUntilReload(relation_id, relation_name);
+                        break;
+                    }
+                }
             }
 
             if (storages.find(table_to_insert) == storages.end())
@@ -345,6 +379,10 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         case 'I': // Insert
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
+
+            if (skip_until_reload.find(relation_id) != skip_until_reload.end())
+                break;
+
             Int8 new_tuple = readInt8(replication_message, pos, size);
 
             LOG_DEBUG(log, "relationID: {}, newTuple: {}, current insert table: {}", relation_id, new_tuple, table_to_insert);
@@ -362,12 +400,17 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         case 'U': // Update
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
+
+            if (skip_until_reload.find(relation_id) != skip_until_reload.end())
+                break;
+
             LOG_DEBUG(log, "relationID {}, current insert table {}", relation_id, table_to_insert);
 
             auto buffer = buffers.find(table_to_insert);
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
-                LOG_DEBUG(log, "Identifier: {}", identifier);
+                char id = identifier;
+                LOG_DEBUG(log, "Identifier: {}", id);
                 bool read_next = true;
                 switch (identifier)
                 {
@@ -407,6 +450,10 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         case 'D': // Delete
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
+
+            if (skip_until_reload.find(relation_id) != skip_until_reload.end())
+                break;
+
             Int8 full_replica_identity = readInt8(replication_message, pos, size);
 
             LOG_DEBUG(log, "relationID: {}, full replica identity: {}", relation_id, full_replica_identity);
@@ -421,6 +468,16 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Unexpected byte1 value {} while parsing replication message", type);
     }
+}
+
+
+/// TODO: If some table has a changed structure, we can stop current stream (after remembering last valid WAL position)
+/// and advance lsn up to this position. Then make changes to nested table and continue the same way.
+void PostgreSQLReplicaConsumer::markTableAsSkippedUntilReload(Int32 relation_id, const String & relation_name)
+{
+    skip_until_reload.insert(relation_id);
+    auto & buffer = buffers.find(relation_name)->second;
+    buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
 }
 
 
