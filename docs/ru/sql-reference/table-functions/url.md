@@ -7,7 +7,7 @@ toc_title: url
 
 Функция `url` создает таблицу с помощью адреса `URL`, формата данных и структуры таблицы.
 
-Функция `url` может быть использована в запросах `SELECT` и `INSERT` в таблицах движка [URL](../../engines/table-engines/special/url.md).
+Функция `url` может быть использована в запросах `SELECT` и `INSERT` с таблицами на движке [URL](../../engines/table-engines/special/url.md).
 
 **Синтаксис**
 
