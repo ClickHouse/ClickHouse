@@ -6,7 +6,8 @@
 #endif
 
 #if USE_NURAFT
-
+#include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/NuKeeperStorageSerializer.h>
@@ -20,6 +21,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <thread>
 #include <Coordination/NuKeeperLogStore.h>
@@ -372,7 +374,7 @@ DB::LogEntryPtr getLogEntry(const std::string & s, size_t term)
 TEST(CoordinationTest, ChangelogTestSimple)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
@@ -386,7 +388,7 @@ TEST(CoordinationTest, ChangelogTestSimple)
 TEST(CoordinationTest, ChangelogTestFile)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
@@ -407,7 +409,7 @@ TEST(CoordinationTest, ChangelogTestFile)
 TEST(CoordinationTest, ChangelogReadWrite)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 1000);
+    DB::NuKeeperLogStore changelog("./logs", 1000, true);
     changelog.init(1);
     for (size_t i = 0; i < 10; ++i)
     {
@@ -415,7 +417,7 @@ TEST(CoordinationTest, ChangelogReadWrite)
         changelog.append(entry);
     }
     EXPECT_EQ(changelog.size(), 10);
-    DB::NuKeeperLogStore changelog_reader("./logs", 1000);
+    DB::NuKeeperLogStore changelog_reader("./logs", 1000, true);
     changelog_reader.init(1);
     EXPECT_EQ(changelog_reader.size(), 10);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
@@ -434,7 +436,7 @@ TEST(CoordinationTest, ChangelogReadWrite)
 TEST(CoordinationTest, ChangelogWriteAt)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 1000);
+    DB::NuKeeperLogStore changelog("./logs", 1000, true);
     changelog.init(1);
     for (size_t i = 0; i < 10; ++i)
     {
@@ -450,7 +452,7 @@ TEST(CoordinationTest, ChangelogWriteAt)
     EXPECT_EQ(changelog.entry_at(7)->get_term(), 77);
     EXPECT_EQ(changelog.next_slot(), 8);
 
-    DB::NuKeeperLogStore changelog_reader("./logs", 1000);
+    DB::NuKeeperLogStore changelog_reader("./logs", 1000, true);
     changelog_reader.init(1);
 
     EXPECT_EQ(changelog_reader.size(), changelog.size());
@@ -463,7 +465,7 @@ TEST(CoordinationTest, ChangelogWriteAt)
 TEST(CoordinationTest, ChangelogTestAppendAfterRead)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
     for (size_t i = 0; i < 7; ++i)
     {
@@ -475,7 +477,7 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
 
-    DB::NuKeeperLogStore changelog_reader("./logs", 5);
+    DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(1);
 
     EXPECT_EQ(changelog_reader.size(), 7);
@@ -511,7 +513,7 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
 TEST(CoordinationTest, ChangelogTestCompaction)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
 
     for (size_t i = 0; i < 3; ++i)
@@ -552,7 +554,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     EXPECT_EQ(changelog.next_slot(), 8);
     EXPECT_EQ(changelog.last_entry()->get_term(), 60);
     /// And we able to read it
-    DB::NuKeeperLogStore changelog_reader("./logs", 5);
+    DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(7);
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.start_index(), 7);
@@ -563,7 +565,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
 TEST(CoordinationTest, ChangelogTestBatchOperations)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 100);
+    DB::NuKeeperLogStore changelog("./logs", 100, true);
     changelog.init(1);
     for (size_t i = 0; i < 10; ++i)
     {
@@ -575,7 +577,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperations)
 
     auto entries = changelog.pack(1, 5);
 
-    DB::NuKeeperLogStore apply_changelog("./logs", 100);
+    DB::NuKeeperLogStore apply_changelog("./logs", 100, true);
     apply_changelog.init(1);
 
     for (size_t i = 0; i < 10; ++i)
@@ -605,7 +607,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperations)
 TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 100);
+    DB::NuKeeperLogStore changelog("./logs", 100, true);
     changelog.init(1);
     for (size_t i = 0; i < 10; ++i)
     {
@@ -618,7 +620,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     auto entries = changelog.pack(5, 5);
 
     ChangelogDirTest test1("./logs1");
-    DB::NuKeeperLogStore changelog_new("./logs1", 100);
+    DB::NuKeeperLogStore changelog_new("./logs1", 100, true);
     changelog_new.init(1);
     EXPECT_EQ(changelog_new.size(), 0);
 
@@ -637,7 +639,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     EXPECT_EQ(changelog_new.start_index(), 5);
     EXPECT_EQ(changelog_new.next_slot(), 11);
 
-    DB::NuKeeperLogStore changelog_reader("./logs1", 100);
+    DB::NuKeeperLogStore changelog_reader("./logs1", 100, true);
     changelog_reader.init(5);
 }
 
@@ -645,7 +647,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
 TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
 
     for (size_t i = 0; i < 33; ++i)
@@ -680,7 +682,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
-    DB::NuKeeperLogStore changelog_read("./logs", 5);
+    DB::NuKeeperLogStore changelog_read("./logs", 5, true);
     changelog_read.init(1);
     EXPECT_EQ(changelog_read.size(), 7);
     EXPECT_EQ(changelog_read.start_index(), 1);
@@ -691,7 +693,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
 TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
 
     for (size_t i = 0; i < 33; ++i)
@@ -726,7 +728,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
     EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
-    DB::NuKeeperLogStore changelog_read("./logs", 5);
+    DB::NuKeeperLogStore changelog_read("./logs", 5, true);
     changelog_read.init(1);
     EXPECT_EQ(changelog_read.size(), 11);
     EXPECT_EQ(changelog_read.start_index(), 1);
@@ -737,7 +739,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
 TEST(CoordinationTest, ChangelogTestWriteAtAllFiles)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
 
     for (size_t i = 0; i < 33; ++i)
@@ -776,7 +778,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtAllFiles)
 TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
 {
     ChangelogDirTest test("./logs");
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
 
     for (size_t i = 0; i < 35; ++i)
@@ -795,7 +797,7 @@ TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     EXPECT_FALSE(fs::exists("./logs/changelog_36_40.bin"));
 
 
-    DB::NuKeeperLogStore changelog_reader("./logs", 5);
+    DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(1);
 
     auto entry = getLogEntry("36_hello_world", 360);
@@ -817,7 +819,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
 {
     ChangelogDirTest test("./logs");
 
-    DB::NuKeeperLogStore changelog("./logs", 5);
+    DB::NuKeeperLogStore changelog("./logs", 5, true);
     changelog.init(1);
 
     for (size_t i = 0; i < 35; ++i)
@@ -837,7 +839,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     DB::WriteBufferFromFile plain_buf("./logs/changelog_11_15.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(0);
 
-    DB::NuKeeperLogStore changelog_reader("./logs", 5);
+    DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(1);
 
     EXPECT_EQ(changelog_reader.size(), 10);
@@ -865,6 +867,43 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
+}
+
+TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
+{
+    ChangelogDirTest test("./logs");
+
+    DB::NuKeeperLogStore changelog("./logs", 20, true);
+    changelog.init(1);
+
+    for (size_t i = 0; i < 35; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
+        changelog.append(entry);
+    }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin"));
+
+    DB::WriteBufferFromFile plain_buf("./logs/changelog_1_20.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    plain_buf.truncate(140);
+
+    DB::NuKeeperLogStore changelog_reader("./logs", 20, true);
+    changelog_reader.init(1);
+
+    EXPECT_EQ(changelog_reader.size(), 2);
+    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 450);
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin"));
+}
+
+int main(int argc, char ** argv)
+{
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
 
 #endif

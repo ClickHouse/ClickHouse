@@ -12,7 +12,7 @@ namespace ErrorCodes
 InMemoryStateManager::InMemoryStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
     : my_server_id(server_id_)
     , my_port(port)
-    , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000))
+    , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000, true))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
@@ -25,7 +25,9 @@ InMemoryStateManager::InMemoryStateManager(
     const Poco::Util::AbstractConfiguration & config,
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
-    , log_store(nuraft::cs_new<NuKeeperLogStore>(config.getString(config_prefix + ".log_storage_path"), coordination_settings->rotate_log_storage_interval))
+    , log_store(nuraft::cs_new<NuKeeperLogStore>(
+                    config.getString(config_prefix + ".log_storage_path"),
+                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
 

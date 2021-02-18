@@ -6,6 +6,8 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Common/Exception.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -37,7 +39,7 @@ ChangelogVersion fromString(const std::string & version_str)
 namespace
 {
 
-static constexpr auto DEFAULT_PREFIX = "changelog";
+constexpr auto DEFAULT_PREFIX = "changelog";
 
 std::string formatChangelogPath(const std::string & prefix, const ChangelogFileDescription & name)
 {
@@ -151,39 +153,56 @@ public:
     size_t readChangelog(IndexToLogEntry & logs, size_t start_log_idx, IndexToOffset & index_to_offset)
     {
         size_t total_read = 0;
-        while (!read_buf.eof())
+        try
         {
-            total_read += 1;
-            off_t pos = read_buf.count();
-            ChangelogRecord record;
-            readIntBinary(record.header.version, read_buf);
-            readIntBinary(record.header.index, read_buf);
-            readIntBinary(record.header.term, read_buf);
-            readIntBinary(record.header.value_type, read_buf);
-            readIntBinary(record.header.blob_size, read_buf);
-            readIntBinary(record.header.blob_checksum, read_buf);
-            auto buffer = nuraft::buffer::alloc(record.header.blob_size);
-            auto buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
-            read_buf.readStrict(buffer_begin, record.header.blob_size);
-            index_to_offset[record.header.index] = pos;
-
-            Checksum checksum = CityHash_v1_0_2::CityHash128(buffer_begin, record.header.blob_size);
-            if (checksum != record.header.blob_checksum)
+            while (!read_buf.eof())
             {
-                throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                                "Checksums doesn't match for log {} (version {}), index {}, blob_size {}",
-                                filepath, record.header.version, record.header.index, record.header.blob_size);
-            }
-            if (record.header.index < start_log_idx)
-                continue;
+                off_t pos = read_buf.count();
+                ChangelogRecord record;
+                readIntBinary(record.header.version, read_buf);
+                readIntBinary(record.header.index, read_buf);
+                readIntBinary(record.header.term, read_buf);
+                readIntBinary(record.header.value_type, read_buf);
+                readIntBinary(record.header.blob_size, read_buf);
+                readIntBinary(record.header.blob_checksum, read_buf);
+                auto buffer = nuraft::buffer::alloc(record.header.blob_size);
+                auto buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
+                read_buf.readStrict(buffer_begin, record.header.blob_size);
+                index_to_offset[record.header.index] = pos;
 
-            auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, buffer, record.header.value_type);
-            if (!logs.try_emplace(record.header.index, log_entry).second)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated index id {} in log {}", record.header.index, filepath);
+                Checksum checksum = CityHash_v1_0_2::CityHash128(buffer_begin, record.header.blob_size);
+                if (checksum != record.header.blob_checksum)
+                {
+                    throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
+                                    "Checksums doesn't match for log {} (version {}), index {}, blob_size {}",
+                                    filepath, record.header.version, record.header.index, record.header.blob_size);
+                }
+
+                if (logs.count(record.header.index) != 0)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated index id {} in log {}", record.header.index, filepath);
+
+                total_read += 1;
+
+                if (record.header.index < start_log_idx)
+                    continue;
+
+                auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, buffer, record.header.value_type);
+
+                logs.emplace(record.header.index, log_entry);
+            }
+        }
+        catch (const Exception & ex)
+        {
+            LOG_WARNING(&Poco::Logger::get("RaftChangelog"), "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(&Poco::Logger::get("RaftChangelog"));
         }
 
         return total_read;
     }
+
 private:
     std::string filepath;
     ReadBufferFromFile read_buf;
@@ -239,11 +258,12 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
         }
     }
 
-    if (existing_changelogs.size() > 0 && read_from_last < entries_in_last)
+    if (!existing_changelogs.empty() && read_from_last < entries_in_last)
     {
         auto description = existing_changelogs.rbegin()->second;
         current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_idx);
         current_writer->setEntriesWritten(read_from_last);
+        current_writer->truncateToLength(index_to_start_pos[read_from_last]);
     }
     else
     {
@@ -287,7 +307,7 @@ ChangelogRecord Changelog::buildRecord(size_t index, nuraft::ptr<nuraft::log_ent
     return ChangelogRecord{header, buffer};
 }
 
-void Changelog::appendEntry(size_t index, nuraft::ptr<nuraft::log_entry> log_entry)
+void Changelog::appendEntry(size_t index, nuraft::ptr<nuraft::log_entry> log_entry, bool force_sync)
 {
     if (!current_writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
@@ -298,14 +318,14 @@ void Changelog::appendEntry(size_t index, nuraft::ptr<nuraft::log_entry> log_ent
     if (current_writer->getEntriesWritten() == rotate_interval)
         rotate(index);
 
-    auto offset = current_writer->appendRecord(buildRecord(index, log_entry), false);
+    auto offset = current_writer->appendRecord(buildRecord(index, log_entry), force_sync);
     if (!index_to_start_pos.try_emplace(index, offset).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
 
     logs[index] = makeClone(log_entry);
 }
 
-void Changelog::writeAt(size_t index, nuraft::ptr<nuraft::log_entry> log_entry)
+void Changelog::writeAt(size_t index, nuraft::ptr<nuraft::log_entry> log_entry, bool force_sync)
 {
     if (index_to_start_pos.count(index) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
@@ -347,7 +367,7 @@ void Changelog::writeAt(size_t index, nuraft::ptr<nuraft::log_entry> log_entry)
 
     current_writer->setEntriesWritten(entries_written);
 
-    appendEntry(index, log_entry);
+    appendEntry(index, log_entry, force_sync);
 }
 
 void Changelog::compact(size_t up_to_log_idx)
@@ -441,7 +461,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(size_t index, in
     return buf_out;
 }
 
-void Changelog::applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer)
+void Changelog::applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer, bool force_sync)
 {
     buffer.pos(0);
     int num_logs = buffer.get_int();
@@ -456,9 +476,9 @@ void Changelog::applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer)
 
         LogEntryPtr log_entry = nuraft::log_entry::deserialize(*buf_local);
         if (i == 0 && logs.count(cur_idx))
-            writeAt(cur_idx, log_entry);
+            writeAt(cur_idx, log_entry, force_sync);
         else
-            appendEntry(cur_idx, log_entry);
+            appendEntry(cur_idx, log_entry, force_sync);
     }
 }
 
