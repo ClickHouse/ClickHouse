@@ -13,8 +13,9 @@ instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
-    key Integer NOT NULL, value Integer)
+    key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
+
 
 def get_postgres_conn(database=False):
     if database == True:
@@ -26,13 +27,17 @@ def get_postgres_conn(database=False):
     conn.autocommit = True
     return conn
 
+
 def create_postgres_db(cursor, name):
     cursor.execute("CREATE DATABASE {}".format(name))
 
-def create_postgres_table(cursor, table_name):
+
+def create_postgres_table(cursor, table_name, replica_identity_full=False):
     cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
     cursor.execute(postgres_table_template.format(table_name))
-    cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
+    if replica_identity_full:
+        cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
+
 
 def postgresql_replica_check_result(result, check=False, ref_file='test_postgresql_replica.reference'):
     fpath = p.join(p.dirname(__file__), ref_file)
