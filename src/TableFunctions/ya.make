@@ -20,6 +20,7 @@ SRCS(
     TableFunctionMySQL.cpp
     TableFunctionNull.cpp
     TableFunctionNumbers.cpp
+    TableFunctionProjection.cpp
     TableFunctionRemote.cpp
     TableFunctionURL.cpp
     TableFunctionValues.cpp
