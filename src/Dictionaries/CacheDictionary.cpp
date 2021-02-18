@@ -142,7 +142,7 @@ void CacheDictionary<dictionary_key_type>::toParent(const PaddedPODArray<UInt64>
         out.assign(values.getData());
     }
     else
-        throw Exception();
+        throw Exception("Hierarchy is not supported for complex key CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 
@@ -437,6 +437,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns);
     const auto & keys = extractor.getKeys();
 
+    /// We make empty request just to fetch if keys exists
     DictionaryStorageFetchRequest request(dict_struct, {});
 
     FetchResult result_of_fetch_from_storage;
@@ -702,7 +703,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 const auto & keys = keys_extractor.getKeys();
 
                 cache_storage_ptr->insertColumnsForKeys(keys, block_columns);
-                found_num += keys.size();
 
                 for (size_t index_of_attribute = 0; index_of_attribute < update_unit_ptr->fetched_columns_during_update.size(); ++index_of_attribute)
                 {
@@ -715,14 +715,14 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     }
                 }
 
-                // std::cerr << "CacheDictionary::update fetched keys during update " << std::endl;
                 for (size_t i = 0; i < keys.size(); ++i)
                 {
                     auto fetched_key_from_source = keys[i];
-                    // std::cerr << "Key " << convertKeyToString(fetched_key_from_source) << std::endl;
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = i;
+                    size_t column_offset = found_num;
+                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = column_offset + i;
                 }
-                // std::cerr << std::endl;
+
+                found_num += keys.size();
             }
 
             stream->readSuffix();
