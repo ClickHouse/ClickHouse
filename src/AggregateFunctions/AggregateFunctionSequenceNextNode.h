@@ -27,13 +27,15 @@
 namespace DB
 {
 
+
+/// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node>
 struct NodeBase
 {
     UInt64 size; // size of payload
 
     DataTypeDateTime::FieldType event_time;
-    UInt32 events_bitset; // UInt32 for combiniant comparesons between bitsets (< operator on bitsets).
+    UInt32 events_bitset; // Bitsets of UInt32 are easy to compare. (< operator on bitsets)
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
@@ -70,6 +72,7 @@ struct NodeBase
     }
 };
 
+/// It stores String, timestamp, bitset of matched events.
 struct NodeString : public NodeBase<NodeString>
 {
     using Node = NodeString;
@@ -91,6 +94,7 @@ struct NodeString : public NodeBase<NodeString>
     }
 };
 
+/// TODO : Expends SequenceNextNodeGeneralData to support other types
 template <typename T, typename Node, bool Descending>
 struct SequenceNextNodeGeneralData
 {
@@ -123,6 +127,7 @@ struct SequenceNextNodeGeneralData
     }
 };
 
+/// Implementation of sequenceNextNode
 template <typename T, typename Node, bool Descending>
 class SequenceNextNodeImpl final
     : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>
@@ -178,6 +183,13 @@ public:
 
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
+        /// The events_bitset variable stores matched events in the form of bitset.
+        /// It uses UInt32 instead of std::bitset because bitsets of UInt32 are easy to compare. (< operator on bitsets)
+        /// Each Nth-bit indicates that the Nth-event are matched.
+        /// For example, event1 and event3 is matched then the values of events_bitset is 0x00000005.
+        ///   0x00000000
+        /// +          1 (bit of event1)
+        /// +          4 (bit of event3)
         UInt32 events_bitset = 0;
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[2 + i])->getData()[row_num])
@@ -265,8 +277,8 @@ public:
         return k;
     }
 
-    // This method returns an index of next node that matched the events.
-    // It is one as referring Boyer-Moore-Algorithm.
+    /// This method returns an index of next node that matched the events.
+    /// It is one as referring Boyer-Moore-Algorithm.
     UInt32 getNextNodeIndex(Data & data) const
     {
         if (data.value.size() <= events_size)
@@ -278,10 +290,12 @@ public:
         while (i < data.value.size())
         {
             UInt32 j = 0;
+            /// It checks whether the chain of events are matched or not.
             for (; j < events_size; ++j)
                 if (!(data.value[i - j]->events_bitset & (1 << (events_size - 1 - j))))
                     break;
 
+            /// If the chain of events are matched returns the index of result value.
             if (j == events_size)
                 return i + 1;
 
@@ -309,6 +323,7 @@ public:
     bool allocatesMemoryInArena() const override { return true; }
 };
 
+/// Implementation of sequenceFirstNode
 template <typename T, typename Node, bool Descending>
 class SequenceFirstNodeImpl final
     : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>

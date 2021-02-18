@@ -503,14 +503,14 @@ Returns a value of next event that matched an event chain.
 **Syntax**
 
 ``` sql
-sequenceNextNode([descending_order])(timestamp, event_column, event1, event2, ... event32)
+sequenceNextNode([descending_order])(timestamp, event_column, event1, event2, event3, ...)
 ```
 
 **Parameters**
 -   `descending_order` - Used to sort the timestamp in ascending or descending order. 0 or 1.
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: Date, DateTime and other unsigned integer types.
 -   `event_column` - Name of the column containing the value of the next event to be returned. Data types supported: String and Nullable(String)
--   `cond` — Conditions or data describing the chain of events. UInt8.
+-   `cond` — Conditions describing the chain of events. UInt8.
 
 **Returned value**
 
