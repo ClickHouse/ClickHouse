@@ -1516,15 +1516,28 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
-    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(
-        metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
-
     FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+
+    std::optional<CurrentlySubmergingEmergingTagger> tagger;
+    ReservationPtr reserved_space = balancedReservation(
+        metadata_snapshot,
+        estimated_space_for_merge,
+        max_volume_index,
+        future_merged_part.name,
+        future_merged_part.part_info,
+        future_merged_part.parts,
+        &tagger,
+        &ttl_infos);
+
+    if (!reserved_space)
+        reserved_space
+            = reserveSpacePreferringTTLRules(metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
+
     future_merged_part.uuid = entry.new_part_uuid;
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
