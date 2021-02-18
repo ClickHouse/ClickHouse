@@ -302,7 +302,7 @@ void Changelog::rotate(size_t new_start_log_idx)
     current_writer = std::make_unique<ChangelogWriter>(new_description.path, WriteMode::Rewrite, new_start_log_idx);
 }
 
-ChangelogRecord Changelog::buildRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry) const
+ChangelogRecord Changelog::buildRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry)
 {
     ChangelogRecordHeader header;
     header.index = index;
