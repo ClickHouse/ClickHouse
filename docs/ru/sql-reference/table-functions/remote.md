@@ -24,7 +24,7 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 
     Вместо параметра `host' может быть указано имя сервера или его адрес в формате IPv4 или IPv6. IPv6 адрес указывается в квадратных скобках.
 	
-	Порт — TCP-порт удалённого сервера. Если порт не указан, используется [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) из конфигурационного файла сервера, к которому обратились через функцию `remote` (по умолчанию - 9000), и [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure), к которому обратились через функцию `remoteSecure` (по умолчанию — 9440).
+	`port` — TCP-порт удалённого сервера. Если порт не указан, используется [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) из конфигурационного файла сервера, к которому обратились через функцию `remote` (по умолчанию - 9000), и [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure), к которому обратились через функцию `remoteSecure` (по умолчанию — 9440).
 
     С IPv6-адресом обязательно нужно указывать порт.
 
