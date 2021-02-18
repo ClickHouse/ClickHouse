@@ -5,7 +5,7 @@ toc_title: remote
 
 # remote, remoteSecure {#remote-remotesecure}
 
-Позволяет обратиться к удалённым серверам без создания таблицы типа [Distributed](../../engines/table-engines/special/distributed.md). Функция `remoteSecure` такая же, как и `remote`, но с защищенным соединением.
+Позволяет обратиться к удалённым серверам без создания таблицы типа [Distributed](../../engines/table-engines/special/distributed.md). Функция `remoteSecure` работает аналогично `remote`, но использует защищенное соединение.
 
 Обе функции могут быть использованы в запросах типа `SELECT` и `INSERT`.
 
