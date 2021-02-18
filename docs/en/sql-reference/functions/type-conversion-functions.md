@@ -777,7 +777,7 @@ Result:
 
 ## parseDateTimeBestEffortUSOrZero {#parsedatetimebesteffortusorzero}
 
-Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) function except that it returns zero date or zero date with time when it encounters a date format that cannot be processed.
+Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) function except that it returns zero date (`1970-01-01`) or zero date with time (`1970-01-01 00:00:00`) when it encounters a date format that cannot be processed.
 
 **Syntax**
 
