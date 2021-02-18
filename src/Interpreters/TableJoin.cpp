@@ -400,12 +400,13 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
         {
             supertype = DB::getLeastSupertype({ltype->second, rtype->second});
         }
-        catch (DB::Exception &)
+        catch (DB::Exception & ex)
         {
             throw Exception(
                 "Type mismatch of columns to JOIN by: " +
                     key_names_left[i] + ": " + ltype->second->getName() + " at left, " +
-                    key_names_right[i] + ": " + rtype->second->getName() + " at right",
+                    key_names_right[i] + ": " + rtype->second->getName() + " at right. " +
+                    "Can't get supertype: " + ex.message(),
                 ErrorCodes::TYPE_MISMATCH);
         }
         left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
@@ -414,8 +415,8 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
     return !left_type_map.empty();
 }
 
-ActionsDAGPtr
-TableJoin::applyKeyConvertToTable(const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename)
+ActionsDAGPtr TableJoin::applyKeyConvertToTable(
+    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const
 {
     ColumnsWithTypeAndName cols_dst = cols_src;
     for (auto & col : cols_dst)
@@ -431,8 +432,6 @@ TableJoin::applyKeyConvertToTable(const ColumnsWithTypeAndName & cols_src, const
     /// Returns converting actions for tables that need to be performed before join
     auto dag = ActionsDAG::makeConvertingActions(
         cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !hasUsing(), &key_column_rename);
-
-    assert(!hasUsing() || key_column_rename.empty());
 
     for (auto & name : names_to_rename)
     {
