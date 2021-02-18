@@ -34,6 +34,8 @@ struct CacheDictionaryStorageConfiguration
 
     Cell in LRUCache consists of allocated size and place in arena were columns serialized data is stored.
 
+    Columns are serialized by rows.
+
     When cell is removed from LRUCache data associated with it is also removed from arena.
 
     In case of complex key we also store key data in arena and it is removed from arena.
@@ -152,12 +154,14 @@ private:
                 if (now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
                 {
                     result.not_found_or_expired_keys.emplace_back(key);
+                    result.not_found_or_expired_keys_indexes.emplace_back(key_index);
                     continue;
                 }
                 else if (now > cell.deadline)
                 {
                     result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
                     result.not_found_or_expired_keys.emplace_back(key);
+                    result.not_found_or_expired_keys_indexes.emplace_back(key_index);
                 }
                 else
                     result.found_keys_to_fetched_columns_index[key] = fetched_columns_index;
