@@ -915,13 +915,13 @@ private:
 
         struct KeyToBlockOffset
         {
-            KeyToBlockOffset(KeyType key_, size_t offset_in_block_, bool is_expired_)
-                : key(key_)
+            KeyToBlockOffset(size_t key_index_, size_t offset_in_block_, bool is_expired_)
+                : key_index(key_index_)
                 , offset_in_block(offset_in_block_)
                 , is_expired(is_expired_)
             {}
 
-            KeyType key;
+            size_t key_index;
             size_t offset_in_block;
             bool is_expired;
         };
@@ -944,6 +944,7 @@ private:
                 if (now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
                 {
                     result.not_found_or_expired_keys.emplace_back(key);
+                    result.not_found_or_expired_keys_indexes.emplace_back(key_index);
                     continue;
                 }
                 else if (now > cell.deadline)
@@ -954,11 +955,13 @@ private:
                         char * serialized_columns_place = partition.getPlace(cell.index);
                         deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, serialized_columns_place);
                         result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
+                        result.not_found_or_expired_keys.emplace_back(key);
+                        result.not_found_or_expired_keys_indexes.emplace_back(key_index);
                         ++fetched_columns_index;
                     }
                     else
                     {
-                        block_to_keys_map[cell.index.block_index].emplace_back(key, cell.index.offset_in_block, true);
+                        block_to_keys_map[cell.index.block_index].emplace_back(key_index, cell.index.offset_in_block, true);
                         unique_blocks_to_request.insert(cell.index.block_index);
                     }
                 }
@@ -974,7 +977,7 @@ private:
                     }
                     else
                     {
-                        block_to_keys_map[cell.index.block_index].emplace_back(key, cell.index.offset_in_block, false);
+                        block_to_keys_map[cell.index.block_index].emplace_back(key_index, cell.index.offset_in_block, false);
                         unique_blocks_to_request.insert(cell.index.block_index);
                     }
                 }
@@ -1001,14 +1004,22 @@ private:
 
             for (auto & key_in_block : keys_in_block)
             {
+                auto key = keys[key_in_block.key_index];
+
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
                 auto & found_key_hash_map
                     = key_in_block.is_expired ? result.expired_keys_to_fetched_columns_index : result.found_keys_to_fetched_columns_index;
 
-                found_key_hash_map[key_in_block.key] = fetched_columns_index;
+                found_key_hash_map[key] = fetched_columns_index;
                 ++fetched_columns_index;
+
+                if (key_in_block.is_expired)
+                {
+                    result.not_found_or_expired_keys.emplace_back(key);
+                    result.not_found_or_expired_keys_indexes.emplace_back(key_in_block.key_index);
+                }
             }
         });
     }
