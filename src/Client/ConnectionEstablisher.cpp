@@ -47,6 +47,9 @@ void ConnectionEstablisher::Routine::ReadCallback::operator()(int fd, const Poco
     connection_establisher.receive_timeout.setRelative(timeout);
     fiber = std::move(fiber).resume();
     connection_establisher.receive_timeout.reset();
+#else
+    (void) fd;
+    (void) timeout;
 #endif
 }
 
@@ -87,7 +90,7 @@ void ConnectionEstablisher::resume()
     bool is_receive_timeout_alarmed = false;
 
     epoll_event events[2];
-    events[0].data.fd = events[1].data.fd;
+    events[0].data.fd = events[1].data.fd = -1;
     size_t ready_count = epoll.getManyReady(2, events, true);
     for (size_t i = 0; i != ready_count; ++i)
     {
