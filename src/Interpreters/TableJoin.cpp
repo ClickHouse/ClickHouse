@@ -232,11 +232,6 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
     columns_added_by_join.emplace_back(joined_column.name, type);
 }
 
-void TableJoin::addRequiredLeftColumn(const String & left_column)
-{
-    required_left_keys.emplace(left_column);
-}
-
 void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
 {
     ColumnsWithTypeAndName columns;
@@ -417,13 +412,7 @@ void TableJoin::applyKeyColumnRename(const NameToNameMap & name_map, TableJoin::
     {
         const auto it = name_map.find(name);
         if (it != name_map.end())
-        {
-//            if (side == TableSide::Left && required_left_keys.contains(name))
-//            {
-//                columns_added_by_join.emplace_back(name, nullptr);
-//            }
             name = it->second;
-        }
     }
 }
 
