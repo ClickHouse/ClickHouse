@@ -867,6 +867,11 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
+
+    DB::NuKeeperLogStore changelog_reader2("./logs", 5, true);
+    changelog_reader2.init(1);
+    EXPECT_EQ(changelog_reader2.size(), 11);
+    EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
 
 TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
@@ -895,6 +900,16 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 450);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
     EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin"));
+    auto entry = getLogEntry("hello_world", 7777);
+    changelog_reader.append(entry);
+    EXPECT_EQ(changelog_reader.size(), 3);
+    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
+
+
+    DB::NuKeeperLogStore changelog_reader2("./logs", 20, true);
+    changelog_reader2.init(1);
+    EXPECT_EQ(changelog_reader2.size(), 3);
+    EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
 
 int main(int argc, char ** argv)

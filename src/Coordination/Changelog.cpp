@@ -142,6 +142,13 @@ private:
     size_t start_index;
 };
 
+struct ChangelogReadResult
+{
+    size_t entries_read;
+    off_t last_position;
+    bool error;
+};
+
 class ChangelogReader
 {
 public:
@@ -150,14 +157,15 @@ public:
         , read_buf(filepath)
     {}
 
-    size_t readChangelog(IndexToLogEntry & logs, size_t start_log_idx, IndexToOffset & index_to_offset)
+    ChangelogReadResult readChangelog(IndexToLogEntry & logs, size_t start_log_idx, IndexToOffset & index_to_offset)
     {
-        size_t total_read = 0;
+        size_t previous_index = 0;
+        ChangelogReadResult result{};
         try
         {
             while (!read_buf.eof())
             {
-                off_t pos = read_buf.count();
+                result.last_position = read_buf.count();
                 ChangelogRecord record;
                 readIntBinary(record.header.version, read_buf);
                 readIntBinary(record.header.index, read_buf);
@@ -168,7 +176,11 @@ public:
                 auto buffer = nuraft::buffer::alloc(record.header.blob_size);
                 auto buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
                 read_buf.readStrict(buffer_begin, record.header.blob_size);
-                index_to_offset[record.header.index] = pos;
+
+                if (previous_index != 0 && previous_index + 1 != record.header.index)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Previous log entry {}, next log entry {}, seems like some entries skipped", previous_index, record.header.index);
+
+                previous_index = record.header.index;
 
                 Checksum checksum = CityHash_v1_0_2::CityHash128(buffer_begin, record.header.blob_size);
                 if (checksum != record.header.blob_checksum)
@@ -181,7 +193,7 @@ public:
                 if (logs.count(record.header.index) != 0)
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated index id {} in log {}", record.header.index, filepath);
 
-                total_read += 1;
+                result.entries_read += 1;
 
                 if (record.header.index < start_log_idx)
                     continue;
@@ -189,18 +201,21 @@ public:
                 auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, buffer, record.header.value_type);
 
                 logs.emplace(record.header.index, log_entry);
+                index_to_offset[record.header.index] = result.last_position;
             }
         }
         catch (const Exception & ex)
         {
+            result.error = true;
             LOG_WARNING(&Poco::Logger::get("RaftChangelog"), "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());
         }
         catch (...)
         {
+            result.error = true;
             tryLogCurrentException(&Poco::Logger::get("RaftChangelog"));
         }
 
-        return total_read;
+        return result;
     }
 
 private:
@@ -225,11 +240,11 @@ Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval
 
 void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
 {
-    size_t read_from_last = 0;
     start_index = from_log_idx == 0 ? 1 : from_log_idx;
     size_t total_read = 0;
     size_t entries_in_last = 0;
     size_t incomplete_log_idx = 0;
+    ChangelogReadResult result{};
     for (const auto & [start_idx, changelog_description] : existing_changelogs)
     {
         entries_in_last = changelog_description.to_log_idx - changelog_description.from_log_idx + 1;
@@ -237,11 +252,11 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
         if (changelog_description.to_log_idx >= from_log_idx)
         {
             ChangelogReader reader(changelog_description.path);
-            read_from_last = reader.readChangelog(logs, from_log_idx, index_to_start_pos);
-            total_read += read_from_last;
+            result = reader.readChangelog(logs, from_log_idx, index_to_start_pos);
+            total_read += result.entries_read;
 
             /// May happen after truncate and crash
-            if (read_from_last < entries_in_last)
+            if (result.entries_read < entries_in_last)
             {
                 incomplete_log_idx = start_idx;
                 break;
@@ -258,12 +273,13 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_idx)
         }
     }
 
-    if (!existing_changelogs.empty() && read_from_last < entries_in_last)
+    if (!existing_changelogs.empty() && result.entries_read < entries_in_last)
     {
         auto description = existing_changelogs.rbegin()->second;
         current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_idx);
-        current_writer->setEntriesWritten(read_from_last);
-        current_writer->truncateToLength(index_to_start_pos[read_from_last]);
+        current_writer->setEntriesWritten(result.entries_read);
+        if (result.error)
+            current_writer->truncateToLength(result.last_position);
     }
     else
     {
