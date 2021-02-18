@@ -4,7 +4,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
-#include <pqxx/pqxx>
+#include <pqxx/pqxx> // Y_IGNORE
 
 
 namespace DB

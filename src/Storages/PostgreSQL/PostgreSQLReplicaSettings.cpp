@@ -1,4 +1,6 @@
 #include "PostgreSQLReplicaSettings.h"
+
+#if USE_LIBPQXX
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -37,4 +39,7 @@ void PostgreSQLReplicaSettings::loadFromQuery(ASTStorage & storage_def)
         storage_def.set(storage_def.settings, settings_ast);
     }
 }
+
 }
+
+#endif

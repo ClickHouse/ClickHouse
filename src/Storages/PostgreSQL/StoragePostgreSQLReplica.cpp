@@ -1,5 +1,6 @@
 #include "StoragePostgreSQLReplica.h"
 
+#if USE_LIBPQXX
 #include <Common/Macros.h>
 #include <Core/Settings.h>
 #include <Common/parseAddress.h>
@@ -495,3 +496,4 @@ void registerStoragePostgreSQLReplica(StorageFactory & factory)
 
 }
 
+#endif

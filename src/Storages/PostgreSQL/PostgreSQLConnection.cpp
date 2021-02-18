@@ -1,9 +1,6 @@
-#if !defined(ARCADIA_BUILD)
-#include "config_core.h"
-#endif
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 

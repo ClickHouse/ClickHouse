@@ -14,8 +14,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <pqxx/pqxx>
 
-#include <common/logger_useful.h>
-
 
 namespace DB
 {
