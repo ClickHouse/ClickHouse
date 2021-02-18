@@ -143,7 +143,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// If totals step has HAVING expression, skip it for now.
         /// TODO:
         /// We can merge HAING expression with current filer.
-        /// Alos, we can push down part of HAVING which depend only on aggregation keys.
+        /// Also, we can push down part of HAVING which depend only on aggregation keys.
         if (totals_having->getActions())
             return 0;
 
