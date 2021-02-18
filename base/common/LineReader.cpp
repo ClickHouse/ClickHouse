@@ -127,7 +127,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         }
 #endif
 
-        line += (line.empty() ? "" : " ") + input;
+        line += (line.empty() ? "" : "\n") + input;
 
         if (!need_next_line)
             break;
