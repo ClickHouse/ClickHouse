@@ -82,6 +82,9 @@ private:
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
 
+    ActionsDAGPtr left_converting_actions;
+    ActionsDAGPtr right_converting_actions;
+
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only renamed columns.
@@ -91,13 +94,12 @@ private:
 
     Names requiredJoinedNames() const;
 
-public:
-    enum class TableSide
-    {
-        Left,
-        Right
-    };
+    /// Create converting actions and change key column names if required
+    ActionsDAGPtr applyKeyConvertToTable(const ColumnsWithTypeAndName & cols_src,
+                                         const NameToTypeMap & type_mapping,
+                                         Names & names_to_rename);
 
+public:
     TableJoin() = default;
     TableJoin(const Settings &, VolumePtr tmp_volume);
 
@@ -157,19 +159,19 @@ public:
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
 
-    void applyKeyColumnRename(const NameToNameMap & name_map, TableSide side);
-
     void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
     void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability = true) const;
 
     /// Calculates common supertypes for corresponding join key columns.
     bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
-    bool inferJoinKeyCommonType(const ColumnsWithTypeAndName & left, const ColumnsWithTypeAndName & right);
+    ///
+    bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
 
     bool needConvert() const { return !left_type_map.empty(); }
-    /// Key columns should be converted according to this mapping before join.
-    const NameToTypeMap & getLeftMapping() const { return left_type_map; }
-    const NameToTypeMap & getRightMapping() const { return right_type_map; }
+
+    /// Key columns should be converted before join.
+    ActionsDAGPtr leftConvertingActions() const { return left_converting_actions; }
+    ActionsDAGPtr rightConvertingActions() const { return right_converting_actions; }
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
