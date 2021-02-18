@@ -33,12 +33,24 @@ namespace ErrorCodes
 
 namespace
 {
-    const pid_t expected_pid = getpid();
+    // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
+    std::atomic<pid_t> expected_pid;
     const int sig = SIGRTMIN;
 
     std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
+    std::atomic<int> data_ready_num = 0;
+    std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
 
-    std::optional<StackTrace> stack_trace;
+    /** Notes:
+      * Only one query from the table can be processed at the moment of time.
+      * This is ensured by the mutex in fillData function.
+      * We obtain information about threads by sending signal and receiving info from the signal handler.
+      * Information is passed via global variables and pipe is used for signaling.
+      * Actually we can send all information via pipe, but we read from it with timeout just in case,
+      * so it's convenient to use is only for signaling.
+      */
+
+    StackTrace stack_trace{NoCapture{}};
 
     constexpr size_t max_query_id_size = 128;
     char query_id_data[max_query_id_size];
@@ -56,25 +68,34 @@ namespace
             return;
 
         /// Signal received too late.
-        if (info->si_value.sival_int != sequence_num.load(std::memory_order_relaxed))
+        int notification_num = info->si_value.sival_int;
+        if (notification_num != sequence_num.load(std::memory_order_acquire))
+            return;
+
+        bool expected = false;
+        if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
             return;
 
         /// All these methods are signal-safe.
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-        stack_trace.emplace(signal_context);
+        stack_trace = StackTrace(signal_context);
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size, max_query_id_size);
         if (query_id.data && query_id.size)
             memcpy(query_id_data, query_id.data, query_id_size);
 
-        int notification_num = info->si_value.sival_int;
+        /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
+        data_ready_num.store(notification_num, std::memory_order_release);
+
         ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
 
         /// We cannot do anything if write failed.
         (void)res;
 
         errno = saved_errno;
+
+        signal_latch.store(false, std::memory_order_release);
     }
 
     /// Wait for data in pipe and read it.
@@ -132,7 +153,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     notification_pipe.open();
 
     /// Setup signal handler.
-
+    expected_pid = getpid();
     struct sigaction sa{};
     sa.sa_sigaction = signalHandler;
     sa.sa_flags = SA_SIGINFO;
@@ -179,7 +200,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         pid_t tid = parse<pid_t>(it->path().filename());
 
         sigval sig_value{};
-        sig_value.sival_int = sequence_num.load(std::memory_order_relaxed);
+        sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
         if (0 != ::sigqueue(tid, sig, sig_value))
         {
             /// The thread may has been already finished.
@@ -191,15 +212,15 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
 
         /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
 
-        if (wait(100))
+        if (wait(100) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
         {
-            size_t stack_trace_size = stack_trace->getSize();
-            size_t stack_trace_offset = stack_trace->getOffset();
+            size_t stack_trace_size = stack_trace.getSize();
+            size_t stack_trace_offset = stack_trace.getOffset();
 
             Array arr;
             arr.reserve(stack_trace_size - stack_trace_offset);
             for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace->getFramePointers()[i]));
+                arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace.getFramePointers()[i]));
 
             res_columns[0]->insert(tid);
             res_columns[1]->insertData(query_id_data, query_id_size);
@@ -214,7 +235,11 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             res_columns[2]->insertDefault();
         }
 
-        ++sequence_num; /// FYI: For signed Integral types, arithmetic is defined to use two’s complement representation. There are no undefined results.
+        /// Signed integer overflow is undefined behavior in both C and C++. However, according to
+        /// C++ standard, Atomic signed integer arithmetic is defined to use two's complement; there
+        /// are no undefined results. See https://en.cppreference.com/w/cpp/atomic/atomic and
+        /// http://eel.is/c++draft/atomics.types.generic#atomics.types.int-8
+        ++sequence_num;
     }
 }
 
