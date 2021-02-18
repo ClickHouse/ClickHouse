@@ -174,7 +174,7 @@ public:
                 readIntBinary(record.header.blob_size, read_buf);
                 readIntBinary(record.header.blob_checksum, read_buf);
                 auto buffer = nuraft::buffer::alloc(record.header.blob_size);
-                auto buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
+                auto * buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
                 read_buf.readStrict(buffer_begin, record.header.blob_size);
 
                 if (previous_index != 0 && previous_index + 1 != record.header.index)
