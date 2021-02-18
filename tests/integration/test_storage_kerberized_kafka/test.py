@@ -24,7 +24,7 @@ instance = cluster.add_instance('instance',
                                 with_kerberized_kafka=True,
                                 clickhouse_path_dir="clickhouse_path"
                                 )
-kafka_id = ''    # instance.cluster.kafka_docker_id
+kafka_id = cluster.kerberized_kafka_docker_id
 
 # Helpers
 
@@ -51,13 +51,14 @@ def wait_kafka_is_available(max_retries=50):
         else:
             retries += 1
             if retries > max_retries:
-                raise "Kafka is not available"
+                raise Exception("Kafka is not available")
             print("Waiting for Kafka to start up")
             time.sleep(1)
 
 
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
+    
 def kafka_produce(topic, messages, timestamp=None):
     producer = KafkaProducer(bootstrap_servers="localhost:9093", value_serializer=producer_serializer)
     for message in messages:
@@ -72,9 +73,7 @@ def kafka_produce(topic, messages, timestamp=None):
 @pytest.fixture(scope="module")
 def kafka_cluster():
     try:
-        global kafka_id
         cluster.start()
-        kafka_id = instance.cluster.kerberized_kafka_docker_id
         print("kafka_id is {}".format(kafka_id))
         yield cluster
 

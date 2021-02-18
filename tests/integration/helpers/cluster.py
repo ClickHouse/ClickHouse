@@ -183,9 +183,19 @@ class ClickHouseCluster:
         self.minio_redirect_port = 8080
 
         # available when with_kafka == True
+        self.kafka_host = "kafka1"
+        self.kafka_port = get_open_port()
+        self.kafka_docker_id = None
         self.schema_registry_client = None
         self.schema_registry_host = "schema-registry"
-        self.schema_registry_port = 8081
+        self.schema_registry_port = get_open_port()
+        self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
+
+        # available when with_kerberozed_kafka == True
+        self.kerberized_kafka_host = "kerberized_kafka1"
+        self.kerberized_kafka_port = get_open_port()
+        self.kerberized_kafka_docker_id = None
+        self.kerberized_kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
@@ -249,6 +259,27 @@ class ClickHouseCluster:
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')]
 
         return self.base_mysql8_cmd
+
+    def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_redis = True
+        env_variables['KAFKA_HOST'] = self.kafka_host
+        env_variables['KAFKA_EXTERNAL_PORT'] = str(self.kafka_port)
+        env_variables['SCHEMA_REGISTRY_EXTERNAL_PORT'] = str(self.schema_registry_port)
+        env_variables['SCHEMA_REGISTRY_INTERNAL_PORT'] = "8081"
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
+        self.base_redis_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
+        return self.base_redis_cmd
+
+    def setup_kerberized_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_redis = True
+        env_variables['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
+        env_variables['KERBERIZED_KAFKA_HOST'] = self.kerberized_kafka_host
+        env_variables['KERBERIZED_KAFKA_EXTERNAL_PORT'] = str(self.kerberized_kafka_port)
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')])
+        self.base_redis_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
+        return self.base_redis_cmd
 
     def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_redis = True
@@ -391,19 +422,10 @@ class ClickHouseCluster:
                 cmds.append(self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_kafka and not self.with_kafka:
-            self.with_kafka = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
-            self.base_kafka_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
-            cmds.append(self.base_kafka_cmd)
+            cmds.append(self.setup_kafka_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_kerberized_kafka and not self.with_kerberized_kafka:
-            env_variables['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
-            self.with_kerberized_kafka = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')])
-            self.base_kerberized_kafka_cmd = ['docker-compose', '--env-file', instance.env_file,'--project-name', self.project_name,
-                                              '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
-            cmds.append(self.base_kerberized_kafka_cmd)
+            cmds.append(self.setup_kerberized_kafka_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_rabbitmq and not self.with_rabbitmq:
             cmds.append(self.setup_rabbitmq_cmd(instance, env_variables, docker_compose_yml_dir))
@@ -695,14 +717,13 @@ class ClickHouseCluster:
         raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
-        sr_client = CachedSchemaRegistryClient('http://localhost:8081')
+        sr_client = CachedSchemaRegistryClient('http://localhost:{}'.format(cluster.schema_registry_port))
         start = time.time()
         while time.time() - start < timeout:
             try:
                 sr_client._send_request(sr_client.url)
-                self.schema_registry_client = sr_client
                 print("Connected to SchemaRegistry")
-                return
+                return sr_client
             except Exception as ex:
                 print(("Can't connect to SchemaRegistry: %s", str(ex)))
                 time.sleep(1)
@@ -784,13 +805,11 @@ class ClickHouseCluster:
             if self.with_kafka and self.base_kafka_cmd:
                 print('Setup Kafka')
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
-                self.kafka_docker_id = self.get_instance_docker_id('kafka1')
-                self.wait_schema_registry_to_start(120)
+                self.schema_registry_client = self.wait_schema_registry_to_start(30)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 print('Setup kerberized kafka')
                 run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
-                self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
                 self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')

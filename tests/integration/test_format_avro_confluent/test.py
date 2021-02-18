@@ -65,7 +65,7 @@ def test_select(cluster):
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     schema_registry_url = "http://{}:{}".format(
         cluster.schema_registry_host,
-        cluster.schema_registry_port
+        8081
     )
 
     run_query(instance, "create table avro_data(value Int64) engine = Memory()")
