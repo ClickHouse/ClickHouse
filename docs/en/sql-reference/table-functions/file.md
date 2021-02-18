@@ -74,7 +74,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 ## Globs in Path {#globs-in-path}
 
-Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern (not only suffix or prefix).
+Multiple path components can have globs. For being processed file must exist and match to the whole path pattern (not only suffix or prefix).
 
 -   `*` — Substitutes any number of any characters except `/` including empty string.
 -   `?` — Substitutes any single character.
