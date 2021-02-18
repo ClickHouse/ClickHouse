@@ -744,8 +744,8 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
 JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & left_actions)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-
     JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, left_actions);
+
     if (syntax->analyzed_join->needConvert())
     {
         assert(left_actions);

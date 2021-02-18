@@ -72,7 +72,6 @@ private:
     ASTTableJoin table_join;
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
-    NameSet required_left_keys;
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN.
@@ -146,7 +145,6 @@ public:
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
-    bool hasJoinedStorage() const { return joined_storage != nullptr; }
 
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
@@ -158,7 +156,6 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-    void addRequiredLeftColumn(const String & left_column);
 
     void applyKeyColumnRename(const NameToNameMap & name_map, TableSide side);
 

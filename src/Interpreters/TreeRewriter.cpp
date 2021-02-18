@@ -583,14 +583,6 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         for (const auto & name : source_columns)
             available_columns.insert(name.name);
 
-        for (const auto & name : analyzed_join->keyNamesLeft())
-        {
-            if (available_columns.count(name))
-                continue;
-            if (required.count(name))
-                analyzed_join->addRequiredLeftColumn(name);
-        }
-
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {

@@ -28,7 +28,17 @@ SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 SELECT '- inner -';
 SELECT a, t1.a, t2.a FROM t1 INNER JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 
-select '- agg -';
+SELECT '- join on -';
+SELECT '- full -';
+SELECT a, b, t2.a, t2.b FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- left -';
+SELECT a, b, t2.a, t2.b FROM t1 LEFT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- right -';
+SELECT a, b, t2.a, t2.b FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- inner -';
+SELECT a, b, t2.a, t2.b FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+
+SELECT '- agg -';
 SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
 SELECT sum(a) == 7 FROM t1 INNER JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
 
@@ -44,11 +54,6 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t
 
 SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a);
 SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a);
-
--- SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
 
 SELECT '--- partial_merge ---';
 
@@ -63,7 +68,6 @@ SELECT a, b, t2.b FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (a);
 SELECT '- inner -';
 SELECT a, b, t2.b FROM t1 INNER JOIN t2 USING (a) ORDER BY (a);
 
-
 SELECT '- full -';
 SELECT a, t1.a, t2.a FROM t1 FULL JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 SELECT '- left -';
@@ -73,7 +77,17 @@ SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 SELECT '- inner -';
 SELECT a, t1.a, t2.a FROM t1 INNER JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 
-select '- agg -';
+SELECT '- join on -';
+SELECT '- full -';
+SELECT a, b, t2.a, t2.b FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- left -';
+SELECT a, b, t2.a, t2.b FROM t1 LEFT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- right -';
+SELECT a, b, t2.a, t2.b FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- inner -';
+SELECT a, b, t2.a, t2.b FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+
+SELECT '- agg -';
 SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
 SELECT sum(a) == 7 FROM t1 INNER JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
 
@@ -88,12 +102,6 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t
 
 SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a);
 SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a);
-
--- SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
-
 
 SELECT '--- switch ---';
 
@@ -109,7 +117,6 @@ SELECT a, b, t2.b FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (a);
 SELECT '- inner -';
 SELECT a, b, t2.b FROM t1 INNER JOIN t2 USING (a) ORDER BY (a);
 
-
 SELECT '- full -';
 SELECT a, t1.a, t2.a FROM t1 FULL JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 SELECT '- left -';
@@ -119,7 +126,17 @@ SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 SELECT '- inner -';
 SELECT a, t1.a, t2.a FROM t1 INNER JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 
-select '- agg -';
+SELECT '- join on -';
+SELECT '- full -';
+SELECT a, b, t2.a, t2.b FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- left -';
+SELECT a, b, t2.a, t2.b FROM t1 LEFT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- right -';
+SELECT a, b, t2.a, t2.b FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+SELECT '- inner -';
+SELECT a, b, t2.a, t2.b FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+
+SELECT '- agg -';
 SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
 SELECT sum(a) == 7 FROM t1 INNER JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
 
@@ -134,11 +151,6 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t
 
 SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a);
 SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a);
-
--- SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
--- SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
 
 SET max_bytes_in_join = 0;
 
@@ -156,7 +168,7 @@ SET join_use_nulls = 0;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-select '---';
+SELECT '---';
 
 DROP TABLE IF EXISTS t_ab1;
 DROP TABLE IF EXISTS t_ab2;
@@ -179,7 +191,7 @@ SELECT a, b FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t
 SELECT '- inner -';
 SELECT a, b FROM t_ab1 INNER JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 
-select '- agg -';
+SELECT '- agg -';
 SELECT sum(a), sum(b) FROM t_ab1 FULL JOIN t_ab2 USING (a, b);
 SELECT sum(a), sum(b) FROM t_ab1 LEFT JOIN t_ab2 USING (a, b);
 SELECT sum(a), sum(b) FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b);
@@ -205,7 +217,7 @@ SELECT a, b FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t
 SELECT '- inner -';
 SELECT a, b FROM t_ab1 INNER JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 
-select '- agg -';
+SELECT '- agg -';
 SELECT sum(a), sum(b) FROM t_ab1 FULL JOIN t_ab2 USING (a, b);
 SELECT sum(a), sum(b) FROM t_ab1 LEFT JOIN t_ab2 USING (a, b);
 SELECT sum(a), sum(b) FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b);
