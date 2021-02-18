@@ -3,7 +3,6 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
-#include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -40,14 +39,11 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     Block sample_block;
@@ -67,7 +63,6 @@ private:
 
 protected:
     StorageJoin(
-        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const Names & key_names_,
@@ -77,7 +72,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
-        bool persistent_);
+        const Context & context_);
 };
 
 }

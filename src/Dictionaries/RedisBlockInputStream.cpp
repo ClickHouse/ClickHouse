@@ -26,7 +26,6 @@ namespace DB
         extern const int LOGICAL_ERROR;
         extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
         extern const int INTERNAL_REDIS_ERROR;
-        extern const int UNKNOWN_TYPE;
     }
 
 
@@ -104,8 +103,6 @@ namespace DB
                 case ValueType::vtUUID:
                     assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
                     break;
-                default:
-                    throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
             }
         }
     }

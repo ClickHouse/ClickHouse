@@ -73,12 +73,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  فرض کنید ما چندین فایل را در قالب فیلم با اوریس زیر در اچ دی ها داریم:
 
--   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  راه های مختلفی برای ایجاد یک جدول متشکل از تمام شش فایل وجود دارد:
 

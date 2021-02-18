@@ -75,7 +75,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices_or_keys\]…) {#jsonhasjson-indices-or-keys}
+## JSONHas(json\[, indices\_or\_keys\]…) {#jsonhasjson-indices-or-keys}
 
 اگر مقدار در سند جسون وجود داشته باشد, `1` برگردانده خواهد شد.
 
@@ -108,7 +108,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices_or_keys\]…) {#jsonlengthjson-indices-or-keys}
+## JSONLength(json\[, indices\_or\_keys\]…) {#jsonlengthjson-indices-or-keys}
 
 بازگشت طول یک مجموعه جانسون یا یک شی جانسون.
 
@@ -121,7 +121,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices_or_keys\]…) {#jsontypejson-indices-or-keys}
+## JSONType(json\[, indices\_or\_keys\]…) {#jsontypejson-indices-or-keys}
 
 بازگشت به نوع یک مقدار جانسون.
 
@@ -135,13 +135,13 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices_or_keys\]…) {#jsonextractuintjson-indices-or-keys}
+## JSONExtractUInt(json\[, indices\_or\_keys\]…) {#jsonextractuintjson-indices-or-keys}
 
-## JSONExtractInt(json\[, indices_or_keys\]…) {#jsonextractintjson-indices-or-keys}
+## JSONExtractInt(json\[, indices\_or\_keys\]…) {#jsonextractintjson-indices-or-keys}
 
-## JSONExtractFloat(json\[, indices_or_keys\]…) {#jsonextractfloatjson-indices-or-keys}
+## JSONExtractFloat(json\[, indices\_or\_keys\]…) {#jsonextractfloatjson-indices-or-keys}
 
-## JSONExtractBool(json\[, indices_or_keys\]…) {#jsonextractbooljson-indices-or-keys}
+## JSONExtractBool(json\[, indices\_or\_keys\]…) {#jsonextractbooljson-indices-or-keys}
 
 تجزیه جانسون و استخراج ارزش. این توابع شبیه به `visitParam` توابع.
 
@@ -155,7 +155,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
-## JSONExtractString(json\[, indices_or_keys\]…) {#jsonextractstringjson-indices-or-keys}
+## JSONExtractString(json\[, indices\_or\_keys\]…) {#jsonextractstringjson-indices-or-keys}
 
 تجزیه جانسون و استخراج یک رشته. این تابع شبیه به `visitParamExtractString` توابع.
 
@@ -173,7 +173,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices_or_keys…\], Return_type) {#jsonextractjson-indices-or-keys-return-type}
+## JSONExtract(json\[, indices\_or\_keys…\], Return\_type) {#jsonextractjson-indices-or-keys-return-type}
 
 تجزیه یک جسون و استخراج یک مقدار از نوع داده داده داده کلیک.
 
@@ -194,7 +194,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
+## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], Value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
 تجزیه جفت کلید ارزش از یک جانسون که ارزش از نوع داده داده داده خانه عروسکی هستند.
 
@@ -204,7 +204,7 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)]
 ```
 
-## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
+## JSONExtractRaw(json\[, indices\_or\_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
 بازگرداندن بخشی از جانسون به عنوان رشته نامحدود.
 
@@ -216,7 +216,7 @@ SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8')
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-## JSONExtractArrayRaw(json\[, indices_or_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
+## JSONExtractArrayRaw(json\[, indices\_or\_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
 
 بازگرداندن مجموعه ای با عناصر از مجموعه جانسون,هر یک به عنوان رشته نامحدود نشان.
 

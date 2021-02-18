@@ -440,7 +440,7 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
             if (i < column_names.size())
                 column_name = column_names[i];
 
-            throw Exception("SummingSortedAlgorithm failed to read row " + toString(row_num)
+            throw Exception("MergingSortedBlockInputStream failed to read row " + toString(row_num)
                             + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
                             ErrorCodes::CORRUPTED_DATA);
         }
@@ -688,10 +688,10 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
             }
 
-            merged_data.startGroup(current->all_columns, current->getRow());
+            merged_data.startGroup(current->all_columns, current->pos);
         }
         else
-            merged_data.addRow(current->all_columns, current->getRow());
+            merged_data.addRow(current->all_columns, current->pos);
 
         if (!current->isLast())
         {

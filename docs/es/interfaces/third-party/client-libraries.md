@@ -9,7 +9,7 @@ toc_title: Client Libraries
     Yandex does **not** maintain the libraries listed below and haven’t done any extensive testing to ensure their quality.
 
 -   Python
-    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
@@ -45,7 +45,7 @@ toc_title: Client Libraries
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C#
+-   C\#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)

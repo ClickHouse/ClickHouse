@@ -10,7 +10,6 @@
 #include <common/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>

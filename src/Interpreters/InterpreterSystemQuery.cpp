@@ -3,7 +3,6 @@
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
@@ -22,7 +21,6 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -135,23 +133,13 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
 
-    if (volume_ptr && action_type == ActionLocks::PartsMerge)
+    if (table_id)
     {
-        volume_ptr->setAvoidMergesUserOverride(!start);
-    }
-    else if (table_id)
-    {
-        auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
-        if (table)
-        {
-            if (start)
-            {
-                manager->remove(table, action_type);
-                table->onActionLockRemove(action_type);
-            }
-            else
-                manager->add(table, action_type);
-        }
+        context.checkAccess(getRequiredAccessType(action_type), table_id);
+        if (start)
+            manager->remove(table_id, action_type);
+        else
+            manager->add(table_id, action_type);
     }
     else
     {
@@ -176,10 +164,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 }
 
                 if (start)
-                {
                     manager->remove(table, action_type);
-                    table->onActionLockRemove(action_type);
-                }
                 else
                     manager->add(table, action_type);
             }
@@ -213,10 +198,6 @@ BlockIO InterpreterSystemQuery::execute()
 
     if (!query.target_dictionary.empty() && !query.database.empty())
         query.target_dictionary = query.database + "." + query.target_dictionary;
-
-    volume_ptr = {};
-    if (!query.storage_policy.empty() && !query.volume.empty())
-        volume_ptr = context.getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
 
     switch (query.type)
     {
@@ -272,14 +253,6 @@ BlockIO InterpreterSystemQuery::execute()
             context.checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context.reloadConfig();
             break;
-        case Type::RELOAD_SYMBOLS:
-#if defined(__ELF__) && !defined(__FreeBSD__)
-            context.checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            (void)SymbolIndex::instance(true);
-            break;
-#else
-            throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
-#endif
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -348,8 +321,7 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
                     [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
                     [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                    [&] () { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
+                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -611,11 +583,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_CONFIG:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
-            break;
-        }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
             break;
         }
         case Type::STOP_MERGES: [[fallthrough]];

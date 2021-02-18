@@ -1,6 +1,6 @@
 ---
 toc_priority: 33
-toc_title: 聚合函数
+toc_title: 简介
 ---
 
 # 聚合函数 {#aggregate-functions}

@@ -7,7 +7,7 @@ toc_title: "MySQL Aray\xFCz\xFC"
 
 # MySQL Arayüzü {#mysql-interface}
 
-ClickHouse MySQL Tel protokolünü destekler. Tarafından etkinleştir canilebilir [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) yapılandırma dosyasında ayarlama:
+ClickHouse MySQL Tel protokolünü destekler. Tarafından etkinleştir canilebilir [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) yapılandırma dosyasında ayarlama:
 
 ``` xml
 <mysql_port>9004</mysql_port>

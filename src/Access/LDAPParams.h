@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include <chrono>
 
@@ -42,7 +42,6 @@ struct LDAPServerParams
 
     enum class SASLMechanism
     {
-        UNKNOWN,
         SIMPLE
     };
 

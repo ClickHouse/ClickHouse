@@ -36,7 +36,6 @@ public:
         RELOAD_DICTIONARIES,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
-        RELOAD_SYMBOLS,
         STOP_MERGES,
         START_MERGES,
         STOP_TTL_MERGES,
@@ -66,8 +65,6 @@ public:
     String replica;
     String replica_zk_path;
     bool is_drop_whole_replica;
-    String storage_policy;
-    String volume;
 
     String getID(char) const override { return "SYSTEM query"; }
 

@@ -99,7 +99,7 @@ ReturnType parseDateTimeBestEffortImpl(
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(message, code);
+            throw Exception(message, code);
         else
             return false;
     };
@@ -532,10 +532,6 @@ ReturnType parseDateTimeBestEffortImpl(
             }
         }
     }
-
-    /// If neither Date nor Time is parsed successfully, it should fail
-    if (!year && !month && !day_of_month && !has_time)
-        return on_error("Cannot read DateTime: neither Date nor Time was parsed successfully", ErrorCodes::CANNOT_PARSE_DATETIME);
 
     if (!year)
         year = 2000;

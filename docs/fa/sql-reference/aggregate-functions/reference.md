@@ -31,7 +31,7 @@ ClickHouse زیر پشتیبانی می کند syntaxes برای `count`:
 
 **اطلاعات دقیق**
 
-تاتر از `COUNT(DISTINCT ...)` نحو. رفتار این ساخت و ساز بستگی به [ا_فزونهها](../../operations/settings/settings.md#settings-count_distinct_implementation) تنظیمات. این تعریف می کند که کدام یک از [دانشگاه\*](#agg_function-uniq) توابع برای انجام عملیات استفاده می شود. به طور پیش فرض است [قرارداد اتحادیه](#agg_function-uniqexact) تابع.
+تاتر از `COUNT(DISTINCT ...)` نحو. رفتار این ساخت و ساز بستگی به [ا\_فزونهها](../../operations/settings/settings.md#settings-count_distinct_implementation) تنظیمات. این تعریف می کند که کدام یک از [دانشگاه\*](#agg_function-uniq) توابع برای انجام عملیات استفاده می شود. به طور پیش فرض است [قرارداد اتحادیه](#agg_function-uniqexact) تابع.
 
 این `SELECT count() FROM table` پرس و جو بهینه سازی شده نیست, چرا که تعداد ورودی در جدول به طور جداگانه ذخیره نمی. این ستون کوچک را از جدول انتخاب می کند و تعداد مقادیر موجود را شمارش می کند.
 
@@ -464,6 +464,69 @@ The kurtosis of the given distribution. Type — [جسم شناور64](../../sql
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
+## هشدار داده می شود) {#agg-function-timeseriesgroupsum}
+
+`timeSeriesGroupSum` می توانید سری های زمانی مختلف که برچسب زمان نمونه هم ترازی جمع نمی.
+این برون یابی خطی بین دو برچسب زمان نمونه و سپس مجموع زمان سری با هم استفاده کنید.
+
+-   `uid` سری زمان شناسه منحصر به فرد است, `UInt64`.
+-   `timestamp` است نوع درون64 به منظور حمایت میلی ثانیه یا میکروثانیه.
+-   `value` متریک است.
+
+تابع گرداند مجموعه ای از تاپل با `(timestamp, aggregated_value)` جفت
+
+قبل از استفاده از این تابع اطمینان حاصل کنید `timestamp` به ترتیب صعودی است.
+
+مثال:
+
+``` text
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+
+``` sql
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+
+و نتیجه خواهد بود:
+
+``` text
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## هشدار داده می شود) {#agg-function-timeseriesgroupratesum}
+
+به طور مشابه به `timeSeriesGroupSum`, `timeSeriesGroupRateSum` محاسبه نرخ زمان سری و سپس مجموع نرخ با هم.
+همچنین, برچسب زمان باید در جهت صعود قبل از استفاده از این تابع باشد.
+
+استفاده از این تابع به داده ها از `timeSeriesGroupSum` مثال, شما نتیجه زیر را دریافت کنید:
+
+``` text
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
+```
+
 ## میانگین) {#agg_function-avg}
 
 محاسبه متوسط.
@@ -658,7 +721,7 @@ uniqExact(x[, ...])
 -   [مخلوط نشده](#agg_function-uniqcombined)
 -   [یونقلل12](#agg_function-uniqhll12)
 
-## groupArray(x) groupArray(max_size)(x) {#agg_function-grouparray}
+## groupArray(x) groupArray(max\_size)(x) {#agg_function-grouparray}
 
 مجموعه ای از مقادیر استدلال را ایجاد می کند.
 مقادیر را می توان به ترتیب در هر (نامعین) اضافه کرد.
@@ -904,7 +967,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x) groupUniqArray(max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x) groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 مجموعه ای از مقادیر مختلف استدلال ایجاد می کند. مصرف حافظه همان است که برای `uniqExact` تابع.
 

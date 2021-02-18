@@ -26,7 +26,6 @@
     #define DISABLE_MREMAP 1
 #endif
 #include <common/mremap.h>
-#include <common/getPageSize.h>
 
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
@@ -60,6 +59,7 @@
   */
 extern const size_t MMAP_THRESHOLD;
 
+static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
 namespace DB
@@ -194,11 +194,10 @@ private:
     void * allocNoTrack(size_t size, size_t alignment)
     {
         void * buf;
-        size_t mmap_min_alignment = ::getPageSize();
 
         if (size >= MMAP_THRESHOLD)
         {
-            if (alignment > mmap_min_alignment)
+            if (alignment > MMAP_MIN_ALIGNMENT)
                 throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
                     ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
 

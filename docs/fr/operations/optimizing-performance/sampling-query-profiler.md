@@ -11,11 +11,11 @@ ClickHouse exécute un profileur d'échantillonnage qui permet d'analyser l'exé
 
 Utilisation du générateur de profils:
 
--   Installation de la [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) la section de la configuration du serveur.
+-   Installation de la [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) la section de la configuration du serveur.
 
-    Cette section configure le [trace_log](../../operations/system-tables.md#system_tables-trace_log) tableau système contenant les résultats du fonctionnement du profileur. Il est configuré par défaut. Rappelez-vous que les données de ce tableau est valable que pour un serveur en cours d'exécution. Après le redémarrage du serveur, ClickHouse ne nettoie pas la table et toute l'adresse de mémoire virtuelle stockée peut devenir invalide.
+    Cette section configure le [trace\_log](../../operations/system-tables.md#system_tables-trace_log) tableau système contenant les résultats du fonctionnement du profileur. Il est configuré par défaut. Rappelez-vous que les données de ce tableau est valable que pour un serveur en cours d'exécution. Après le redémarrage du serveur, ClickHouse ne nettoie pas la table et toute l'adresse de mémoire virtuelle stockée peut devenir invalide.
 
--   Installation de la [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) ou [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) paramètre. Les deux paramètres peuvent être utilisés simultanément.
+-   Installation de la [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) ou [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) paramètre. Les deux paramètres peuvent être utilisés simultanément.
 
     Ces paramètres vous permettent de configurer les minuteries du profileur. Comme il s'agit des paramètres de session, vous pouvez obtenir une fréquence d'échantillonnage différente pour l'ensemble du serveur, les utilisateurs individuels ou les profils d'utilisateurs, pour votre session interactive et pour chaque requête individuelle.
 
@@ -25,7 +25,7 @@ Pour analyser les `trace_log` système de table:
 
 -   Installer le `clickhouse-common-static-dbg` paquet. Voir [Installer à partir de paquets DEB](../../getting-started/install.md#install-from-deb-packages).
 
--   Autoriser les fonctions d'introspection par [allow_introspection_functions](../settings/settings.md#settings-allow_introspection_functions) paramètre.
+-   Autoriser les fonctions d'introspection par [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) paramètre.
 
     Pour des raisons de sécurité, les fonctions d'introspection sont désactivées par défaut.
 

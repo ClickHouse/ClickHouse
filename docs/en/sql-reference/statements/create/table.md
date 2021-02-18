@@ -1,5 +1,5 @@
 ---
-toc_priority: 36
+toc_priority: 2
 toc_title: TABLE
 ---
 
@@ -28,8 +28,6 @@ The structure of the table is a list of column descriptions, secondary indexes a
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
 Expressions can also be defined for default values (see below).
-
-If necessary, primary key can be specified, with one or more key expressions.
 
 ### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
@@ -99,34 +97,6 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-## Primary Key {#primary-key}
-
-You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
-
-- inside the column list
-
-``` sql
-CREATE TABLE db.table_name 
-( 
-    name1 type1, name2 type2, ..., 
-    PRIMARY KEY(expr1[, expr2,...])]
-) 
-ENGINE = engine;
-```
-
-- outside the column list
-
-``` sql
-CREATE TABLE db.table_name
-( 
-    name1 type1, name2 type2, ...
-) 
-ENGINE = engine
-PRIMARY KEY(expr1[, expr2,...]);
-```
-
-You can't combine both ways in one query.
-
 ## Constraints {#constraints}
 
 Along with columns descriptions constraints could be defined:
@@ -151,9 +121,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs {#codecs}
 
-By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
-
-You can also define the compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
 ``` sql
 CREATE TABLE codec_example
@@ -168,18 +136,7 @@ ENGINE = <Engine>
 ...
 ```
 
-The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) in runtime.
-Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
-
-Also you can remove current CODEC from the column and use default compression from config.xml:
-
-``` sql
-ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
-```
-
-Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
-
-To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type.
+If a codec is specified, the default codec doesn’t apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type. 
 
 !!! warning "Warning"
     You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.

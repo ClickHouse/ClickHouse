@@ -169,7 +169,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
         catch (Exception & e)
         {
-            e.addMessage(", while trying to set settings profile {}", profile_name);
+            e.addMessage(", while trying to set settings profile " + profile_name);
             throw;
         }
         return true;

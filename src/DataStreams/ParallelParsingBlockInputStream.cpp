@@ -17,7 +17,7 @@ ParallelParsingBlockInputStream::ParallelParsingBlockInputStream(const Params & 
       // Subtract one thread that we use for segmentation and one for
       // reading. After that, must have at least two threads left for
       // parsing. See the assertion below.
-      pool(std::max(2, static_cast<int>(params.max_threads) - 2)),
+      pool(std::max(2, params.max_threads - 2)),
       file_segmentation_engine(params.file_segmentation_engine)
 {
     // See comment above.
@@ -126,11 +126,8 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction(ThreadGroupStatu
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(
-                original_buffer, unit.segment, min_chunk_bytes);
-
-            unit.offset = successfully_read_rows_count;
-            successfully_read_rows_count += currently_read_rows;
+            const bool have_more_data = file_segmentation_engine(original_buffer,
+                unit.segment, min_chunk_bytes);
 
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
@@ -145,7 +142,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction(ThreadGroupStatu
     }
     catch (...)
     {
-        onBackgroundException(successfully_read_rows_count);
+        onBackgroundException();
     }
 }
 
@@ -160,11 +157,11 @@ void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr 
 
     setThreadName("ChunkParser");
 
-    const auto current_unit_number = current_ticket_number % processing_units.size();
-    auto & unit = processing_units[current_unit_number];
-
     try
     {
+        const auto current_unit_number = current_ticket_number % processing_units.size();
+        auto & unit = processing_units[current_unit_number];
+
         /*
          * This is kind of suspicious -- the input_process_creator contract with
          * respect to multithreaded use is not clear, but we hope that it is
@@ -198,22 +195,19 @@ void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr 
     }
     catch (...)
     {
-        onBackgroundException(unit.offset);
+        onBackgroundException();
     }
 }
 
-void ParallelParsingBlockInputStream::onBackgroundException(size_t offset)
+void ParallelParsingBlockInputStream::onBackgroundException()
 {
+    tryLogCurrentException(__PRETTY_FUNCTION__);
+
     std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
-
-        if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
-            if (e->getLineNumber() != -1)
-                e->setLineNumber(e->getLineNumber() + offset);
     }
-    tryLogCurrentException(__PRETTY_FUNCTION__);
     finished = true;
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();

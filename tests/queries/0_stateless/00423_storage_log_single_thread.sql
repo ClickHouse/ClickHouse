@@ -5,7 +5,7 @@ SELECT * FROM log LIMIT 1;
 SELECT * FROM log;
 
 DETACH TABLE log;
-ATTACH TABLE log;
+ATTACH TABLE log (s String) ENGINE = Log;
 
 SELECT * FROM log;
 SELECT * FROM log LIMIT 1;
@@ -15,13 +15,13 @@ INSERT INTO log VALUES ('Hello'), ('World');
 SELECT * FROM log LIMIT 1;
 
 DETACH TABLE log;
-ATTACH TABLE log;
+ATTACH TABLE log (s String) ENGINE = Log;
 
 SELECT * FROM log LIMIT 1;
 SELECT * FROM log;
 
 DETACH TABLE log;
-ATTACH TABLE log;
+ATTACH TABLE log (s String) ENGINE = Log;
 
 SELECT * FROM log;
 SELECT * FROM log LIMIT 1;

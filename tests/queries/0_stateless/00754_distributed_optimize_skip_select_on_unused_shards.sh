@@ -103,6 +103,3 @@ ${CLICKHOUSE_CLIENT} -n --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 OR c = 0;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE distributed"
-$CLICKHOUSE_CLIENT -q "DROP TABLE mergetree_00754"

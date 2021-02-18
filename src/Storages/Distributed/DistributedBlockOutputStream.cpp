@@ -10,7 +10,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -22,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
+#include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -138,28 +138,17 @@ void DistributedBlockOutputStream::write(const Block & block)
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
-    const Settings & settings = context.getSettingsRef();
-    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
+    if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
+        return writeSplitAsync(block);
 
-    if (random_shard_insert)
-    {
-        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
-    }
-    else
-    {
-
-        if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
-
-        writeAsyncImpl(block);
-        ++inserted_blocks;
-    }
+    writeAsyncImpl(block);
+    ++inserted_blocks;
 }
 
 
 std::string DistributedBlockOutputStream::getCurrentStateDescription()
 {
-    WriteBufferFromOwnString buffer;
+    std::stringstream buffer;
     const auto & addresses = cluster->getShardsAddresses();
 
     buffer << "Insertion status:\n";
@@ -186,18 +175,18 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 }
 
 
-void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, size_t start, size_t end)
+void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
     const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
-    size_t num_shards = end - start;
+    size_t num_shards = shards_info.size();
 
     remote_jobs_count = 0;
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    for (size_t shard_index : ext::range(start, end))
+    for (size_t shard_index : ext::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
@@ -253,11 +242,10 @@ void DistributedBlockOutputStream::waitForJobs()
 }
 
 
-ThreadPool::Job
-DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards)
+ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
     auto thread_group = CurrentThread::getGroup();
-    return [this, thread_group, &job, &current_block, num_shards]()
+    return [this, thread_group, &job, &current_block]()
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -274,6 +262,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
         });
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
+        size_t num_shards = cluster->getShardsInfo().size();
         auto & shard_job = per_shard_jobs[job.shard_index];
         const auto & addresses = cluster->getShardsAddresses();
 
@@ -367,19 +356,12 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 {
     const Settings & settings = context.getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
-    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
-    size_t start = 0, end = shards_info.size();
-    if (random_shard_insert)
-    {
-        start = storage.getRandomShardIndex(shards_info);
-        end = start + 1;
-    }
-    size_t num_shards = end - start;
+    size_t num_shards = shards_info.size();
 
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs(block, start, end);
+        initWritingJobs(block);
 
         pool.emplace(remote_jobs_count + local_jobs_count);
 
@@ -412,7 +394,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : ext::range(0, shards_info.size()))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
+                pool->scheduleOrThrowOnError(runWritingJob(job, block));
     }
     catch (...)
     {
@@ -542,14 +524,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
         else
-        {
-            const auto & path = shard_info.insertPathForInternalReplication(
-                settings.prefer_localhost_replica,
-                settings.use_compact_format_in_distributed_parts_names);
-            if (path.empty())
-                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(block, {path});
-        }
+            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
     }
     else
     {
@@ -586,7 +561,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
+    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
     auto disk = reservation->getDisk()->getPath();
     auto data_path = storage.getRelativeDataPath();
 
@@ -608,16 +583,16 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         {
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out};
-            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
             /// Prepare the header.
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
             WriteBufferFromOwnString header_buf;
-            writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
+            writeVarUInt(ClickHouseRevision::get(), header_buf);
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().write(header_buf);
-            context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

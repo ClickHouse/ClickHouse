@@ -31,12 +31,12 @@ Sonuç türü Uint64'tür.
 Dizenin UTF-8 kodlanmış metni oluşturan bir bayt kümesi içerdiğini varsayarak, Unicode kod noktalarında (karakterlerde değil) bir dizenin uzunluğunu döndürür. Bu varsayım karşılanmazsa, bir sonuç döndürür (bir istisna atmaz).
 Sonuç türü Uint64'tür.
 
-## char_length, CHAR_LENGTH {#char-length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Dizenin UTF-8 kodlanmış metni oluşturan bir bayt kümesi içerdiğini varsayarak, Unicode kod noktalarında (karakterlerde değil) bir dizenin uzunluğunu döndürür. Bu varsayım karşılanmazsa, bir sonuç döndürür (bir istisna atmaz).
 Sonuç türü Uint64'tür.
 
-## character_length, CHARACTER_LENGTH {#character-length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Dizenin UTF-8 kodlanmış metni oluşturan bir bayt kümesi içerdiğini varsayarak, Unicode kod noktalarında (karakterlerde değil) bir dizenin uzunluğunu döndürür. Bu varsayım karşılanmazsa, bir sonuç döndürür (bir istisna atmaz).
 Sonuç türü Uint64'tür.
@@ -77,7 +77,7 @@ toValidUTF8( input_string )
 
 Parametre:
 
--   input_string — Any set of bytes represented as the [Dize](../../sql-reference/data-types/string.md) veri türü nesnesi.
+-   input\_string — Any set of bytes represented as the [Dize](../../sql-reference/data-types/string.md) veri türü nesnesi.
 
 Döndürülen değer: geçerli UTF-8 dizesi.
 
