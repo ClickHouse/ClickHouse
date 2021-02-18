@@ -11,7 +11,7 @@ namespace DB
 class NuKeeperLogStore : public nuraft::log_store
 {
 public:
-    NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_);
+    NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_, bool force_sync_);
 
     void init(size_t from_log_idx);
 
@@ -44,6 +44,7 @@ public:
 private:
     mutable std::mutex changelog_lock;
     Changelog changelog;
+    bool force_sync;
 };
 
 }

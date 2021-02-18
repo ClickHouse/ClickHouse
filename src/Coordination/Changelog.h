@@ -64,9 +64,9 @@ public:
 
     void readChangelogAndInitWriter(size_t from_log_idx);
 
-    void appendEntry(size_t index, LogEntryPtr log_entry);
+    void appendEntry(size_t index, LogEntryPtr log_entry, bool force_sync);
 
-    void writeAt(size_t index, LogEntryPtr log_entry);
+    void writeAt(size_t index, LogEntryPtr log_entry, bool force_sync);
 
     void compact(size_t up_to_log_idx);
 
@@ -88,7 +88,7 @@ public:
 
     nuraft::ptr<nuraft::buffer> serializeEntriesToBuffer(size_t index, int32_t cnt);
 
-    void applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer);
+    void applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer, bool force_sync);
 
     void flush();
 

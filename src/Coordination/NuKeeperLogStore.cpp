@@ -3,8 +3,9 @@
 namespace DB
 {
 
-NuKeeperLogStore::NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_)
+NuKeeperLogStore::NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_, bool force_sync_)
     : changelog(changelogs_path, rotate_interval_)
+    , force_sync(force_sync_)
 {
 }
 
@@ -36,7 +37,7 @@ size_t NuKeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 {
     std::lock_guard lock(changelog_lock);
     size_t idx = changelog.getNextEntryIndex();
-    changelog.appendEntry(idx, entry);
+    changelog.appendEntry(idx, entry, force_sync);
     return idx;
 }
 
@@ -44,7 +45,7 @@ size_t NuKeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 void NuKeeperLogStore::write_at(size_t index, nuraft::ptr<nuraft::log_entry> & entry)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.writeAt(index, entry);
+    changelog.writeAt(index, entry, force_sync);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> NuKeeperLogStore::log_entries(size_t start, size_t end)
@@ -91,7 +92,7 @@ bool NuKeeperLogStore::flush()
 void NuKeeperLogStore::apply_pack(size_t index, nuraft::buffer & pack)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.applyEntriesFromBuffer(index, pack);
+    changelog.applyEntriesFromBuffer(index, pack, force_sync);
 }
 
 size_t NuKeeperLogStore::size() const

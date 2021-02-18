@@ -9,6 +9,7 @@
             <session_timeout_ms>30000</session_timeout_ms>
             <snapshot_distance>0</snapshot_distance>
             <reserved_log_items>0</reserved_log_items>
+            <force_sync>false</force_sync>
         </coordination_settings>
 
         <raft_configuration>
