@@ -28,7 +28,15 @@ SELECT 'Integer and String types';
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt8('1') as a;
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt8('11') as a;
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt16('11') as a;
+SELECT 'Dates';
+SELECT reinterpret(0, 'Date'), reinterpret('', 'Date');
+SELECT reinterpret(0, 'DateTime'), reinterpret('', 'DateTime');
+SELECT reinterpret(0, 'DateTime64'), reinterpret('', 'DateTime64');
+SELECT 'Decimals';
+SELECT reinterpret(toDecimal32(5, 2), 'Decimal32(2)'), reinterpret('1', 'Decimal32(2)');
+SELECT reinterpret(toDecimal64(5, 2), 'Decimal64(2)'), reinterpret('1', 'Decimal64(2)');;
+SELECT reinterpret(toDecimal128(5, 2), 'Decimal128(2)'), reinterpret('1', 'Decimal128(2)');
+SELECT reinterpret(toDecimal256(5, 2), 'Decimal256(2)'), reinterpret('1', 'Decimal256(2)');
+SELECT reinterpret(toDateTime64(0, 0), 'Decimal64(2)');
 SELECT 'ReinterpretErrors';
-SELECT reinterpret(toDecimal64(1, 2), 'UInt8'); -- {serverError 43}
 SELECT reinterpret('123', 'FixedString(1)'); -- {serverError 43}
-SELECT reinterpret(toDateTime('9922337203.6854775808', 1), 'Decimal64(1)'); -- {serverError 43}

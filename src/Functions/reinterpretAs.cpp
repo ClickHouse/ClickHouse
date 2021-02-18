@@ -11,10 +11,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
@@ -158,7 +161,7 @@ public:
                 {
                     const auto * col_from = assert_cast<const ColumnString *>(arguments[0].column.get());
 
-                    auto col_res = ToColumnType::create();
+                    auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
 
                     const ColumnString::Chars & data_from = col_from->getChars();
                     const ColumnString::Offsets & offsets_from = col_from->getOffsets();
@@ -185,7 +188,7 @@ public:
                 {
                     const auto * col_from_fixed = assert_cast<const ColumnFixedString *>(arguments[0].column.get());
 
-                    auto col_res = ToColumnType::create();
+                    auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
 
                     const ColumnString::Chars & data_from = col_from_fixed->getChars();
                     size_t step = col_from_fixed->getN();
@@ -209,12 +212,27 @@ public:
                 }
                 else if constexpr (CanBeReinterpretedAsNumeric<FromType>)
                 {
-                    using FromTypeFieldType = typename FromType::FieldType;
-                    const auto * col = assert_cast<const ColumnVector<FromTypeFieldType>*>(arguments[0].column.get());
+                    using From = typename FromType::FieldType;
+                    using To = typename ToType::FieldType;
 
-                    auto col_res = ToColumnType::create();
-                    reinterpretImpl(col->getData(), col_res->getData());
-                    result = std::move(col_res);
+                    using FromColumnType = std::conditional_t<IsDecimalNumber<From>, ColumnDecimal<From>, ColumnVector<From>>;
+
+                    const auto * column_from = assert_cast<const FromColumnType*>(arguments[0].column.get());
+
+                    auto column_to = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
+
+                    auto & from = column_from->getData();
+                    auto & to = column_to->getData();
+
+                    size_t size = from.size();
+                    to.resize_fill(size);
+
+                    static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+
+                    for (size_t i = 0; i < size; ++i)
+                        memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+
+                    result = std::move(column_to);
 
                     return true;
                 }
@@ -232,7 +250,7 @@ public:
 private:
     template <typename T>
     static constexpr auto CanBeReinterpretedAsNumeric =
-        IsDataTypeNumber<T> ||
+        IsDataTypeDecimalOrNumber<T> ||
         std::is_same_v<T, DataTypeDate> ||
         std::is_same_v<T, DataTypeDateTime> ||
         std::is_same_v<T, DataTypeUUID>;
@@ -243,7 +261,8 @@ private:
             type.isInt() ||
             type.isDateOrDateTime() ||
             type.isFloat() ||
-            type.isUUID();
+            type.isUUID() ||
+            type.isDecimal();
     }
 
     static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
@@ -296,18 +315,32 @@ private:
         }
     }
 
-    template <typename From, typename To>
-    static void reinterpretImpl(const PaddedPODArray<From> & from, PaddedPODArray<To> & to)
+    template <typename Type>
+    static typename Type::ColumnType::MutablePtr numericColumnCreateHelper(const Type & type)
     {
+        size_t column_size = 0;
+
+        using ColumnType = typename Type::ColumnType;
+
+        if constexpr (IsDataTypeDecimal<Type>)
+            return ColumnType::create(column_size, type.getScale());
+        else
+            return ColumnType::create(column_size);
+    }
+
+    template <typename FromContainer, typename ToContainer>
+    static void reinterpretImpl(const FromContainer & from, ToContainer & to)
+    {
+        using From = typename FromContainer::value_type;
+        using To = typename ToContainer::value_type;
+
         size_t size = from.size();
         to.resize_fill(size);
 
+        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+
         for (size_t i = 0; i < size; ++i)
-        {
-            memcpy(static_cast<void*>(&to[i]),
-                static_cast<const void*>(&from[i]),
-                std::min(sizeof(From), sizeof(To)));
-        }
+            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
     }
 };
 
