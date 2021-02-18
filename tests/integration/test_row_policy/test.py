@@ -107,6 +107,7 @@ def test_cannot_trick_row_policy_with_keyword_with():
     assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1") == TSV([[0, 0], [0, 1]])
     assert node.query("WITH 0 AS a SELECT a FROM mydb.filtered_table1") == TSV([[0], [0]])
     assert node.query("WITH 0 AS a SELECT b FROM mydb.filtered_table1") == TSV([[0], [1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a IN(0, 1) WHERE b IN(0, 1)") == TSV([[0], [1]])
 
 
 def test_policy_from_users_xml_affects_only_user_assigned():
@@ -119,6 +120,38 @@ def test_policy_from_users_xml_affects_only_user_assigned():
 
     assert node.query("SELECT * FROM mydb.local") == TSV([[1, 0], [1, 1], [2, 0], [2, 1]])
     assert node.query("SELECT * FROM mydb.local", user="another") == TSV([[1, 0], [1, 1]])
+
+
+def test_with_prewhere():
+    copy_policy_xml('normal_filters.xml')
+    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE a > 1") == TSV([[4, 5, 2, 1]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 WHERE a > 1") == TSV([[4]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 WHERE a > 1") == TSV([[4, 5]])
+    assert node.query("SELECT b, c FROM mydb.filtered_table2 WHERE a > 1") == TSV([[5, 2]])
+    assert node.query("SELECT d FROM mydb.filtered_table2 WHERE a > 1") == TSV([[1]])
+
+    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4, 5, 2, 1]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4, 5]])
+    assert node.query("SELECT b, c FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[5, 2]])
+    assert node.query("SELECT d FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[1]])
+
+    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 2, 3, 4]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1]])
+    assert node.query("SELECT b FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[2]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 2]])
+    assert node.query("SELECT a, c FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 3]])
+    assert node.query("SELECT b, d FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[2, 4]])
+    assert node.query("SELECT c, d FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[3, 4]])
+
+
+def test_with_throwif_in_prewhere():
+    copy_policy_xml('no_filters.xml')
+    assert 'expected' in node.query_and_get_error("SELECT throwIf(a = 0, 'expected') FROM mydb.filtered_table2 PREWHERE b < 10")
+
+    copy_policy_xml('normal_filters.xml')
+    assert node.query("SELECT throwIf(a = 0, 'pwned') FROM mydb.filtered_table2 PREWHERE b < 10") == TSV([
+        [4, 5, 2, 1], [1, 2, 3, 4]])
 
 
 def test_change_of_users_xml_changes_row_policies():
