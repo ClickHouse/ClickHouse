@@ -936,7 +936,8 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
 
     /// Rewrite function names to their canonical ones.
-    FunctionNameNormalizer().visit(query.get());
+    if (settings.normalize_function_names)
+        FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, settings);
