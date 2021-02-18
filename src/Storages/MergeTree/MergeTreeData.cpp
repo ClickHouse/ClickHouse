@@ -3012,8 +3012,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-    auto reservation = getStoragePolicy()->reserve(expected_size);
-    return checkAndReturnReservation(expected_size, std::move(reservation));
+    return getStoragePolicy()->reserveAndCheck(expected_size);
 }
 
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)
