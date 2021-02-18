@@ -54,19 +54,30 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeDate>();
     else if (type.starts_with("numeric"))
     {
-        /// Numeric and decimal will both end up here as numeric.
-        res = DataTypeFactory::instance().get(type);
-        uint32_t precision = getDecimalPrecision(*res);
-        uint32_t scale = getDecimalScale(*res);
+        /// Numeric and decimal will both end up here as numeric. If it has type and precision,
+        /// there will be Numeric(x, y), otherwise just Numeric
+        uint32_t precision, scale;
+        if (type.ends_with(")"))
+        {
+            res = DataTypeFactory::instance().get(type);
+            precision = getDecimalPrecision(*res);
+            scale = getDecimalScale(*res);
 
-        if (precision <= DecimalUtils::maxPrecision<Decimal32>())
-            res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
-            res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
-            res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
-            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            if (precision <= DecimalUtils::maxPrecision<Decimal32>())
+                res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
+            else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
+                res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
+            else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
+                res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+            else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
+                res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+        }
+        else
+        {
+            precision = DecimalUtils::maxPrecision<Decimal128>();
+            res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, precision);
+        }
+
     }
 
     if (!res)
