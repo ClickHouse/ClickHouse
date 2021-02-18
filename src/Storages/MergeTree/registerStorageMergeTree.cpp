@@ -673,6 +673,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     + " is lesser than specified min_index_granularity_bytes: " + std::to_string(min_index_granularity_bytes),
                 ErrorCodes::BAD_ARGUMENTS);
         }
+
+        // Pre-define a reasonable minimum size for the JBOD rebalancer
+        static constexpr size_t MIN_BYTES_TO_REBALANCE_OVER_JBOD = 100 * 1024 * 1024;
+        if (storage_settings->min_bytes_to_rebalance_partition_over_jbod > 0
+            && storage_settings->min_bytes_to_rebalance_partition_over_jbod < MIN_BYTES_TO_REBALANCE_OVER_JBOD)
+        {
+            throw Exception(
+                "min_bytes_to_rebalance_partition_over_jbod: "
+                    + std::to_string(storage_settings->min_bytes_to_rebalance_partition_over_jbod) + " is lesser than "
+                    + std::to_string(MIN_BYTES_TO_REBALANCE_OVER_JBOD),
+                ErrorCodes::BAD_ARGUMENTS);
+        }
     }
     else
     {
