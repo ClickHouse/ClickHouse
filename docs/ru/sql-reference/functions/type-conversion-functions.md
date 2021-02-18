@@ -746,7 +746,7 @@ SELECT parseDateTimeBestEffortUSOrNull('10.2021') AS parseDateTimeBestEffortUSOr
 
 ## parseDateTimeBestEffortUSOrZero {#parsedatetimebesteffortusorzero}
 
-Похожа на функцию [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но разница в том, что возвращает нулевую дату или нулевую дату со временем, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
+Работает аналогично функции [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но в отличие от нее возвращает нулевую дату или нулевую дату со временем, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Синтаксис**
 
