@@ -1,5 +1,5 @@
 ---
-title: Questions about ClickHouse use cases
+title: Вопросы о применении ClickHouse
 toc_hidden_folder: true
 toc_priority: 2
 toc_title: Применение
@@ -9,6 +9,5 @@ toc_title: Применение
 
 Вопросы:
 
--   Can I use ClickHouse as a time-series database?
--   Can I use ClickHouse as a key-value storage?
-
+-   [Можно ли пользоваться ClickHouse как базой данных временных рядов?](time-series.md)
+-   [Можно ли использовать ClickHouse как хранилище вида "ключ-значение"?](key-value.md)
