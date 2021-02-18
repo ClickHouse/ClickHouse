@@ -70,14 +70,14 @@ def query_with_id(node, id_, query, **kwargs):
 # @return -- [user, initial_user]
 def get_query_user_info(node, query_pattern):
     node.query("SYSTEM FLUSH LOGS")
-    return node.query("""
+    return list(map(lambda x: x.split('\t'), node.query("""
     SELECT user, initial_user
     FROM system.query_log
     WHERE
         query LIKE '%{}%' AND
         query NOT LIKE '%system.query_log%' AND
         type = 'QueryFinish'
-    """.format(query_pattern)).strip().split('\t')
+    """.format(query_pattern)).strip().split('\n')))
 
 # @return -- settings
 def get_query_setting_on_shard(node, query_pattern, setting):
@@ -153,15 +153,15 @@ def test_secure_disagree_insert():
 def test_user_insecure_cluster(user, password):
     id_ = 'query-dist_insecure-' + user
     query_with_id(n1, id_, 'SELECT * FROM dist_insecure', user=user, password=password)
-    assert get_query_user_info(n1, id_) == [user, user] # due to prefer_localhost_replica
-    assert get_query_user_info(n2, id_) == ['default', user]
+    assert get_query_user_info(n1, id_) == [[user, user], [user, user]] # due to prefer_localhost_replica
+    assert get_query_user_info(n2, id_) == [['default', user]]
 
 @users
 def test_user_secure_cluster(user, password):
     id_ = 'query-dist_secure-' + user
     query_with_id(n1, id_, 'SELECT * FROM dist_secure', user=user, password=password)
-    assert get_query_user_info(n1, id_) == [user, user]
-    assert get_query_user_info(n2, id_) == [user, user]
+    assert get_query_user_info(n1, id_) == [[user, user], [user, user]]
+    assert get_query_user_info(n2, id_) == [[user, user]]
 
 @users
 def test_per_user_inline_settings_insecure_cluster(user, password):
