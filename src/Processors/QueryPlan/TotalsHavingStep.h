@@ -28,6 +28,8 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
+    const ActionsDAGPtr & getActions() const { return actions_dag; }
+
 private:
     bool overflow_row;
     ActionsDAGPtr actions_dag;

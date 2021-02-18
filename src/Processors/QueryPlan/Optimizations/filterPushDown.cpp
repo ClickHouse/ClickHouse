@@ -5,14 +5,17 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/MergingSortedStep.h>
+#include <Processors/QueryPlan/PartialSortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Common/typeid_cast.h>
-#include "Processors/QueryPlan/FinishSortingStep.h"
-#include "Processors/QueryPlan/MergeSortingStep.h"
-#include "Processors/QueryPlan/MergingSortedStep.h"
-#include "Processors/QueryPlan/PartialSortingStep.h"
-#include <Processors/QueryPlan/DistinctStep.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+
 #include <Columns/IColumn.h>
 
 namespace DB::ErrorCodes
@@ -131,6 +134,31 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         const auto & params = aggregating->getParams();
         Names keys = getAggregatinKeys(params);
 
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
+            return updated_steps;
+    }
+
+    if (auto * totals_having = typeid_cast<TotalsHavingStep *>(child.get()))
+    {
+        /// If totals step has HAVING expression, skip it for now.
+        /// TODO:
+        /// We can merge HAING expression with current filer.
+        /// Alos, we can push down part of HAVING which depend only on aggregation keys.
+        if (totals_having->getActions())
+            return 0;
+
+        Names keys;
+        const auto & header = totals_having->getInputStreams().front().header;
+        for (const auto & column : header)
+            if (typeid_cast<const DataTypeAggregateFunction *>(column.type.get()) == nullptr)
+                keys.push_back(column.name);
+
+        /// NOTE: this optimization changes TOTALS value. Example:
+        ///   `select * from (select y, sum(x) from (
+        ///        select number as x, number % 4 as y from numbers(10)
+        ///    ) group by y with totals) where y != 2`
+        /// Optimization will replace totals row `y, sum(x)` from `(0, 45)` to `(0, 37)`.
+        /// It is expected to ok, cause AST optimization `enable_optimize_predicate_expression = 1` also brakes it.
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
             return updated_steps;
     }

@@ -112,3 +112,12 @@ PartialSorting
 Filter column: and(notEquals(x, 0), notEquals(y, 0))
 1	2
 1	1
+> filter is pushed down before TOTALS HAVING and aggregating
+TotalsHaving
+Aggregating
+Filter column: notEquals(y, 2)
+0	12
+1	15
+3	10
+
+0	37
