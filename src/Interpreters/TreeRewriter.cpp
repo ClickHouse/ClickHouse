@@ -365,6 +365,19 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 }
 
+TreeRewriterResult::TreeRewriterResult(
+    const NamesAndTypesList & source_columns_,
+    ConstStoragePtr storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    bool add_special)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , source_columns(source_columns_)
+{
+    collectSourceColumns(add_special);
+    is_remote_storage = storage && storage->isRemote();
+}
+
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
 /// Special columns are non physical columns, for example ALIAS
 void TreeRewriterResult::collectSourceColumns(bool add_special)
