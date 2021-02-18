@@ -27,7 +27,7 @@ url(URL, format, structure)
 
 **Примеры**
 
-Получение первых 3 строк таблицы, содержащей столбцы типа `String` и [UInt32](../../sql-reference/data-types/int-uint.md), с HTTP-сервера в формате [CSV](../../interfaces/formats.md/#csv).
+Получение с HTTP-сервера первых 3 строк таблицы с данными в формате [CSV](../../interfaces/formats.md/#csv), содержащей столбцы типа [String](../../sql-reference/data-types/string.md) и [UInt32](../../sql-reference/data-types/int-uint.md).
 
 ``` sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3;
