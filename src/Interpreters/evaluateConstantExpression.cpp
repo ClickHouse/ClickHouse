@@ -36,7 +36,10 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     auto ast = node->clone();
     ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(ast);
-    FunctionNameNormalizer().visit(ast.get());
+
+    if (context.getSettingsRef().normalize_function_names)
+        FunctionNameNormalizer().visit(ast.get());
+
     String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();

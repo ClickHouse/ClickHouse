@@ -1133,6 +1133,12 @@ void TCPHandler::receiveQuery()
     }
     query_context->applySettingsChanges(settings_changes);
 
+    /// Disable function name normalization it's not an initial query.
+    if (client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        query_context->setSetting("normalize_function_names", Field(0));
+    }
+
     // Use the received query id, or generate a random default. It is convenient
     // to also generate the default OpenTelemetry trace id at the same time, and
     // set the trace parent.
