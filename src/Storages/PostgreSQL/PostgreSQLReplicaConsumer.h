@@ -83,8 +83,8 @@ private:
 
     using Buffers = std::unordered_map<String, BufferData>;
 
-    void insertDefaultValue(BufferData & buffer, size_t column_idx);
-    void insertValue(BufferData & buffer, const std::string & value, size_t column_idx);
+    static void insertDefaultValue(BufferData & buffer, size_t column_idx);
+    static void insertValue(BufferData & buffer, const std::string & value, size_t column_idx);
 
     enum class PostgreSQLQuery
     {
@@ -95,11 +95,11 @@ private:
 
     void readTupleData(BufferData & buffer, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
 
-    void readString(const char * message, size_t & pos, size_t size, String & result);
-    Int64 readInt64(const char * message, size_t & pos, size_t size);
-    Int32 readInt32(const char * message, size_t & pos, size_t size);
-    Int16 readInt16(const char * message, size_t & pos, size_t size);
-    Int8 readInt8(const char * message, size_t & pos, size_t size);
+    static void readString(const char * message, size_t & pos, size_t size, String & result);
+    static Int64 readInt64(const char * message, size_t & pos, size_t size);
+    static Int32 readInt32(const char * message, size_t & pos, size_t size);
+    static Int16 readInt16(const char * message, size_t & pos, size_t size);
+    static Int8 readInt8(const char * message, size_t & pos, size_t size);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;

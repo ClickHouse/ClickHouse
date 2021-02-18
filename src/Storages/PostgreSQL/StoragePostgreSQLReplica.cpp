@@ -95,7 +95,7 @@ std::string StoragePostgreSQLReplica::getNestedTableName() const
 
 
 std::shared_ptr<ASTColumnDeclaration> StoragePostgreSQLReplica::getMaterializedColumnsDeclaration(
-        const String name, const String type, UInt64 default_value) const
+        const String name, const String type, UInt64 default_value)
 {
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 

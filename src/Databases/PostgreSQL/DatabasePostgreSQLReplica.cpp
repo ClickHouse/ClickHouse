@@ -96,7 +96,7 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
 
         if (storage)
         {
-            replication_handler->addStorage(table_name, storage.get()->template as<StoragePostgreSQLReplica>());
+            replication_handler->addStorage(table_name, storage->template as<StoragePostgreSQLReplica>());
             tables[table_name] = storage;
         }
     }

@@ -78,8 +78,8 @@ protected:
         std::unique_ptr<PostgreSQLReplicaSettings> replication_settings_);
 
 private:
-    std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            const String name, const String type, UInt64 default_value) const;
+    static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
+            const String name, const String type, UInt64 default_value);
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 
