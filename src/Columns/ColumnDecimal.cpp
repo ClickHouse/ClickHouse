@@ -356,7 +356,7 @@ ColumnPtr ColumnDecimal<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());

@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-std::shared_ptr<Memory<>> ColumnCompressed::compressBuffer(const void * data, size_t data_size)
+std::shared_ptr<Memory<>> ColumnCompressed::compressBuffer(const void * data, size_t data_size, bool always_compress)
 {
     size_t max_dest_size = LZ4_COMPRESSBOUND(data_size);
 
@@ -34,7 +34,7 @@ std::shared_ptr<Memory<>> ColumnCompressed::compressBuffer(const void * data, si
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column");
 
     /// If compression is inefficient.
-    if (static_cast<size_t>(compressed_size) * 2 > data_size)
+    if (!always_compress && static_cast<size_t>(compressed_size) * 2 > data_size)
         return {};
 
     /// Shrink to fit.

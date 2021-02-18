@@ -535,24 +535,13 @@ ColumnPtr ColumnString::compress() const
     if (source_chars_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size);
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size);
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
 
     /// Return original column if not compressable.
-    if (!chars_compressed && !offsets_compressed)
+    if (!chars_compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    if (!chars_compressed)
-    {
-        chars_compressed = std::make_shared<Memory<>>(source_chars_size);
-        memcpy(chars_compressed->data(), chars.data(), source_chars_size);
-    }
-
-    if (!offsets_compressed)
-    {
-        offsets_compressed = std::make_shared<Memory<>>(source_offsets_size);
-        memcpy(offsets_compressed->data(), offsets.data(), source_offsets_size);
-    }
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
 
     return ColumnCompressed::create(offsets.size(), chars_compressed->size() + offsets_compressed->size(),
         [
@@ -575,7 +564,6 @@ ColumnPtr ColumnString::compress() const
 
             return res;
         });
-
 }
 
 
