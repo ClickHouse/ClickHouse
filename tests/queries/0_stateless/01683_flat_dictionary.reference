@@ -53,26 +53,6 @@ dictGet
 1
 1
 2
-dictIsIn
-Check [1] in [0, 1, 2]
-0
-1
-0
-Check [2] in [0, 1, 2]
-0
-1
-1
-Check [3] in [0, 1, 2]
-0
-1
-0
-Check [3, 4] in [0, 1, 2]
-0
-1
-0
-1
-1
-1
 dictGetHierarchy
 [1]
 [4,2,1]
