@@ -101,6 +101,8 @@ private:
     static Int16 readInt16(const char * message, size_t & pos, size_t size);
     static Int8 readInt8(const char * message, size_t & pos, size_t size);
 
+    void markTableAsSkippedUntilReload(Int32 relation_id, const String & relation_name);
+
     Poco::Logger * log;
     std::shared_ptr<Context> context;
     const std::string replication_slot_name, publication_name;
@@ -119,6 +121,20 @@ private:
 
     Storages storages;
     Buffers buffers;
+
+    std::unordered_map<Int32, String> relation_id_to_name;
+
+    struct SchemaData
+    {
+        Int16 number_of_columns;
+        /// data_type_id and type_modifier
+        std::vector<std::pair<Int32, Int32>> column_identifiers;
+
+        SchemaData(Int16 number_of_columns_) : number_of_columns(number_of_columns_) {}
+    };
+
+    std::unordered_map<Int32, SchemaData> schema_data;
+    std::unordered_set<Int32> skip_until_reload;
 };
 
 }

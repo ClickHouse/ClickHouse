@@ -2,6 +2,7 @@ import pytest
 import time
 import psycopg2
 import os.path as p
+import random
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -14,6 +15,10 @@ instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
     key Integer NOT NULL, value Integer, PRIMARY KEY(key))
+    """
+postgres_table_template_2 = """
+    CREATE TABLE IF NOT EXISTS {} (
+    key Integer NOT NULL, value1 Integer, value2 Integer, value3 Integer, PRIMARY KEY(key))
     """
 
 def get_postgres_conn(database=False):
@@ -31,9 +36,9 @@ def create_postgres_db(cursor, name):
     cursor.execute("CREATE DATABASE {}".format(name))
 
 
-def create_postgres_table(cursor, table_name, replica_identity_full=False):
+def create_postgres_table(cursor, table_name, replica_identity_full=False, template=postgres_table_template):
     cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
-    cursor.execute(postgres_table_template.format(table_name))
+    cursor.execute(template.format(table_name))
     if replica_identity_full:
         cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
 
@@ -83,6 +88,7 @@ def postgresql_setup_teardown():
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
 
 
+@pytest.mark.timeout(120)
 def test_load_and_sync_all_database_tables(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -109,6 +115,7 @@ def test_load_and_sync_all_database_tables(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
+@pytest.mark.timeout(120)
 def test_replicating_dml(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -151,6 +158,7 @@ def test_replicating_dml(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
+@pytest.mark.timeout(120)
 def test_different_data_types(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -190,6 +198,13 @@ def test_different_data_types(started_cluster):
     check_tables_are_synchronized('test_data_types', 'id');
     result = instance.query('SELECT * FROM test_database.test_data_types ORDER BY id LIMIT 1;')
     assert(result == '0\t-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t0.20000\t0.20000\n')
+
+    for i in range(10):
+        col = random.choice(['a', 'b', 'c'])
+        cursor.execute('UPDATE test_data_types SET {} = {};'.format(col, i))
+        cursor.execute('''UPDATE test_data_types SET i = '2020-12-12';'''.format(col, i))
+
+    check_tables_are_synchronized('test_data_types', 'id');
     cursor.execute('drop table test_data_types;')
 
     instance.query("INSERT INTO postgres_database.test_array_data_type "
@@ -227,6 +242,7 @@ def test_different_data_types(started_cluster):
     assert(result == expected)
 
 
+@pytest.mark.timeout(120)
 def test_load_and_sync_subset_of_database_tables(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -277,6 +293,34 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
     instance.query("DROP DATABASE test_database")
     assert 'test_database' not in instance.query('SHOW DATABASES')
+
+
+@pytest.mark.timeout(120)
+def test_table_schema_changes(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    NUM_TABLES = 5
+
+    for i in range(NUM_TABLES):
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i), template=postgres_table_template_2);
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {}, {}, {} from numbers(50)".format(i, i, i, i))
+
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+
+    cursor.execute("ALTER TABLE postgresql_replica_3 DROP COLUMN value2")
+
+    for i in range(NUM_TABLES):
+        cursor.execute("INSERT INTO postgresql_replica_{} VALUES (50, {}, {})".format(i, i, i))
+        cursor.execute("UPDATE postgresql_replica_{} SET value3 = 12 WHERE key%2=0".format(i))
+
+    # Wait to check nothing breaks
+    time.sleep(5)
+    # TODO
 
 
 if __name__ == '__main__':
