@@ -16,7 +16,6 @@ using namespace DB;
 struct NuKeeperStorageRequest;
 using NuKeeperStorageRequestPtr = std::shared_ptr<NuKeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenRefSet = std::unordered_set<std::string_view>;
 
 class NuKeeperStorage
 {
@@ -31,7 +30,6 @@ public:
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
-        ChildrenRefSet children;
     };
 
     struct ResponseForSession
@@ -50,9 +48,9 @@ public:
 
     using RequestsForSessions = std::vector<RequestForSession>;
 
-    using Container = std::unordered_map<std::string, Node>;
-    using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+    using Container = std::map<std::string, Node>;
+    using Ephemerals = std::unordered_map<int64_t, std::unordered_set<String>>;
+    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<String>>;
     using SessionAndTimeout = std::unordered_map<int64_t, long>;
     using SessionIDs = std::vector<int64_t>;
 
