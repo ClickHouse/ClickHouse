@@ -420,9 +420,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
 
         /// `USING` semantic allows to have columns with changed types in result table.
         /// `JOIN ON` should preserve types from original table
-        /// We can infer common type on syntax stage, because join only by columns (not expression) is possible
-        /// We need to know that types in result tables changed because some analysis (e.g. analyzeAggregation) performed before we will create join
-        /// For `JOIN ON expr1 == expr2` we will infer common type on join createion, when types of expression will be known
+        /// We can infer common type on syntax stage for `USING` because join is performed only by columns (not expressions)
+        /// We need to know  changed types in result tables because some analysis (e.g. analyzeAggregation) performed before join
+        /// For `JOIN ON expr1 == expr2` we will infer common type later in ExpressionAnalyzer, when types of expression will be known
         analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns);
     }
     else if (table_join.on_expression)

@@ -95,9 +95,8 @@ private:
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(const ColumnsWithTypeAndName & cols_src,
-                                         const NameToTypeMap & type_mapping,
-                                         Names & names_to_rename);
+    ActionsDAGPtr applyKeyConvertToTable(
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
 
 public:
     TableJoin() = default;
@@ -164,7 +163,10 @@ public:
 
     /// Calculates common supertypes for corresponding join key columns.
     bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
-    ///
+
+    /// Calculate converting actions, rename key columns in required
+    /// For `USING` join we will convert key columns inplace and affect into types in the result table
+    /// For `JOIN ON` we will create new columns with converted keys to join by.
     bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
 
     bool needConvert() const { return !left_type_map.empty(); }
