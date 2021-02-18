@@ -324,15 +324,19 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 └─────────────┴──────────────┴───────────────┘
 ```
 
-## reinterpretAsUInt(8\|16\|32\|64\|256) {#type_conversion_function-reinterpretAsUInt8163264256}
+## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretAsUInt8163264256}
 
-## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#type_conversion_function-reinterpretAsInt8163264128256}
+## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretAsInt8163264128256}
 
-## reinterpretAsFloat(32\|64) {##type_conversion_function-reinterpretAsFloat}
+## reinterpretAsDecimal(32\|64\|128\|256) {#reinterpretAsDecimal3264128256}
+
+## reinterpretAsFloat(32\|64) {#type_conversion_function-reinterpretAsFloat}
 
 ## reinterpretAsDate {#type_conversion_function-reinterpretAsDate}
 
 ## reinterpretAsDateTime {#type_conversion_function-reinterpretAsDateTime}
+
+## reinterpretAsDateTime64 {#type_conversion_function-reinterpretAsDateTime64}
 
 ## reinterpretAsString {#type_conversion_function-reinterpretAsString}
 
