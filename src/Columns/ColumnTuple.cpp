@@ -496,23 +496,23 @@ bool ColumnTuple::isCollationSupported() const
 }
 
 
-ColumnPtr ColumnTuple::compress() const
+ColumnPtr ColumnTuple::compress(const ArenaPtr & arena) const
 {
     size_t byte_size = 0;
     Columns compressed;
     compressed.reserve(columns.size());
     for (const auto & column : columns)
     {
-        auto compressed_column = column->compress();
+        auto compressed_column = column->compress(arena);
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }
 
     return ColumnCompressed::create(size(), byte_size,
-        [compressed = std::move(compressed)]() mutable
+        [compressed = std::move(compressed)](LZ4::PerformanceStatistics & statistics) mutable
         {
             for (auto & column : compressed)
-                column = column->decompress();
+                column = column->decompress(statistics);
             return ColumnTuple::create(compressed);
         });
 }

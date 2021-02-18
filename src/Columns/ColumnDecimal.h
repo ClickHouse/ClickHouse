@@ -172,7 +172,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(const ArenaPtr & arena) const override;
 
 
     void insertValue(const T value) { data.push_back(value); }

@@ -3,7 +3,6 @@
 #include <optional>
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
-#include <IO/BufferWithOwnMemory.h>
 
 
 namespace DB
@@ -33,7 +32,7 @@ namespace ErrorCodes
 class ColumnCompressed : public COWHelper<IColumn, ColumnCompressed>
 {
 public:
-    using Lazy = std::function<ColumnPtr()>;
+    using Lazy = std::function<ColumnPtr(LZ4::PerformanceStatistics &)>;
 
     ColumnCompressed(size_t rows_, size_t bytes_, Lazy lazy_)
         : rows(rows_), bytes(bytes_), lazy(lazy_)
@@ -46,9 +45,9 @@ public:
     size_t byteSize() const override { return bytes; }
     size_t allocatedBytes() const override { return bytes; }
 
-    ColumnPtr decompress() const override
+    ColumnPtr decompress(LZ4::PerformanceStatistics & statistics) const override
     {
-        return lazy();
+        return lazy(statistics);
     }
 
     /** Wrap uncompressed column without compression.
@@ -60,17 +59,21 @@ public:
         return ColumnCompressed::create(
             column->size(),
             column->allocatedBytes(),
-            [column = std::move(column)]{ return column; });
+            [column = std::move(column)](LZ4::PerformanceStatistics &){ return column; });
     }
 
     /// Helper methods for compression.
 
-    /// If data is not worth to be compressed and not 'always_compress' - returns nullptr.
-    /// Note: shared_ptr is to allow to be captured by std::function.
-    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool always_compress);
+    /// Compress data into arena.
+    /// If data is not worth to be compressed and not 'always_compress' - does not use arena and returns nullptr.
+    static StringRef compressBuffer(const ArenaPtr & arena, const void * data, size_t data_size, bool always_compress);
 
     static void decompressBuffer(
-        const void * compressed_data, void * decompressed_data, size_t compressed_size, size_t decompressed_size);
+        const void * compressed_data,
+        void * decompressed_data,
+        size_t compressed_size,
+        size_t decompressed_size,
+        LZ4::PerformanceStatistics & statistics);
 
     /// All other methods throw exception.
 

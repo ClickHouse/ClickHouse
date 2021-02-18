@@ -1,5 +1,6 @@
 #include <cassert>
 #include <Common/Exception.h>
+#include <Common/Arena.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
@@ -43,7 +44,9 @@ public:
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
+        , decompress_statistics(column_names_and_types.size())
     {
+
     }
 
     String getName() const override { return "Memory"; }
@@ -69,15 +72,18 @@ protected:
         columns.reserve(columns.size());
 
         /// Add only required columns to `res`.
+        size_t idx = 0;
         for (const auto & elem : column_names_and_types)
         {
             auto current_column = src.getByName(elem.getNameInStorage()).column;
-            current_column = current_column->decompress();
+            current_column = current_column->decompress(decompress_statistics[idx]);
 
             if (elem.isSubcolumn())
                 columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
             else
                 columns.emplace_back(std::move(current_column));
+
+            ++idx;
         }
 
         return Chunk(std::move(columns), src.rows());
@@ -101,6 +107,9 @@ private:
     std::shared_ptr<const Blocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
     InitializerFunc initializer_func;
+
+    /// Performance statistics to speed up decompression.
+    std::vector<LZ4::PerformanceStatistics> decompress_statistics;
 };
 
 
@@ -112,10 +121,18 @@ public:
         const StorageMetadataPtr & metadata_snapshot_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , header(metadata_snapshot->getSampleBlock())
     {
+        /// When compressing data, we will use per-column arenas for better cache locality.
+        if (storage.compress)
+        {
+            arenas.resize(header.columns());
+            for (auto & arena : arenas)
+                arena = std::make_shared<Arena>();
+        }
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const override { return header; }
 
     void write(const Block & block) override
     {
@@ -123,9 +140,13 @@ public:
 
         if (storage.compress)
         {
+            size_t idx = 0;
             Block compressed_block;
             for (const auto & elem : block)
-                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+            {
+                compressed_block.insert({ elem.column->compress(arenas[idx]), elem.type, elem.name });
+                ++idx;
+            }
 
             new_blocks.emplace_back(compressed_block);
         }
@@ -158,9 +179,11 @@ public:
 
 private:
     Blocks new_blocks;
+    Arenas arenas;
 
     StorageMemory & storage;
     StorageMetadataPtr metadata_snapshot;
+    Block header;
 };
 
 
@@ -262,13 +285,23 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
     auto in = interpreter->execute();
 
+    Arenas arenas(in->getHeader().columns());
+    for (auto & arena : arenas)
+        arena = std::make_shared<Arena>();
+
     in->readPrefix();
     Blocks out;
     while (Block block = in->read())
     {
         if (compress)
+        {
+            size_t idx = 0;
             for (auto & elem : block)
-                elem.column = elem.column->compress();
+            {
+                elem.column = elem.column->compress(arenas[idx]);
+                ++idx;
+            }
+        }
 
         out.push_back(block);
     }

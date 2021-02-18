@@ -920,17 +920,18 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool
         updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
 }
 
-ColumnPtr ColumnArray::compress() const
+ColumnPtr ColumnArray::compress(const ArenaPtr & arena) const
 {
-    ColumnPtr data_compressed = data->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    ColumnPtr data_compressed = data->compress(arena);
+    ColumnPtr offsets_compressed = offsets->compress(arena);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
         [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
+        (LZ4::PerformanceStatistics & statistics)
         {
-            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
+            return ColumnArray::create(data_compressed->decompress(statistics), offsets_compressed->decompress(statistics));
         });
 }
 

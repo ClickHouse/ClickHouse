@@ -89,7 +89,7 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
-    ColumnPtr compress() const override;
+    ColumnPtr compress(const ArenaPtr & arena) const override;
 
     size_t tupleSize() const { return columns.size(); }
 

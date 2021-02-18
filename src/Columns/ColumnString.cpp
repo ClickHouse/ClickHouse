@@ -526,7 +526,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 }
 
 
-ColumnPtr ColumnString::compress() const
+ColumnPtr ColumnString::compress(const ArenaPtr & arena) const
 {
     size_t source_chars_size = chars.size();
     size_t source_offsets_size = offsets.size() * sizeof(Offset);
@@ -535,21 +535,23 @@ ColumnPtr ColumnString::compress() const
     if (source_chars_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
+    StringRef chars_compressed = ColumnCompressed::compressBuffer(arena, chars.data(), source_chars_size, false);
 
     /// Return original column if not compressable.
-    if (!chars_compressed)
+    if (!chars_compressed.data)
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
+    StringRef offsets_compressed = ColumnCompressed::compressBuffer(arena, offsets.data(), source_offsets_size, true);
 
-    return ColumnCompressed::create(offsets.size(), chars_compressed->size() + offsets_compressed->size(),
+    return ColumnCompressed::create(offsets.size(), chars_compressed.size + offsets_compressed.size,
         [
-            chars_compressed = std::move(chars_compressed),
-            offsets_compressed = std::move(offsets_compressed),
+            arena = arena,
+            chars_compressed = chars_compressed,
+            offsets_compressed = offsets_compressed,
             source_chars_size,
             source_offsets_elements = offsets.size()
         ]
+        (LZ4::PerformanceStatistics & statistics)
         {
             auto res = ColumnString::create();
 
@@ -557,10 +559,18 @@ ColumnPtr ColumnString::compress() const
             res->getOffsets().resize(source_offsets_elements);
 
             ColumnCompressed::decompressBuffer(
-                chars_compressed->data(), res->getChars().data(), chars_compressed->size(), source_chars_size);
+                chars_compressed.data,
+                res->getChars().data(),
+                chars_compressed.size,
+                source_chars_size,
+                statistics);
 
             ColumnCompressed::decompressBuffer(
-                offsets_compressed->data(), res->getOffsets().data(), offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
+                offsets_compressed.data,
+                res->getOffsets().data(),
+                offsets_compressed.size,
+                source_offsets_elements * sizeof(Offset),
+                statistics);
 
             return res;
         });

@@ -261,7 +261,7 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(const ArenaPtr & arena) const override;
 
     void reserve(size_t n) override;
 

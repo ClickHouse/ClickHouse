@@ -4,6 +4,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Compression/LZ4_decompress_faster.h>
 #include <common/StringRef.h>
 #include <Core/Types.h>
 
@@ -26,9 +27,10 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
+using ArenaPtr = std::shared_ptr<Arena>;
 
-/*
- * Represents a set of equal ranges in previous column to perform sorting in current column.
+
+/* Represents a set of equal ranges in previous column to perform sorting in current column.
  * Used in sorting by tuples.
  * */
 using EqualRanges = std::vector<std::pair<size_t, size_t> >;
@@ -359,7 +361,8 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    virtual Ptr compress() const
+    /// It can use arena to store data there and take shared ownership of it.
+    virtual Ptr compress(const ArenaPtr &) const
     {
         /// No compression by default.
         return getPtr();
@@ -367,7 +370,7 @@ public:
 
     /// If it's CompressedColumn, decompress it and return.
     /// Otherwise return itself.
-    virtual Ptr decompress() const
+    virtual Ptr decompress(LZ4::PerformanceStatistics &) const
     {
         return getPtr();
     }

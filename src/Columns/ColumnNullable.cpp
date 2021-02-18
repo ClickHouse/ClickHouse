@@ -512,17 +512,17 @@ void ColumnNullable::protect()
     getNullMapColumn().protect();
 }
 
-ColumnPtr ColumnNullable::compress() const
+ColumnPtr ColumnNullable::compress(const ArenaPtr & arena) const
 {
-    ColumnPtr nested_compressed = nested_column->compress();
-    ColumnPtr null_map_compressed = null_map->compress();
+    ColumnPtr nested_compressed = nested_column->compress(arena);
+    ColumnPtr null_map_compressed = null_map->compress(arena);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [nested_column = std::move(nested_column), null_map = std::move(null_map)]
+        [nested_column = std::move(nested_column), null_map = std::move(null_map)](LZ4::PerformanceStatistics & statistics)
         {
-            return ColumnNullable::create(nested_column->decompress(), null_map->decompress());
+            return ColumnNullable::create(nested_column->decompress(statistics), null_map->decompress(statistics));
         });
 }
 

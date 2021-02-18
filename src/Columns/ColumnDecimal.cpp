@@ -348,7 +348,7 @@ void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::compress() const
+ColumnPtr ColumnDecimal<T>::compress(const ArenaPtr & arena) const
 {
     size_t source_size = data.size() * sizeof(T);
 
@@ -356,17 +356,17 @@ ColumnPtr ColumnDecimal<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+    StringRef compressed = ColumnCompressed::compressBuffer(arena, data.data(), source_size, false);
 
-    if (!compressed)
+    if (!compressed.data)
         return ColumnCompressed::wrap(this->getPtr());
 
-    return ColumnCompressed::create(data.size(), compressed->size(),
-        [compressed = std::move(compressed), column_size = data.size(), scale = this->scale]
+    return ColumnCompressed::create(data.size(), compressed.size,
+        [arena = arena, compressed = compressed, column_size = data.size(), scale = this->scale](LZ4::PerformanceStatistics & statistics)
         {
             auto res = ColumnDecimal<T>::create(column_size, scale);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+                compressed.data, res->getData().data(), compressed.size, column_size * sizeof(T), statistics);
             return res;
         });
 }

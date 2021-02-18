@@ -298,7 +298,7 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(const ArenaPtr & arena) const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);

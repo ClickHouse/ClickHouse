@@ -447,7 +447,7 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnFixedString::compress() const
+ColumnPtr ColumnFixedString::compress(const ArenaPtr & arena) const
 {
     size_t source_size = chars.size();
 
@@ -455,21 +455,21 @@ ColumnPtr ColumnFixedString::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
+    StringRef compressed = ColumnCompressed::compressBuffer(arena, chars.data(), source_size, false);
 
-    if (!compressed)
+    if (!compressed.data)
         return ColumnCompressed::wrap(this->getPtr());
 
     size_t column_size = size();
 
-    return ColumnCompressed::create(column_size, compressed->size(),
-        [compressed = std::move(compressed), column_size, n = n]
+    return ColumnCompressed::create(column_size, compressed.size,
+        [arena = arena, compressed = compressed, column_size, n = n](LZ4::PerformanceStatistics & statistics)
         {
             size_t chars_size = n * column_size;
             auto res = ColumnFixedString::create(n);
             res->getChars().resize(chars_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+                compressed.data, res->getChars().data(), compressed.size, chars_size, statistics);
             return res;
         });
 }

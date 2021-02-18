@@ -117,7 +117,7 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(const ArenaPtr & arena) const override;
 
     void forEachSubcolumn(ColumnCallback callback) override
     {

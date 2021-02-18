@@ -525,7 +525,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 
 template <typename T>
-ColumnPtr ColumnVector<T>::compress() const
+ColumnPtr ColumnVector<T>::compress(const ArenaPtr & arena) const
 {
     size_t source_size = data.size() * sizeof(T);
 
@@ -533,17 +533,18 @@ ColumnPtr ColumnVector<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+    StringRef compressed = ColumnCompressed::compressBuffer(arena, data.data(), source_size, false);
 
-    if (!compressed)
+    if (!compressed.data)
         return ColumnCompressed::wrap(this->getPtr());
 
-    return ColumnCompressed::create(data.size(), compressed->size(),
-        [compressed = std::move(compressed), column_size = data.size()]
+    return ColumnCompressed::create(data.size(), compressed.size,
+        [arena = arena, compressed = compressed, column_size = data.size()]
+        (LZ4::PerformanceStatistics & statistics)
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+                compressed.data, res->getData().data(), compressed.size, column_size * sizeof(T), statistics);
             return res;
         });
 }
