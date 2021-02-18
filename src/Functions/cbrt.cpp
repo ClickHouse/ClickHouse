@@ -3,13 +3,9 @@
 
 namespace DB
 {
-namespace
-{
 
 struct CbrtName { static constexpr auto name = "cbrt"; };
 using FunctionCbrt = FunctionMathUnary<UnaryFunctionVectorized<CbrtName, cbrt>>;
-
-}
 
 void registerFunctionCbrt(FunctionFactory & factory)
 {

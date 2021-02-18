@@ -13,24 +13,10 @@ namespace DB
 {
 
 class Context;
-class QueryPlan;
-
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
-    const StoragePtr & storage,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MutationCommand> & commands,
-    Context context_copy
-);
-
-ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
-    const StoragePtr & storage,
-    const Context & context
-);
+    StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const std::vector<MutationCommand> & commands, Context context_copy);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -65,11 +51,9 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
-
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;

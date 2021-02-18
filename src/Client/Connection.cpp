@@ -1,6 +1,5 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -18,15 +17,12 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/OpenSSLHelpers.h>
-#include <Common/randomSeed.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <pcg_random.hpp>
+#include <Processors/ConcatProcessor.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -54,7 +50,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
-    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -138,7 +133,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -173,33 +167,17 @@ void Connection::sendHello()
         || has_control_character(password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
+    auto client_revision = ClickHouseRevision::get();
+
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    writeVarUInt(client_revision, *out);
     writeStringBinary(default_database, *out);
-    /// If interserver-secret is used, one do not need password
-    /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
-    if (!cluster_secret.empty())
-    {
-        writeStringBinary(USER_INTERSERVER_MARKER, *out);
-        writeStringBinary("" /* password */, *out);
-
-#if USE_SSL
-        sendClusterNameAndSalt();
-#else
-        throw Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-    }
-    else
-    {
-        writeStringBinary(user, *out);
-        writeStringBinary(password, *out);
-    }
+    writeStringBinary(user, *out);
+    writeStringBinary(password, *out);
 
     out->next();
 }
@@ -209,12 +187,6 @@ void Connection::receiveHello()
 {
     /// Receive hello packet.
     UInt64 packet_type = 0;
-
-    /// Prevent read after eof in readVarUInt in case of reset connection
-    /// (Poco should throw such exception while reading from socket but
-    /// sometimes it doesn't for unknown reason)
-    if (in->eof())
-        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -320,19 +292,6 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
         connect(timeouts);
     }
 }
-
-#if USE_SSL
-void Connection::sendClusterNameAndSalt()
-{
-    pcg64_fast rng(randomSeed());
-    UInt64 rand = rng();
-
-    salt = encodeSHA256(&rand, sizeof(rand));
-
-    writeStringBinary(cluster, *out);
-    writeStringBinary(salt, *out);
-}
-#endif
 
 bool Connection::ping()
 {
@@ -452,37 +411,6 @@ void Connection::sendQuery(
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
-    /// Interserver secret
-    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
-    {
-        /// Hash
-        ///
-        /// Send correct hash only for !INITIAL_QUERY, due to:
-        /// - this will avoid extra protocol complexity for simplest cases
-        /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/unsecure changes)
-        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        {
-#if USE_SSL
-            std::string data(salt);
-            data += cluster_secret;
-            data += query;
-            data += query_id;
-            data += client_info->initial_user;
-            /// TODO: add source/target host/ip-address
-
-            std::string hash = encodeSHA256(data);
-            writeStringBinary(hash, *out);
-#else
-        throw Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-        }
-        else
-            writeStringBinary("", *out);
-    }
-
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
 
@@ -546,9 +474,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
-
-    if (input.eof())
-        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
 
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
@@ -663,17 +588,16 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(*elem->pipe));
-        pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
-        {
-            if (type != QueryPipeline::StreamType::Main)
-                return nullptr;
-            return sink;
-        });
-        executor = pipeline.execute();
+        if (elem->pipe->numOutputPorts() > 1)
+            elem->pipe->addTransform(std::make_shared<ConcatProcessor>(elem->pipe->getHeader(), elem->pipe->numOutputPorts()));
+
+        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
+        DB::connect(*elem->pipe->getOutputPort(0), sink->getPort());
+
+        auto processors = Pipe::detachProcessors(std::move(*elem->pipe));
+        processors.push_back(sink);
+
+        executor = std::make_shared<PipelineExecutor>(processors);
         executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();
@@ -747,11 +671,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket()
 {
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT(in->setAsyncCallback({}));
-
     try
     {
         Packet res;
@@ -808,9 +729,6 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
     }
     catch (Exception & e)
     {
-        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
-        e.setRemoteException();
-
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -900,7 +818,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

@@ -1,8 +1,6 @@
 ---
-title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432\u0020\u0053\u0045\u004c\u0045\u0043\u0054"
-toc_folder_title: SELECT
-toc_priority: 32
-toc_title: "\u041e\u0431\u0437\u043e\u0440"
+toc_priority: 33
+toc_title: SELECT
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -18,12 +16,11 @@ SELECT [DISTINCT] expr_list
 [GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
-[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
+[GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
-[SETTINGS ...]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
@@ -45,7 +42,7 @@ SELECT [DISTINCT] expr_list
 -   [Секция SELECT](#select-clause)
 -   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
--   [Секция UNION ALL](union.md)
+-   [Секция UNION ALL](union-all.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)
 
@@ -162,17 +159,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Подробнее смотрите в разделе «Настройки». Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию.
 
-## SETTINGS в запросе SELECT {#settings-in-select}
-
-Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
-
-Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md). 
-
-**Пример**
-
-``` sql
-SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
-```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/)
-<!--hide-->
+{## [Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}

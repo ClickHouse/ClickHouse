@@ -38,29 +38,26 @@ namespace
     // Those inequations helps checking conditions in ProtobufReader::SimpleReader.
     constexpr Int64 END_OF_VARINT = -1;
     constexpr Int64 END_OF_GROUP = -2;
-    constexpr Int64 END_OF_FILE = -3;
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 
+    [[noreturn]] void throwUnknownFormat()
+    {
+        throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
+    }
 }
 
 
 // SimpleReader is an utility class to deserialize protobufs.
 // Knows nothing about protobuf schemas, just provides useful functions to deserialize data.
-ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_, const bool use_length_delimiters_)
+ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_)
     : in(in_)
     , cursor(0)
     , current_message_level(0)
     , current_message_end(0)
     , field_end(0)
     , last_string_pos(-1)
-    , use_length_delimiters(use_length_delimiters_)
 {
-}
-
-[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
-{
-    throw Exception(std::string("Protobuf messages are corrupted or don't match the provided schema.") + (use_length_delimiters ? " Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint." : ""), ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
 }
 
 bool ProtobufReader::SimpleReader::startMessage()
@@ -69,16 +66,8 @@ bool ProtobufReader::SimpleReader::startMessage()
     assert(!current_message_level);
     if (unlikely(in.eof()))
         return false;
-
-    if (use_length_delimiters)
-    {
-        size_t size_of_message = readVarint();
-        current_message_end = cursor + size_of_message;
-    }
-    else
-    {
-        current_message_end = END_OF_FILE;
-    }
+    size_t size_of_message = readVarint();
+    current_message_end = cursor + size_of_message;
     ++current_message_level;
     field_end = cursor;
     return true;
@@ -161,23 +150,8 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
             throwUnknownFormat();
     }
 
-    if (cursor >= current_message_end)
-    {
-        if (current_message_end == END_OF_FILE)
-        {
-            if (unlikely(in.eof()))
-            {
-                current_message_end = cursor;
-                return false;
-            }
-        }
-        else if (current_message_end == END_OF_GROUP)
-        {
-            /// We'll check for the `GROUP_END` marker later.
-        }
-        else
-            return false;
-    }
+    if ((cursor >= current_message_end) && (current_message_end != END_OF_GROUP))
+        return false;
 
     UInt64 varint = readVarint();
     if (unlikely(varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)))
@@ -1103,8 +1077,8 @@ std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<goog
 
 
 ProtobufReader::ProtobufReader(
-    ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_)
-    : simple_reader(in_, use_length_delimiters_)
+    ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names)
+    : simple_reader(in_)
 {
     root_message = ProtobufColumnMatcher::matchColumns<ColumnMatcherTraits>(column_names, message_type);
     setTraitsDataAfterMatchingColumns(root_message.get());

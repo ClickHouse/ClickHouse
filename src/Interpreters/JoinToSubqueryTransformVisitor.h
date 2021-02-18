@@ -20,6 +20,7 @@ public:
     {
         const std::vector<TableWithColumnNamesAndTypes> & tables;
         const Aliases & aliases;
+        size_t version = 1;
         bool done = false;
     };
 
@@ -42,7 +43,10 @@ private:
     ///         TablesInSelectQueryElement [source1]
     ///         TablesInSelectQueryElement [source2]
     ///
-    static void visit(ASTSelectQuery & select, ASTPtr & ast, Data & data);
+    static void visitV1(ASTSelectQuery & select, ASTPtr & ast, Data & data);
+
+    /// V2 uses information about tables' columns to rewrite queries.
+    static void visitV2(ASTSelectQuery & select, ASTPtr & ast, Data & data);
 
     /// @return combined TablesInSelectQueryElement or nullptr if cannot rewrite
     static ASTPtr replaceJoin(ASTPtr left, ASTPtr right, ASTPtr subquery_template);
