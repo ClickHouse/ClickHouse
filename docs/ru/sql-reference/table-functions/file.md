@@ -7,7 +7,7 @@ toc_title: file
 
 Создаёт таблицу из файла. Данная табличная функция похожа на табличные функции [url](../../sql-reference/table-functions/url.md) and [hdfs](../../sql-reference/table-functions/hdfs.md).
 
-Функция `file` может использоваться в запросах `SELECT` и `INSERT` движка таблиц [File](../../engines/table-engines/special/file.md).
+Функция `file` может использоваться в запросах `SELECT` и `INSERT` при работе с движком таблиц [File](../../engines/table-engines/special/file.md).
 
 **Синтаксис**
 
