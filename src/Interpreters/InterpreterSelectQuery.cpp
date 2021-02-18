@@ -561,10 +561,20 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
 
-    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    /// Do I need to perform the first part of the pipeline?
+    /// Running on remote servers during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=1 or when there is
+    /// only one remote server, it is equal to local query in terms of query
+    /// stages (or when due to optimize_distributed_group_by_sharding_key the query was processed up to Complete stage).
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
         && options.to_stage >= QueryProcessingStage::WithMergeableState;
-    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    /// Do I need to execute the second part of the pipeline?
+    /// Running on the initiating server during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=2 (i.e. when optimize_distributed_group_by_sharding_key takes place)
+    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregation,
+    /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
