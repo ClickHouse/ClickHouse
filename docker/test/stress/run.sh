@@ -64,9 +64,50 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" && echo "OK" > /test_output/script_exit_code.txt || echo "FAIL" > /test_output/script_exit_code.txt
+./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+    && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
+    || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
 start
 
-clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt
+clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
+                       || echo -e 'Server failed to start\tFAIL' >> /test_output/test_results.tsv
+
+[ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
+[ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
+
+# Print Fatal log messages to stdout
+zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log
+
+# Grep logs for sanitizer asserts, crashes and other critical errors
+
+# Sanitizer asserts
+zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" > /dev/null \
+    && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
+rm -f /test_output/tmp
+
+# Logical errors
+zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+    && echo -e 'Logical error thrown (see clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
+
+# Crash
+zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+    && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
+
+# It also checks for OOM or crash without stacktrace (printed by watchdog)
+zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+    && echo -e 'Fatal message in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
+
+zgrep -Fa "########################################" /test_output/* > /dev/null \
+    && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
+
+# Write check result into check_status.tsv
+clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK'  LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
+[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found"
