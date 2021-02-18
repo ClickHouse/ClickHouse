@@ -100,9 +100,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
         registerAggregateFunctionMannWhitney(factory);
+        registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
-        registerAggregateFunctionSequenceNextNode(factory);
     }
 
     {
