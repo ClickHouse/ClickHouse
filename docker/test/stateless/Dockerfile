@@ -23,7 +23,8 @@ RUN apt-get update -y \
             telnet \
             tree \
             unixodbc \
-            wget
+            wget \
+            mysql-client-5.7
 
 RUN pip3 install numpy scipy pandas
 
