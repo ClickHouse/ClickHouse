@@ -34,7 +34,7 @@ void RabbitMQBlockOutputStream::writePrefix()
     buffer->activateWriting();
 
     auto format_settings = getFormatSettings(context);
-    format_settings.protobuf.allow_many_rows_no_delimiters = true;
+    format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
     child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
         getHeader(), context,
