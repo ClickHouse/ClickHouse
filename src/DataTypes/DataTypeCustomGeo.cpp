@@ -12,6 +12,20 @@
 namespace DB
 {
 
+namespace
+{
+    const auto point_data_type = std::make_shared<const DataTypeTuple>(
+        DataTypes{std::make_shared<const DataTypeFloat64>(), std::make_shared<const DataTypeFloat64>()}
+    );
+
+    const auto ring_data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType());
+
+    const auto polygon_data_type = std::make_shared<const DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType());
+
+    const auto multipolygon_data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType());
+}
+
+
 void DataTypeCustomPointSerialization::serializeText(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -26,10 +40,7 @@ void DataTypeCustomPointSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomPointSerialization::nestedDataType()
 {
-    static const auto data_type = std::make_shared<const DataTypeTuple>(
-        DataTypes{std::make_shared<const DataTypeFloat64>(), std::make_shared<const DataTypeFloat64>()}
-    );
-    return data_type;
+    return point_data_type;
 }
 
 void DataTypeCustomRingSerialization::serializeText(
@@ -46,8 +57,7 @@ void DataTypeCustomRingSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomRingSerialization::nestedDataType()
 {
-    static auto data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType());
-    return data_type;
+    return ring_data_type;
 }
 
 void DataTypeCustomPolygonSerialization::serializeText(
@@ -64,8 +74,7 @@ void DataTypeCustomPolygonSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomPolygonSerialization::nestedDataType()
 {
-    static auto data_type = std::make_shared<const DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType());
-    return data_type;
+    return polygon_data_type;
 }
 
 void DataTypeCustomMultiPolygonSerialization::serializeText(
@@ -82,8 +91,7 @@ void DataTypeCustomMultiPolygonSerialization::deserializeText(
 
 DataTypePtr DataTypeCustomMultiPolygonSerialization::nestedDataType()
 {
-    static auto data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType());
-    return data_type;
+    return multipolygon_data_type;
 }
 
 void registerDataTypeDomainGeo(DataTypeFactory & factory)
