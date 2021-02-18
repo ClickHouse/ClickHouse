@@ -1,5 +1,6 @@
 #include "PostgreSQLReplicationHandler.h"
 
+#if USE_LIBPQXX
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StoragePostgreSQLReplica.h>
@@ -342,3 +343,5 @@ PostgreSQLTableStructure PostgreSQLReplicationHandler::fetchTableStructure(
 }
 
 }
+
+#endif

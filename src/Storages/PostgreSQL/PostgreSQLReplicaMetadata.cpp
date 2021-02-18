@@ -1,5 +1,6 @@
 #include "PostgreSQLReplicaMetadata.h"
 
+#if USE_LIBPQXX
 #include <Poco/File.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -95,3 +96,5 @@ void PostgreSQLReplicaMetadata::commitMetadata(std::string & lsn, const std::fun
 }
 
 }
+
+#endif

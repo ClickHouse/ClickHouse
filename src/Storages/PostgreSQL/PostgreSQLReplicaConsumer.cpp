@@ -1,4 +1,6 @@
 #include "PostgreSQLReplicaConsumer.h"
+
+#if USE_LIBPQXX
 #include "StoragePostgreSQLReplica.h"
 
 #include <Columns/ColumnNullable.h>
@@ -526,4 +528,4 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 
 }
 
-
+#endif

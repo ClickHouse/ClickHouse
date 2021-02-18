@@ -1,5 +1,10 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include "config_core.h"
+#endif
+
+#if USE_LIBPQXX
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicaConsumer.h"
 #include "PostgreSQLReplicaMetadata.h"
@@ -75,6 +80,7 @@ private:
     std::unordered_map<String, StoragePtr> nested_storages;
 };
 
-
 }
+
+#endif
 

@@ -1,15 +1,20 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include "config_core.h"
+#endif
+
+#if USE_LIBPQXX
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicaMetadata.h"
-#include "pqxx/pqxx"
+#include "insertPostgreSQLValue.h"
 
 #include <Core/BackgroundSchedulePool.h>
 #include <common/logger_useful.h>
 #include <Storages/IStorage.h>
-#include <Storages/PostgreSQL/insertPostgreSQLValue.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Parsers/ASTExpressionList.h>
+#include "pqxx/pqxx" // Y_IGNORE
 
 
 namespace DB
@@ -118,3 +123,4 @@ private:
 
 }
 
+#endif
