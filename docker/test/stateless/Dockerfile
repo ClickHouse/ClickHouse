@@ -13,6 +13,7 @@ RUN apt-get update -y \
             ncdu \
             netcat-openbsd \
             openssl \
+            protobuf-compiler \
             python3 \
             python3-lxml \
             python3-requests \
