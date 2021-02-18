@@ -537,7 +537,7 @@ ColumnPtr ColumnString::compress() const
 
     auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
 
-    /// Return original column if not compressable.
+    /// Return original column if not compressible.
     if (!chars_compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
