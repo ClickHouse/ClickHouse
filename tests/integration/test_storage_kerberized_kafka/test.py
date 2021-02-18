@@ -37,7 +37,7 @@ def check_kafka_is_available():
                           kafka_id,
                           '/usr/bin/kafka-broker-api-versions',
                           '--bootstrap-server',
-                          'localhost:9093'),
+                          'INSIDE://{}:{}'.format("localhost", cluster.kafka_port)),
                          stdout=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
@@ -58,14 +58,26 @@ def wait_kafka_is_available(max_retries=50):
 
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
+
+def get_kafka_producer(port, serializer):
+    errors = []
+    for _ in range(15):
+        try:
+            producer = KafkaProducer(bootstrap_servers="localhost:{}".format(port), value_serializer=serializer)
+            logging.debug("Kafka Connection establised: localhost:{}".format(port))
+            return producer
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
     
-def kafka_produce(topic, messages, timestamp=None):
-    producer = KafkaProducer(bootstrap_servers="localhost:9093", value_serializer=producer_serializer)
+    raise Exception("Connection not establised, {}".format(errors))   
+
+def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
+    logging.debug("kafka_produce server:{}:{} topic:{}".format("localhost", kafka_cluster.kafka_port, topic))
+    producer = get_kafka_producer(kafka_cluster.kafka_port, producer_serializer)
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
-    print ("Produced {} messages for topic {}".format(len(messages), topic))
-
 
 
 # Fixtures
@@ -74,9 +86,7 @@ def kafka_produce(topic, messages, timestamp=None):
 def kafka_cluster():
     try:
         cluster.start()
-        print("kafka_id is {}".format(kafka_id))
         yield cluster
-
     finally:
         cluster.shutdown()
 
@@ -92,7 +102,7 @@ def kafka_setup_teardown():
 
 @pytest.mark.timeout(180)  # wait to build containers
 def test_kafka_json_as_string(kafka_cluster):
-    kafka_produce('kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
+    kafka_produce(kafka_cluster, 'kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
     instance.query('''
         CREATE TABLE test.kafka (field String)
@@ -116,7 +126,7 @@ def test_kafka_json_as_string(kafka_cluster):
     assert instance.contains_in_log("Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows")
 
 def test_kafka_json_as_string_no_kdc(kafka_cluster):
-    kafka_produce('kafka_json_as_string_no_kdc', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
+    kafka_produce(kafka_cluster, 'kafka_json_as_string_no_kdc', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
     kafka_cluster.pause_container('kafka_kerberos')
     time.sleep(45)   # wait for ticket expiration
