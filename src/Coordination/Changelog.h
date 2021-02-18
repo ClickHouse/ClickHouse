@@ -103,7 +103,7 @@ private:
 
     void rotate(size_t new_start_log_idx);
 
-    ChangelogRecord buildRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry) const;
+    static ChangelogRecord buildRecord(size_t index, nuraft::ptr<nuraft::log_entry> log_entry);
 
 private:
     std::string changelogs_dir;
