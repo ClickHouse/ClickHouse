@@ -273,6 +273,12 @@
         "00763_create_query_as_table_engine_bug",
         "00765_sql_compatibility_aliases",
         "00825_protobuf_format_input",
+        "00825_protobuf_format_nested_optional",
+        "00825_protobuf_format_array_3dim",
+        "00825_protobuf_format_map",
+        "00825_protobuf_format_array_of_arrays",
+        "00825_protobuf_format_table_default",
+        "00825_protobuf_format_enum_mapping",
         "00826_cross_to_inner_join",
         "00834_not_between",
         "00909_kill_not_initialized_query",
@@ -734,6 +740,7 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn"
     ]
 }
