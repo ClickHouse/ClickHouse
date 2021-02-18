@@ -201,26 +201,34 @@ void PostgreSQLReplicaConsumer::readTupleData(
     Int16 num_columns = readInt16(message, pos, size);
     LOG_DEBUG(log, "number of columns {}", num_columns);
 
-    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
+    auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        /// 'n' means nullable, 'u' means TOASTed value, 't' means text formatted data
-        char identifier = readInt8(message, pos, size);
-        Int32 col_len = readInt32(message, pos, size);
-        String value;
-
-        for (int i = 0; i < col_len; ++i)
+        LOG_DEBUG(log, "Identifier: {}", identifier);
+        switch (identifier)
         {
-            value += readInt8(message, pos, size);
+            case 'n': /// NULL
+            {
+                insertDefaultValue(buffer, column_idx);
+                break;
+            }
+            case 't': /// Text formatted value
+            {
+                Int32 col_len = readInt32(message, pos, size);
+                String value;
+
+                for (int i = 0; i < col_len; ++i)
+                    value += readInt8(message, pos, size);
+
+                insertValue(buffer, value, column_idx);
+                break;
+            }
+            case 'u': /// Toasted (unchanged) value TODO:!
+                break;
         }
+    };
 
-        /// For arrays default for null is inserted when converted to clickhouse array
-        if (value == "NULL")
-            insertDefaultValue(buffer, column_idx);
-        else
-            insertValue(buffer, value, column_idx);
-
-        LOG_DEBUG(log, "Identifier: {}, column length: {}, value: {}", identifier, col_len, value);
-    }
+    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
+        proccess_column_value(readInt8(message, pos, size), column_idx);
 
     switch (type)
     {
@@ -240,10 +248,7 @@ void PostgreSQLReplicaConsumer::readTupleData(
         }
         case PostgreSQLQuery::UPDATE:
         {
-            /// TODO: If table has primary key, skip old value and remove first insert with -1.
-            //  Otherwise use replica identity full (with check) and use first insert.
-
-            if (old_value)
+            if (old_value) /// Only if replica identity is set to full
                 buffer.columns[num_columns]->insert(Int8(-1));
             else
                 buffer.columns[num_columns]->insert(Int8(1));
@@ -302,7 +307,6 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             Int8 replica_identity = readInt8(replication_message, pos, size);
             Int16 num_columns = readInt16(replication_message, pos, size);
 
-            /// TODO: If replica identity is not full, check if there will be a full columns list.
             LOG_DEBUG(log,
                     "INFO: relation id: {}, namespace: {}, relation name: {}, replica identity: {}, columns number: {}",
                     relation_id, relation_namespace, relation_name, replica_identity, num_columns);
@@ -351,28 +355,52 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
                 throw Exception(ErrorCodes::UNKNOWN_TABLE,
                         "Buffer for table {} does not exist", table_to_insert);
             }
+
             readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::INSERT);
             break;
         }
         case 'U': // Update
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
-            Int8 primary_key_or_old_tuple_data = readInt8(replication_message, pos, size);
-
-            LOG_DEBUG(log, "relationID {}, key {} current insert table {}", relation_id, primary_key_or_old_tuple_data, table_to_insert);
-
-            /// TODO: Two cases: based on primary keys and based on replica identity full.
-            ///       Add first one and add a check for second one.
+            LOG_DEBUG(log, "relationID {}, current insert table {}", relation_id, table_to_insert);
 
             auto buffer = buffers.find(table_to_insert);
-            readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
-
-            if (pos + 1 < size)
+            auto proccess_identifier = [&](Int8 identifier) -> bool
             {
-                Int8 new_tuple_data = readInt8(replication_message, pos, size);
-                readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE);
-                LOG_DEBUG(log, "new tuple data: {}", new_tuple_data);
-            }
+                LOG_DEBUG(log, "Identifier: {}", identifier);
+                bool read_next = true;
+                switch (identifier)
+                {
+                    case 'K': /// TODO:!
+                    {
+                        /// Only if changed column(s) are part of replica identity index
+                        break;
+                    }
+                    case 'O':
+                    {
+                        /// Old row. Only of replica identity is set to full.
+                        /// (For the case when a table does not have any primary key.)
+                        /// TODO: Need to find suitable order_by for nested table (Now it throws if no primary key)
+                        readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
+                        break;
+                    }
+                    case 'N':
+                    {
+                        readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE);
+                        read_next = false;
+                        break;
+                    }
+                }
+
+                return read_next;
+            };
+
+            /// Read either 'K' or 'O'. Never both of them. Also possible not to get both of them.
+            bool read_next = proccess_identifier(readInt8(replication_message, pos, size));
+
+            /// 'N'. Always present, but could come in place of 'K' and 'O'.
+            if (read_next)
+                proccess_identifier(readInt8(replication_message, pos, size));
 
             break;
         }
