@@ -315,7 +315,10 @@ private:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    JoinPtr makeTableJoin(
+        const ASTTablesInSelectQueryElement & join_element,
+        const ColumnsWithTypeAndName & left_sample_columns,
+        ActionsDAGPtr & left_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 

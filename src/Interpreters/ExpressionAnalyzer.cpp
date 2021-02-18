@@ -97,7 +97,10 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
 
 
 /// Returns converting actions for tables that need to be performed before join
-ActionsDAGPtr createJoinConvertingActions(const ColumnsWithTypeAndName & cols_src, const TableJoin::NameToTypeMap & mapping)
+ActionsDAGPtr createJoinConvertingActions(const ColumnsWithTypeAndName & cols_src,
+                                          const TableJoin::NameToTypeMap & mapping,
+                                          bool has_using,
+                                          NameToNameMap & renames)
 {
     ColumnsWithTypeAndName cols_dst = cols_src;
     for (auto & col : cols_dst)
@@ -108,7 +111,8 @@ ActionsDAGPtr createJoinConvertingActions(const ColumnsWithTypeAndName & cols_sr
             col.column = nullptr;
         }
     }
-    return ActionsDAG::makeConvertingActions(cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true);
+    return ActionsDAG::makeConvertingActions(
+        cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !has_using, &renames);
 };
 
 
@@ -739,11 +743,12 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
 
 JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & left_actions)
 {
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
+    const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
+
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, left_actions);
     if (syntax->analyzed_join->needConvert())
     {
-        left_actions = createJoinConvertingActions(chain.getLastStep().getResultColumns(),
-                                                   syntax->analyzed_join->getLeftMapping());
+        assert(left_actions);
         chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(left_actions));
         chain.addStep();
     }
@@ -814,7 +819,8 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join,
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
+    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns, ActionsDAGPtr & left_actions)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -852,10 +858,26 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
 
+        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
+        /// For `USING` we already inferred common type an syntax analyzer stage
+        if (!syntax->analyzed_join->hasUsing())
+            syntax->analyzed_join->inferJoinKeyCommonType(left_sample_columns, right_sample_columns);
         if (syntax->analyzed_join->needConvert())
         {
-            auto right_actions = createJoinConvertingActions(subquery_for_join.sample_block.getColumnsWithTypeAndName(),
-                                                             syntax->analyzed_join->getRightMapping());
+            NameToNameMap left_column_rename;
+            left_actions = createJoinConvertingActions(left_sample_columns,
+                                                    syntax->analyzed_join->getLeftMapping(),
+                                                    syntax->analyzed_join->hasUsing(),
+                                                    left_column_rename);
+            syntax->analyzed_join->applyKeyColumnRename(left_column_rename, TableJoin::TableSide::Left);
+
+            NameToNameMap right_renames;
+            auto right_actions = createJoinConvertingActions(right_sample_columns,
+                                                             syntax->analyzed_join->getRightMapping(),
+                                                             syntax->analyzed_join->hasUsing(),
+                                                             right_renames);
+            syntax->analyzed_join->applyKeyColumnRename(right_renames, TableJoin::TableSide::Right);
+
             subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(right_actions));
         }
 

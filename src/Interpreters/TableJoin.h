@@ -65,16 +65,18 @@ private:
     const String temporary_files_codec = "LZ4";
 
     Names key_names_left;
+
     Names key_names_right; /// Duplicating names are qualified.
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
+    NameSet required_left_keys;
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN.
-    /// It's a subset of columns_from_joined_table with corrected Nullability and type (if type conversion is required)
+    /// It's a subset of columns_from_joined_table with corrected Nullability and type (if inplace type conversion is required)
     NamesAndTypesList columns_added_by_join;
 
     /// Target type to convert key columns before join
@@ -88,7 +90,15 @@ private:
 
     VolumePtr tmp_volume;
 
+    Names requiredJoinedNames() const;
+
 public:
+    enum class TableSide
+    {
+        Left,
+        Right
+    };
+
     TableJoin() = default;
     TableJoin(const Settings &, VolumePtr tmp_volume);
 
@@ -138,7 +148,6 @@ public:
     bool hasOn() const { return table_join.on_expression != nullptr; }
     bool hasJoinedStorage() const { return joined_storage != nullptr; }
 
-    NameSet getQualifiedColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
 
@@ -149,12 +158,17 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
+    void addRequiredLeftColumn(const String & left_column);
+
+    void applyKeyColumnRename(const NameToNameMap & name_map, TableSide side);
 
     void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
     void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability = true) const;
 
     /// Calculates common supertypes for corresponding join key columns.
     bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
+    bool inferJoinKeyCommonType(const ColumnsWithTypeAndName & left, const ColumnsWithTypeAndName & right);
+
     bool needConvert() const { return !left_type_map.empty(); }
     /// Key columns should be converted according to this mapping before join.
     const NameToTypeMap & getLeftMapping() const { return left_type_map; }
@@ -166,11 +180,16 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    Names requiredJoinedNames() const;
     const Names & keyNamesLeft() const { return key_names_left; }
     const Names & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
-    const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
+    Names columnsAddedByJoin() const
+    {
+        Names res;
+        for (const auto & col : columns_added_by_join)
+            res.push_back(col.name);
+        return res;
+    }
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
@@ -178,8 +197,6 @@ public:
     /// Split key and other columns by keys name list
     void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
-
-    static bool sameJoin(const TableJoin * x, const TableJoin * y);
 };
 
 }

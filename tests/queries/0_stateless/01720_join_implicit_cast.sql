@@ -45,10 +45,10 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t
 SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a);
 SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a);
 
-SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
+-- SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
 
 SELECT '--- partial_merge ---';
 
@@ -89,10 +89,10 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t
 SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a);
 SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a);
 
-SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
+-- SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
 
 
 SELECT '--- switch ---';
@@ -135,10 +135,10 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t
 SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a);
 SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a);
 
-SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
-SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 53 }
+-- SELECT * FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 LEFT JOIN t2 ON(t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
+-- SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a);
 
 SET max_bytes_in_join = 0;
 

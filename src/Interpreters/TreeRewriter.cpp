@@ -419,9 +419,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
             analyzed_join.addUsingKey(key);
 
         /// `USING` semantic allows to have columns with changed types in result table.
-        /// `JOIN ON key1 = key2` should preserve types from original table, so do not perform conversion at all.
-        /// TODO: Conversion for `JOIN ON` can be added with additional maintenance for types and columns.
-        ///  Or maybe it's possible to perform it on ast level? Not implemented yet.
+        /// `JOIN ON` should preserve types from original table
+        /// We can infer common type on syntax stage, because join only by columns (not expression) is possible
+        /// We need to know that types in result tables changed because some analysis (e.g. analyzeAggregation) performed before we will create join
+        /// For `JOIN ON expr1 == expr2` we will infer common type on join createion, when types of expression will be known
         analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns);
     }
     else if (table_join.on_expression)
@@ -576,12 +577,19 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         source_column_names.insert(column.name);
 
     NameSet required = columns_context.requiredColumns();
-
     if (columns_context.has_table_join)
     {
         NameSet available_columns;
         for (const auto & name : source_columns)
             available_columns.insert(name.name);
+
+        for (const auto & name : analyzed_join->keyNamesLeft())
+        {
+            if (available_columns.count(name))
+                continue;
+            if (required.count(name))
+                analyzed_join->addRequiredLeftColumn(name);
+        }
 
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
