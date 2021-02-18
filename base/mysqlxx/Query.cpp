@@ -71,16 +71,6 @@ UseQueryResult Query::use()
     return UseQueryResult(res, conn, this);
 }
 
-StoreQueryResult Query::store()
-{
-    executeImpl();
-    MYSQL_RES * res = mysql_store_result(conn->getDriver());
-    if (!res)
-        checkError(conn->getDriver());
-
-    return StoreQueryResult(res, conn, this);
-}
-
 void Query::execute()
 {
     executeImpl();
