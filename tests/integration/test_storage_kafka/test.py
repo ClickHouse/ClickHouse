@@ -42,7 +42,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml'],
                                 with_kafka=True,
-#                                with_zookeeper=True,
+                                with_zookeeper=True, # For Replicated Table
                                 macros={"kafka_broker":"kafka1",
                                         "kafka_topic_old":"old",
                                         "kafka_group_name_old":"old",
@@ -130,7 +130,7 @@ def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messa
 
 def kafka_produce_protobuf_messages_no_delimeters(kafka_cluster, topic, start_index, num_messages):
     data = ''
-    producer = KafkaProducer(bootstrap_servers="localhost:".format(kafka_cluster.kafka_port))
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
     for i in range(start_index, start_index + num_messages):
         msg = kafka_pb2.KeyValuePair()
         msg.key = i
@@ -1477,7 +1477,7 @@ def test_kafka_insert(kafka_cluster):
 
     messages = []
     while True:
-        messages.extend(kafka_consume('insert1'))
+        messages.extend(kafka_consume(kafka_cluster, 'insert1'))
         if len(messages) == 50:
             break
 
@@ -1942,7 +1942,7 @@ def test_kafka_rebalance(kafka_cluster):
 
     # time.sleep(2)
 
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:".format(kafka_cluster.kafka_port))
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
     topic_list = []
     topic_list.append(NewTopic(name="topic_with_multiple_partitions", num_partitions=11, replication_factor=1))
     admin_client.create_topics(new_topics=topic_list, validate_only=False)

@@ -186,7 +186,6 @@ class ClickHouseCluster:
         self.kafka_host = "kafka1"
         self.kafka_port = get_open_port()
         self.kafka_docker_id = None
-        self.schema_registry_client = None
         self.schema_registry_host = "schema-registry"
         self.schema_registry_port = get_open_port()
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
@@ -805,7 +804,7 @@ class ClickHouseCluster:
             if self.with_kafka and self.base_kafka_cmd:
                 print('Setup Kafka')
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
-                self.schema_registry_client = self.wait_schema_registry_to_start(30)
+                self.wait_schema_registry_to_start(30)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 print('Setup kerberized kafka')
