@@ -1103,9 +1103,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 /** If there is an ORDER BY for distributed query processing,
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
+                  *
+                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregation
+                  * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
+                  * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
                   */
 
-                if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+                if (from_aggregation_stage)
+                    executeMergeSorted(query_plan, "for ORDER BY");
+                else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, query_info.input_order_info);
