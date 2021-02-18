@@ -1,9 +1,8 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -56,15 +55,9 @@ void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline)
 
     if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
     {
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-                pipeline.getHeader().getColumnsWithTypeAndName(),
-                res_header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag);
-
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<ExpressionTransform>(header, actions);
+            return std::make_shared<ConvertingTransform>(header, res_header, ConvertingTransform::MatchColumnsMode::Name);
         });
     }
 }

@@ -12,9 +12,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
-
 class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinator
 {
 public:
@@ -47,8 +44,6 @@ public:
         return std::make_shared<AggregateFunctionArray>(nested_function, arguments);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory)
 {

@@ -73,7 +73,6 @@ void registerDataTypeFixedString(DataTypeFactory & factory);
 void registerDataTypeEnum(DataTypeFactory & factory);
 void registerDataTypeArray(DataTypeFactory & factory);
 void registerDataTypeTuple(DataTypeFactory & factory);
-void registerDataTypeMap(DataTypeFactory & factory);
 void registerDataTypeNullable(DataTypeFactory & factory);
 void registerDataTypeNothing(DataTypeFactory & factory);
 void registerDataTypeUUID(DataTypeFactory & factory);
@@ -83,6 +82,7 @@ void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeDateTime64(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
 
 }

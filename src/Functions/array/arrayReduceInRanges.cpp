@@ -52,7 +52,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// lazy initialization in getReturnTypeImpl
@@ -123,7 +123,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
 }
 
 
-ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -133,7 +133,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
 
     /// Handling ranges
 
-    const IColumn * ranges_col_array = arguments[1].column.get();
+    const IColumn * ranges_col_array = block.getByPosition(arguments[1]).column.get();
     const IColumn * ranges_col_tuple = nullptr;
     const ColumnArray::Offsets * ranges_offsets = nullptr;
     if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(ranges_col_array))
@@ -164,7 +164,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
-        const IColumn * col = arguments[i + 2].column.get();
+        const IColumn * col = block.getByPosition(arguments[i + 2]).column.get();
 
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
@@ -192,7 +192,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
 
     /// Handling results
 
-    MutableColumnPtr result_holder = result_type->createColumn();
+    MutableColumnPtr result_holder = block.getByPosition(result).type->createColumn();
     ColumnArray * result_arr = static_cast<ColumnArray *>(result_holder.get());
     IColumn & result_data = result_arr->getData();
 
@@ -203,7 +203,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
 
     if (!res_col_aggregate_function && agg_func.isState())
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
-                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     /// Perform the aggregation
 
@@ -383,7 +383,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
         }
     }
 
-    return result_holder;
+    block.getByPosition(result).column = std::move(result_holder);
 }
 
 

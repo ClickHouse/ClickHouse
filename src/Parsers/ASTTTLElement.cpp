@@ -2,7 +2,6 @@
 #include <Columns/Collator.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -57,11 +56,6 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
                 it->second->formatImpl(settings, state, frame);
             }
         }
-    }
-    else if (mode == TTLMode::RECOMPRESS)
-    {
-        settings.ostr << " RECOMPRESS ";
-        recompression_codec->formatImpl(settings, state, frame);
     }
     else if (mode == TTLMode::DELETE)
     {

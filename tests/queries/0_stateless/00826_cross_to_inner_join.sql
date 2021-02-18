@@ -1,3 +1,4 @@
+SET enable_debug_queries = 1;
 SET enable_optimize_predicate_expression = 0;
 
 select * from system.one l cross join system.one r;
@@ -36,22 +37,22 @@ SELECT * FROM t1_00826, t2_00826 where t1_00826.b = t2_00826.b;
 
 
 SELECT 'cross';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a;
+ANALYZE SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a;
 SELECT 'cross nullable';
-EXPLAIN SYNTAX SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a;
+ANALYZE SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a;
 SELECT 'cross nullable vs not nullable';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.b;
+ANALYZE SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.b;
 SELECT 'cross self';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 x cross join t1_00826 y where x.a = y.a and x.b = y.b;
+ANALYZE SELECT * FROM t1_00826 x cross join t1_00826 y where x.a = y.a and x.b = y.b;
 SELECT 'cross one table expr';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t1_00826.b;
+ANALYZE SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t1_00826.b;
 SELECT 'cross multiple ands';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a and t1_00826.b = t2_00826.b;
+ANALYZE SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a and t1_00826.b = t2_00826.b;
 SELECT 'cross and inside and';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a and (t1_00826.a = t2_00826.a and (t1_00826.a = t2_00826.a and t1_00826.b = t2_00826.b));
+ANALYZE SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a and (t1_00826.a = t2_00826.a and (t1_00826.a = t2_00826.a and t1_00826.b = t2_00826.b));
 
 SELECT 'cross split conjunction';
-EXPLAIN SYNTAX SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a and t1_00826.b = t2_00826.b and t1_00826.a >= 1 and t2_00826.b > 0;
+ANALYZE SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a and t1_00826.b = t2_00826.b and t1_00826.a >= 1 and t2_00826.b > 0;
 
 DROP TABLE t1_00826;
 DROP TABLE t2_00826;

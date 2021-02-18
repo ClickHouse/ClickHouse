@@ -55,7 +55,7 @@ StorageMySQL::StorageMySQL(
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , pool(std::move(pool_))
-    , global_context(context_.getGlobalContext())
+    , global_context(context_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -67,7 +67,7 @@ StorageMySQL::StorageMySQL(
 Pipe StorageMySQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info_,
+    const SelectQueryInfo & query_info_,
     const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
@@ -147,7 +147,7 @@ public:
         sqlbuf << backQuoteMySQL(remote_database_name) << "." << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.global_context);
+        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.global_context);
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())

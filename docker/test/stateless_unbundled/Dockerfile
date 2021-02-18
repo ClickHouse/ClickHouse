@@ -8,7 +8,6 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             alien \
             brotli \
-            zstd \
             cmake \
             devscripts \
             expect \
@@ -44,8 +43,6 @@ RUN apt-get --allow-unauthenticated update -y \
             libreadline-dev \
             libsasl2-dev \
             libzstd-dev \
-            librocksdb-dev \
-            libgflags-dev \
             lsof \
             moreutils \
             ncdu \
@@ -57,11 +54,8 @@ RUN apt-get --allow-unauthenticated update -y \
             perl \
             pigz \
             pkg-config \
-            python3 \
-            python3-lxml \
-            python3-requests \
-            python3-termcolor \
-            python3-pip \
+            python \
+            python-lxml \
             qemu-user-static \
             sudo \
             telnet \
@@ -70,12 +64,12 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc \
             unixodbc-dev \
             wget \
-            zlib1g-dev
-
-RUN pip3 install numpy scipy pandas
+            zlib1g-dev \
+            zookeeper \
+            zookeeperd
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
-   && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
+   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
    && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
    && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \

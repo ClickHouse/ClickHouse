@@ -16,6 +16,7 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/UInt128.h>
+#include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
@@ -227,7 +228,7 @@ struct AggregationMethodString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -253,7 +254,7 @@ struct AggregationMethodStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -279,7 +280,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -304,7 +305,7 @@ struct AggregationMethodFixedStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -928,6 +929,9 @@ public:
 
     Aggregator(const Params & params_);
 
+    /// Aggregate the source. Get the result in the form of one of the data structures.
+    void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
+
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
     using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
@@ -951,7 +955,15 @@ public:
       */
     BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
+    /** Merge several aggregation data structures and output the result as a block stream.
+      */
+    std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const;
+
+    /** Merge the stream of partially aggregated blocks into one data structure.
+      * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
+      */
+    void mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads);
 
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
@@ -1001,6 +1013,7 @@ public:
 
 protected:
     friend struct AggregatedDataVariants;
+    friend class MergingAndConvertingBlockInputStream;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;

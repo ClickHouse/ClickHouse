@@ -15,11 +15,7 @@ namespace DB
 class JSONEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONEachRowRowOutputFormat(
-        WriteBuffer & out_,
-        const Block & header_,
-        const RowOutputFormatParams & params_,
-        const FormatSettings & settings_);
+    JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
@@ -27,9 +23,6 @@ public:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
-    void writeRowBetweenDelimiter() override;
-    void writePrefix() override;
-    void writeSuffix() override;
 
 protected:
     /// No totals and extremes.

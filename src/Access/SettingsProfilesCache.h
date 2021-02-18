@@ -2,7 +2,7 @@
 
 #include <Access/EnabledSettings.h>
 #include <Core/UUID.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <ext/scope_guard.h>
 #include <map>
 #include <unordered_map>

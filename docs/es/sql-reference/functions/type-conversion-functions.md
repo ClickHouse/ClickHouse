@@ -246,7 +246,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-Como excepción, si convierte de tipos numéricos UInt32, Int32, UInt64 o Int64 a Date, y si el número es mayor o igual que 65536, el número se interpreta como una marca de tiempo Unix (y no como el número de días) y se redondea a la fecha. Esto permite soporte para la ocurrencia común de la escritura ‘toDate(unix_timestamp)’, que de otra manera sería un error y requeriría escribir el más engorroso ‘toDate(toDateTime(unix_timestamp))’.
+Como excepción, si convierte de tipos numéricos UInt32, Int32, UInt64 o Int64 a Date, y si el número es mayor o igual que 65536, el número se interpreta como una marca de tiempo Unix (y no como el número de días) y se redondea a la fecha. Esto permite soporte para la ocurrencia común de la escritura ‘toDate(unix\_timestamp)’, que de otra manera sería un error y requeriría escribir el más engorroso ‘toDate(toDateTime(unix\_timestamp))’.
 
 La conversión entre una fecha y una fecha con la hora se realiza de la manera natural: agregando un tiempo nulo o eliminando el tiempo.
 

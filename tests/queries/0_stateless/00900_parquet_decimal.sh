@@ -3,7 +3,6 @@
 # set -x
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
@@ -108,5 +107,5 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;" > "${
 
 echo diff3:
 diff "${CLICKHOUSE_TMP}"/parquet_decimal3_1.dump "${CLICKHOUSE_TMP}"/parquet_decimal3_2.dump
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
+#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
+#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"

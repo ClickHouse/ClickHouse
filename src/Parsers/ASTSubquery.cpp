@@ -1,6 +1,5 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 namespace DB
 {

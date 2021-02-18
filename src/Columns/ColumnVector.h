@@ -178,11 +178,6 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return sizeof(data[0]);
-    }
-
     size_t allocatedBytes() const override
     {
         if constexpr (is_POD)
@@ -223,6 +218,8 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                               IColumn::SpecialSort) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
