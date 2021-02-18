@@ -638,7 +638,6 @@ def kafka_cluster():
     try:
         cluster.start()
         yield cluster
-
     finally:
         cluster.shutdown()
 
