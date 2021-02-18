@@ -16,6 +16,7 @@
 
 #include <memory>
 #include <utility>
+#include <chrono>
 
 namespace DB
 {
@@ -57,28 +58,30 @@ public:
     {
         checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[0]);
         auto first_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[0].column->convertToFullColumnIfConst()));
-        MultiPolygon<Point> first_container;
+        
 
         checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[1]);
-        auto second_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[1].column->convertToFullColumnIfConst()));
-        MultiPolygon<Point> second_container;
+        auto second_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[1].column->convertToFullColumnIfConst()));        
 
         MultiPolygonSerializer<Point> serializer;
         MultiPolygon<Point> intersection{};
+
+        auto first = first_parser.parse(0, 0);
+        auto second = second_parser.parse(0, 0);
 
         /// We are not interested in some pitfalls in third-party libraries
         /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            first_parser.get(first_container, i);
-            second_parser.get(second_container, i);
+            MultiPolygon<Point> first_container = first[i];
+            MultiPolygon<Point> second_container = second[i];
 
             /// Orient the polygons correctly.
             boost::geometry::correct(first_container);
             boost::geometry::correct(second_container);
 
             /// Main work here.
-            boost::geometry::intersection(first_container, second_container, intersection);
+            boost::geometry::intersection(first_container[0], second_container[0], intersection);
 
             serializer.add(intersection);
         }

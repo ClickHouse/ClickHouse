@@ -1,100 +1,100 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/geometryConverters.h>
+// #include <Functions/FunctionFactory.h>
+// #include <Functions/geometryConverters.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
+// #include <boost/geometry.hpp>
+// #include <boost/geometry/geometries/point_xy.hpp>
+// #include <boost/geometry/geometries/polygon.hpp>
 
-#include <common/logger_useful.h>
+// #include <common/logger_useful.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
+// #include <Columns/ColumnArray.h>
+// #include <Columns/ColumnTuple.h>
+// #include <Columns/ColumnConst.h>
+// #include <Columns/ColumnsNumber.h>
+// #include <DataTypes/DataTypesNumber.h>
+// #include <DataTypes/DataTypeArray.h>
+// #include <DataTypes/DataTypeTuple.h>
+// #include <DataTypes/DataTypeCustomGeo.h>
 
-#include <memory>
-#include <utility>
+// #include <memory>
+// #include <utility>
 
-namespace DB
-{
+// namespace DB
+// {
 
-template <typename Point>
-class FunctionPolygonsEquals : public IFunction
-{
-public:
-    static const char * name;
+// template <typename Point>
+// class FunctionPolygonsEquals : public IFunction
+// {
+// public:
+//     static const char * name;
 
-    explicit FunctionPolygonsEquals() = default;
+//     explicit FunctionPolygonsEquals() = default;
 
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionPolygonsEquals>();
-    }
+//     static FunctionPtr create(const Context &)
+//     {
+//         return std::make_shared<FunctionPolygonsEquals>();
+//     }
 
-    String getName() const override
-    {
-        return name;
-    }
+//     String getName() const override
+//     {
+//         return name;
+//     }
 
-    bool isVariadic() const override
-    {
-        return false;
-    }
+//     bool isVariadic() const override
+//     {
+//         return false;
+//     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
+//     size_t getNumberOfArguments() const override
+//     {
+//         return 2;
+//     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
+//     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+//     {
+//         return std::make_shared<DataTypeUInt8>();
+//     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
-    {
-        checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[0]);
-        auto first_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[0].column->convertToFullColumnIfConst()));
-        MultiPolygon<Point> first_container;
+//     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+//     {
+//         checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[0]);
+//         auto first_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[0].column->convertToFullColumnIfConst()));
+//         MultiPolygon<Point> first_container;
 
-        checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[1]);
-        auto second_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[1].column->convertToFullColumnIfConst()));
-        MultiPolygon<Point> second_container;
+//         checkColumnTypeOrThrow<Point, MultiPolygon>(arguments[1]);
+//         auto second_parser = MultiPolygonFromColumnParser<Point>(std::move(arguments[1].column->convertToFullColumnIfConst()));
+//         MultiPolygon<Point> second_container;
 
-        auto res_column = ColumnUInt8::create();
+//         auto res_column = ColumnUInt8::create();
 
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            first_parser.get(first_container, i);
-            second_parser.get(second_container, i);
+//         for (size_t i = 0; i < input_rows_count; i++)
+//         {
+//             first_parser.get(first_container, i);
+//             second_parser.get(second_container, i);
 
-            boost::geometry::correct(first_container);
-            boost::geometry::correct(second_container);
+//             boost::geometry::correct(first_container);
+//             boost::geometry::correct(second_container);
 
-            res_column->insertValue(boost::geometry::equals(first_container, second_container));
-        }
+//             res_column->insertValue(boost::geometry::equals(first_container, second_container));
+//         }
 
-        return res_column;
-    }
+//         return res_column;
+//     }
 
-    bool useDefaultImplementationForConstants() const override
-    {
-        return true;
-    }
-};
-
-
-template <>
-const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
+//     bool useDefaultImplementationForConstants() const override
+//     {
+//         return true;
+//     }
+// };
 
 
-void registerFunctionPolygonsEquals(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>();
-}
+// template <>
+// const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
 
-}
+
+// void registerFunctionPolygonsEquals(FunctionFactory & factory)
+// {
+//     factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>();
+// }
+
+// }

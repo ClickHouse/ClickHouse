@@ -17,6 +17,9 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
+// TODO: maybe use isInfinite from clickhouse codebase
+#include <cmath>
+
 #include <common/logger_useful.h>
 
 namespace DB
@@ -28,28 +31,26 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace bg = boost::geometry;
+template <typename Point>
+using Ring = boost::geometry::model::ring<Point>;
 
 template <typename Point>
-using Ring = bg::model::ring<Point>;
+using Polygon = boost::geometry::model::polygon<Point>;
 
 template <typename Point>
-using Polygon = bg::model::polygon<Point>;
-
-template <typename Point>
-using MultiPolygon = bg::model::multi_polygon<Polygon<Point>>;
+using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>>;
 
 template <typename Point>
 using Geometry = boost::variant<Point, Ring<Point>, Polygon<Point>, MultiPolygon<Point>>;
 
 
-using CartesianPoint = bg::model::d2::point_xy<Float64>;
+using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
 using CartesianRing = Ring<CartesianPoint>;
 using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 using CartesianGeometry = Geometry<CartesianPoint>;
 
-using GeographicPoint = bg::model::point<Float64, 2, bg::cs::geographic<bg::degree>>;
+using GeographicPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::geographic<boost::geometry::degree>>;
 using GeographicRing = Ring<GeographicPoint>;
 using GeographicPolygon = Polygon<GeographicPoint>;
 using GeographicMultiPolygon = MultiPolygon<GeographicPoint>;
@@ -63,72 +64,48 @@ template <typename PointType>
 class PointFromColumnParser
 {
 public:
+    using Container = std::conditional_t<std::is_same_v<PointType, CartesianPoint>, CartesianGeometry, GeographicGeometry>;
+
     explicit PointFromColumnParser(ColumnPtr col_) : col(col_)
     {
-        const auto & tuple = dynamic_cast<const ColumnTuple &>(*col_);
-        const auto & tuple_columns = tuple.getColumns();
-
-#ifndef NDEBUG
-        size = tuple.size();
-#endif
-        const auto & x_data = dynamic_cast<const ColumnFloat64 &>(*tuple_columns[0]);
-        first = x_data.getData().data();
-
-        const auto & y_data = dynamic_cast<const ColumnFloat64 &>(*tuple_columns[1]);
-        second = y_data.getData().data();
     }
 
-    template<class Q = PointType>
-    typename std::enable_if_t<std::is_same_v<Q, CartesianPoint>, CartesianGeometry> createContainer() const
+    std::vector<PointType> parse(size_t shift, size_t count) const
     {
-        return CartesianPoint();
-    }
+        const auto * tuple = typeid_cast<const ColumnTuple *>(col.get());
+        const auto & tuple_columns = tuple->getColumns();
 
-    template<class Q = PointType>
-    typename std::enable_if_t<std::is_same_v<Q, GeographicPoint>, GeographicGeometry> createContainer() const
-    {
-        return GeographicPoint();
-    }
+        const auto * x_data = typeid_cast<const ColumnFloat64 *>(tuple_columns[0].get());
+        const auto * y_data = typeid_cast<const ColumnFloat64 *>(tuple_columns[1].get());
 
-    template<class Q = PointType>
-    void get(std::enable_if_t<std::is_same_v<Q, CartesianPoint>, CartesianGeometry> & container, size_t i) const
-    {
-#ifndef NDEBUG
-        assert(i < size);
-#endif
-        get(boost::get<PointType>(container), i);
-    }
+        const auto * first_container = x_data->getData().data() + shift;
+        const auto * second_container = y_data->getData().data() + shift;
 
-    template<class Q = PointType>
-    void get(std::enable_if_t<std::is_same_v<Q, GeographicPoint>, GeographicGeometry> & container, size_t i) const
-    {
-#ifndef NDEBUG
-        assert(i < size);
-#endif
-        get(boost::get<PointType>(container), i);
-    }
+        std::vector<PointType> answer(count);
 
-    void get(PointType & container, size_t i) const
-    {
-#ifndef NDEBUG
-        assert(i < size);
-#endif
-        if (isNaN(first[i]) || isNaN(second[i]))
-            throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const Float64 first = first_container[i];
+            const Float64 second = second_container[i];
 
-        boost::geometry::set<0>(container, first[i]);
-        boost::geometry::set<1>(container, second[i]);
+            if (isNaN(first) || isNaN(second))
+                throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            if (isinf(first) || isinf(second))
+                throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            answer[i] = PointType(first, second);
+        }
+
+        return answer;
     }
 
 private:
     /// To prevent use-after-free and increase column lifetime.
     ColumnPtr col;
-#ifndef NDEBUG
-    size_t size;
-#endif
-    const Float64 * first;
-    const Float64 * second;
 };
+
+
 
 template<class Point>
 class RingFromColumnParser
@@ -136,41 +113,27 @@ class RingFromColumnParser
 public:
     explicit RingFromColumnParser(ColumnPtr col_)
         : col(col_)
-        , offsets(dynamic_cast<const ColumnArray &>(*col_).getOffsets())
-        , point_parser(dynamic_cast<const ColumnArray &>(*col_).getDataPtr())
+        , offsets(typeid_cast<const ColumnArray &>(*col_).getOffsets())
+        , point_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
-    Geometry<Point> createContainer() const
+    std::vector<Ring<Point>> parse(size_t shift, size_t /*size*/) const
     {
-        return Ring<Point>();
-    }
+        size_t prev_offset = shift;
 
-    void get(Geometry<Point> & container, size_t i) const
-    {
-        get(boost::get<Ring<Point>>(container), i);
-    }
+        std::vector<Ring<Point>> answer;
+        answer.reserve(offsets.size());
 
-    void get(Ring<Point> & container, size_t i) const
-    {
-        size_t left = i == 0 ? 0 : offsets[i - 1];
-        size_t right = offsets[i];
-
-        if (left == right)
-            throw Exception("Empty polygons are not allowed in line " + toString(i), ErrorCodes::BAD_ARGUMENTS);
-
-        // reserve extra point for case when polygon is open
-        container.reserve(right - left + 1);
-        container.resize(right - left);
-
-        for (size_t j = left; j < right; j++)
-            point_parser.get(container[j - left], j);
-
-        // make ring closed
-        if (!boost::geometry::equals(container[0], container.back()))
+        for (size_t offset : offsets)
         {
-            container.push_back(container[0]);
+            offset += shift;
+            auto points = point_parser.parse(prev_offset, offset - prev_offset);
+            answer.emplace_back(points.begin(), points.end());
+            prev_offset = offset;
         }
+
+        return answer;
     }
 
 private:
@@ -186,32 +149,28 @@ class PolygonFromColumnParser
 public:
     explicit PolygonFromColumnParser(ColumnPtr col_)
         : col(col_)
-        , offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
-        , ring_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
+        , offsets(typeid_cast<const ColumnArray &>(*col_).getOffsets())
+        , ring_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
-    Geometry<Point> createContainer() const
+    std::vector<Polygon<Point>> parse(size_t shift, size_t /*size*/) const
     {
-        return Polygon<Point>();
-    }
+        size_t prev_offset = shift;
+        std::vector<Polygon<Point>> answer(offsets.size());
+        size_t iter = 0;
 
-    void get(Geometry<Point> & container, size_t i) const
-    {
-        get(boost::get<Polygon<Point>>(container), i);
-    }
-
-    void get(Polygon<Point> & container, size_t i) const
-    {
-        size_t l = offsets[i - 1];
-        size_t r = offsets[i];
-
-        ring_parser.get(container.outer(), l);
-
-        container.inners().resize(r - l - 1);
-        for (size_t j = l + 1; j < r; j++)
+        for (size_t offset : offsets)
         {
-            ring_parser.get(container.inners()[j - l - 1], j);
+            offset += shift;
+            auto tmp = ring_parser.parse(prev_offset, offset - prev_offset);
+
+            /// FIXME: other rings are holes in first
+            answer[iter].outer() = tmp[0];
+            prev_offset = offset;
+            ++iter;
         }
+
+        return answer;
     }
 
 private:
@@ -227,30 +186,29 @@ class MultiPolygonFromColumnParser
 public:
     explicit MultiPolygonFromColumnParser(ColumnPtr col_)
         : col(col_)
-        , offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
-        , polygon_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
+        , offsets(typeid_cast<const ColumnArray &>(*col_).getOffsets())
+        , polygon_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
-    Geometry<Point> createContainer() const
+    std::vector<MultiPolygon<Point>> parse(size_t shift, size_t /*size*/) const
     {
-        return MultiPolygon<Point>();
-    }
+        size_t prev_offset = shift;
+        
+        std::vector<MultiPolygon<Point>> answer;
+        answer.resize(offsets.size());
 
-    void get(Geometry<Point> & container, size_t i) const
-    {
-        get(boost::get<MultiPolygon<Point>>(container), i);
-    }
+        size_t iter = 0;
 
-    void get(MultiPolygon<Point> & container, size_t i) const
-    {
-        size_t l = offsets[i - 1];
-        size_t r = offsets[i];
-
-        container.resize(r - l);
-        for (size_t j = l; j < r; j++)
+        for (size_t offset : offsets)
         {
-            polygon_parser.get(container[j - l], j);
+            offset += shift;
+            auto polygons = polygon_parser.parse(prev_offset, offset - prev_offset);
+            answer[iter].swap(polygons); 
+            prev_offset = offset;
+            ++iter;
         }
+
+        return answer;
     }
 
 private:
@@ -268,22 +226,22 @@ using GeometryFromColumnParser = boost::variant<
     MultiPolygonFromColumnParser<Point>
 >;
 
-template <typename Point>
-Geometry<Point> createContainer(const GeometryFromColumnParser<Point> & parser);
+// template <typename Point>
+// Geometry<Point> createContainer(const GeometryFromColumnParser<Point> & parser);
 
-template <typename Point>
-void get(const GeometryFromColumnParser<Point> & parser, Geometry<Point> & container, size_t i);
+// template <typename Point>
+// void get(const GeometryFromColumnParser<Point> & parser, Geometry<Point> & container, size_t i);
 
-template <typename Point>
-GeometryFromColumnParser<Point> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+// template <typename Point>
+// GeometryFromColumnParser<Point> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
 
-extern template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> & parser);
-extern template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> & parser);
-extern template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
-extern template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
-extern template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
-extern template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+// extern template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> & parser);
+// extern template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> & parser);
+// extern template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
+// extern template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
+// extern template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+// extern template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
 /// To serialize Geographic or Cartesian point (a pair of numbers in both cases).
 template <typename Point>
