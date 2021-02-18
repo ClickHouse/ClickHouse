@@ -52,14 +52,23 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
-Требуемая конфигурация:
 
 Конфигурация сервера RabbitMQ добавляется с помощью конфигурационного файла ClickHouse.
+
+Требуемая конфигурация:
 
 ``` xml
  <rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
+ </rabbitmq>
+```
+
+Дополнительная конфигурация:
+
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
  </rabbitmq>
 ```
 
