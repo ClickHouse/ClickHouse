@@ -135,3 +135,15 @@ $CLICKHOUSE_CLIENT -q "
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc
     ) where x != 0 and y != 0
     settings enable_optimize_predicate_expression = 0"
+
+echo "> filter is pushed down before TOTALS HAVING and aggregating"
+$CLICKHOUSE_CLIENT -q "
+    explain actions = 1 select * from (
+        select y, sum(x) from (select number as x, number % 4 as y from numbers(10)) group by y with totals
+    ) where y != 2
+    settings enable_optimize_predicate_expression=0" |
+    grep -o "TotalsHaving\|Aggregating\|Filter column: notEquals(y, 2)"
+$CLICKHOUSE_CLIENT -q "
+    select * from (
+        select y, sum(x) from (select number as x, number % 4 as y from numbers(10)) group by y with totals
+    ) where y != 2"
