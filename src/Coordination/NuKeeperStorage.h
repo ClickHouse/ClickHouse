@@ -31,7 +31,7 @@ public:
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
-        ChildrenSet children;
+        ChildrenSet children{};
     };
 
     struct ResponseForSession
