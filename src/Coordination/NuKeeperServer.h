@@ -2,7 +2,7 @@
 
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <Coordination/InMemoryLogStore.h>
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Coordination/NuKeeperStateMachine.h>
 #include <Coordination/NuKeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
@@ -20,7 +20,7 @@ private:
 
     nuraft::ptr<NuKeeperStateMachine> state_machine;
 
-    nuraft::ptr<InMemoryStateManager> state_manager;
+    nuraft::ptr<NuKeeperStateManager> state_manager;
 
     nuraft::raft_launcher launcher;
 

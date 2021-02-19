@@ -1,7 +1,7 @@
 #include <Coordination/NuKeeperServer.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/NuKeeperStateMachine.h>
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -26,7 +26,7 @@ NuKeeperServer::NuKeeperServer(
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
     , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
-    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, "test_keeper_server", config, coordination_settings))
+    , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
 }

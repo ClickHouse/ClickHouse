@@ -1,4 +1,4 @@
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-InMemoryStateManager::InMemoryStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
+NuKeeperStateManager::NuKeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
     : my_server_id(server_id_)
     , my_port(port)
     , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000, true))
@@ -19,7 +19,7 @@ InMemoryStateManager::InMemoryStateManager(int server_id_, const std::string & h
     cluster_config->get_servers().push_back(peer_config);
 }
 
-InMemoryStateManager::InMemoryStateManager(
+NuKeeperStateManager::NuKeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix,
     const Poco::Util::AbstractConfiguration & config,
@@ -63,17 +63,17 @@ InMemoryStateManager::InMemoryStateManager(
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
-void InMemoryStateManager::loadLogStore(size_t start_log_index)
+void NuKeeperStateManager::loadLogStore(size_t start_log_index)
 {
     log_store->init(start_log_index);
 }
 
-void InMemoryStateManager::flushLogStore()
+void NuKeeperStateManager::flushLogStore()
 {
     log_store->flush();
 }
 
-void InMemoryStateManager::save_config(const nuraft::cluster_config & config)
+void NuKeeperStateManager::save_config(const nuraft::cluster_config & config)
 {
     // Just keep in memory in this example.
     // Need to write to disk here, if want to make it durable.
@@ -81,7 +81,7 @@ void InMemoryStateManager::save_config(const nuraft::cluster_config & config)
     cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
-void InMemoryStateManager::save_state(const nuraft::srv_state & state)
+void NuKeeperStateManager::save_state(const nuraft::srv_state & state)
 {
      // Just keep in memory in this example.
      // Need to write to disk here, if want to make it durable.

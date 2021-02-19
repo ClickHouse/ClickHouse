@@ -9,7 +9,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Coordination/InMemoryLogStore.h>
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Coordination/NuKeeperStorageSerializer.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/NuKeeperStateMachine.h>
@@ -100,7 +100,7 @@ struct SimpliestRaftServer
         , port(port_)
         , endpoint(hostname + ":" + std::to_string(port))
         , state_machine(nuraft::cs_new<StateMachine>())
-        , state_manager(nuraft::cs_new<DB::InMemoryStateManager>(server_id, hostname, port, logs_path))
+        , state_manager(nuraft::cs_new<DB::NuKeeperStateManager>(server_id, hostname, port, logs_path))
     {
         state_manager->loadLogStore(1);
         nuraft::raft_params params;
@@ -151,7 +151,7 @@ struct SimpliestRaftServer
     nuraft::ptr<StateMachine> state_machine;
 
     // State manager.
-    nuraft::ptr<DB::InMemoryStateManager> state_manager;
+    nuraft::ptr<DB::NuKeeperStateManager> state_manager;
 
     // Raft launcher.
     nuraft::raft_launcher launcher;
