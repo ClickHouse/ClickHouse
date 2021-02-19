@@ -149,7 +149,7 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
     int num_events = 0;
     while (num_events <= 0)
     {
-        num_events = epoll_wait(epoll_fd, events, 3, 0);
+        num_events = epoll_wait(epoll_fd, events, 3, -1);
         if (num_events == -1 && errno != EINTR)
             throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
     }
