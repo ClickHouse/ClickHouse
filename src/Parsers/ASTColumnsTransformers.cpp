@@ -234,7 +234,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes, std::vector<String> d
     }
 
     std::vector<String>::iterator db = databases.begin();
-    bool have_database_name = databases.size() > 0 ? true : false;
+    bool have_database_name = !databases.empty();
     for (auto & column : nodes)
     {
         if (const auto * id = column->as<ASTIdentifier>())
