@@ -276,8 +276,12 @@ public:
             throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
+        std::cerr << "Attribute name to get " << attribute_name << std::endl;
         /// We're extracting the return type from the dictionary's config, without loading the dictionary.
-        return helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name).type;
+        auto attribute = helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name);
+        std::cerr << "FunctionDictGetNoType " << attribute.name << " " << attribute.type->getName() << std::endl;
+
+        return attribute.type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

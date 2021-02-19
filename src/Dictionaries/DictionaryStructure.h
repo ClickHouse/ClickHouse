@@ -159,7 +159,6 @@ struct DictionaryStructure final
 
     void validateKeyTypes(const DataTypes & key_types) const;
 
-    size_t getAttributeIndex(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
     size_t getKeysSize() const;
@@ -174,8 +173,7 @@ private:
     std::vector<DictionaryAttribute> getAttributes(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const bool hierarchy_allowed = true,
-        const bool allow_null_values = true);
+        bool complex_key_attributes);
 };
 
 }

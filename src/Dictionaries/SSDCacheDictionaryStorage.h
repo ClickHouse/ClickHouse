@@ -670,7 +670,9 @@ public:
                     throw Exception("AIO failed to read file " + file_path + ".", ErrorCodes::AIO_READ_ERROR);
 
                 char * request_buffer = getRequestBuffer(request);
-                __msan_unpoison(buf_ptr, block_size);
+
+                // Unpoison the memory returned from an uninstrumented system function.
+                __msan_unpoison(request_buffer, block_size);
 
                 SSDCacheBlock block(block_size);
                 block.reset(request_buffer);
@@ -941,13 +943,15 @@ private:
             {
                 const auto & cell = it->getMapped();
 
-                if (now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
+                bool has_deadline = cellHasDeadline(cell);
+
+                if (has_deadline && now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
                 {
                     result.not_found_or_expired_keys.emplace_back(key);
                     result.not_found_or_expired_keys_indexes.emplace_back(key_index);
                     continue;
                 }
-                else if (now > cell.deadline)
+                else if (has_deadline && now > cell.deadline)
                 {
                     if (cell.in_memory)
                     {
@@ -1190,9 +1194,15 @@ private:
         }
     }
 
+    inline static bool cellHasDeadline(const Cell & cell)
+    {
+        return cell.deadline != std::chrono::system_clock::from_time_t(0);
+    }
+
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
-        /// TODO: Fix zero dictionary lifetime deadlines
+        if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
+            cell.deadline = std::chrono::system_clock::from_time_t(0);
 
         size_t min_sec_lifetime = configuration.lifetime.min_sec;
         size_t max_sec_lifetime = configuration.lifetime.max_sec;

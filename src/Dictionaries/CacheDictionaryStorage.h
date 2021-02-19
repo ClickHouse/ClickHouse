@@ -149,15 +149,17 @@ private:
             if (it)
             {
                 /// Columns values for key are serialized in cache now deserialize them
-                auto & cell = it->getMapped();
+                const auto & cell = it->getMapped();
 
-                if (now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
+                bool has_deadline = cellHasDeadline(cell);
+
+                if (has_deadline && now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
                 {
                     result.not_found_or_expired_keys.emplace_back(key);
                     result.not_found_or_expired_keys_indexes.emplace_back(key_index);
                     continue;
                 }
-                else if (now > cell.deadline)
+                else if (has_deadline && now > cell.deadline)
                 {
                     result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
                     result.not_found_or_expired_keys.emplace_back(key);
@@ -265,15 +267,21 @@ private:
         char * place_for_serialized_columns;
     };
 
+    inline static bool cellHasDeadline(const Cell & cell)
+    {
+        return cell.deadline != std::chrono::system_clock::from_time_t(0);
+    }
+
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
-        /// TODO: Fix zero dictionary lifetime deadlines
+        if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
+            cell.deadline = std::chrono::system_clock::from_time_t(0);
 
         size_t min_sec_lifetime = configuration.lifetime.min_sec;
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
 
         std::uniform_int_distribution<UInt64> distribution{min_sec_lifetime, max_sec_lifetime};
-        cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
+        cell.deadline = now + std::chrono::seconds(distribution(rnd_engine));
     }
 
     template <typename>
