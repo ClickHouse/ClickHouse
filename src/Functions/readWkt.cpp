@@ -76,7 +76,7 @@ public:
 };
 
 
-class FunctionReadWktRing : public FunctionReadWkt<DataTypeCustomRingSerialization, CartesianPolygon, RingSerializer<CartesianPoint>>
+class FunctionReadWktRing : public FunctionReadWkt<DataTypeCustomRingSerialization, CartesianRing, RingSerializer<CartesianPoint>>
 {
 public:
     static inline const char * name = "readWktRing";

@@ -55,17 +55,22 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto parser = getConverterBasedOnType<Point>(arguments[0]);  
-        auto figures = parseFigure(parser);
-
         auto res_column = ColumnFloat64::create();
-        auto & res_data = res_column->getData();
-        res_data.reserve(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; i++)
+        callOnGeometryDataType<Point>(arguments[0].type, [&] (const auto & type)
         {
-            res_data.emplace_back(boost::geometry::area(figures[i]));
+            using TypeParser = std::decay_t<decltype(type)>;
+            // using Parser = TypeParser::Type;
+            TypeParser parser(arguments[0].column->convertToFullColumnIfConst());
+            auto figures = parser.parse();
+
+            auto & res_data = res_column->getData();
+            res_data.reserve(input_rows_count);
+
+            for (size_t i = 0; i < input_rows_count; i++)
+                res_data.emplace_back(boost::geometry::area(figures[i]));
         }
+        );
 
         return res_column;
     }

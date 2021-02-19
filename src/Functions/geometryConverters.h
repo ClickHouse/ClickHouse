@@ -14,6 +14,7 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
@@ -75,17 +76,19 @@ template <typename Point>
 class PointFromColumnParser
 {
 public:
-    using Container = std::conditional_t<std::is_same_v<Point, CartesianPoint>, CartesianGeometry, GeographicGeometry>;
+    PointFromColumnParser() = default;
 
     explicit PointFromColumnParser(ColumnPtr col_) : col(col_)
     {
     }
 
-    std::vector<Point> parse(size_t shift, size_t count) const;
+    std::vector<Point> parse() const;
 
 private:
-    /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col;
+    std::vector<Point> parseImpl(size_t shift, size_t count) const;
+
+    friend class RingFromColumnParser<Point>;
+    ColumnPtr col{nullptr};
 };
 
 
@@ -93,121 +96,98 @@ template<class Point>
 class RingFromColumnParser
 {
 public:
+    RingFromColumnParser() = default;
+
     explicit RingFromColumnParser(ColumnPtr col_)
         : col(col_)
-        , offsets(typeid_cast<const ColumnArray &>(*col_).getOffsets())
         , point_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
-    std::vector<Ring<Point>> parse(size_t /*shift*/, size_t /*size*/) const;
+    std::vector<Ring<Point>> parse() const;
 
 private:
+    friend class PointFromColumnParser<Point>;
     /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col;
-    const IColumn::Offsets & offsets;
-    const PointFromColumnParser<Point> point_parser;
+    ColumnPtr col{nullptr};
+    const PointFromColumnParser<Point> point_parser{};
 };
 
 template<class Point>
 class PolygonFromColumnParser
 {
 public:
+    PolygonFromColumnParser() = default;
+
     explicit PolygonFromColumnParser(ColumnPtr col_)
         : col(col_)
-        , offsets(typeid_cast<const ColumnArray &>(*col_).getOffsets())
         , ring_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
-    std::vector<Polygon<Point>> parse(size_t /*shift*/, size_t /*size*/) const;
+    std::vector<Polygon<Point>> parse() const;
 
 private:
     friend class MultiPolygonFromColumnParser<Point>;
 
     /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col;
-    const IColumn::Offsets & offsets;
-    const RingFromColumnParser<Point> ring_parser;
+    ColumnPtr col{nullptr};
+    const RingFromColumnParser<Point> ring_parser{};
 };
 
 template<class Point>
 class MultiPolygonFromColumnParser
 {
 public:
+    MultiPolygonFromColumnParser() = default;
+
     explicit MultiPolygonFromColumnParser(ColumnPtr col_)
         : col(col_)
-        , offsets(typeid_cast<const ColumnArray &>(*col_).getOffsets())
         , polygon_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
-    std::vector<MultiPolygon<Point>> parse(size_t /*shift*/, size_t /*size*/) const;
+    std::vector<MultiPolygon<Point>> parse() const;
 
 private:
     /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col;
-    const IColumn::Offsets & offsets;
-    const PolygonFromColumnParser<Point> polygon_parser;
+    ColumnPtr col{nullptr};
+    const PolygonFromColumnParser<Point> polygon_parser{};
 };
 
-template <typename Point>
-using GeometryFromColumnParser = boost::variant<
-    RingFromColumnParser<Point>,
-    PolygonFromColumnParser<Point>,
-    MultiPolygonFromColumnParser<Point>
->;
 
-
-template <typename Point>
-std::vector<Figure<Point>> parseFigure(const GeometryFromColumnParser<Point> & parser);
-
-extern template std::vector<Figure<CartesianPoint>> parseFigure(const GeometryFromColumnParser<CartesianPoint> &);
-extern template std::vector<Figure<GeographicPoint>> parseFigure(const GeometryFromColumnParser<GeographicPoint> &);
+extern template class PointFromColumnParser<CartesianPoint>;
+extern template class PointFromColumnParser<GeographicPoint>;
+extern template class RingFromColumnParser<CartesianPoint>;
+extern template class RingFromColumnParser<GeographicPoint>;
+extern template class PolygonFromColumnParser<CartesianPoint>;
+extern template class PolygonFromColumnParser<GeographicPoint>;
+extern template class MultiPolygonFromColumnParser<CartesianPoint>;
+extern template class MultiPolygonFromColumnParser<GeographicPoint>;
 
 
 /// To serialize Geographic or Cartesian point (a pair of numbers in both cases).
 template <typename Point>
-class PointSerializerVisitor : public boost::static_visitor<void>
+class PointSerializer
 {
 public:
-    PointSerializerVisitor()
+    PointSerializer()
         : first(ColumnFloat64::create())
         , second(ColumnFloat64::create())
+        , first_container(first->getData())
+        , second_container(second->getData())
     {}
 
-    explicit PointSerializerVisitor(size_t n)
+    explicit PointSerializer(size_t n)
         : first(ColumnFloat64::create(n))
         , second(ColumnFloat64::create(n))
+        , first_container(first->getData())
+        , second_container(second->getData())
     {}
 
-    void operator()(const Point & point)
+    void add(const Point & point)
     {
-        first->insertValue(point.template get<0>());
-        second->insertValue(point.template get<1>());
-    }
-
-    void operator()(const Ring<Point> & ring)
-    {
-        if (ring.size() != 1)
-            throw Exception("Unable to write ring of size " + toString(ring.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
-
-        (*this)(ring[0]);
-    }
-
-    void operator()(const Polygon<Point> & polygon)
-    {
-        if (polygon.inners().size() != 0)
-            throw Exception("Unable to write polygon with holes to point column", ErrorCodes::BAD_ARGUMENTS);
-
-        (*this)(polygon.outer());
-    }
-
-    void operator()(const MultiPolygon<Point> & multi_polygon)
-    {
-        if (multi_polygon.size() != 1)
-            throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
-
-        (*this)(multi_polygon[0]);
+        first_container.emplace_back(point.template get<0>());
+        second_container.emplace_back(point.template get<1>());
     }
 
     ColumnPtr finalize()
@@ -222,52 +202,29 @@ public:
 private:
     ColumnFloat64::MutablePtr first;
     ColumnFloat64::MutablePtr second;
+
+    ColumnFloat64::Container & first_container;
+    ColumnFloat64::Container & second_container;
 };
 
 template <typename Point>
-class RingSerializerVisitor : public boost::static_visitor<void>
+class RingSerializer
 {
 public:
-    RingSerializerVisitor()
+    RingSerializer()
         : offsets(ColumnUInt64::create())
     {}
 
-    explicit RingSerializerVisitor(size_t n)
+    explicit RingSerializer(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const Point & point)
-    {
-        size++;
-        offsets->insertValue(size);
-
-        point_serializer(point);
-    }
-
-    void operator()(const Ring<Point> & ring)
+    void add(const Ring<Point> & ring)
     {
         size += ring.size();
         offsets->insertValue(size);
         for (const auto & point : ring)
-        {
-            point_serializer(point);
-        }
-    }
-
-    void operator()(const Polygon<Point> & polygon)
-    {
-        if (polygon.inners().size() != 0)
-            throw Exception("Unable to write polygon with holes to ring column", ErrorCodes::BAD_ARGUMENTS);
-
-        (*this)(polygon.outer());
-    }
-
-    void operator()(const MultiPolygon<Point> & multi_polygon)
-    {
-        if (multi_polygon.size() != 1)
-            throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to ring column", ErrorCodes::BAD_ARGUMENTS);
-
-        (*this)(multi_polygon[0]);
+            point_serializer.add(point);
     }
 
     ColumnPtr finalize()
@@ -277,53 +234,36 @@ public:
 
 private:
     size_t size = 0;
-    PointSerializerVisitor<Point> point_serializer;
+    PointSerializer<Point> point_serializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
 template <typename Point>
-class PolygonSerializerVisitor : public boost::static_visitor<void>
+class PolygonSerializer
 {
 public:
-    PolygonSerializerVisitor()
+    PolygonSerializer()
         : offsets(ColumnUInt64::create())
     {}
 
-    explicit PolygonSerializerVisitor(size_t n)
+    explicit PolygonSerializer(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const Point & point)
+    void add(const Ring<Point> & ring)
     {
         size++;
         offsets->insertValue(size);
-        ring_serializer(point);
+        ring_serializer.add(ring);
     }
 
-    void operator()(const Ring<Point> & ring)
-    {
-        size++;
-        offsets->insertValue(size);
-        ring_serializer(ring);
-    }
-
-    void operator()(const Polygon<Point> & polygon)
+    void add(const Polygon<Point> & polygon)
     {
         size += 1 + polygon.inners().size();
         offsets->insertValue(size);
-        ring_serializer(polygon.outer());
+        ring_serializer.add(polygon.outer());
         for (const auto & ring : polygon.inners())
-        {
-            ring_serializer(ring);
-        }
-    }
-
-    void operator()(const MultiPolygon<Point> & multi_polygon)
-    {
-        if (multi_polygon.size() != 1)
-            throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to polygon column", ErrorCodes::BAD_ARGUMENTS);
-
-        (*this)(multi_polygon[0]);
+            ring_serializer.add(ring);
     }
 
     ColumnPtr finalize()
@@ -333,50 +273,43 @@ public:
 
 private:
     size_t size = 0;
-    RingSerializerVisitor<Point> ring_serializer;
+    RingSerializer<Point> ring_serializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
 template <typename Point>
-class MultiPolygonSerializerVisitor : public boost::static_visitor<void>
+class MultiPolygonSerializer
 {
 public:
-    MultiPolygonSerializerVisitor()
+    MultiPolygonSerializer()
         : offsets(ColumnUInt64::create())
     {}
 
-    explicit MultiPolygonSerializerVisitor(size_t n)
+    explicit MultiPolygonSerializer(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const Point & point)
+    void add(const Ring<Point> & ring)
     {
         size++;
         offsets->insertValue(size);
-        polygon_serializer(point);
+        polygon_serializer.add(ring);
     }
 
-    void operator()(const Ring<Point> & ring)
+    void add(const Polygon<Point> & polygon)
     {
         size++;
         offsets->insertValue(size);
-        polygon_serializer(ring);
+        polygon_serializer.add(polygon);
     }
 
-    void operator()(const Polygon<Point> & polygon)
-    {
-        size++;
-        offsets->insertValue(size);
-        polygon_serializer(polygon);
-    }
-
-    void operator()(const MultiPolygon<Point> & multi_polygon)
+    void add(const MultiPolygon<Point> & multi_polygon)
     {
         size += multi_polygon.size();
         offsets->insertValue(size);
         for (const auto & polygon : multi_polygon)
         {
-            polygon_serializer(polygon);
+            polygon_serializer.add(polygon);
         }
     }
 
@@ -387,44 +320,37 @@ public:
 
 private:
     size_t size = 0;
-    PolygonSerializerVisitor<Point> polygon_serializer;
+    PolygonSerializer<Point> polygon_serializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
-template <class Geometry, class Visitor>
-class GeometrySerializer
+template <typename Point, typename F>
+static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
-public:
-    void add(const Geometry & geometry)
+    if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
+        return f(RingFromColumnParser<Point>());
+    if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
+        return f(PolygonFromColumnParser<Point>());
+    if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
+        return f(MultiPolygonFromColumnParser<Point>());
+    throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+template <typename Point, typename F>
+static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_type, F && func)
+{
+    return callOnGeometryDataType<Point>(left_type, [&](const auto & left_types)
     {
-        boost::apply_visitor(visitor, geometry);
-    }
+        using LeftParser = std::decay_t<decltype(left_types)>;
 
-    ColumnPtr finalize()
-    {
-        return visitor.finalize();
-    }
-private:
-    Visitor visitor;
-};
+        return callOnGeometryDataType<Point>(right_type, [&](const auto & right_types)
+        {
+            using RightParser = std::decay_t<decltype(right_types)>;
 
-template <typename Point>
-using PointSerializer = GeometrySerializer<Geometry<Point>, PointSerializerVisitor<Point>>;
-
-template <typename Point>
-using RingSerializer = GeometrySerializer<Geometry<Point>, RingSerializerVisitor<Point>>;
-
-template <typename Point>
-using PolygonSerializer = GeometrySerializer<Geometry<Point>, PolygonSerializerVisitor<Point>>;
-
-template <typename Point>
-using MultiPolygonSerializer = GeometrySerializer<Geometry<Point>, MultiPolygonSerializerVisitor<Point>>;
-
-
-template <typename Point, template<typename> typename Desired>
-void checkColumnTypeOrThrow(const ColumnWithTypeAndName & column);
-
-template <typename Point>
-GeometryFromColumnParser<Point> getConverterBasedOnType(const ColumnWithTypeAndName & column);
+            return func(LeftParser(), RightParser());
+        });
+    });
+}
 
 }
