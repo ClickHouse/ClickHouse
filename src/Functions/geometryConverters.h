@@ -324,15 +324,22 @@ private:
     ColumnUInt64::MutablePtr offsets;
 };
 
+
+template <typename PType>
+struct ParserType
+{
+    using Type = PType;
+};
+
 template <typename Point, typename F>
 static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
     if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
-        return f(RingFromColumnParser<Point>());
+        return f(ParserType<RingFromColumnParser<Point>>());
     if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
-        return f(PolygonFromColumnParser<Point>());
+        return f(ParserType<PolygonFromColumnParser<Point>>());
     if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
-        return f(MultiPolygonFromColumnParser<Point>());
+        return f(ParserType<MultiPolygonFromColumnParser<Point>>());
     throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -342,13 +349,13 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
 {
     return callOnGeometryDataType<Point>(left_type, [&](const auto & left_types)
     {
-        using LeftParser = std::decay_t<decltype(left_types)>;
+        using LeftParserType = std::decay_t<decltype(left_types)>;
 
         return callOnGeometryDataType<Point>(right_type, [&](const auto & right_types)
         {
-            using RightParser = std::decay_t<decltype(right_types)>;
+            using RightParserType = std::decay_t<decltype(right_types)>;
 
-            return func(LeftParser(), RightParser());
+            return func(LeftParserType(), RightParserType());
         });
     });
 }

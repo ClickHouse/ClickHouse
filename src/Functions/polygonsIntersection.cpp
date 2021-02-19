@@ -60,8 +60,11 @@ public:
         MultiPolygonSerializer<Point> serializer;
 
         callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type) {
-            using LeftParser = std::decay_t<decltype(left_type)>;
-            using RightParser = std::decay_t<decltype(right_type)>;
+            using LeftParserType = std::decay_t<decltype(left_type)>;
+            using RightParserType = std::decay_t<decltype(right_type)>;
+
+            using LeftParser = typename LeftParserType::Type;
+            using RightParser = typename RightParserType::Type;
 
             auto first = LeftParser(arguments[0].column->convertToFullColumnIfConst()).parse();
             auto second = RightParser(arguments[1].column->convertToFullColumnIfConst()).parse();

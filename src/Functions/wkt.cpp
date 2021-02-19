@@ -43,7 +43,8 @@ public:
         callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
             using TypeParser = std::decay_t<decltype(type)>;
-            TypeParser parser(arguments[0].column->convertToFullColumnIfConst());
+            using Parser = typename TypeParser::Type;
+            Parser parser(arguments[0].column->convertToFullColumnIfConst());
             auto figures = parser.parse();
 
             for (size_t i = 0; i < input_rows_count; i++)

@@ -60,8 +60,8 @@ public:
         callOnGeometryDataType<Point>(arguments[0].type, [&] (const auto & type)
         {
             using TypeParser = std::decay_t<decltype(type)>;
-            // using Parser = TypeParser::Type;
-            TypeParser parser(arguments[0].column->convertToFullColumnIfConst());
+            using Parser = typename TypeParser::Type;
+            Parser parser(arguments[0].column->convertToFullColumnIfConst());
             auto figures = parser.parse();
 
             auto & res_data = res_column->getData();
