@@ -114,4 +114,4 @@ mv /var/log/clickhouse-server/stderr.log /test_output/
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK'  LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
-[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found"
+[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
