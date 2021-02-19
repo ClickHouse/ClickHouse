@@ -83,9 +83,9 @@ private:
     // Throws an exception if authentication failed.
     bool authenticateUser(
         Context & context,
-        Poco::Net::HTTPServerRequest & request,
+        HTTPServerRequest & request,
         HTMLForm & params,
-        Poco::Net::HTTPServerResponse & response);
+        HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(

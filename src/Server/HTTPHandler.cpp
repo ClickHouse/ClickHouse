@@ -37,9 +37,9 @@
 #    include <Common/config.h>
 #endif
 
-#include <Poco/File.h>
-#include <Poco/Base64Encoder.h>
 #include <Poco/Base64Decoder.h>
+#include <Poco/Base64Encoder.h>
+#include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
@@ -272,11 +272,9 @@ bool HTTPHandler::authenticateUser(
     Context & context,
     HTTPServerRequest & request,
     HTMLForm & params,
-    HTTPServerResponse & response,
-    Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope)
+    HTTPServerResponse & response)
 {
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    using namespace Poco::Net;
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -302,7 +300,7 @@ bool HTTPHandler::authenticateUser(
 
             if (Poco::icompare(scheme, "Basic") == 0)
             {
-                Poco::Net::HTTPBasicCredentials credentials(auth_info);
+                HTTPBasicCredentials credentials(auth_info);
                 user = credentials.getUsername();
                 password = credentials.getPassword();
             }
@@ -367,7 +365,7 @@ bool HTTPHandler::authenticateUser(
             if (spnego_response.empty())
                 throw Exception("Invalid authentication: 'Negotiate' HTTP Authorization failure", ErrorCodes::AUTHENTICATION_FAILED);
 
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+            response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
             response.send();
             return false;
         }
@@ -403,7 +401,7 @@ bool HTTPHandler::authenticateUser(
         else
             response.set("WWW-Authenticate", "Basic realm=\"" + required_credentials.getRealm() + "\"");
 
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+        response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
         response.send();
         return false;
     }
@@ -416,7 +414,7 @@ bool HTTPHandler::authenticateUser(
         else
             response.set("WWW-Authenticate", "Negotiate realm=\"" + required_credentials.getRealm() + "\"");
 
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+        response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
         response.send();
         return false;
     }
@@ -436,12 +434,14 @@ bool HTTPHandler::authenticateUser(
 
 void HTTPHandler::processQuery(
     Context & context,
-    Poco::Net::HTTPServerRequest & request,
+    HTTPServerRequest & request,
     HTMLForm & params,
-    Poco::Net::HTTPServerResponse & response,
+    HTTPServerResponse & response,
     Output & used_output,
     std::optional<CurrentThread::QueryScope> & query_scope)
 {
+    using namespace Poco::Net;
+
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (!authenticateUser(context, request, params, response))
@@ -542,7 +542,7 @@ void HTTPHandler::processQuery(
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
-        request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+        request.getMethod() == HTTPRequest::HTTP_HEAD,
         keep_alive_timeout,
         client_supports_http_compression,
         http_response_compression_method);
