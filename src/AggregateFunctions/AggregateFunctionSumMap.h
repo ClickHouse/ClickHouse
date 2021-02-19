@@ -115,7 +115,12 @@ public:
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
                         getName(), value_type->getName()};
 
-                result_type = value_type_without_nullable->promoteNumericType();
+                WhichDataType value_type_to_check(value_type);
+
+                if (value_type_to_check.isDecimal())
+                    result_type = value_type_without_nullable;
+                else
+                    result_type = value_type_without_nullable->promoteNumericType();
             }
 
             types.emplace_back(std::make_shared<DataTypeArray>(result_type));
