@@ -99,7 +99,7 @@ private:
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
     /// for this table is not too large.
-    TryResult tryGetEntry(
+    static TryResult tryGetEntry(
             IConnectionPool & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
