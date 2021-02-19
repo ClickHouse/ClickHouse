@@ -66,11 +66,6 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
             const UInt8 * data = res_column_uint8.getData().data();
             size_t size = res_column_uint8.size();
 
-            std::cerr << std::endl;
-            for (size_t j = 0; j < size; ++j)
-                std::cerr << data[j] << " ";
-            std::cerr << std::endl;
-
             /// Is violated.
             if (!memoryIsByte(data, size, 1))
             {
