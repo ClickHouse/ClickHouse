@@ -417,9 +417,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query && insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
 
-        if (insert_query && insert_query->data)
+        if (insert_query)
         {
-            query_end = insert_query->data;
+            if (insert_query->data)
+                query_end = insert_query->data;
+            else
+                query_end = end;
             insert_query->tail = istr;
         }
         else

@@ -402,13 +402,16 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-    else if (query.data)
+    else
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, query.tail, query_sample_block, context, nullptr);
 
     if (!out_streams.empty())
+    {
+        assert(res.in);
         res.out = std::move(out_streams.at(0));
+    }
     else
-        assert(res.pipeline.initialized());
+        assert(!res.in && res.pipeline.initialized());
 
     res.pipeline.addStorageHolder(table);
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
