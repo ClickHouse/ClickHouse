@@ -29,8 +29,6 @@ namespace ErrorCodes
 namespace
 {
 
-using TablesWithColumnNamesAndTypes = std::vector<TableWithColumnNamesAndTypes>;
-
 struct JoinedElement
 {
     explicit JoinedElement(const ASTTablesInSelectQueryElement & table_element)
@@ -126,21 +124,27 @@ void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
     members.push_back(node);
 }
 
-std::optional<size_t> getIdentsMembership(const std::vector<const ASTIdentifier *> idents,
-                                          const TablesWithColumnNamesAndTypes & tables,
+std::optional<size_t> getIdentMembership(const ASTIdentifier & ident, const std::vector<TableWithColumnNamesAndTypes> & tables)
+{
+    std::optional<size_t> table_pos = IdentifierSemantic::getMembership(ident);
+    if (table_pos)
+        return table_pos;
+    return IdentifierSemantic::chooseTableColumnMatch(ident, tables);
+}
+
+std::optional<size_t> getIdentsMembership(const ASTPtr ast,
+                                          const std::vector<TableWithColumnNamesAndTypes> & tables,
                                           const Aliases & aliases)
 {
+    auto idents = IdentifiersCollector::collect(ast);
+
     std::optional<size_t> result;
     for (const auto * ident : idents)
     {
         /// Moving expressions that use column aliases is not supported.
         if (ident->isShort() && aliases.count(ident->shortName()))
             return {};
-
-        std::optional<size_t> pos = IdentifierSemantic::getMembership(*ident);
-        if (!pos)
-            pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables);
-
+        const auto pos = getIdentMembership(*ident, tables);
         if (!pos)
             return {};
         if (result && *pos != *result)
@@ -148,33 +152,6 @@ std::optional<size_t> getIdentsMembership(const std::vector<const ASTIdentifier 
         result = pos;
     }
     return result;
-}
-
-std::optional<std::pair<size_t, size_t>> getArgumentsMembership(
-    const ASTPtr & left, const ASTPtr & right, const TablesWithColumnNamesAndTypes & tables, const Aliases & aliases, bool recursive)
-{
-    std::optional<size_t> left_table_pos, right_table_pos;
-    if (recursive)
-    {
-        /// Collect all nested identifies
-        left_table_pos = getIdentsMembership(IdentifiersCollector::collect(left), tables, aliases);
-        right_table_pos = getIdentsMembership(IdentifiersCollector::collect(right), tables, aliases);
-    }
-    else
-    {
-        /// Use identifier only if it's on the top level
-        const auto * left_ident = left->as<ASTIdentifier>();
-        const auto * right_ident = right->as<ASTIdentifier>();
-        if (left_ident && right_ident)
-        {
-            left_table_pos = getIdentsMembership({left_ident}, tables, aliases);
-            right_table_pos = getIdentsMembership({right_ident}, tables, aliases);
-        }
-    }
-
-    if (left_table_pos && right_table_pos)
-        return std::make_pair(*left_table_pos, *right_table_pos);
-    return {};
 }
 
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
@@ -196,7 +173,6 @@ bool canMoveExpressionToJoinOn(const ASTPtr & ast,
                                const std::vector<JoinedElement> & joined_tables,
                                const std::vector<TableWithColumnNamesAndTypes> & tables,
                                const Aliases & aliases,
-                               int rewrite_mode,
                                std::map<size_t, std::vector<ASTPtr>> & asts_to_join_on)
 {
     std::vector<ASTPtr> conjuncts;
@@ -208,18 +184,17 @@ bool canMoveExpressionToJoinOn(const ASTPtr & ast,
             if (!func->arguments || func->arguments->children.size() != 2)
                 return false;
 
-            bool optimistic_rewrite = rewrite_mode >= 2;
-            auto table_pos = getArgumentsMembership(func->arguments->children[0], func->arguments->children[1],
-                                                    tables, aliases, optimistic_rewrite);
-
             /// Check if the identifiers are from different joined tables.
             /// If it's a self joint, tables should have aliases.
-            if (table_pos && table_pos->first != table_pos->second)
+            auto left_table_pos = getIdentsMembership(func->arguments->children[0], tables, aliases);
+            auto right_table_pos = getIdentsMembership(func->arguments->children[1], tables, aliases);
+
+            /// Identifiers from different table move to JOIN ON
+            if (left_table_pos && right_table_pos && *left_table_pos != *right_table_pos)
             {
-                /// Identifiers from different table move to JOIN ON
-                size_t max_table_pos = std::max(table_pos->first, table_pos->second);
-                if (joined_tables[max_table_pos].canAttachOnExpression())
-                    asts_to_join_on[max_table_pos].push_back(node);
+                size_t table_pos = std::max(*left_table_pos, *right_table_pos);
+                if (joined_tables[table_pos].canAttachOnExpression())
+                    asts_to_join_on[table_pos].push_back(node);
                 else
                     return false;
             }
@@ -351,11 +326,11 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
 
     /// CROSS to INNER
 
-    if (select.where() && data.cross_to_inner_join_rewrite > 0)
+    if (select.where() && data.cross_to_inner_join_rewrite)
     {
         std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-        bool can_move_where = canMoveExpressionToJoinOn(
-            select.where(), joined_tables, data.tables_with_columns, data.aliases, data.cross_to_inner_join_rewrite, asts_to_join_on);
+        bool can_move_where
+            = canMoveExpressionToJoinOn(select.where(), joined_tables, data.tables_with_columns, data.aliases, asts_to_join_on);
         if (can_move_where)
         {
             for (size_t i = 1; i < joined_tables.size(); ++i)
