@@ -342,6 +342,7 @@ void NuKeeperTCPHandler::runImpl()
             PollResult result = poll_wrapper->poll(session_timeout);
             if (result.has_requests && !close_received)
             {
+                size_t requests_read = 0;
                 do
                 {
                     auto [received_op, received_xid] = receiveRequest();
@@ -358,6 +359,10 @@ void NuKeeperTCPHandler::runImpl()
                         LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
                         session_stopwatch.restart();
                     }
+
+                    if (requests_read > 50)
+                        break;
+                    requests_read++;
                 }
                 while (in->available());
             }
