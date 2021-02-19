@@ -38,19 +38,24 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto parser = getConverterBasedOnType<CartesianPoint>(arguments[0]);
-        auto figures = parseFigure(parser);
-
         auto res_column = ColumnString::create();
 
-        for (size_t i = 0; i < input_rows_count; i++)
+        callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
-            std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            str << boost::geometry::wkt(figures[i]);
-            std::string serialized = str.str();
-            res_column->insertData(serialized.c_str(), serialized.size());
-        }
+            using TypeParser = std::decay_t<decltype(type)>;
+            TypeParser parser(arguments[0].column->convertToFullColumnIfConst());
+            auto figures = parser.parse();
 
+            for (size_t i = 0; i < input_rows_count; i++)
+            {
+                std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                str << boost::geometry::wkt(figures[i]);
+                std::string serialized = str.str();
+                res_column->insertData(serialized.c_str(), serialized.size());
+            }
+        }
+        );
+    
         return res_column;
     }
 
