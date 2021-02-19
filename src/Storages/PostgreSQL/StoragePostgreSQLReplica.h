@@ -67,6 +67,8 @@ public:
 
     bool isNestedLoaded() { return nested_loaded.load(); }
 
+    void dropNested();
+
 protected:
     StoragePostgreSQLReplica(
         const StorageID & table_id_,
@@ -86,8 +88,6 @@ private:
     ASTPtr getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure);
 
     std::string getNestedTableName() const;
-
-    void dropNested();
 
     std::string remote_table_name;
     std::shared_ptr<Context> global_context;

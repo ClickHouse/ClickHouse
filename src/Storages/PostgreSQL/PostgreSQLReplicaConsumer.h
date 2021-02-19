@@ -10,6 +10,7 @@
 #include "insertPostgreSQLValue.h"
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Names.h>
 #include <common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/OneBlockInputStream.h>
@@ -19,6 +20,7 @@
 
 namespace DB
 {
+using NestedReloadFunc = std::function<std::string(PostgreSQLConnection::ConnectionPtr, NameSet &)>;
 
 class PostgreSQLReplicaConsumer
 {
@@ -35,9 +37,9 @@ public:
             const size_t max_block_size_,
             Storages storages_);
 
-    void startSynchronization();
+    void readMetadata();
 
-    void stopSynchronization();
+    bool consume(NameSet & skipped_tables);
 
 private:
     void synchronizationStream();
@@ -101,7 +103,7 @@ private:
     static Int16 readInt16(const char * message, size_t & pos, size_t size);
     static Int8 readInt8(const char * message, size_t & pos, size_t size);
 
-    void markTableAsSkippedUntilReload(Int32 relation_id, const String & relation_name);
+    void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
@@ -115,9 +117,6 @@ private:
 
     std::string table_to_insert;
     std::unordered_set<std::string> tables_to_sync;
-
-    BackgroundSchedulePool::TaskHolder wal_reader_task;
-    std::atomic<bool> stop_synchronization = false;
 
     Storages storages;
     Buffers buffers;
@@ -134,7 +133,7 @@ private:
     };
 
     std::unordered_map<Int32, SchemaData> schema_data;
-    std::unordered_set<Int32> skip_until_reload;
+    std::unordered_set<Int32> skip_list;
 };
 
 }

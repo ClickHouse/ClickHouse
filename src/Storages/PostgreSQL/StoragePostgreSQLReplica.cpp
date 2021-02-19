@@ -172,7 +172,7 @@ ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery(const std::function<P
     const auto & columns = metadata_snapshot->getColumns();
     NamesAndTypesList ordinary_columns_and_types;
 
-    if (!columns.empty())
+    if (!is_postgresql_replica_database)
     {
         ordinary_columns_and_types = columns.getOrdinary();
     }
@@ -243,16 +243,26 @@ ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery(const std::function<P
 
 void StoragePostgreSQLReplica::createNestedIfNeeded(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
 {
-    nested_storage = tryGetNested();
+    if (nested_loaded)
+    {
+        nested_storage = tryGetNested();
 
-    if (nested_storage)
-        return;
+        if (nested_storage)
+            return;
+    }
 
     auto context = makeNestedTableContext();
     const auto ast_create = getCreateNestedTableQuery(fetch_table_structure);
 
-    InterpreterCreateQuery interpreter(ast_create, context);
-    interpreter.execute();
+    try
+    {
+        InterpreterCreateQuery interpreter(ast_create, context);
+        interpreter.execute();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     nested_storage = getNested();
 }
@@ -337,6 +347,9 @@ void StoragePostgreSQLReplica::dropNested()
     auto context = makeNestedTableContext();
     auto interpreter = InterpreterDropQuery(ast_drop, context);
     interpreter.execute();
+
+    nested_loaded.store(false);
+    nested_storage = nullptr;
 }
 
 

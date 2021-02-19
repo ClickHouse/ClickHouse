@@ -22,10 +22,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-static const auto reschedule_ms = 500;
-static const auto max_thread_work_duration_ms = 60000;
-
-
 PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     std::shared_ptr<Context> context_,
     PostgreSQLConnectionPtr connection_,
@@ -49,13 +45,10 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     {
         buffers.emplace(table_name, BufferData(storage));
     }
-
-    wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ synchronizationStream(); });
-    wal_reader_task->deactivate();
 }
 
 
-void PostgreSQLReplicaConsumer::startSynchronization()
+void PostgreSQLReplicaConsumer::readMetadata()
 {
     try
     {
@@ -73,35 +66,6 @@ void PostgreSQLReplicaConsumer::startSynchronization()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    wal_reader_task->activateAndSchedule();
-}
-
-
-void PostgreSQLReplicaConsumer::stopSynchronization()
-{
-    stop_synchronization.store(true);
-    wal_reader_task->deactivate();
-}
-
-
-void PostgreSQLReplicaConsumer::synchronizationStream()
-{
-    auto start_time = std::chrono::steady_clock::now();
-
-    while (!stop_synchronization)
-    {
-        if (!readFromReplicationSlot())
-            break;
-
-        auto end_time = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (duration.count() > max_thread_work_duration_ms)
-            break;
-    }
-
-    if (!stop_synchronization)
-        wal_reader_task->scheduleAfter(reschedule_ms);
 }
 
 
@@ -331,8 +295,8 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
 
             if (current_schema_data.number_of_columns != num_columns)
             {
-                markTableAsSkippedUntilReload(relation_id, relation_name);
-                break;
+                markTableAsSkipped(relation_id, relation_name);
+                return;
             }
 
             for (uint16_t i = 0; i < num_columns; ++i)
@@ -357,8 +321,8 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
                     if (current_schema_data.column_identifiers[i].first != data_type_id
                             || current_schema_data.column_identifiers[i].second != type_modifier)
                     {
-                        markTableAsSkippedUntilReload(relation_id, relation_name);
-                        break;
+                        markTableAsSkipped(relation_id, relation_name);
+                        return;
                     }
                 }
             }
@@ -380,7 +344,7 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            if (skip_until_reload.find(relation_id) != skip_until_reload.end())
+            if (skip_list.find(relation_id) != skip_list.end())
                 break;
 
             Int8 new_tuple = readInt8(replication_message, pos, size);
@@ -401,7 +365,7 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            if (skip_until_reload.find(relation_id) != skip_until_reload.end())
+            if (skip_list.find(relation_id) != skip_list.end())
                 break;
 
             LOG_DEBUG(log, "relationID {}, current insert table {}", relation_id, table_to_insert);
@@ -451,7 +415,7 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            if (skip_until_reload.find(relation_id) != skip_until_reload.end())
+            if (skip_list.find(relation_id) != skip_list.end())
                 break;
 
             Int8 full_replica_identity = readInt8(replication_message, pos, size);
@@ -471,13 +435,12 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
 }
 
 
-/// TODO: If some table has a changed structure, we can stop current stream (after remembering last valid WAL position)
-/// and advance lsn up to this position. Then make changes to nested table and continue the same way.
-void PostgreSQLReplicaConsumer::markTableAsSkippedUntilReload(Int32 relation_id, const String & relation_name)
+void PostgreSQLReplicaConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
-    skip_until_reload.insert(relation_id);
+    skip_list.insert(relation_id);
     auto & buffer = buffers.find(relation_name)->second;
     buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+    LOG_DEBUG(log, "Table {} is skipped temporarily", relation_name);
 }
 
 
@@ -608,6 +571,20 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
     }
 
     syncTables(tx);
+    return true;
+}
+
+
+bool PostgreSQLReplicaConsumer::consume(NameSet & skipped_tables)
+{
+    if (!readFromReplicationSlot() || !skip_list.empty())
+    {
+        for (const auto & relation_id : skip_list)
+            skipped_tables.insert(relation_id_to_name[relation_id]);
+
+        return false;
+    }
+
     return true;
 }
 
