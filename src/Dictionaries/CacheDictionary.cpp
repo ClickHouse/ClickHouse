@@ -130,7 +130,7 @@ const IDictionarySource * CacheDictionary<dictionary_key_type>::getSource() cons
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::toParent(const PaddedPODArray<UInt64> & ids, PaddedPODArray<UInt64> & out) const
+void CacheDictionary<dictionary_key_type>::toParent(const PaddedPODArray<UInt64> & ids [[maybe_unused]], PaddedPODArray<UInt64> & out [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
@@ -306,7 +306,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
 template <DictionaryKeyType dictionary_key_type>
 Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
     const Strings & attribute_names,
-    const Columns & key_columns,
+    const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & keys,
     const Columns & default_values_columns) const
 {

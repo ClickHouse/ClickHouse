@@ -352,7 +352,7 @@ public:
         if (current_block_index == partition_blocks_size)
             return false;
 
-        size_t block_offset;
+        size_t block_offset = 0;
         bool write_in_current_block = current_write_block.writeKey(key, block_offset);
 
         if (write_in_current_block)
