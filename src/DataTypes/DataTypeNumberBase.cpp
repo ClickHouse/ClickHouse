@@ -8,8 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 
 
 namespace DB
@@ -202,34 +200,6 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
     x.resize(initial_size + limit);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
-}
-
-
-template <typename T>
-void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeNumber(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]));
-}
-
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    T value;
-    if (!protobuf.readNumber(value))
-        return;
-
-    auto & container = typeid_cast<ColumnVector<T> &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(value);
-        row_added = true;
-    }
-    else
-        container.back() = value;
 }
 
 
