@@ -198,7 +198,7 @@ public:
     virtual Executor & getExecutor() { return *executor; }
 
     /// Reload config if config changed
-    virtual void updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & /* config */, 
+    virtual void updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & /* config */,
                         const String & /* config_prefix */,
                         const Context & /* context */) { }
 

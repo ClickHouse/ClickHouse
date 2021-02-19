@@ -391,7 +391,7 @@ void DiskLocal::sync(int fd) const
         throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
 }
 
-void DiskLocal::updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & config, 
+void DiskLocal::updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & config,
                         const String & config_prefix,
                         const Context & context)
 {
