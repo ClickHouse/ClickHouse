@@ -10,16 +10,16 @@
 namespace DB
 {
 
-class InMemoryStateManager : public nuraft::state_mgr
+class NuKeeperStateManager : public nuraft::state_mgr
 {
 public:
-    InMemoryStateManager(
+    NuKeeperStateManager(
         int server_id_,
         const std::string & config_prefix,
         const Poco::Util::AbstractConfiguration & config,
         const CoordinationSettingsPtr & coordination_settings);
 
-    InMemoryStateManager(
+    NuKeeperStateManager(
         int server_id_,
         const std::string & host,
         int port,
