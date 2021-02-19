@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -290,6 +291,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    htmlOrXmlCoarseParse.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -423,6 +425,7 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp

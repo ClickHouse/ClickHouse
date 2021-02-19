@@ -1050,6 +1050,25 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 }
 
 
+void skipToCarriageReturnOrEOF(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\r')
+        {
+            ++buf.position();
+            return;
+        }
+    }
+}
+
+
 void skipToNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())
@@ -1104,9 +1123,9 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     assert(current >= in.position());
     assert(current <= in.buffer().end());
 
-    const int old_bytes = memory.size();
-    const int additional_bytes = current - in.position();
-    const int new_bytes = old_bytes + additional_bytes;
+    const size_t old_bytes = memory.size();
+    const size_t additional_bytes = current - in.position();
+    const size_t new_bytes = old_bytes + additional_bytes;
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)

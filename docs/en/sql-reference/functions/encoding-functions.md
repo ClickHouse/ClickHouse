@@ -15,7 +15,7 @@ Returns the string with the length as the number of passed arguments and each by
 char(number_1, [number_2, ..., number_n]);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
 
@@ -107,7 +107,7 @@ For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal 
 
 Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
 
-**Parameters**
+**Arguments**
 
 -   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 

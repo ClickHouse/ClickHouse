@@ -10,8 +10,6 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromString.h>
@@ -260,45 +258,6 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
     deserializeFromString(function, column, s);
 }
 
-
-void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(
-        protobuf.writeAggregateFunction(function, assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num]));
-}
-
-void DataTypeAggregateFunction::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
-    Arena & arena = column_concrete.createOrGetArena();
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-    function->create(place);
-    try
-    {
-        if (!protobuf.readAggregateFunction(function, place, arena))
-        {
-            function->destroy(place);
-            return;
-        }
-        auto & container = column_concrete.getData();
-        if (allow_add_row)
-        {
-            container.emplace_back(place);
-            row_added = true;
-        }
-        else
-            container.back() = place;
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-}
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
