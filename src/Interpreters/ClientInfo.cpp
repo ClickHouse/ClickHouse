@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 #include <common/getFQDNOrHostName.h>
+#include <Common/ClickHouseRevision.h>
 #include <unistd.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -43,7 +44,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         writeBinary(client_name, out);
         writeVarUInt(client_version_major, out);
         writeVarUInt(client_version_minor, out);
-        writeVarUInt(client_tcp_protocol_version, out);
+        writeVarUInt(client_revision, out);
     }
     else if (interface == Interface::HTTP)
     {
@@ -58,26 +59,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     {
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             writeVarUInt(client_version_patch, out);
-    }
-
-    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
-    {
-        if (client_trace_context.trace_id)
-        {
-            // Have OpenTelemetry header.
-            writeBinary(uint8_t(1), out);
-            // No point writing these numbers with variable length, because they
-            // are random and will probably require the full length anyway.
-            writeBinary(client_trace_context.trace_id, out);
-            writeBinary(client_trace_context.span_id, out);
-            writeBinary(client_trace_context.tracestate, out);
-            writeBinary(client_trace_context.trace_flags, out);
-        }
-        else
-        {
-            // Don't have OpenTelemetry header.
-            writeBinary(uint8_t(0), out);
-        }
     }
 }
 
@@ -111,7 +92,7 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         readBinary(client_name, in);
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
-        readVarUInt(client_tcp_protocol_version, in);
+        readVarUInt(client_revision, in);
     }
     else if (interface == Interface::HTTP)
     {
@@ -130,20 +111,7 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             readVarUInt(client_version_patch, in);
         else
-            client_version_patch = client_tcp_protocol_version;
-    }
-
-    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
-    {
-        uint8_t have_trace_id = 0;
-        readBinary(have_trace_id, in);
-        if (have_trace_id)
-        {
-            readBinary(client_trace_context.trace_id, in);
-            readBinary(client_trace_context.span_id, in);
-            readBinary(client_trace_context.tracestate, in);
-            readBinary(client_trace_context.trace_flags, in);
-        }
+            client_version_patch = client_revision;
     }
 }
 
@@ -169,7 +137,7 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     client_version_major = DBMS_VERSION_MAJOR;
     client_version_minor = DBMS_VERSION_MINOR;
     client_version_patch = DBMS_VERSION_PATCH;
-    client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+    client_revision = ClickHouseRevision::get();
 }
 
 

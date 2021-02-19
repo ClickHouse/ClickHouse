@@ -41,7 +41,6 @@ public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
     ASTExpressionList * constraints = nullptr;
-    IAST              * primary_key = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 

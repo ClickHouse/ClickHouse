@@ -2,9 +2,8 @@
 #include "FunctionFactory.h"
 #include "MatchImpl.h"
 
+
 namespace DB
-{
-namespace
 {
 
 struct NameNotLike
@@ -13,8 +12,6 @@ struct NameNotLike
 };
 
 using FunctionNotLike = FunctionsStringSearch<MatchImpl<true, true>, NameNotLike>;
-
-}
 
 void registerFunctionNotLike(FunctionFactory & factory)
 {

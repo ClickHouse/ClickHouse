@@ -31,7 +31,6 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {
@@ -63,7 +62,7 @@ struct CustomizeFunctionsData
 
     const String & customized_func_name;
 
-    void visit(ASTFunction & func, ASTPtr &) const
+    void visit(ASTFunction & func, ASTPtr &)
     {
         if (Poco::toLower(func.name) == func_name)
         {
@@ -97,7 +96,7 @@ struct CustomizeFunctionsSuffixData
 
     const String & customized_func_suffix;
 
-    void visit(ASTFunction & func, ASTPtr &) const
+    void visit(ASTFunction & func, ASTPtr &)
     {
         if (endsWith(Poco::toLower(func.name), func_suffix))
         {
@@ -110,27 +109,6 @@ struct CustomizeFunctionsSuffixData
 /// Swap 'if' and 'distinct' suffixes to make execution more optimal.
 char ifDistinct[] = "ifdistinct";
 using CustomizeIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsSuffixData<ifDistinct>>, true>;
-
-/// Used to rewrite all aggregate functions to add -OrNull suffix to them if setting `aggregate_functions_null_for_empty` is set.
-struct CustomizeAggregateFunctionsSuffixData
-{
-    using TypeToVisit = ASTFunction;
-
-    const String & customized_func_suffix;
-
-    void visit(ASTFunction & func, ASTPtr &) const
-    {
-        const auto & instance = AggregateFunctionFactory::instance();
-        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix))
-        {
-            auto properties = instance.tryGetProperties(func.name);
-            if (properties && !properties->returns_default_when_only_null)
-                func.name = func.name + customized_func_suffix;
-        }
-    }
-};
-
-using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -500,24 +478,6 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
-    else if (is_select && metadata_snapshot)
-    {
-        const auto & partition_desc = metadata_snapshot->getPartitionKey();
-        if (partition_desc.expression)
-        {
-            const auto & partition_source_columns = partition_desc.expression->getRequiredColumns();
-            optimize_trivial_count = true;
-            for (const auto & required_column : required)
-            {
-                if (std::find(partition_source_columns.begin(), partition_source_columns.end(), required_column)
-                    == partition_source_columns.end())
-                {
-                    optimize_trivial_count = false;
-                    break;
-                }
-            }
-        }
-    }
 
     NameSet unknown_required_source_columns = required;
 
@@ -552,7 +512,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
-        WriteBufferFromOwnString ss;
+        std::stringstream ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
@@ -660,7 +620,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&
-            !select_query->groupBy() && !select_query->having() &&
+            !select_query->where() && !select_query->prewhere() && !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
@@ -730,13 +690,6 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
 
         CustomizeGlobalNotInVisitor::Data data_global_not_null_in{"globalNotNullIn"};
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
-    }
-
-    // Rewrite all aggregate functions to add -OrNull suffix to them
-    if (settings.aggregate_functions_null_for_empty)
-    {
-        CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
-        CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
     }
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr

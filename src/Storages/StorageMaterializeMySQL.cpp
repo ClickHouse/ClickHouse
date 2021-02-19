@@ -23,7 +23,7 @@ namespace DB
 {
 
 StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_)
-    : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
+    : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
     StorageInMemoryMetadata in_memory_metadata;
@@ -34,7 +34,7 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
 Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
@@ -104,17 +104,6 @@ NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
     /// If the background synchronization thread has exception.
     database->rethrowExceptionIfNeed();
     return nested_storage->getVirtuals();
-}
-
-IStorage::ColumnSizeByName StorageMaterializeMySQL::getColumnSizes() const
-{
-    auto sizes = nested_storage->getColumnSizes();
-    auto nested_header = nested_storage->getInMemoryMetadataPtr()->getSampleBlock();
-    String sign_column_name = nested_header.getByPosition(nested_header.columns() - 2).name;
-    String version_column_name = nested_header.getByPosition(nested_header.columns() - 1).name;
-    sizes.erase(sign_column_name);
-    sizes.erase(version_column_name);
-    return sizes;
 }
 
 }

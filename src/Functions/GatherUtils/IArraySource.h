@@ -30,12 +30,9 @@ struct IArraySource
     }
 };
 
-#pragma GCC visibility push(hidden)
-
 template <typename Derived>
 class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
 
-#pragma GCC visibility pop
 }
 
 }

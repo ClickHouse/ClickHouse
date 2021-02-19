@@ -81,8 +81,8 @@ public:
     void initSkipIndices() final;
     void initPrimaryIndex() final;
 
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
@@ -97,7 +97,8 @@ protected:
     const String marks_file_extension;
     CompressionCodecPtr default_codec;
 
-    const bool compute_granularity;
+    bool compute_granularity;
+    bool need_finish_last_granule;
 
     /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
@@ -105,17 +106,14 @@ protected:
 
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
-    /// Amount of marks currently serialized in skip index aggregator
-    std::vector<size_t> marks_in_skip_index_aggregator;
-    /// Amount of rows currently serialized in skip index aggregator for last mark
-    std::vector<size_t> rows_in_skip_index_aggregator_last_mark;
+    std::vector<size_t> skip_index_filling;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     DataTypes index_types;
-    /// Index columns from the last block
+    /// Index columns values from the last row from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
-    Columns last_block_index_columns;
+    Row last_index_row;
 
     bool data_written = false;
     bool primary_index_initialized = false;
@@ -127,11 +125,6 @@ protected:
 private:
     /// Index is already serialized up to this mark.
     size_t index_mark = 0;
-
-    /// Increment corresponding marks_in_skip_index_aggregator[skip_index_pos]
-    /// value and flush skip_indices_streams[skip_index_pos] to disk if we have
-    /// aggregated enough marks
-    void accountMarkForSkipIdxAndFlushIfNeeded(size_t skip_index_pos);
 };
 
 }

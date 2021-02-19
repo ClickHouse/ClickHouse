@@ -57,7 +57,6 @@ export -f thread_select
 export -f thread_insert
 export -f thread_insert_select
 
-
 # Do randomized queries and expect nothing extraordinary happens.
 
 function test_with_engine {

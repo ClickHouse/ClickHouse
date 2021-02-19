@@ -160,8 +160,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss.exceptions(std::ios::failbit);
+    std::ostringstream ss;
     root_node->printJson(ss, 0);
     return ss.str();
 }

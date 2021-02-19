@@ -201,7 +201,7 @@ Ayar `format_template_resultset` resultset için bir biçim dizesi içeren dosya
 -   `min` satır içinde minimum değerlere sahip mi `format_template_row` biçim (1 olarak ayarlandığında)
 -   `max` maksimum değerleri olan satır `format_template_row` biçim (1 olarak ayarlandığında)
 -   `rows` çıktı satırlarının toplam sayısıdır
--   `rows_before_limit` minimum satır sayısı sınırı olmadan olurdu. Yalnızca sorgu sınırı içeriyorsa çıktı. Sorgu GROUP BY içeriyorsa, ROWS_BEFORE_LİMİT_AT_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
+-   `rows_before_limit` minimum satır sayısı sınırı olmadan olurdu. Yalnızca sorgu sınırı içeriyorsa çıktı. Sorgu GROUP BY içeriyorsa, ROWS\_BEFORE\_LİMİT\_AT\_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
 -   `time` istek yürütme süresi saniyeler içinde mi
 -   `rows_read` satır sayısı okun thedu mu
 -   `bytes_read` bayt sayısı (sıkıştırılmamış) okundu mu
@@ -352,21 +352,21 @@ Ayrıştırma, ek alanın varlığına izin verir `tskv` eşit işareti veya bir
 
 Virgülle ayrılmış değerler biçimi ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-Biçimlendirme yaparken, satırlar çift tırnak içine alınır. Bir dizenin içindeki çift alıntı, bir satırda iki çift tırnak olarak çıktılanır. Karakterlerden kaçmak için başka kural yoktur. Tarih ve Tarih-Saat çift tırnak içine alınır. Sayılar tırnak işaretleri olmadan çıktı. Değerler, bir sınırlayıcı karakterle ayrılır; `,` varsayılan olarak. Sınırlayıcı karakteri ayarında tanımlanır [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Satırlar Unıx satır besleme (LF) kullanılarak ayrılır. Diziler CSV'DE aşağıdaki gibi serileştirilir: ilk olarak, dizi TabSeparated biçiminde olduğu gibi bir dizeye serileştirilir ve daha sonra ortaya çıkan dize çift tırnak içinde CSV'YE çıkarılır. CSV biçimindeki Tuples ayrı sütunlar olarak serileştirilir(yani, tuple'daki yuvalanmaları kaybolur).
+Biçimlendirme yaparken, satırlar çift tırnak içine alınır. Bir dizenin içindeki çift alıntı, bir satırda iki çift tırnak olarak çıktılanır. Karakterlerden kaçmak için başka kural yoktur. Tarih ve Tarih-Saat çift tırnak içine alınır. Sayılar tırnak işaretleri olmadan çıktı. Değerler, bir sınırlayıcı karakterle ayrılır; `,` varsayılan olarak. Sınırlayıcı karakteri ayarında tanımlanır [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Satırlar Unıx satır besleme (LF) kullanılarak ayrılır. Diziler CSV'DE aşağıdaki gibi serileştirilir: ilk olarak, dizi TabSeparated biçiminde olduğu gibi bir dizeye serileştirilir ve daha sonra ortaya çıkan dize çift tırnak içinde CSV'YE çıkarılır. CSV biçimindeki Tuples ayrı sütunlar olarak serileştirilir(yani, tuple'daki yuvalanmaları kaybolur).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\* Varsayılan olarak, sınırlayıcı `,`. Görmek [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) daha fazla bilgi için ayarlama.
+\* Varsayılan olarak, sınırlayıcı `,`. Görmek [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) daha fazla bilgi için ayarlama.
 
 Ayrıştırma yaparken, tüm değerler tırnak işaretleri ile veya tırnak işaretleri olmadan ayrıştırılabilir. Hem çift hem de tek tırnak desteklenmektedir. Satırlar tırnak işaretleri olmadan da düzenlenebilir. Bu durumda, sınırlayıcı karaktere veya satır beslemesine (CR veya LF) ayrıştırılır. RFC'Yİ ihlal ederken, satırları tırnak işaretleri olmadan ayrıştırırken, önde gelen ve sondaki boşluklar ve sekmeler göz ardı edilir. Hat beslemesi için Unix (LF), Windows (CR LF) ve Mac OS Classic (CR LF) türleri desteklenir.
 
 Boş unquoted giriş değerleri, ilgili sütunlar için varsayılan değerlerle değiştirilir
-[ınput_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 etkindir.
 
-`NULL` olarak format islanır `\N` veya `NULL` veya boş bir unquoted dize (bkz. ayarlar [ınput_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) ve [ınput_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` olarak format islanır `\N` veya `NULL` veya boş bir unquoted dize (bkz. ayarlar [ınput\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) ve [ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 CSV biçimi, toplamların ve aşırılıkların çıktısını aynı şekilde destekler `TabSeparated`.
 
@@ -451,12 +451,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-Json JavaScript ile uyumludur. Bunu sağlamak için, bazı karakterler ek olarak kaçar: eğik çizgi `/` olarak kaç İsar `\/`; alternatif Satır sonları `U+2028` ve `U+2029`, hangi bazı tarayıcılar kırmak, olarak kaçtı `\uXXXX`. ASCII denetim karakterleri kaçtı: backspace, form besleme, satır besleme, satır başı ve yatay sekme ile değiştirilir `\b`, `\f`, `\n`, `\r`, `\t` , 00-1f aralığında kalan baytların yanı sıra `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0'a.
+Json JavaScript ile uyumludur. Bunu sağlamak için, bazı karakterler ek olarak kaçar: eğik çizgi `/` olarak kaç İsar `\/`; alternatif Satır sonları `U+2028` ve `U+2029`, hangi bazı tarayıcılar kırmak, olarak kaçtı `\uXXXX`. ASCII denetim karakterleri kaçtı: backspace, form besleme, satır besleme, satır başı ve yatay sekme ile değiştirilir `\b`, `\f`, `\n`, `\r`, `\t` , 00-1f aralığında kalan baytların yanı sıra `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0'a.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` Minimum satır sayısı sınırı olmadan olurdu. Yalnızca sorgu sınırı içeriyorsa çıktı.
-Sorgu GROUP BY içeriyorsa, ROWS_BEFORE_LİMİT_AT_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
+Sorgu GROUP BY içeriyorsa, ROWS\_BEFORE\_LİMİT\_AT\_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -543,7 +543,7 @@ ClickHouse, nesnelerden sonra öğeler ve virgüller arasındaki boşlukları yo
 
 ClickHouse, karşılık gelen değerler için varsayılan değerlerle atlanmış değerleri değiştirir [veri türleri](../sql-reference/data-types/index.md).
 
-Eğer `DEFAULT expr` belirtilen, ClickHouse bağlı olarak farklı ikame kuralları kullanır [ınput_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) ayar.
+Eğer `DEFAULT expr` belirtilen, ClickHouse bağlı olarak farklı ikame kuralları kullanır [ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) ayar.
 
 Aşağıdaki tabloyu düşünün:
 
@@ -586,7 +586,7 @@ Aksine [JSON](#json) biçimi, geçersiz UTF-8 dizilerinin hiçbir ikame yoktur. 
 
 ### İç içe yapıların kullanımı {#jsoneachrow-nested}
 
-İle bir tablo varsa [İçiçe](../sql-reference/data-types/nested-data-structures/nested.md) veri türü sütunları, aynı yapıya sahip json verilerini ekleyebilirsiniz. İle bu özelliği etkinleştirin [ınput_format_ımport_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) ayar.
+İle bir tablo varsa [İçiçe](../sql-reference/data-types/nested-data-structures/nested.md) veri türü sütunları, aynı yapıya sahip json verilerini ekleyebilirsiniz. İle bu özelliği etkinleştirin [ınput\_format\_ımport\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) ayar.
 
 Örneğin, aşağıdaki tabloyu göz önünde bulundurun:
 
@@ -600,7 +600,7 @@ Gibi görmek `Nested` veri türü açıklaması, ClickHouse, iç içe geçmiş y
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-Hiyerarşik bir json nesnesi olarak veri eklemek için [input_format_import_nested_json = 1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+Hiyerarşik bir json nesnesi olarak veri eklemek için [input\_format\_import\_nested\_json = 1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -782,7 +782,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 Bu, kullanılan formattır `INSERT INTO t VALUES ...`, ancak sorgu sonuçlarını biçimlendirmek için de kullanabilirsiniz.
 
-Ayrıca bakınız: [ınput_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) ve [ınput_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) ayarlar.
+Ayrıca bakınız: [ınput\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) ve [ınput\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) ayarlar.
 
 ## Dikey {#vertical}
 
@@ -1045,7 +1045,7 @@ Sütun adları gerekir:
 -   ile başla `[A-Za-z_]`
 -   daha sonra sadece içerir `[A-Za-z0-9_]`
 
-Çıkış Avro dosya sıkıştırma ve senkronizasyon aralığı ile yapılandırılabilir [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) ve [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) sırasıyla.
+Çıkış Avro dosya sıkıştırma ve senkronizasyon aralığı ile yapılandırılabilir [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) ve [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) sırasıyla.
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1055,7 +1055,7 @@ Her Avro iletisi, şema Kayıt defterinin yardımıyla gerçek şemaya çözüle
 
 Şemalar çözüldükten sonra önbelleğe alınır.
 
-Şema kayıt defteri URL'si ile yapılandırılır [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+Şema kayıt defteri URL'si ile yapılandırılır [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### Veri Türleri Eşleştirme {#data_types-matching-1}
 
@@ -1198,13 +1198,13 @@ mutlak bir yol veya istemci üzerinde geçerli dizine göre bir yol içerebilir.
 Eğer istemci kullanıyorsanız [Toplu Modu](../interfaces/cli.md#cli_usage), şemanın yolu güvenlik nedeniyle göreceli olmalıdır.
 
 Eğer giriş veya çıkış veri üzerinden [HTTP arayüzü](../interfaces/http.md) biçim şemasında belirtilen dosya adı
-belirtilen dizinde bulunmalıdır [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+belirtilen dizinde bulunmalıdır [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 sunucu yapılandırmasında.
 
 ## Atlama Hataları {#skippingerrors}
 
-Gibi bazı format suchlar `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` ve `Protobuf` ayrıştırma hatası oluşursa kırık satırı atlayabilir ve bir sonraki satırın başından ayrıştırmaya devam edebilir. Görmek [ınput_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) ve
-[ınput_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) ayarlar.
+Gibi bazı format suchlar `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` ve `Protobuf` ayrıştırma hatası oluşursa kırık satırı atlayabilir ve bir sonraki satırın başından ayrıştırmaya devam edebilir. Görmek [ınput\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) ve
+[ınput\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) ayarlar.
 Sınırlamalar:
 - Ayrıştırma hatası durumunda `JSONEachRow` yeni satıra (veya EOF) kadar tüm verileri atlar, bu nedenle satırlar AŞAĞIDAKİLERLE sınırlandırılmalıdır `\n` hataları doğru saymak için.
 - `Template` ve `CustomSeparated` bir sonraki satırın başlangıcını bulmak için son sütundan sonra sınırlayıcı ve satırlar arasındaki sınırlayıcıyı kullanın, Bu nedenle hataları atlamak yalnızca en az biri boş değilse çalışır.

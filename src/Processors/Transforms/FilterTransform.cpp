@@ -33,8 +33,7 @@ Block FilterTransform::transformHeader(
     const String & filter_column_name,
     bool remove_filter_column)
 {
-    size_t num_rows = header.rows();
-    expression->execute(header, num_rows);
+    expression->execute(header);
 
     if (remove_filter_column)
         header.erase(filter_column_name);
@@ -97,15 +96,19 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    size_t num_rows_before_filtration = chunk.getNumRows();
+    size_t num_rows_before_filtration;
     auto columns = chunk.detachColumns();
 
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
-        expression->execute(block, num_rows_before_filtration);
+        if (on_totals)
+            expression->executeOnTotals(block);
+        else
+            expression->execute(block);
 
+        num_rows_before_filtration = block.rows();
         columns = block.getColumns();
     }
 

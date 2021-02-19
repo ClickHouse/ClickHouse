@@ -239,7 +239,7 @@ Aşağıdaki örnekte, dizin kullanılamaz.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Clickhouse'un bir sorgu çalıştırırken dizini kullanıp kullanamayacağını kontrol etmek için ayarları kullanın [force_index_by_date](../../../operations/settings/settings.md#settings-force_index_by_date) ve [force_primary_key](../../../operations/settings/settings.md).
+Clickhouse'un bir sorgu çalıştırırken dizini kullanıp kullanamayacağını kontrol etmek için ayarları kullanın [force\_index\_by\_date](../../../operations/settings/settings.md#settings-force_index_by_date) ve [force\_primary\_key](../../../operations/settings/settings.md).
 
 Aylara göre bölümleme anahtarı, yalnızca uygun aralıktaki tarihleri içeren veri bloklarını okumanıza izin verir. Bu durumda, veri bloğu birçok tarih için veri içerebilir (bir aya kadar). Bir blok içinde veriler, ilk sütun olarak tarihi içermeyen birincil anahtara göre sıralanır. Bu nedenle, birincil anahtar önekini belirtmeyen yalnızca bir tarih koşulu ile bir sorgu kullanarak tek bir tarih için okunacak daha fazla veri neden olur.
 
@@ -330,7 +330,7 @@ Koşulları `WHERE` yan tümcesi, sütunlarla çalışan işlevlerin çağrılar
 
 Bu `set` dizin tüm fonksiyonları ile kullanılabilir. Diğer dizinler için işlev alt kümeleri aşağıdaki tabloda gösterilmiştir.
 
-| Fonksiyon (operatör) / dizin                                                                               | birincil anahtar | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
+| Fonksiyon (operatör) / dizin                                                                               | birincil anahtar | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter |
 |------------------------------------------------------------------------------------------------------------|------------------|--------|-------------|-------------|---------------|
 | [eşitlikler (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)             | ✔                | ✔      | ✔           | ✔           | ✔             |
 | [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔                | ✔      | ✔           | ✔           | ✔             |
@@ -495,7 +495,7 @@ Veri kısmı için minimum hareketli birimdir `MergeTree`- motor masaları. Bir 
 -   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 -   Storage policy — Set of volumes and the rules for moving data between them.
 
-Açıklanan varlıklara verilen isimler sistem tablolarında bulunabilir, [sistem.storage_policies](../../../operations/system-tables.md#system_tables-storage_policies) ve [sistem.diskler](../../../operations/system-tables.md#system_tables-disks). Bir tablo için yapılandırılmış depolama ilkelerinden birini uygulamak için `storage_policy` ayarı `MergeTree`- motor aile tabloları.
+Açıklanan varlıklara verilen isimler sistem tablolarında bulunabilir, [sistem.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) ve [sistem.diskler](../../../operations/system-tables.md#system_tables-disks). Bir tablo için yapılandırılmış depolama ilkelerinden birini uygulamak için `storage_policy` ayarı `MergeTree`- motor aile tabloları.
 
 ### Yapılandırma {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -642,7 +642,7 @@ Mutasyonlar ve bölüm dondurma hariç tüm bu durumlarda, bir parça verilen de
 Kap hoodut underun altında, [sabit linkler](https://en.wikipedia.org/wiki/Hard_link). Farklı diskler arasındaki sabit bağlantılar desteklenmez, bu nedenle bu gibi durumlarda ortaya çıkan parçalar ilk disklerle aynı disklerde saklanır.
 
 Arka planda, parçalar boş alan miktarına göre hacimler arasında taşınır (`move_factor` parametre) sırasına göre birimler yapılandırma dosyasında beyan edilir.
-Veriler asla sonuncudan ve birincisine aktarılmaz. Bir sistem tabloları kullanabilirsiniz [sistem.part_log](../../../operations/system-tables.md#system_tables-part-log) (alan `type = MOVE_PART`) ve [sistem.parçalar](../../../operations/system-tables.md#system_tables-parts) (alanlar `path` ve `disk`) arka plan hareketlerini izlemek için. Ayrıca, ayrıntılı bilgi sunucu günlüklerinde bulunabilir.
+Veriler asla sonuncudan ve birincisine aktarılmaz. Bir sistem tabloları kullanabilirsiniz [sistem.part\_log](../../../operations/system-tables.md#system_tables-part-log) (alan `type = MOVE_PART`) ve [sistem.parçalar](../../../operations/system-tables.md#system_tables-parts) (alanlar `path` ve `disk`) arka plan hareketlerini izlemek için. Ayrıca, ayrıntılı bilgi sunucu günlüklerinde bulunabilir.
 
 Kullanıcı, sorguyu kullanarak bir bölümü veya bölümü bir birimden diğerine taşımaya zorlayabilir [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition), arka plan işlemleri için tüm kısıtlamalar dikkate alınır. Sorgu, kendi başına bir hareket başlatır ve tamamlanması için arka plan işlemleri beklemez. Yeterli boş alan yoksa veya gerekli koşullardan herhangi biri karşılanmazsa kullanıcı bir hata mesajı alır.
 

@@ -1,8 +1,3 @@
----
-toc_priority: 48
-toc_title: DateTime
----
-
 # DateTime {#data_type-datetime}
 
 Позволяет хранить момент времени, который может быть представлен как календарная дата и время.
@@ -29,7 +24,7 @@ DateTime([timezone])
 
 ClickHouse отображает значения типа `DateTime` в формате `YYYY-MM-DD hh:mm:ss`. Отображение можно поменять с помощью функции [formatDateTime](../../sql-reference/data-types/datetime.md#formatdatetime).
 
-При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format).
+При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format).
 
 ## Примеры {#primery}
 

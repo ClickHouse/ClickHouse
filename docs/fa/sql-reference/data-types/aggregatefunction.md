@@ -6,7 +6,7 @@ toc_title: "\u06A9\u0627\u0631\u06A9\u0631\u062F(\u0646\u0627\u0645 \u0648 \u064
   \u0645 \u062E\u0627\u0646\u0648\u0627\u062F\u06AF\u06CC..)"
 ---
 
-# AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [مشاهده محقق](../../sql-reference/statements/create.md#create-view). راه معمول برای تولید یک دولت تابع جمع است با فراخوانی تابع جمع با `-State` پسوند. برای دریافت نتیجه نهایی از تجمع در اینده, شما باید همان تابع کل با استفاده از `-Merge`پسوند.
 

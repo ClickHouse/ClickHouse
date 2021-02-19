@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <array>
 #include <math.h>
 #include <Columns/ColumnsNumber.h>
@@ -22,9 +16,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)
 /// and returns h3 index of this point
@@ -63,11 +54,11 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_lon = arguments[0].column.get();
-        const auto * col_lat = arguments[1].column.get();
-        const auto * col_res = arguments[2].column.get();
+        const auto * col_lon = block.getByPosition(arguments[0]).column.get();
+        const auto * col_lat = block.getByPosition(arguments[1]).column.get();
+        const auto * col_res = block.getByPosition(arguments[2]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -88,11 +79,10 @@ public:
             dst_data[row] = hindex;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionGeoToH3(FunctionFactory & factory)
 {
@@ -100,5 +90,3 @@ void registerFunctionGeoToH3(FunctionFactory & factory)
 }
 
 }
-
-#endif

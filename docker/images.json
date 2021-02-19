@@ -58,8 +58,7 @@
     "docker/test/stateless": {
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/stateful_with_coverage"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateless_pytest": {
@@ -68,7 +67,9 @@
     },
     "docker/test/stateless_with_coverage": {
         "name": "yandex/clickhouse-stateless-test-with-coverage",
-        "dependent": []
+        "dependent": [
+            "docker/test/stateful_with_coverage"
+        ]
     },
     "docker/test/unit": {
         "name": "yandex/clickhouse-unit-test",
@@ -132,10 +133,6 @@
     },
     "docker/test/integration/postgresql_java_client": {
         "name": "yandex/clickhouse-postgresql-java-client",
-        "dependent": []
-    },
-    "docker/test/integration/kerberos_kdc": {
-        "name": "yandex/clickhouse-kerberos-kdc",
         "dependent": []
     },
     "docker/test/base": {

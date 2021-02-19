@@ -3,8 +3,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct PiImpl
 {
@@ -13,8 +11,6 @@ struct PiImpl
 };
 
 using FunctionPi = FunctionMathConstFloat64<PiImpl>;
-
-}
 
 void registerFunctionPi(FunctionFactory & factory)
 {

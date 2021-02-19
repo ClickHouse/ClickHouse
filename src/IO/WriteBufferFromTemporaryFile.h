@@ -1,4 +1,3 @@
-#pragma once
 #include <IO/WriteBuffer.h>
 #include <IO/IReadableWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
