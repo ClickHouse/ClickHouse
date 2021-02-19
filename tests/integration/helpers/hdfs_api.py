@@ -56,7 +56,7 @@ class HDFSApi(object):
 
         if kerberized:
             self._run_kinit()
-            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
+            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override="kerberizedhdfs1", principal=self.principal)
                 #principal=self.principal,
                 #hostname_override=self.host, principal=self.principal)
                 # , mutual_authentication=reqkerb.REQUIRED, force_preemptive=True)
@@ -106,6 +106,7 @@ class HDFSApi(object):
         else:
             location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port)) 
         logging.debug("redirected to {}".format(location))
+
         response_data = requests.get(location, headers={'host': 'localhost'},
                                      verify=False, auth=self.kerberos_auth)
         if response_data.status_code != 200:
@@ -124,12 +125,6 @@ class HDFSApi(object):
             content = content.encode()
         named_file.write(content)
         named_file.flush()
-
-        if self.kerberized:
-            self._run_kinit()
-            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, 
-            hostname_override="kerberizedhdfs1", 
-            principal=self.principal)
 
         response = requests.put(
             "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, host='localhost',
