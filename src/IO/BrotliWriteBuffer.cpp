@@ -86,7 +86,7 @@ void BrotliWriteBuffer::nextImpl()
             throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
-    while (in_available > 0 || out_capacity == 0);
+    while (in_available > 0);
 }
 
 void BrotliWriteBuffer::finish()
