@@ -4145,17 +4145,17 @@ ReservationPtr MergeTreeData::balancedReservation(
     if (tagger_ptr && min_bytes_to_rebalance_partition_over_jbod > 0 && part_size >= min_bytes_to_rebalance_partition_over_jbod)
     try
     {
-        auto & disks = getStoragePolicy()->getVolume(max_volume_index)->getDisks();
+        const auto & disks = getStoragePolicy()->getVolume(max_volume_index)->getDisks();
         std::map<String, size_t> disk_occupation;
         std::map<String, std::vector<String>> disk_parts;
-        for (auto & disk : disks)
+        for (const auto & disk : disks)
             disk_occupation.emplace(disk->getName(), 0);
 
         std::set<String> big_parts;
         std::set<String> merging_parts;
         std::lock_guard lock(currently_submerging_emerging_mutex);
 
-        for (auto & part : currently_submerging_parts)
+        for (const auto & part : currently_submerging_parts)
         {
             if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
                 && part_info.partition_id == part->info.partition_id)
@@ -4174,7 +4174,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             }
 
             // Also include current submerging parts
-            for (auto & part : covered_parts)
+            for (const auto & part : covered_parts)
                 merging_parts.insert(part->name);
 
             for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Committed))
@@ -4201,7 +4201,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             }
         }
 
-        for (auto & [name, emerging_part] : currently_emerging_parts)
+        for (const auto & [name, emerging_part] : currently_emerging_parts)
         {
             // It's possible that the emerging parts are committed and get added twice. Thus a set is used to deduplicate.
             if (big_parts.find(name) == big_parts.end())
@@ -4218,7 +4218,7 @@ ReservationPtr MergeTreeData::balancedReservation(
 
         size_t min_occupation_size = std::numeric_limits<size_t>::max();
         std::vector<String> candidates;
-        for (auto & [disk_name, size] : disk_occupation)
+        for (const auto & [disk_name, size] : disk_occupation)
         {
             if (size < min_occupation_size)
             {
@@ -4238,7 +4238,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             String selected_disk_name = candidates.front();
             WriteBufferFromOwnString log_str;
             writeCString("\nbalancer: \n", log_str);
-            for (auto & [disk_name, per_disk_parts] : disk_parts)
+            for (const auto & [disk_name, per_disk_parts] : disk_parts)
                 writeString(fmt::format("  {}: [{}]\n", disk_name, boost::algorithm::join(per_disk_parts, ", ")), log_str);
             LOG_DEBUG(log, log_str.str());
 
