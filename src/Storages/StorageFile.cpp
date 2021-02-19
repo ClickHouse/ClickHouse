@@ -475,7 +475,8 @@ public:
         std::unique_lock<std::shared_timed_mutex> && lock_,
         const CompressionMethod compression_method,
         const Context & context,
-        const std::optional<FormatSettings> & format_settings)
+        const std::optional<FormatSettings> & format_settings,
+        int & flags)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
@@ -491,13 +492,14 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd, DBMS_DEFAULT_BUFFER_SIZE);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            flags |= O_WRONLY | O_APPEND | O_CREAT;
+            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
         /// In case of CSVWithNames we have already written prefix.
@@ -552,10 +554,11 @@ BlockOutputStreamPtr StorageFile::write(
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
+    int flags = 0;
+
     std::string path;
     if (context.getSettingsRef().engine_file_truncate_on_insert)
-        if (0 != ::truncate(paths[0].c_str(), 0))
-            throwFromErrnoWithPath("Cannot truncate file " + paths[0], paths[0], ErrorCodes::CANNOT_TRUNCATE_FILE);
+        flags |= O_TRUNC;
 
     if (!paths.empty())
     {
@@ -569,7 +572,8 @@ BlockOutputStreamPtr StorageFile::write(
         std::unique_lock{rwlock, getLockTimeout(context)},
         chooseCompressionMethod(path, compression_method),
         context,
-        format_settings);
+        format_settings,
+        flags);
 }
 
 bool StorageFile::storesDataOnDisk() const
