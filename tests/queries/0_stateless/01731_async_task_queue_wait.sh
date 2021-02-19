@@ -7,4 +7,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # regression for 'Empty task was returned from async task queue' during query
 # cancellation with async_socket_for_remote=1 (that ignores
 # max_distributed_connections)
-$(timeout --signal=SIGINT 1 ${CLICKHOUSE_CLIENT} --max_distributed_connections=1 --max_block_size=2  --interactive_delay=900000 -q "select x  from remote('127.{2,3}', view(select number + sleep(0.3) as x from numbers(16))) settings max_block_size = 2") 2>&1 | grep "Empty task was returned from async task queue"
+$(timeout --signal=SIGINT 1 ${CLICKHOUSE_CLIENT} --max_distributed_connections=1 --max_block_size=2  --interactive_delay=900000 -q "select x  from remote('127.{2,3}', view(select number + sleep(0.3) as x from numbers(16))) settings max_block_size = 2") 2>&1 | grep "Empty task was returned from async task queue" || true
