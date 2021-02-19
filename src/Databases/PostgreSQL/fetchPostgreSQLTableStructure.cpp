@@ -56,7 +56,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        uint32_t precision, scale;
+        UInt32 precision, scale;
         if (type.ends_with(")"))
         {
             res = DataTypeFactory::instance().get(type);
@@ -71,11 +71,14 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
             else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Presicion {} and scale {} are too big and not supported", precision, scale);
         }
         else
         {
             precision = DecimalUtils::maxPrecision<Decimal128>();
-            res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, precision);
+            scale = precision >> 1;
+            res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
 
     }
