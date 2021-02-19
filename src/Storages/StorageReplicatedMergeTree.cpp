@@ -1309,24 +1309,23 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     const MergeTreePartInfo target_part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     const String& part_checksum = entry.part_checksum;
 
-    MergeTreePartInfo part_iter;
-    const Poco::DirectoryIterator dir_end;
-
-    const String detached_dir = "detached/";
+    Poco::DirectoryIterator dir_end;
 
     for (const String& path : getDataPaths())
     {
-        for (Poco::DirectoryIterator it{path + detached_dir}; it != dir_end; ++it)
+        for (Poco::DirectoryIterator it{path + "detached/"}; it != dir_end; ++it)
         {
+            MergeTreePartInfo part_iter;
+
             if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_iter, format_version) ||
                 part_iter.partition_id != target_part.partition_id)
                 continue;
 
             const String& part_name = part_iter.getPartName();
-            const String part_to_path = detached_dir + part_name;
+            const String part_to_path = "detached/" + part_name;
 
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
-                getDiskForPart(part_name, detached_dir));
+                getDiskForPart(part_name, "detached/"));
 
             MergeTreeData::MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
 
