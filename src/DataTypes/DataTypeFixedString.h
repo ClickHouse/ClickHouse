@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/PODArray_fwd.h>
 
 #define MAX_FIXEDSTRING_SIZE 0xFFFFFF
 
@@ -82,6 +83,11 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    /// Makes sure that the length of a newly inserted string to `chars` is equal to getN().
+    /// If the length is less than getN() the function will add zero characters up to getN().
+    /// If the length is greater than getN() the function will throw an exception.
+    void alignStringLength(PaddedPODArray<UInt8> & chars, size_t old_size) const;
 };
 
 }
