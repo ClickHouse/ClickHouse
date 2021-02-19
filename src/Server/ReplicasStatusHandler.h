@@ -1,17 +1,15 @@
 #pragma once
 
-#include "IServer.h"
-
-#include <Poco/Net/HTTPRequestHandler.h>
-
+#include <Server/HTTP/HTTPRequestHandler.h>
 
 namespace DB
 {
 
 class Context;
+class IServer;
 
 /// Replies "Ok.\n" if all replicas on this server don't lag too much. Otherwise output lag information.
-class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
+class ReplicasStatusHandler : public HTTPRequestHandler
 {
 private:
     Context & context;
@@ -19,7 +17,7 @@ private:
 public:
     explicit ReplicasStatusHandler(IServer & server_);
 
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 };
 
 
