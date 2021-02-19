@@ -16,7 +16,7 @@ using namespace DB;
 struct NuKeeperStorageRequest;
 using NuKeeperStorageRequestPtr = std::shared_ptr<NuKeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenRefSet = std::unordered_set<std::string_view>;
+using ChildrenSet = std::unordered_set<std::string>;
 
 class NuKeeperStorage
 {
@@ -31,7 +31,7 @@ public:
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
-        ChildrenRefSet children;
+        ChildrenSet children;
     };
 
     struct ResponseForSession
