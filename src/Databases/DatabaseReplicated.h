@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataStreams/BlockIO.h>
@@ -22,13 +23,14 @@ class DatabaseReplicated : public DatabaseAtomic
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
+                       DatabaseReplicatedSettings db_settings_,
                        const Context & context);
 
     ~DatabaseReplicated() override;
 
     String getEngineName() const override { return "Replicated"; }
 
-    /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current MetadataTransaction.
+    /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current ZooKeeperMetadataTransaction.
     void dropTable(const Context &, const String & table_name, bool no_delay) override;
     void renameTable(const Context & context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
@@ -46,7 +48,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO propose(const ASTPtr & query, const Context & query_context);
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, const Context & query_context);
 
     void stopReplication();
 
@@ -64,7 +66,7 @@ public:
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
-    void tryConnectToZooKeeper(bool force_attach);
+    void tryConnectToZooKeeperAndInitDatabase(bool force_attach);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
@@ -78,6 +80,7 @@ private:
     String shard_name;
     String replica_name;
     String replica_path;
+    DatabaseReplicatedSettings db_settings;
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 

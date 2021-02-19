@@ -96,7 +96,7 @@ void DDLTaskBase::parseQueryFromEntry(const Context & context)
     query = parseQuery(parser_query, begin, end, description, 0, context.getSettingsRef().max_parser_depth);
 }
 
-std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context)
+std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
     auto query_context = std::make_unique<Context>(from_context);
     query_context->makeQueryContext();
@@ -293,28 +293,26 @@ String DatabaseReplicatedTask::getShardID() const
     return database->shard_name;
 }
 
-std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context)
+std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper)
 {
-    auto query_context = DDLTaskBase::makeQueryContext(from_context);
+    auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentDatabase(database->getDatabaseName());
 
-    auto txn = std::make_shared<MetadataTransaction>();
-    query_context->initMetadataTransaction(txn);
-    txn->current_zookeeper = from_context.getZooKeeper();
-    txn->zookeeper_path = database->zookeeper_path;
-    txn->is_initial_query = is_initial_query;
+    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query);
+    query_context->initZooKeeperMetadataTransaction(txn);
 
     if (is_initial_query)
     {
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(entry_path + "/try", -1));
-        txn->ops.emplace_back(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
-        txn->ops.emplace_back(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+        txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
+        txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    txn->ops.emplace_back(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+    txn->addOp(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
-    std::move(ops.begin(), ops.end(), std::back_inserter(txn->ops));
+    for (auto & op : ops)
+        txn->addOp(std::move(op));
     ops.clear();
 
     return query_context;
@@ -335,7 +333,7 @@ UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
     return parse<UInt32>(log_entry_name.substr(strlen(name)));
 }
 
-void MetadataTransaction::commit()
+void ZooKeeperMetadataTransaction::commit()
 {
     assert(state == CREATED);
     state = FAILED;

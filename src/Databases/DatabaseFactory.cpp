@@ -103,8 +103,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
-    if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
-        engine_define->sample_by || (!endsWith(engine_name, "MySQL") && engine_define->settings))
+    bool has_unexpected_element = engine_define->engine->parameters || engine_define->partition_by ||
+                                  engine_define->primary_key || engine_define->order_by ||
+                                  engine_define->sample_by;
+    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated";
+    if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 
@@ -205,7 +208,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         shard_name = context.getMacros()->expand(shard_name);
         replica_name = context.getMacros()->expand(replica_name);
 
-        return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid, zookeeper_path, shard_name, replica_name, context);
+        DatabaseReplicatedSettings database_replicated_settings{};
+        if (engine_define->settings)
+            database_replicated_settings.loadFromQuery(*engine_define);
+
+        return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid,
+                                                    zookeeper_path, shard_name, replica_name,
+                                                    std::move(database_replicated_settings), context);
     }
 
 #if USE_LIBPQXX

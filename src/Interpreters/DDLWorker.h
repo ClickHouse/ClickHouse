@@ -77,7 +77,7 @@ protected:
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
     virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
-    void processTask(DDLTaskBase & task);
+    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
@@ -95,7 +95,7 @@ protected:
         const String & node_path,
         const ZooKeeperPtr & zookeeper);
 
-    bool tryExecuteQuery(const String & query, DDLTaskBase & task);
+    bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);

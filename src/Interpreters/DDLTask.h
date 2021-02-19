@@ -20,8 +20,8 @@ class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class DatabaseReplicated;
 
-struct MetadataTransaction;
-using MetadataTransactionPtr = std::shared_ptr<MetadataTransaction>;
+class ZooKeeperMetadataTransaction;
+using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 struct HostID
 {
@@ -95,7 +95,7 @@ struct DDLTaskBase
 
     virtual String getShardID() const = 0;
 
-    virtual std::unique_ptr<Context> makeQueryContext(Context & from_context);
+    virtual std::unique_ptr<Context> makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper);
 
     inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
     inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
@@ -132,13 +132,19 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
 
     String getShardID() const override;
-    std::unique_ptr<Context> makeQueryContext(Context & from_context) override;
+    std::unique_ptr<Context> makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };
 
-
-struct MetadataTransaction
+/// The main purpose of ZooKeeperMetadataTransaction is to execute all zookeeper operation related to query
+/// in a single transaction when we performed all required checks and ready to "commit" changes.
+/// For example, create ALTER_METADATA entry in ReplicatedMergeTree log,
+/// create path/to/entry/finished/host_id node in distributed DDL queue to mark query as executed and
+/// update metadata in path/to/replicated_database/metadata/table_name
+/// It's used for DatabaseReplicated.
+/// TODO we can also use it for ordinary ON CLUSTER queries
+class ZooKeeperMetadataTransaction
 {
     enum State
     {
@@ -153,8 +159,29 @@ struct MetadataTransaction
     bool is_initial_query;
     Coordination::Requests ops;
 
+public:
+    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_)
+    : current_zookeeper(current_zookeeper_)
+    , zookeeper_path(zookeeper_path_)
+    , is_initial_query(is_initial_query_)
+    {
+    }
+
+    bool isInitialQuery() const { return is_initial_query; }
+
+    bool isExecuted() const { return state != CREATED; }
+
+    String getDatabaseZooKeeperPath() const { return zookeeper_path; }
+
+    void addOp(Coordination::RequestPtr && op)
+    {
+        assert(!isExecuted());
+        ops.emplace_back(op);
+    }
+
     void moveOpsTo(Coordination::Requests & other_ops)
     {
+        assert(!isExecuted());
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;
@@ -162,7 +189,7 @@ struct MetadataTransaction
 
     void commit();
 
-    ~MetadataTransaction() { assert(state != CREATED || std::uncaught_exception()); }
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exception()); }
 };
 
 }

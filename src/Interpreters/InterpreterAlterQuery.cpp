@@ -54,7 +54,7 @@ BlockIO InterpreterAlterQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);

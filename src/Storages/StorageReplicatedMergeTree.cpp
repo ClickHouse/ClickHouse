@@ -4282,12 +4282,12 @@ void StorageReplicatedMergeTree::alter(
                 zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
         }
 
-        if (auto txn = query_context.getMetadataTransaction())
+        if (auto txn = query_context.getZooKeeperMetadataTransaction())
         {
             txn->moveOpsTo(ops);
             /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
             /// so we have to update metadata of DatabaseReplicated here.
-            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
+            String metadata_zk_path = txn->getDatabaseZooKeeperPath() + "/metadata/" + escapeForFileName(table_id.table_name);
             auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
             applyMetadataChangesToCreateQuery(ast, future_metadata);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
@@ -5262,7 +5262,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         requests.emplace_back(zkutil::makeCreateRequest(
             mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-        if (auto txn = query_context.getMetadataTransaction())
+        if (auto txn = query_context.getZooKeeperMetadataTransaction())
             txn->moveOpsTo(requests);
 
         Coordination::Responses responses;
@@ -5766,7 +5766,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             }
         }
 
-        if (auto txn = context.getMetadataTransaction())
+        if (auto txn = context.getZooKeeperMetadataTransaction())
             txn->moveOpsTo(ops);
 
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
@@ -6269,7 +6269,7 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version.
-    if (auto txn = query_context.getMetadataTransaction())
+    if (auto txn = query_context.getZooKeeperMetadataTransaction())
         txn->moveOpsTo(ops);
     Coordination::Responses responses = zookeeper.multi(ops);
 

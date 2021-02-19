@@ -194,7 +194,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
             detachDictionary(dictionary_name);
     });
 
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     if (txn && !context.isInternalSubquery())
         txn->commit();      /// Commit point (a sort of) for Replicated database
 
@@ -219,7 +219,7 @@ void DatabaseWithDictionaries::removeDictionary(const Context & context, const S
     {
         String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
 
-        auto txn = context.getMetadataTransaction();
+        auto txn = context.getZooKeeperMetadataTransaction();
         if (txn && !context.isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
 

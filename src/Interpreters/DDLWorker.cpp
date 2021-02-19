@@ -195,16 +195,15 @@ void DDLWorker::startup()
 
 void DDLWorker::shutdown()
 {
-    stop_flag = true;
-    queue_updated_event->set();
-    cleanup_event->set();
-
-    if (main_thread.joinable())
+    bool prev_stop_flag = stop_flag.exchange(true);
+    if (!prev_stop_flag)
+    {
+        queue_updated_event->set();
+        cleanup_event->set();
         main_thread.join();
-    if (cleanup_thread.joinable())
         cleanup_thread.join();
-
-    worker_pool.reset();
+        worker_pool.reset();
+    }
 }
 
 DDLWorker::~DDLWorker()
@@ -267,6 +266,8 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     }
 
     /// Stage 2: resolve host_id and check if we should execute query or not
+    /// Multiple clusters can use single DDL queue path in ZooKeeper,
+    /// So we should skip task if we cannot find current host in cluster hosts list.
     if (!task->findCurrentHostID(context, log))
     {
         out_reason = "There is no a local address in host list";
@@ -317,7 +318,7 @@ void DDLWorker::scheduleTasks()
         bool status_written = zookeeper->exists(task->getFinishedNodePath());
         if (task->was_executed && !status_written && task_still_exists)
         {
-            processTask(*task);
+            processTask(*task, zookeeper);
         }
     }
 
@@ -364,15 +365,15 @@ void DDLWorker::scheduleTasks()
 
         if (worker_pool)
         {
-            worker_pool->scheduleOrThrowOnError([this, &saved_task]()
+            worker_pool->scheduleOrThrowOnError([this, &saved_task, &zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
-                processTask(saved_task);
+                processTask(saved_task, zookeeper);
             });
         }
         else
         {
-            processTask(saved_task);
+            processTask(saved_task, zookeeper);
         }
     }
 }
@@ -385,7 +386,7 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
+bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -398,14 +399,16 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
 
     try
     {
-        auto query_context = task.makeQueryContext(context);
+        auto query_context = task.makeQueryContext(context, zookeeper);
         if (!task.is_initial_query)
             query_scope.emplace(*query_context);
         executeQuery(istr, ostr, !task.is_initial_query, *query_context, {});
 
-        if (auto txn = query_context->getMetadataTransaction())
+        if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
-            if (txn->state == MetadataTransaction::CREATED)
+            /// Most queries commit changes to ZooKeeper right before applying local changes,
+            /// but some queries does not support it, so we have to do it here.
+            if (!txn->isExecuted())
                 txn->commit();
         }
     }
@@ -463,10 +466,8 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     }
 }
 
-void DDLWorker::processTask(DDLTaskBase & task)
+void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
-    auto zookeeper = tryGetZooKeeper();
-
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
 
     String active_node_path = task.getActiveNodePath();
@@ -541,7 +542,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
             else
             {
                 storage.reset();
-                tryExecuteQuery(rewritten_query, task);
+                tryExecuteQuery(rewritten_query, task, zookeeper);
             }
         }
         catch (const Coordination::Exception &)
@@ -565,7 +566,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
             }
             else
             {
-                /// task.ops where not executed by table or database engine, se DDLWorker is responsible for
+                /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
                 /// writing query execution status into ZooKeeper.
                 task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
             }
@@ -589,7 +590,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
     }
 
     /// Active node was removed in multi ops
-    active_node->reset();
+    active_node->setAlreadyRemoved();
 
     task.completely_processed = true;
 }
@@ -712,7 +713,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
-            if (tryExecuteQuery(rewritten_query, task))
+            if (tryExecuteQuery(rewritten_query, task, zookeeper))
             {
                 executed_by_us = true;
                 break;

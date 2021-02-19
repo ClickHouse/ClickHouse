@@ -63,11 +63,13 @@ DatabaseReplicated::DatabaseReplicated(
     const String & zookeeper_path_,
     const String & shard_name_,
     const String & replica_name_,
+    DatabaseReplicatedSettings db_settings_,
     const Context & context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , shard_name(shard_name_)
     , replica_name(replica_name_)
+    , db_settings(std::move(db_settings_))
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
         throw Exception("ZooKeeper path, shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
@@ -141,7 +143,8 @@ ClusterPtr DatabaseReplicated::getCluster() const
             break;
     }
     if (!success)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot");
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
+                                                                 "because replicas are created or removed concurrently");
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
@@ -172,7 +175,7 @@ ClusterPtr DatabaseReplicated::getCluster() const
     return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, global_context.getTCPPort(), false);
 }
 
-void DatabaseReplicated::tryConnectToZooKeeper(bool force_attach)
+void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
 {
     try
     {
@@ -228,6 +231,9 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter", "", zkutil::CreateMode::Persistent));
+    /// We create and remove counter/cnt- node to increment sequential number of counter/ node and make log entry numbers start from 1.
+    /// New replicas are created with log pointer equal to 0 and log pointer is a number of the last executed entry.
+    /// It means that we cannot have log entry with number 0.
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter/cnt-", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/counter/cnt-", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", "", zkutil::CreateMode::Persistent));
@@ -253,10 +259,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     auto host_id = getHostID(global_context, db_uuid);
 
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
-    DDLLogEntry entry;
-    entry.hosts = {};
-    entry.query = {};
-    entry.initiator = {};
+    DDLLogEntry entry{};
 
     String query_path_prefix = zookeeper_path + "/log/query-";
     String counter_prefix = zookeeper_path + "/counter/cnt-";
@@ -273,7 +276,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
 void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
-    tryConnectToZooKeeper(force_attach);
+    tryConnectToZooKeeperAndInitDatabase(force_attach);
 
     DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
@@ -281,7 +284,7 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
     ddl_worker->startup();
 }
 
-BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_context)
+BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const Context & query_context)
 {
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
@@ -405,7 +408,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
-    if (total_tables < tables_to_detach.size() * 2)
+    if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
     else if (!tables_to_detach.empty())
     {
@@ -594,12 +597,12 @@ void DatabaseReplicated::shutdown()
 
 void DatabaseReplicated::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->is_initial_query)
+    if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
     DatabaseAtomic::dropTable(context, table_name, no_delay);
 }
@@ -607,10 +610,10 @@ void DatabaseReplicated::dropTable(const Context & context, const String & table
 void DatabaseReplicated::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     assert(txn);
 
-    if (txn->is_initial_query)
+    if (txn->isInitialQuery())
     {
         if (this != &to_database)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
@@ -622,16 +625,16 @@ void DatabaseReplicated::renameTable(const Context & context, const String & tab
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
         String statement = readMetadataFile(table_name);
-        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        String metadata_zk_path_to = txn->zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        String metadata_zk_path_to = zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
         if (exchange)
         {
             String statement_to = readMetadataFile(to_table_name);
-            txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
-            txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
+            txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
         }
-        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
     }
 
     DatabaseAtomic::renameTable(context, table_name, to_database, to_table_name, exchange, dictionary);
@@ -641,14 +644,14 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                        const Context & query_context)
 {
-    auto txn = query_context.getMetadataTransaction();
+    auto txn = query_context.getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->is_initial_query)
+    if (txn && txn->isInitialQuery())
     {
-        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(query.table);
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.table);
         String statement = getObjectDefinitionFromCreateQuery(query.clone());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
-        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
     }
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
 }
@@ -657,11 +660,11 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                                           const String & statement, const Context & query_context)
 {
-    auto txn = query_context.getMetadataTransaction();
-    if (txn && txn->is_initial_query)
+    auto txn = query_context.getZooKeeperMetadataTransaction();
+    if (txn && txn->isInitialQuery())
     {
-        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
-        txn->ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
+        txn->addOp(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
     }
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
 }
@@ -670,37 +673,37 @@ void DatabaseReplicated::createDictionary(const Context & context,
                                           const String & dictionary_name,
                                           const ASTPtr & query)
 {
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->is_initial_query)
+    if (txn && txn->isInitialQuery())
     {
-        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
         String statement = getObjectDefinitionFromCreateQuery(query->clone());
-        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
     }
     DatabaseAtomic::createDictionary(context, dictionary_name, query);
 }
 
 void DatabaseReplicated::removeDictionary(const Context & context, const String & dictionary_name)
 {
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->is_initial_query)
+    if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
     DatabaseAtomic::removeDictionary(context, dictionary_name);
 }
 
 void DatabaseReplicated::detachTablePermanently(const Context & context, const String & table_name)
 {
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->is_initial_query)
+    if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
     DatabaseAtomic::detachTablePermanently(context, table_name);
 }

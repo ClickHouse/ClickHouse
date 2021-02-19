@@ -146,7 +146,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query.clone(), context);
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query.clone(), context);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -231,7 +231,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
         context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
 
         ddl_guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
     }
 
     if (!database || !database->isDictionaryExist(dictionary_name))

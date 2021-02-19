@@ -212,11 +212,11 @@ static void executeDropQuery(ASTDropQuery::Kind kind, const Context & global_con
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context(global_context);
         drop_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (auto txn = current_context.getMetadataTransaction())
+        if (auto txn = current_context.getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
             drop_context.setQueryContext(const_cast<Context &>(current_context));
-            drop_context.initMetadataTransaction(txn, true);
+            drop_context.initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();

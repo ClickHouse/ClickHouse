@@ -108,6 +108,7 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "00825_protobuf_format_map",
         "00152_insert_different_granularity",
         "01715_background_checker_blather_zookeeper",
         "01714_alter_drop_version",
