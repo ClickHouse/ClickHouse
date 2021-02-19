@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct SumburConsistentHashImpl
 {
@@ -25,8 +23,6 @@ struct SumburConsistentHashImpl
 };
 
 using FunctionSumburConsistentHash = FunctionConsistentHashImpl<SumburConsistentHashImpl>;
-
-}
 
 void registerFunctionSumburConsistentHash(FunctionFactory & factory)
 {

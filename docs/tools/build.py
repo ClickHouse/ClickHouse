@@ -28,7 +28,6 @@ import test
 import util
 import website
 
-from cmake_in_clickhouse_generator import generate_cmake_flags_files
 
 class ClickHouseMarkdown(markdown.extensions.Extension):
     class ClickHousePreprocessor(markdown.util.Processor):
@@ -181,15 +180,12 @@ def build(args):
     if not args.skip_website:
         website.build_website(args)
 
-    if not args.skip_test_templates:
-        test.test_templates(args.website_dir)
+    test.test_templates(args.website_dir)
 
-    if not args.skip_docs:
-        generate_cmake_flags_files()
+    build_docs(args)
 
-        build_docs(args)
-        from github import build_releases
-        build_releases(args, build_docs)
+    from github import build_releases
+    build_releases(args, build_docs)
 
     if not args.skip_blog:
         blog.build_blog(args)
@@ -202,19 +198,13 @@ def build(args):
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
-
-    # A root path to ClickHouse source code.
-    src_dir = '..'
-
-    website_dir = os.path.join(src_dir, 'website')
-
+    website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
     arg_parser.add_argument('--blog-lang', default='en,ru')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
-    arg_parser.add_argument('--src-dir', default=src_dir)
     arg_parser.add_argument('--blog-dir', default=os.path.join(website_dir, 'blog'))
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
@@ -230,8 +220,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
-    arg_parser.add_argument('--skip-docs', action='store_true')
-    arg_parser.add_argument('--skip-test-templates', action='store_true')
     arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')

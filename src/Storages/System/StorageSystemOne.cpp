@@ -23,7 +23,7 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
 Pipe StorageSystemOne::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo &,
+    const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,

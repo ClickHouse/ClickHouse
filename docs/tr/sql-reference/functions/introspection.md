@@ -16,11 +16,11 @@ toc_title: "\u0130\xE7g\xF6zlem"
 
 -   Yüklemek `clickhouse-common-static-dbg` paket.
 
--   Ayarla... [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) ayar 1.
+-   Ayarla... [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) ayar 1.
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse için profiler raporları kaydeder [trace_log](../../operations/system-tables.md#system_tables-trace_log) sistem tablosu. Tablo ve profiler düzgün yapılandırıldığından emin olun.
+ClickHouse için profiler raporları kaydeder [trace\_log](../../operations/system-tables.md#system_tables-trace_log) sistem tablosu. Tablo ve profiler düzgün yapılandırıldığından emin olun.
 
 ## addressToLine {#addresstoline}
 

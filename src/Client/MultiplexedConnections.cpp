@@ -1,6 +1,5 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/Operators.h>
 #include <Common/thread_local_rng.h>
 
 
@@ -223,18 +222,18 @@ std::string MultiplexedConnections::dumpAddresses() const
 std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
-    WriteBufferFromOwnString buf;
+    std::ostringstream os;
     for (const ReplicaState & state : replica_states)
     {
         const Connection * connection = state.connection;
         if (connection)
         {
-            buf << (is_first ? "" : "; ") << connection->getDescription();
+            os << (is_first ? "" : "; ") << connection->getDescription();
             is_first = false;
         }
     }
 
-    return buf.str();
+    return os.str();
 }
 
 Packet MultiplexedConnections::receivePacketUnlocked()

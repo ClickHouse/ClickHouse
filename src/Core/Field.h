@@ -767,9 +767,8 @@ T & Field::get()
 #ifndef NDEBUG
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
-    if (target != which
-           && (!isInt64FieldType(target) || !isInt64FieldType(which)))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
+    assert(target == which
+           || (isInt64FieldType(target) && isInt64FieldType(which)));
 #endif
 
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);

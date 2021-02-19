@@ -53,9 +53,6 @@ struct TreeRewriterResult
 
     bool optimize_trivial_count = false;
 
-    /// Cache isRemote() call for storage, because it may be too heavy.
-    bool is_remote_storage = false;
-
     /// Results of scalar sub queries
     Scalars scalars;
 
@@ -63,7 +60,13 @@ struct TreeRewriterResult
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
         const StorageMetadataPtr & metadata_snapshot_ = {},
-        bool add_special = true);
+        bool add_special = true)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , source_columns(source_columns_)
+    {
+        collectSourceColumns(add_special);
+    }
 
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);

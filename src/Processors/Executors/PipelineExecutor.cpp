@@ -8,7 +8,6 @@
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -693,8 +692,6 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
-    OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
-
     initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;

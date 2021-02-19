@@ -116,7 +116,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-Klasör ‘201901_1_1_0’, ‘201901_1_7_1’ ve böylece parçaların dizinleri vardır. Her bölüm karşılık gelen bir bölümle ilgilidir ve yalnızca belirli bir ay için veri içerir (Bu örnekteki tabloda aylara göre bölümleme vardır).
+Klasör ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ ve böylece parçaların dizinleri vardır. Her bölüm karşılık gelen bir bölümle ilgilidir ve yalnızca belirli bir ay için veri içerir (Bu örnekteki tabloda aylara göre bölümleme vardır).
 
 Bu `detached` dizin kullanarak tablodan ayrılmış parçaları içerir [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) sorgu. Bozuk parçalar da silinmek yerine bu dizine taşınır. Sunucu parçaları kullanmaz `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) sorgu.
 

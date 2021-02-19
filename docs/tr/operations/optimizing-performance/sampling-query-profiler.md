@@ -11,11 +11,11 @@ ClickHouse, sorgu yürütülmesini analiz etmeyi sağlayan örnekleme profiler'i
 
 Profiler kullanmak için:
 
--   Kurulum [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) sunucu yapılandırması bölümü.
+-   Kurulum [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) sunucu yapılandırması bölümü.
 
-    Bu bölüm yapılandırır [trace_log](../../operations/system-tables.md#system_tables-trace_log) profiler işleyişinin sonuçlarını içeren sistem tablosu. Varsayılan olarak yapılandırılmıştır. Bu tablodaki verilerin yalnızca çalışan bir sunucu için geçerli olduğunu unutmayın. Sunucu yeniden başlatıldıktan sonra ClickHouse tabloyu temizlemez ve depolanan tüm sanal bellek adresi geçersiz hale gelebilir.
+    Bu bölüm yapılandırır [trace\_log](../../operations/system-tables.md#system_tables-trace_log) profiler işleyişinin sonuçlarını içeren sistem tablosu. Varsayılan olarak yapılandırılmıştır. Bu tablodaki verilerin yalnızca çalışan bir sunucu için geçerli olduğunu unutmayın. Sunucu yeniden başlatıldıktan sonra ClickHouse tabloyu temizlemez ve depolanan tüm sanal bellek adresi geçersiz hale gelebilir.
 
--   Kurulum [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) veya [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) ayarlar. Her iki ayar da aynı anda kullanılabilir.
+-   Kurulum [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) veya [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) ayarlar. Her iki ayar da aynı anda kullanılabilir.
 
     Bu ayarlar, profiler zamanlayıcılarını yapılandırmanıza izin verir. Bunlar oturum ayarları olduğundan, tüm sunucu, bireysel kullanıcılar veya kullanıcı profilleri, etkileşimli oturumunuz ve her bir sorgu için farklı örnekleme sıklığı elde edebilirsiniz.
 
@@ -25,7 +25,7 @@ Analiz etmek `trace_log` sistem tablosu:
 
 -   Yüklemek `clickhouse-common-static-dbg` paket. Görmek [DEB paketlerinden yükleyin](../../getting-started/install.md#install-from-deb-packages).
 
--   Tarafından iç gözlem işlevlerine izin ver [allow_introspection_functions](../settings/settings.md#settings-allow_introspection_functions) ayar.
+-   Tarafından iç gözlem işlevlerine izin ver [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) ayar.
 
     Güvenlik nedenleriyle, iç gözlem işlevleri varsayılan olarak devre dışı bırakılır.
 

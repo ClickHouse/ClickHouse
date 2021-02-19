@@ -1,4 +1,3 @@
-#pragma once
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>

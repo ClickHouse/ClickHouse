@@ -1,4 +1,3 @@
-#pragma once
 #include <Columns/ColumnString.h>
 #include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>

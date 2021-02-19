@@ -22,7 +22,7 @@ Le `FixedString` type est efficace lorsque les données ont la longueur de préc
 Exemples de valeurs qui peuvent être stockées efficacement dans `FixedString`-tapé colonnes:
 
 -   La représentation binaire des adresses IP (`FixedString(16)` pour IPv6).
--   Language codes (ru_RU, en_US … ).
+-   Language codes (ru\_RU, en\_US … ).
 -   Currency codes (USD, RUB … ).
 -   Représentation binaire des hachages (`FixedString(16)` pour MD5, `FixedString(32)` pour SHA256).
 

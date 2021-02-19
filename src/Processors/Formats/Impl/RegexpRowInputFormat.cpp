@@ -51,8 +51,6 @@ RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const St
         return ColumnFormat::Csv;
     if (format == "JSON")
         return ColumnFormat::Json;
-    if (format == "Raw")
-        return ColumnFormat::Raw;
     throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -90,19 +88,13 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
                 else
                     type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
                 break;
-            case ColumnFormat::Raw:
-                if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeWholeText(*columns[index], field_buf, format_settings, type);
-                else
-                    type->deserializeAsWholeText(*columns[index], field_buf, format_settings);
-                break;
             default:
                 break;
         }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while read the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
     return read;

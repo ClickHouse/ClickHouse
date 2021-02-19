@@ -31,7 +31,7 @@ DateTime([timezone])
 
 خروجی کلیک ارزش در `YYYY-MM-DD hh:mm:ss` قالب متن به طور پیش فرض. شما می توانید خروجی را با تغییر [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) تابع.
 
-هنگام قرار دادن داده ها به تاتر, شما می توانید فرمت های مختلف تاریخ و زمان رشته استفاده, بسته به ارزش [تغییر _شماره](../../operations/settings/settings.md#settings-date_time_input_format) تنظیمات.
+هنگام قرار دادن داده ها به تاتر, شما می توانید فرمت های مختلف تاریخ و زمان رشته استفاده, بسته به ارزش [تغییر \_شماره](../../operations/settings/settings.md#settings-date_time_input_format) تنظیمات.
 
 ## مثالها {#examples}
 

@@ -22,7 +22,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
     ParserKeyword s_no_delay("NO DELAY");
-    ParserKeyword s_sync("SYNC");
 
     ASTPtr database;
     ASTPtr table;
@@ -46,9 +45,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
-
-        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
-            no_delay = true;
     }
     else
     {
@@ -83,7 +79,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
                 return false;
         }
 
-        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
+        if (s_no_delay.ignore(pos, expected))
             no_delay = true;
     }
 

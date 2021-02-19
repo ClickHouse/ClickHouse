@@ -1,8 +1,6 @@
 ---
-title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432\u0020\u0053\u0045\u004c\u0045\u0043\u0054"
-toc_folder_title: SELECT
-toc_priority: 32
-toc_title: "\u041e\u0431\u0437\u043e\u0440"
+toc_priority: 33
+toc_title: SELECT
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -18,7 +16,7 @@ SELECT [DISTINCT] expr_list
 [GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
-[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
+[GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
 [LIMIT [offset_value, ]n BY columns]

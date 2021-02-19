@@ -79,7 +79,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
+           FormatFactory::WriteCallback,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
@@ -89,7 +89,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
+           FormatFactory::WriteCallback,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);

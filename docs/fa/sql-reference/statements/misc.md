@@ -57,7 +57,7 @@ CHECK TABLE [db.]name
 اگر جدول خراب شده است, شما می توانید داده های غیر خراب به جدول دیگر کپی کنید. برای انجام این کار:
 
 1.  ایجاد یک جدول جدید با ساختار همان جدول صدمه دیده است. برای انجام این کار پرس و جو را اجرا کنید `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  تنظیم [_مخفی کردن](../../operations/settings/settings.md#settings-max_threads) ارزش به 1 برای پردازش پرس و جو بعدی در یک موضوع واحد. برای انجام این کار پرس و جو را اجرا کنید `SET max_threads = 1`.
+2.  تنظیم [\_مخفی کردن](../../operations/settings/settings.md#settings-max_threads) ارزش به 1 برای پردازش پرس و جو بعدی در یک موضوع واحد. برای انجام این کار پرس و جو را اجرا کنید `SET max_threads = 1`.
 3.  اجرای پرسوجو `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. این درخواست داده های غیر خراب شده را از جدول خراب شده به جدول دیگر کپی می کند. فقط داده ها قبل از قسمت خراب کپی خواهد شد.
 4.  راه اندازی مجدد `clickhouse-client` برای تنظیم مجدد `max_threads` ارزش.
 
@@ -253,7 +253,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 چه زمانی `OPTIMIZE` با استفاده از [تکرار غذای اصلی](../../engines/table-engines/mergetree-family/replication.md) خانواده از موتورهای جدول, تاتر ایجاد یک کار برای ادغام و منتظر اعدام در تمام گره (در صورتی که `replication_alter_partitions_sync` تنظیم فعال است).
 
--   اگر `OPTIMIZE` یک ادغام به هر دلیلی انجام نمی, این کار مشتری اطلاع نیست. برای فعال کردن اعلان ها از [ا_فزون_ف_کوپ](../../operations/settings/settings.md#setting-optimize_throw_if_noop) تنظیمات.
+-   اگر `OPTIMIZE` یک ادغام به هر دلیلی انجام نمی, این کار مشتری اطلاع نیست. برای فعال کردن اعلان ها از [ا\_فزون\_ف\_کوپ](../../operations/settings/settings.md#setting-optimize_throw_if_noop) تنظیمات.
 -   اگر شما یک مشخص `PARTITION` فقط پارتیشن مشخص شده بهینه شده است. [نحوه تنظیم بیان پارتیشن](alter.md#alter-how-to-specify-part-expr).
 -   اگر شما مشخص کنید `FINAL` حتی زمانی که تمام داده ها در حال حاضر در یک بخش بهینه سازی انجام شده است.
 -   اگر شما مشخص کنید `DEDUPLICATE` و سپس به طور کامل یکسان ردیف خواهد بود deduplicated (تمام ستون ها در مقایسه با) آن را حس می کند تنها برای MergeTree موتور.

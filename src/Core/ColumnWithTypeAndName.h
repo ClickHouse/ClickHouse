@@ -33,7 +33,6 @@ struct ColumnWithTypeAndName
     ColumnWithTypeAndName cloneEmpty() const;
     bool operator==(const ColumnWithTypeAndName & other) const;
 
-    void dumpNameAndType(WriteBuffer & out) const;
     void dumpStructure(WriteBuffer & out) const;
     String dumpStructure() const;
 };

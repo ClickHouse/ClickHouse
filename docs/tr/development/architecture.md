@@ -47,7 +47,7 @@ A `Block` bellekteki bir tablonun bir alt kümesini (yığın) temsil eden bir k
 
 Bir bloktaki sütunlar üzerinde bazı işlevleri hesapladığımızda, bloğa sonucu olan başka bir sütun ekleriz ve işlemler değişmez olduğu için işlevin argümanları için sütunlara dokunmayız. Daha sonra, gereksiz sütunlar bloktan kaldırılabilir, ancak değiştirilemez. Ortak alt ifadelerin ortadan kaldırılması için uygundur.
 
-İşlenen her veri yığını için bloklar oluşturulur. Aynı hesaplama türü için, sütun adları ve türleri farklı bloklar için aynı kalır ve yalnızca sütun verileri değişir unutmayın. Küçük blok boyutları shared_ptrs ve sütun adlarını kopyalamak için geçici dizeleri yüksek bir ek yükü olduğundan blok üstbilgisinden blok verileri bölmek daha iyidir.
+İşlenen her veri yığını için bloklar oluşturulur. Aynı hesaplama türü için, sütun adları ve türleri farklı bloklar için aynı kalır ve yalnızca sütun verileri değişir unutmayın. Küçük blok boyutları shared\_ptrs ve sütun adlarını kopyalamak için geçici dizeleri yüksek bir ek yükü olduğundan blok üstbilgisinden blok verileri bölmek daha iyidir.
 
 ## Blok Akışları {#block-streams}
 
