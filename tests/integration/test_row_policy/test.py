@@ -106,26 +106,26 @@ def test_cannot_trick_row_policy_with_keyword_with():
     assert node.query("WITH 0 AS a SELECT a FROM mydb.filtered_table1") == TSV([[0], [0]])
     assert node.query("WITH 0 AS a SELECT b FROM mydb.filtered_table1") == TSV([[0], [1]])
 
-    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1")                                      == TSV([[1, 0], [1, 1]])
-    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 WHERE a IN(0, 1) AND b IN(0, 1)")      == TSV([[1, 0], [1, 1]])
-    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a IN(0, 1) AND b IN(0, 1)")   == TSV([[1, 0], [1, 1]])
-    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a IN(0, 1) WHERE b IN(0, 1)") == TSV([[1, 0], [1, 1]])
-    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE b IN(0, 1) WHERE a IN(0, 1)") == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1")                              == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 WHERE a >= 0 AND b >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a >= 0 AND b >= 0")   == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a >= 0 WHERE b >= 0") == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE b >= 0 WHERE a >= 0") == TSV([[1, 0], [1, 1]])
 
-    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1")                                      == TSV([[0, 0], [0, 1]])
-    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 WHERE a IN(0, 1) AND b IN(0, 1)")      == TSV([[0, 0], [0, 1]])
-    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE a IN(0, 1) AND b IN(0, 1)")   == TSV([[0, 0], [0, 1]])
-    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE a IN(0, 1) WHERE b IN(0, 1)") == TSV([[0, 0], [0, 1]])
-    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE b IN(0, 1) WHERE a IN(0, 1)") == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1")                              == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 WHERE a >= 0 AND b >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE a >= 0 AND b >= 0")   == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE a >= 0 WHERE b >= 0") == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE b >= 0 WHERE a >= 0") == TSV([[0, 0], [0, 1]])
 
     assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3")                              == TSV([[0, 1], [1, 0]])
-    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0")      == TSV([[0, 1], [1, 0]])
+    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 1], [1, 0]])
     assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE c >= 0 AND a >= 0")   == TSV([[0, 1], [1, 0]])
     assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 1], [1, 0]])
     assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 1], [1, 0]])
 
     assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3")                              == TSV([[0, 1], [1, 0], [0, 0]])
-    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0")      == TSV([[0, 1], [1, 0], [0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 1], [1, 0], [0, 0]])
     assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 AND a >= 0")   == TSV([[0, 1], [1, 0], [0, 0]])
     assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 1], [1, 0], [0, 0]])
     assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 1], [1, 0], [0, 0]])
@@ -145,17 +145,17 @@ def test_policy_from_users_xml_affects_only_user_assigned():
 
 def test_with_prewhere():
     copy_policy_xml('normal_filter2_table2.xml')
-    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE a > 1") == TSV([[4, 3, 2, 1]])
-    assert node.query("SELECT a FROM mydb.filtered_table2 WHERE a > 1") == TSV([[4]])
-    assert node.query("SELECT a, b FROM mydb.filtered_table2 WHERE a > 1") == TSV([[4, 3]])
-    assert node.query("SELECT b, c FROM mydb.filtered_table2 WHERE a > 1") == TSV([[3, 2]])
-    assert node.query("SELECT d FROM mydb.filtered_table2 WHERE a > 1") == TSV([[1]])
+    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0")    == TSV([[4, 3, 2, 1]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0")    == TSV([[4]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0") == TSV([[4, 3]])
+    assert node.query("SELECT b, c FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0") == TSV([[3, 2]])
+    assert node.query("SELECT d FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0")    == TSV([[1]])
 
-    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4, 3, 2, 1]])
-    assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4]])
+    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a > 1")    == TSV([[4, 3, 2, 1]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a > 1")    == TSV([[4]])
     assert node.query("SELECT a, b FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4, 3]])
     assert node.query("SELECT b, c FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[3, 2]])
-    assert node.query("SELECT d FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[1]])
+    assert node.query("SELECT d FROM mydb.filtered_table2 PREWHERE a > 1")    == TSV([[1]])
 
     assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 2, 3, 4]])
     assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1]])
@@ -168,10 +168,10 @@ def test_with_prewhere():
 
 def test_with_throwif_in_where():
     copy_policy_xml('no_filters.xml')
-    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'expected') = 0")
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'expected') = 0 SETTINGS optimize_move_to_prewhere = 0")
 
     copy_policy_xml('normal_filter2_table2.xml')
-    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'pwned') = 0") == TSV([
+    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'pwned') = 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([
         [1, 2, 3, 4], [4, 3, 2, 1]])
 
 

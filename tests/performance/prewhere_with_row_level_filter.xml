@@ -6,7 +6,7 @@
     <fill_query>INSERT INTO test_prl SELECT number FROM numbers(50000000);</fill_query>
 
     <query>SELECT * FROM test_prl;</query>
-    <query>SELECT * FROM test_prl WHERE n % 3 AND n % 5;</query>
+    <query>SELECT * FROM test_prl WHERE n % 3 AND n % 5 SETTINGS optimize_move_to_prewhere = 0;</query>
     <query>SELECT * FROM test_prl PREWHERE n % 3 AND n % 5;</query>
     <query>SELECT * FROM test_prl PREWHERE n % 3 WHERE n % 5;</query>
     <query>SELECT * FROM test_prl PREWHERE n % 5 WHERE n % 3;</query>
