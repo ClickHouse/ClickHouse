@@ -104,10 +104,12 @@ private:
         {
             try
             {
-                AsyncCallbackSetter async_setter(receiver.connection, ReadCallback{receiver, sink});
                 while (true)
                 {
-                    receiver.packet = receiver.connection->receivePacket();
+                    {
+                        AsyncCallbackSetter async_setter(receiver.connection, ReadCallback{receiver, sink});
+                        receiver.packet = receiver.connection->receivePacket();
+                    }
                     sink = std::move(sink).resume();
                 }
 

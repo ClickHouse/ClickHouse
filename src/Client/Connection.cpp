@@ -109,8 +109,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        if (async_callback)
-            in->setAsyncCallback(std::move(async_callback));
+        in->setAsyncCallback(std::move(async_callback));
 
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
