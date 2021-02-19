@@ -702,9 +702,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config)
+        [&](ConfigurationPtr config, bool initial_loading)
         {
-            static bool initial_loading = true;
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             /// Limit on total memory usage
@@ -761,7 +760,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
-                initial_loading = false;
             }
 
             global_context->updateStorageConfiguration(*config);

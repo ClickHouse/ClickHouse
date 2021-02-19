@@ -62,8 +62,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
 </yandex>"""
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
 
-    # Hopefully it has finished the configuration reload
-    time.sleep(2)
+    node.query("SYSTEM RELOAD CONFIG")
 
     node.query(
         "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zookeeper2:/clickhouse/tables/0/simple';"
