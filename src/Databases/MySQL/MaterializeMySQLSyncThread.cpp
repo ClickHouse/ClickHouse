@@ -35,6 +35,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_MYSQL_VARIABLE;
     extern const int SYNC_MYSQL_USER_ACCESS_ERROR;
     extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
@@ -157,32 +159,48 @@ void MaterializeMySQLSyncThread::synchronization()
     {
         MaterializeMetadata metadata(
             DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata");
-        if (prepareSynchronized(metadata))
+        bool need_reconnect = true;
+
+        Stopwatch watch;
+        Buffers buffers(database_name);
+
+        while (!isCancelled())
         {
-            Stopwatch watch;
-            Buffers buffers(database_name);
-
-            while (!isCancelled())
+            if (need_reconnect)
             {
-                /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
-                UInt64 max_flush_time = settings->max_flush_data_time;
+                if (!prepareSynchronized(metadata))
+                    break;
+                need_reconnect = false;
+            }
+
+            /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
+            UInt64 max_flush_time = settings->max_flush_data_time;
+
+            try
+            {
                 BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
+                if (binlog_event)
+                    onEvent(buffers, binlog_event, metadata);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::CANNOT_READ_ALL_DATA || settings->max_wait_time_when_mysql_unavailable < 0)
+                    throw;
 
-                {
-                    if (binlog_event)
-                        onEvent(buffers, binlog_event, metadata);
-
-                    if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
-                            settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
-                            settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
-                        )
-                    {
-                        watch.restart();
-
-                        if (!buffers.data.empty())
-                            flushBuffersData(buffers, metadata);
-                    }
-                }
+                flushBuffersData(buffers, metadata);
+                LOG_INFO(log, "Lost connection to MySQL");
+                need_reconnect = true;
+                setSynchronizationThreadException(std::current_exception());
+                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                continue;
+            }
+            if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
+                    settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
+                    settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
+                )
+            {
+                watch.restart();
+                flushBuffersData(buffers, metadata);
             }
         }
     }
@@ -336,7 +354,15 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
     {
         try
         {
-            connection = pool.get();
+            connection = pool.tryGet();
+            if (connection.isNull())
+            {
+                if (settings->max_wait_time_when_mysql_unavailable < 0)
+                    throw Exception("Unable to connect to MySQL", ErrorCodes::UNKNOWN_EXCEPTION);
+                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                continue;
+            }
+
             opened_transaction = false;
 
             checkMySQLVariables(connection);
@@ -383,12 +409,17 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed &)
+            catch (const mysqlxx::ConnectionFailed &) {}
+            catch (const mysqlxx::BadQuery & e)
             {
-                setSynchronizationThreadException(std::current_exception());
-                /// Avoid busy loop when MySQL is not available.
-                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                // Lost connection to MySQL server during query
+                if (e.code() != CR_SERVER_LOST || settings->max_wait_time_when_mysql_unavailable < 0)
+                    throw;
             }
+
+            setSynchronizationThreadException(std::current_exception());
+            /// Avoid busy loop when MySQL is not available.
+            sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
         }
     }
 
@@ -397,6 +428,9 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
 
 void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
 {
+    if (buffers.data.empty())
+        return;
+
     metadata.transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
 
     const auto & position_message = [&]()
