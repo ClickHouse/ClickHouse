@@ -106,10 +106,6 @@ namespace ErrorCodes
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
 {
-    // std::cerr << "----- InterpreterSelectQuery::generateFilterActions\n";
-    // for (const auto & name : prerequisite_columns)
-    //     std::cerr << name << std::endl;
-
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
 
@@ -144,7 +140,6 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     auto syntax_result = TreeRewriter(*context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, metadata_snapshot));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
-    //std::cerr << actions->
 
     return expr_list->children.at(0)->getColumnName();
 }
@@ -527,10 +522,6 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, input, std::move(input_pipe));
 
-    // WriteBufferFromOwnString buf;
-    // query_plan.explainPlan(buf, {.header = true, .actions = true});
-    // std::cerr << buf.str();
-
     /// We must guarantee that result structure is the same as in getSampleBlock()
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
@@ -826,7 +817,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
             if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
             {
-                // std::cerr << "----- Moving row level filter to prewhere\n";
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereDAGInfo>(
                     std::move(expressions.filter_info->actions),
@@ -839,7 +829,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         else
         {
             /// Add row level security actions to prewhere.
-            // std::cerr << expressions.filter_info->actions->dumpDAG() << std::endl;
             expressions.prewhere_info->row_level_filter_actions = std::move(expressions.filter_info->actions);
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
             expressions.prewhere_info->row_level_filter_actions->projectInput(false);
@@ -1658,7 +1647,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (prewhere_info)
         {
-            // std::cerr << "-------- filling prewhere info \n";
             query_info.prewhere_info = std::make_shared<PrewhereInfo>();
 
             query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);

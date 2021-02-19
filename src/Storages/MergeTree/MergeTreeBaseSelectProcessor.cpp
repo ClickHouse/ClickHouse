@@ -334,12 +334,8 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
 {
     if (prewhere_info)
     {
-        // std::cerr << "0: " << block.dumpStructure() << std::endl;
-
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(block);
-
-        // std::cerr << "1: " << block.dumpStructure() << std::endl;
 
         if (prewhere_info->row_level_filter)
         {
@@ -351,12 +347,9 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
                     ErrorCodes::LOGICAL_ERROR);
             }
         }
-        // std::cerr << "2: " << block.dumpStructure() << std::endl;
 
         if (prewhere_info->prewhere_actions)
             prewhere_info->prewhere_actions->execute(block);
-
-        // std::cerr << "3: " << block.dumpStructure() << std::endl;
 
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -372,8 +365,6 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
-
-        // std::cerr << "4: " << block.dumpStructure() << std::endl;
     }
 }
 
