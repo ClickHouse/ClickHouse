@@ -290,7 +290,6 @@ ColumnPtr IPAddressDictionary::getColumn(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto * out = column.get();

@@ -229,8 +229,8 @@ public:
 
     bool ALWAYS_INLINE erase(const Key & key)
     {
-        auto hash = Base::hash(key);
-        auto it = Base::find(key, hash);
+        auto key_hash = Base::hash(key);
+        auto it = Base::find(key, key_hash);
 
         if (!it)
             return false;
@@ -239,7 +239,7 @@ public:
 
         lru_list.erase(lru_list.iterator_to(*it));
 
-        return Base::erase(key, hash);
+        return Base::erase(key, key_hash);
     }
 
     void ALWAYS_INLINE clear()

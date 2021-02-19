@@ -147,7 +147,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         id.emplace(config, structure_prefix + ".id");
     else if (has_key)
     {
-        key.emplace(getAttributes(config, structure_prefix + ".key", false, false));
+        key.emplace(getAttributes(config, structure_prefix + ".key", true));
         if (key->empty())
             throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
     }
@@ -196,7 +196,13 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             has_expressions = true;
     }
 
-    attributes = getAttributes(config, structure_prefix);
+    attributes = getAttributes(config, structure_prefix, false);
+
+    for (size_t i = 0; i < attributes.size(); ++i)
+    {
+        const auto & attribute_name = attributes[i].name;
+        attribute_name_to_index[attribute_name] = i;
+    }
 
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
@@ -223,23 +229,22 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     }
 }
 
-size_t DictionaryStructure::getAttributeIndex(const std::string & attribute_name) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const
 {
     auto it = attribute_name_to_index.find(attribute_name);
 
     if (it == attribute_name_to_index.end())
-        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    {
+        if (!access_to_key_from_attributes)
+            throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
-    size_t index = it->second;
+        for (const auto & key_attribute : *key)
+            if (key_attribute.name == attribute_name)
+                return key_attribute;
+    }
 
-    return index;
-}
-
-const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const
-{
-    size_t index = getAttributeIndex(attribute_name);
-
-    return attributes[index];
+    size_t attribute_index = it->second;
+    return attributes[attribute_index];
 }
 
 const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name, const DataTypePtr & type) const
@@ -339,9 +344,12 @@ static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const bool hierarchy_allowed,
-    const bool allow_null_values)
+    bool complex_key_attributes)
 {
+    /// If we request complex key attributes they does not support hierarchy and does not allow null values
+    const bool hierarchy_allowed = !complex_key_attributes;
+    const bool allow_null_values = !complex_key_attributes;
+
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(config_prefix, config_elems);
     auto has_hierarchy = false;
@@ -367,7 +375,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         /// columns will be duplicated
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
-
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
@@ -428,7 +435,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        attribute_name_to_index[name] = res_attributes.size();
         res_attributes.emplace_back(DictionaryAttribute{
             name,
             underlying_type,
