@@ -903,7 +903,7 @@ class ClickHouseCluster:
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             logging.debug(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
             self.up_called = True
-            subprocess.check_output(clickhouse_start_cmd)
+            subprocess_check_call(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
             start_deadline = time.time() + 20.0  # seconds
