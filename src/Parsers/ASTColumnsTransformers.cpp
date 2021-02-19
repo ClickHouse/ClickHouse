@@ -105,7 +105,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes, std::vector<String> da
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
-        bool have_database_name = databases.size() > 0 ? true : false;
+        bool have_database_name = !databases.empty();
         std::vector<String>::iterator db = databases.begin();
 
         for (auto it = nodes.begin(); it != nodes.end();)
