@@ -124,6 +124,13 @@ void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
     members.push_back(node);
 }
 
+std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
+{
+    std::vector<ASTPtr> members;
+    collectConjunctions(node, members);
+    return members;
+}
+
 std::optional<size_t> getIdentMembership(const ASTIdentifier & ident, const std::vector<TableWithColumnNamesAndTypes> & tables)
 {
     std::optional<size_t> table_pos = IdentifierSemantic::getMembership(ident);
@@ -169,20 +176,20 @@ bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
     return node->as<ASTIdentifier>() || node->as<ASTLiteral>();
 }
 
-bool canMoveExpressionToJoinOn(const ASTPtr & ast,
-                               const std::vector<JoinedElement> & joined_tables,
-                               const std::vector<TableWithColumnNamesAndTypes> & tables,
-                               const Aliases & aliases,
-                               std::map<size_t, std::vector<ASTPtr>> & asts_to_join_on)
+/// Return mapping table_no -> expression with expression that can be moved into JOIN ON section
+std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
+    const ASTPtr & ast,
+    const std::vector<JoinedElement> & joined_tables,
+    const std::vector<TableWithColumnNamesAndTypes> & tables,
+    const Aliases & aliases)
 {
-    std::vector<ASTPtr> conjuncts;
-    collectConjunctions(ast, conjuncts);
-    for (const auto & node : conjuncts)
+    std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
+    for (const auto & node : collectConjunctions(ast))
     {
         if (const auto * func = node->as<ASTFunction>(); func && func->name == NameEquals::name)
         {
             if (!func->arguments || func->arguments->children.size() != 2)
-                return false;
+                return {};
 
             /// Check if the identifiers are from different joined tables.
             /// If it's a self joint, tables should have aliases.
@@ -196,14 +203,14 @@ bool canMoveExpressionToJoinOn(const ASTPtr & ast,
                 if (joined_tables[table_pos].canAttachOnExpression())
                     asts_to_join_on[table_pos].push_back(node);
                 else
-                    return false;
+                    return {};
             }
         }
 
         if (!isAllowedToRewriteCrossJoin(node, aliases))
-            return false;
+            return {};
     }
-    return true;
+    return asts_to_join_on;
 }
 
 ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
@@ -317,7 +324,6 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     }
 
     /// COMMA to CROSS
-
     if (num_comma)
     {
         for (auto & table : joined_tables)
@@ -325,22 +331,16 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     }
 
     /// CROSS to INNER
-
-    if (select.where() && data.cross_to_inner_join_rewrite)
+    if (data.cross_to_inner_join_rewrite && select.where())
     {
-        std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-        bool can_move_where
-            = canMoveExpressionToJoinOn(select.where(), joined_tables, data.tables_with_columns, data.aliases, asts_to_join_on);
-        if (can_move_where)
+        auto asts_to_join_on = moveExpressionToJoinOn(select.where(), joined_tables, data.tables_with_columns, data.aliases);
+        for (size_t i = 1; i < joined_tables.size(); ++i)
         {
-            for (size_t i = 1; i < joined_tables.size(); ++i)
+            const auto & expr_it = asts_to_join_on.find(i);
+            if (expr_it != asts_to_join_on.end())
             {
-                const auto & expr_it = asts_to_join_on.find(i);
-                if (expr_it != asts_to_join_on.end())
-                {
-                    if (joined_tables[i].rewriteCrossToInner(makeOnExpression(expr_it->second)))
-                        data.done = true;
-                }
+                if (joined_tables[i].rewriteCrossToInner(makeOnExpression(expr_it->second)))
+                    data.done = true;
             }
         }
     }
