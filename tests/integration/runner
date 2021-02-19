@@ -142,11 +142,22 @@ if __name__ == "__main__":
         action="append",
         help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)")
 
+    parser.add_argument(
+        "-n", "--parallel",
+        action="store",
+        dest="parallel",
+        help="Parallelism")
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
 
     check_args_and_update_paths(args)
+
+    parallel_args = ""
+    if args.parallel:
+        parallel_args += "--dist=loadfile"
+        parallel_args += "-n {}".format(args.parallel)
 
     net = ""
     if not args.disable_net_host:
@@ -188,7 +199,7 @@ if __name__ == "__main__":
     cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{opts}' {img} {command}".format(
+        --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{parallel} {opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -197,6 +208,7 @@ if __name__ == "__main__":
         cases_dir=args.cases_dir,
         src_dir=args.src_dir,
         env_tags=env_tags,
+        parallel=parallel_args,
         opts=' '.join(args.pytest_args),
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,

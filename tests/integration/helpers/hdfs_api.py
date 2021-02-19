@@ -10,7 +10,6 @@ import socket
 import tempfile
 import logging
 import os
-
 class mk_krb_conf(object):
     def __init__(self, krb_conf, kdc_ip):
         self.krb_conf = krb_conf
@@ -51,6 +50,9 @@ class HDFSApi(object):
         requests_log = logging.getLogger("requests.packages.urllib3")
         requests_log.setLevel(logging.DEBUG)
         requests_log.propagate = True
+        kerb_log = logging.getLogger("requests_kerberos")
+        kerb_log.setLevel(logging.DEBUG)
+        kerb_log.propagate = True
 
         if kerberized:
             self._run_kinit()
@@ -66,23 +68,28 @@ class HDFSApi(object):
             raise Exception("kerberos principal and keytab are required")
 
         with mk_krb_conf(self.krb_conf, self.kdc_ip) as instantiated_krb_conf:
-            logging.debug("instantiated_krb_conf ", instantiated_krb_conf)
+            logging.debug("instantiated_krb_conf {}".format(instantiated_krb_conf))
 
             os.environ["KRB5_CONFIG"] = instantiated_krb_conf
 
             cmd = "(kinit -R -t {keytab} -k {principal} || (sleep 5 && kinit -R -t {keytab} -k {principal})) ; klist".format(instantiated_krb_conf=instantiated_krb_conf, keytab=self.keytab, principal=self.principal)
 
-            logging.debug(cmd)
-
             start = time.time()
 
             while time.time() - start < self.timeout:
                 try:
-                    subprocess.call(cmd, shell=True)
-                    print("KDC started, kinit successfully run")
+                    res = subprocess.run(cmd, shell=True)
+                    if res.returncode != 0:
+                        # check_call(...) from subprocess does not print stderr, so we do it manually
+                        logging.debug('Stderr:\n{}\n'.format(res.stderr.decode('utf-8')))
+                        logging.debug('Stdout:\n{}\n'.format(res.stdout.decode('utf-8')))
+                        logging.debug('Env:\n{}\n'.format(env))
+                        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
+
+                    logging.debug("KDC started, kinit successfully run")
                     return
                 except Exception as ex:
-                    print("Can't run kinit ... waiting {}".format(str(ex)))
+                    logging.debug("Can't run kinit ... waiting {}".format(str(ex)))
                     time.sleep(1)
 
         raise Exception("Kinit running failure")
@@ -93,9 +100,13 @@ class HDFSApi(object):
         if response.status_code != 307:
             response.raise_for_status()
         # additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
-        url = "{location}".format(location=response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port)))
-        logging.debug("redirected to {}".format(url))
-        response_data = requests.get(url, headers={'host': 'localhost'},
+        location = None
+        if self.kerberized:
+            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.host, self.data_port)) 
+        else:
+            location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port)) 
+        logging.debug("redirected to {}".format(location))
+        response_data = requests.get(location, headers={'host': 'localhost'},
                                      verify=False, auth=self.kerberos_auth)
         if response_data.status_code != 200:
             response_data.raise_for_status()
@@ -116,7 +127,6 @@ class HDFSApi(object):
         if self.kerberized:
             self._run_kinit()
             self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
-            logging.debug(self.kerberos_auth)
 
         response = requests.put(
             "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, host='localhost',
@@ -135,8 +145,11 @@ class HDFSApi(object):
 
         # additional_params = '&'.join(
         #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
-        location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port))
-
+        if self.kerberized:
+            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.host, self.data_port)) 
+        else:
+            location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port))
+            
         with open(fpath, mode="rb") as fh:
             file_data = fh.read()
             protocol = "http" # self.protocol

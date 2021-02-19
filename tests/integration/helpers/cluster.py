@@ -184,6 +184,13 @@ class ClickHouseCluster:
         self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
         self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
 
+        # available when with_kerberized_hdfs == True
+        self.hdfs_kerberized_host = "kerberizedhdfs1"
+        self.hdfs_kerberized_name_port = get_open_port()
+        self.hdfs_kerberized_data_port = get_open_port()
+        self.hdfs_kerberized_dir = p.abspath(p.join(self.instances_dir, "kerberized_hdfs"))
+        self.hdfs_kerberized_logs_dir = os.path.join(self.hdfs_kerberized_dir, "logs")
+
         # available when with_kafka == True
         self.kafka_host = "kafka1"
         self.kafka_port = get_open_port()
@@ -276,6 +283,21 @@ class ClickHouseCluster:
         print("HDFS BASE CMD:{}".format(self.base_hdfs_cmd))
         return self.base_hdfs_cmd
 
+    def setup_kerberized_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kerberized_hdfs = True
+        env_variables['KERBERIZED_HDFS_HOST'] = self.hdfs_kerberized_host
+        env_variables['KERBERIZED_HDFS_NAME_EXTERNAL_PORT'] = str(self.hdfs_kerberized_name_port)
+        env_variables['KERBERIZED_HDFS_NAME_INTERNAL_PORT'] = "50070"
+        env_variables['KERBERIZED_HDFS_DATA_EXTERNAL_PORT'] = str(self.hdfs_kerberized_data_port)
+        env_variables['KERBERIZED_HDFS_DATA_INTERNAL_PORT'] = "1006"
+        env_variables['KERBERIZED_HDFS_LOGS'] = self.hdfs_kerberized_logs_dir
+        env_variables['KERBERIZED_HDFS_FS'] = "bind"
+        env_variables['KERBERIZED_HDFS_DIR'] = instance.path + '/'
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')])
+        self.base_kerberized_hdfs_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                            '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
+        return self.base_kerberized_hdfs_cmd
+
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_redis = True
         env_variables['KAFKA_HOST'] = self.kafka_host
@@ -345,7 +367,7 @@ class ClickHouseCluster:
         self.with_minio = True        
         cert_d = p.join(self.minio_dir, "certs")
         env_variables['MINIO_CERTS_DIR'] = cert_d
-        env_variables['MINIO_EXTERNAL_PORT'] = self.minio_port
+        env_variables['MINIO_EXTERNAL_PORT'] = str(self.minio_port)
         env_variables['MINIO_INTERNAL_PORT'] = "9001"
         env_variables['SSL_CERT_FILE'] = p.join(self.base_dir, cert_d, 'public.crt')
 
@@ -473,12 +495,7 @@ class ClickHouseCluster:
             cmds.append(self.setup_hdfs_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_kerberized_hdfs and not self.with_kerberized_hdfs:
-            self.with_kerberized_hdfs = True
-            env_variables['KERBERIZED_HDFS_DIR'] = instance.path + '/'
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')])
-            self.base_kerberized_hdfs_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                             '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
-            cmds.append(self.base_kerberized_hdfs_cmd)
+            cmds.append(self.setup_kerberized_hdfs_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_mongo and not self.with_mongo:
             cmds.append(self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir))
@@ -672,10 +689,10 @@ class ClickHouseCluster:
                               principal="root@TEST.CLICKHOUSE.TECH",
                               keytab=keytab,
                               krb_conf=krb_conf,
-                              host="kerberizedhdfs1",
+                              host="localhost",
                               protocol="http",
-                              proxy_port=50070,
-                              data_port=1006,
+                              proxy_port=self.hdfs_kerberized_name_port,
+                              data_port=self.hdfs_kerberized_data_port,
                               hdfs_ip=hdfs_ip,
                               kdc_ip=kdc_ip)
                                       
@@ -847,9 +864,10 @@ class ClickHouseCluster:
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
+                os.makedirs(self.hdfs_kerberized_logs_dir)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 hdfs_api = self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(hdfs_api, timeout=300)
+                self.wait_hdfs_to_start(hdfs_api, timeout=30)
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
