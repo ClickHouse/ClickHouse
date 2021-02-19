@@ -108,6 +108,10 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /dev/nu
 zgrep -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
+# Put logs into /test_output/
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz
+mv /var/log/clickhouse-server/stderr.log /test_output/
+
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK'  LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found"

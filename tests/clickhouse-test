@@ -229,13 +229,15 @@ def get_stacktraces_from_clickhouse(client):
 
 def get_server_pid(server_tcp_port):
     cmd = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
+    output = None
     try:
-        output = subprocess.check_output(cmd, shell=True)
+        output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
         if output:
             return int(output)
         else:
             return None # server dead
-    except Exception:
+    except Exception as e:
+        print("Cannot get server pid, got {}: {}", output, e)
         return None
 
 

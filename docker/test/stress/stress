@@ -89,7 +89,7 @@ if __name__ == "__main__":
         cmd = "{} {} {}".format(args.test_cmd, "--hung-check", "00001_select_1")
         res = call(cmd, shell=True, stderr=STDOUT)
         hung_check_status = "Hung check\t{}\n".format('FAIL' if res else 'OK')
-        open(os.path.join(args.output_folder, "test_results.tsv"), 'w+').write()
+        open(os.path.join(args.output_folder, "test_results.tsv"), 'w+').write(hung_check_status)
         if res != 0:
             logging.info("Hung check failed with exit code {}".format(res))
 
