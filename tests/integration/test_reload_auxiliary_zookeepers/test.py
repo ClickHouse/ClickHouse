@@ -80,7 +80,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
     </zookeeper>
 </yandex>"""
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
-    time.sleep(2)
+    node.query("SYSTEM RELOAD CONFIG")
     with pytest.raises(QueryRuntimeException):
         node.query(
             "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zookeeper2:/clickhouse/tables/0/simple';"
