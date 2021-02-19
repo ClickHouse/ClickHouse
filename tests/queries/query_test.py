@@ -33,7 +33,7 @@ SKIP_LIST = [
     "01057_http_compression_prefer_brotli",
     "01080_check_for_error_incorrect_size_of_nested_column",
     "01083_expressions_in_engine_arguments",
-    "01086_odbc_roundtrip",
+    # "01086_odbc_roundtrip",
     "01088_benchmark_query_id",
     "01098_temporary_and_external_tables",
     "01099_parallel_distributed_insert_select",
