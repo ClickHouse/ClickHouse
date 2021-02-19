@@ -103,7 +103,7 @@
         "00738_lock_for_inner_table"
     ],
     "polymorphic-parts": [
-        "01508_partition_pruning", /// bug, shoud be fixed
+        "01508_partition_pruning_long", /// bug, shoud be fixed
         "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
     ],
     "antlr": [
@@ -122,6 +122,12 @@
         "00763_create_query_as_table_engine_bug",
         "00765_sql_compatibility_aliases",
         "00825_protobuf_format_input",
+        "00825_protobuf_format_nested_optional",
+        "00825_protobuf_format_array_3dim",
+        "00825_protobuf_format_map",
+        "00825_protobuf_format_array_of_arrays",
+        "00825_protobuf_format_table_default",
+        "00825_protobuf_format_enum_mapping",
         "00826_cross_to_inner_join",
         "00834_not_between",
         "00909_kill_not_initialized_query",
@@ -267,7 +273,7 @@
         "01501_clickhouse_client_INSERT_exception",
         "01504_compression_multiple_streams",
         "01508_explain_header",
-        "01508_partition_pruning",
+        "01508_partition_pruning_long",
         "01509_check_parallel_quorum_inserts",
         "01509_parallel_quorum_and_merge",
         "01515_mv_and_array_join_optimisation_bag",
@@ -574,6 +580,7 @@
         "01676_dictget_in_default_expression",
         "01715_background_checker_blather_zookeeper",
         "01700_system_zookeeper_path_in",
+        "01669_columns_declaration_serde",
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -581,6 +588,7 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn"
     ]
 }
