@@ -264,6 +264,9 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+    /// Check if there are new broken disks and enqueue part recovery tasks.
+    void checkBrokenDisks();
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -392,6 +395,9 @@ private:
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
     ThrottlerPtr replicated_sends_throttler;
+
+    std::mutex last_broken_disks_mutex;
+    std::set<String> last_broken_disks;
 
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;

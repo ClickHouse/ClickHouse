@@ -55,7 +55,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
         throw;
     }
 }
@@ -140,7 +140,7 @@ size_t MergeTreeReaderWide::readRows(
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            storage.reportBrokenPart(data_part->name);
+            storage.reportBrokenPart(data_part);
 
         /// Better diagnostics.
         e.addMessage("(while reading from part " + data_part->getFullPath() + " "
@@ -150,7 +150,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
 
         throw;
     }

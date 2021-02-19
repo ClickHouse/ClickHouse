@@ -466,6 +466,8 @@ void ReplicatedMergeTreePartCheckThread::run()
             }
         }
 
+        storage.checkBrokenDisks();
+
         task->schedule();
     }
     catch (const Coordination::Exception & e)
