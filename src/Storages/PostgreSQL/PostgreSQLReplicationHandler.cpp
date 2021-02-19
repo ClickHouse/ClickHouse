@@ -15,6 +15,8 @@ namespace DB
 {
 
 static const auto reschedule_ms = 500;
+static const auto max_thread_work_duration_ms = 60000;
+
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
@@ -37,6 +39,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
     startup_task->deactivate();
+
+    consumer_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
+    consumer_task->deactivate();
 }
 
 
@@ -77,8 +82,8 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
 
 void PostgreSQLReplicationHandler::shutdown()
 {
-    if (consumer)
-        consumer->stopSynchronization();
+    stop_synchronization.store(true);
+    consumer_task->deactivate();
 }
 
 
@@ -95,7 +100,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
     auto initial_sync = [&]()
     {
         createReplicationSlot(ntx, start_lsn, snapshot_name);
-        loadFromSnapshot(snapshot_name);
+        loadFromSnapshot(snapshot_name, storages);
     };
 
     /// Replication slot should be deleted with drop table only and created only once, reused after detach.
@@ -124,7 +129,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
 
     consumer = std::make_shared<PostgreSQLReplicaConsumer>(
             context,
-            std::move(connection),
+            connection,
             replication_slot,
             publication_name,
             metadata_path,
@@ -132,15 +137,15 @@ void PostgreSQLReplicationHandler::startSynchronization()
             max_block_size,
             nested_storages);
 
-    consumer->startSynchronization();
+    consumer_task->activateAndSchedule();
 
     replication_connection->conn()->close();
 }
 
 
-void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
+void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages)
 {
-    for (const auto & storage_data : storages)
+    for (const auto & storage_data : sync_storages)
     {
         try
         {
@@ -159,18 +164,19 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
             /// Already connected to needed database, no need to add it to query.
             query_str = fmt::format("SELECT * FROM {}", storage_data.first);
 
+            const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
+            auto insert_context = storage_data.second->makeNestedTableContext();
+
             auto insert = std::make_shared<ASTInsertQuery>();
             insert->table_id = nested_storage->getStorageID();
-            auto insert_context = storage_data.second->makeNestedTableContext();
 
             InterpreterInsertQuery interpreter(insert, insert_context);
             auto block_io = interpreter.execute();
 
-            const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
             auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
-
             PostgreSQLBlockInputStream<pqxx::work> input(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
 
+            assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica load from snapshot");
             copyData(input, *block_io.out);
 
             storage_data.second->setNestedLoaded();
@@ -185,6 +191,35 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
     }
 
     LOG_DEBUG(log, "Table dump end");
+}
+
+
+void PostgreSQLReplicationHandler::consumerFunc()
+{
+    auto start_time = std::chrono::steady_clock::now();
+    NameSet skipped_tables;
+
+    while (!stop_synchronization)
+    {
+        bool reschedule = !consumer->consume(skipped_tables);
+
+        if (!skipped_tables.empty())
+        {
+            reloadFromSnapshot(skipped_tables);
+            skipped_tables.clear();
+        }
+
+        if (reschedule)
+            break;
+
+        auto end_time = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        if (duration.count() > max_thread_work_duration_ms)
+            break;
+    }
+
+    if (!stop_synchronization)
+        consumer_task->scheduleAfter(reschedule_ms);
 }
 
 
@@ -258,9 +293,16 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(NontransactionPtr ntx,
 }
 
 
-void PostgreSQLReplicationHandler::createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name)
+void PostgreSQLReplicationHandler::createReplicationSlot(
+        NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name, bool temporary)
 {
-    std::string query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", replication_slot);
+    std::string query_str;
+
+    if (!temporary)
+        query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", replication_slot);
+    else
+        query_str = fmt::format("CREATE_REPLICATION_SLOT {} TEMPORARY LOGICAL pgoutput EXPORT_SNAPSHOT", replication_slot + "_tmp");
+
     try
     {
         pqxx::result result{ntx->exec(query_str)};
@@ -340,6 +382,45 @@ PostgreSQLTableStructure PostgreSQLReplicationHandler::fetchTableStructure(
 {
     auto use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     return fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true);
+}
+
+
+/// TODO: After temporary replication slot is created, we have a start lsn. In replication stream
+/// when get message for a table and this table turn out to be in a skip list, check
+/// if current lsn position is >= start lsn position for skipped table. If so, we can
+/// remove this table fromm skip list and consume changes without any loss.
+std::string PostgreSQLReplicationHandler::reloadFromSnapshot(NameSet & table_names)
+{
+    String start_lsn;
+    try
+    {
+        auto tx = std::make_shared<pqxx::work>(*connection->conn());
+        Storages sync_storages;
+        for (const auto & table_name : table_names)
+        {
+            auto storage = storages[table_name];
+            sync_storages[table_name] = storage;
+            storage->dropNested();
+        }
+        tx->commit();
+
+        auto replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection_str));
+        replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
+
+        auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+        std::string snapshot_name;
+        createReplicationSlot(ntx, start_lsn, snapshot_name, true);
+        ntx->commit();
+
+        loadFromSnapshot(snapshot_name, sync_storages);
+
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return start_lsn;
 }
 
 }

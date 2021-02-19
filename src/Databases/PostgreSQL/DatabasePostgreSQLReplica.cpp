@@ -164,7 +164,6 @@ StoragePtr DatabasePostgreSQLReplica<Base>::tryGetTable(const String & name, con
         return table->second;
 
     return StoragePtr{};
-
 }
 
 
@@ -177,6 +176,7 @@ void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
             Base::createTable(context, name, table, query);
+            /// TODO: Update table cached tables list or not
             return;
         }
     }
@@ -188,6 +188,7 @@ void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const
 template<typename Base>
 void DatabasePostgreSQLReplica<Base>::dropTable(const Context & context, const String & name, bool no_delay)
 {
+    /// TODO: If called from non sync thread, add dropped storage to skip list
     Base::dropTable(context, name, no_delay);
 }
 

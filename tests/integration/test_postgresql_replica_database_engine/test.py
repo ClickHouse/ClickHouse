@@ -304,23 +304,28 @@ def test_table_schema_changes(started_cluster):
 
     for i in range(NUM_TABLES):
         create_postgres_table(cursor, 'postgresql_replica_{}'.format(i), template=postgres_table_template_2);
-        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {}, {}, {} from numbers(50)".format(i, i, i, i))
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {}, {}, {} from numbers(25)".format(i, i, i, i))
 
     instance.query(
         "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
 
     for i in range(NUM_TABLES):
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 25 + number, {}, {}, {} from numbers(25)".format(i, i, i, i))
+
+    for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
 
-    cursor.execute("ALTER TABLE postgresql_replica_3 DROP COLUMN value2")
+    expected = instance.query("SELECT key, value1, value3 FROM test_database.postgresql_replica_3 ORDER BY key");
+    cursor.execute("ALTER TABLE postgresql_replica_4 DROP COLUMN value2")
 
     for i in range(NUM_TABLES):
         cursor.execute("INSERT INTO postgresql_replica_{} VALUES (50, {}, {})".format(i, i, i))
         cursor.execute("UPDATE postgresql_replica_{} SET value3 = 12 WHERE key%2=0".format(i))
 
-    # Wait to check nothing breaks
-    time.sleep(5)
-    # TODO
+    time.sleep(4)
+    print("Sync check")
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
 
 
 if __name__ == '__main__':

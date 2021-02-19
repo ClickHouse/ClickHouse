@@ -42,6 +42,7 @@ public:
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
+    using Storages = std::unordered_map<String, StoragePostgreSQLReplica *>;
 
     bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
 
@@ -49,7 +50,7 @@ private:
 
     void createPublicationIfNeeded(PostgreSQLConnection::ConnectionPtr connection_);
 
-    void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name);
+    void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
 
     void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name);
 
@@ -59,9 +60,13 @@ private:
 
     void startSynchronization();
 
-    void loadFromSnapshot(std::string & snapshot_name);
+    void consumerFunc();
+
+    void loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages);
 
     std::unordered_set<std::string> fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_);
+
+    std::string reloadFromSnapshot(NameSet & table_names);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
@@ -72,11 +77,11 @@ private:
     PostgreSQLConnectionPtr connection;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
 
-    BackgroundSchedulePool::TaskHolder startup_task;
-    std::atomic<bool> tables_loaded = false;
+    BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
+    std::atomic<bool> tables_loaded = false, stop_synchronization = false;
     bool new_publication_created = false;
 
-    std::unordered_map<String, StoragePostgreSQLReplica *> storages;
+    Storages storages;
     std::unordered_map<String, StoragePtr> nested_storages;
 };
 
