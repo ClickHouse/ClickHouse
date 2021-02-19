@@ -1322,9 +1322,6 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
                 part_iter.partition_id != target_part.partition_id)
                 continue;
 
-            // TODO Check if we can compare by entry.new_part_name ?== part_iter.getPartName(),
-            // mostly sure we can't, but if we can, all this thing would work faster.
-
             const String& part_name = part_iter.getPartName();
             const String part_to_path = detached_dir + part_name;
 
@@ -1334,7 +1331,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             MergeTreeData::MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
 
             if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
-                continue; // TODO if we can, here would be return {};
+                continue;
 
             return iter_part_ptr;
         }
@@ -1367,10 +1364,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
-    if (entry.type == LogEntry::GET_PART ||
-        entry.type == LogEntry::ATTACH_PART ||
-        entry.type == LogEntry::MERGE_PARTS ||
-        entry.type == LogEntry::MUTATE_PART)
+    if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
         /// The part may be still in the PreCommitted -> Committed transition so we first search
