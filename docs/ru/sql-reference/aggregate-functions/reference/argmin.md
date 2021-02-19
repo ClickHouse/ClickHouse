@@ -17,7 +17,7 @@ argMin(arg, val)
 или
 
 ``` sql
-argMin(tuple(arg, val))
+argMin(tuple(arg), val)
 ```
 
 **Параметры**
@@ -29,11 +29,11 @@ argMin(tuple(arg, val))
 
 -   Значение `arg`, соответствующее минимальному значению `val`.
 
-Тип: соответствует типу `arg`. 
+Тип: соответствует типу `arg`.
 
 Если передан кортеж:
 
--   Кортеж `(arg, val)` c минимальным значением `val` и соответствующим ему `arg`.
+-   Кортеж `(tuple(arg), val)` c минимальным значением `val` и соответствующим ему `arg`.
 
 Тип: [Tuple](../../../sql-reference/data-types/tuple.md).
 
@@ -52,15 +52,15 @@ argMin(tuple(arg, val))
 Запрос:
 
 ``` sql
-SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
+SELECT argMin(user, salary), argMin(tuple(user, salary), salary) FROM salary;
 ```
 
 Результат:
 
 ``` text
-┌─argMin(user, salary)─┬─argMin(tuple(user, salary))─┐
-│ worker               │ ('worker',1000)             │
-└──────────────────────┴─────────────────────────────┘
+┌─argMin(user, salary)─┬─argMin(tuple(user, salary), salary)─┐
+│ worker               │ ('worker',1000)                     │
+└──────────────────────┴─────────────────────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/argmin/) <!--hide-->

@@ -17,7 +17,7 @@ argMax(arg, val)
 или
 
 ``` sql
-argMax(tuple(arg, val))
+argMax(tuple(arg), val)
 ```
 
 **Параметры**
@@ -33,7 +33,7 @@ argMax(tuple(arg, val))
 
 Если передан кортеж:
 
--   Кортеж `(arg, val)` c максимальным значением `val` и соответствующим ему `arg`.
+-   Кортеж `(tuple(arg), val)` c максимальным значением `val` и соответствующим ему `arg`.
 
 Тип: [Tuple](../../../sql-reference/data-types/tuple.md).
 
@@ -52,15 +52,15 @@ argMax(tuple(arg, val))
 Запрос:
 
 ``` sql
-SELECT argMax(user, salary), argMax(tuple(user, salary)) FROM salary;
+SELECT argMax(user, salary), argMax(tuple(user, salary), salary) FROM salary;
 ```
 
 Результат:
 
 ``` text
-┌─argMax(user, salary)─┬─argMax(tuple(user, salary))─┐
-│ director             │ ('director',5000)           │
-└──────────────────────┴─────────────────────────────┘
+┌─argMax(user, salary)─┬─argMax(tuple(user, salary), salary)─┐
+│ director             │ ('director',5000)                   │
+└──────────────────────┴─────────────────────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/argmax/) <!--hide-->
