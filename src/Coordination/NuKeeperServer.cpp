@@ -161,7 +161,7 @@ bool NuKeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
-    if (type == nuraft::cb_func::Type::BecomeFresh || type == nuraft::cb_func::Type::BecomeLeader)
+    if ((type == nuraft::cb_func::InitialBatchCommited && isLeader()) || type == nuraft::cb_func::BecomeFresh)
     {
         std::unique_lock lock(initialized_mutex);
         initialized_flag = true;
@@ -176,13 +176,6 @@ void NuKeeperServer::waitInit()
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag; }))
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
-
-    /// TODO FIXME somehow
-    while (isLeader() && raft_instance->get_committed_log_idx() != raft_instance->get_last_log_idx())
-    {
-        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Loading from log store {}/{}", raft_instance->get_committed_log_idx(), raft_instance->get_last_log_idx());
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
 }
 
 std::unordered_set<int64_t> NuKeeperServer::getDeadSessions()
