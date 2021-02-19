@@ -149,46 +149,17 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
-        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
-    {
-    }
-
+    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
-    bool is_table_function;
 };
 
-// A special function parser for view table function.
-// It parses an SELECT query as its argument and doesn't support getColumnName().
-class ParserTableFunctionView : public IParserBase
-{
-protected:
-    const char * getName() const override { return "function"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-// Window reference (the thing that goes after OVER) for window function.
-// Can be either window name or window definition.
-class ParserWindowReference : public IParserBase
-{
-    const char * getName() const override { return "window reference"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
+// Window definition (the thing that goes after OVER) for window function.
 class ParserWindowDefinition : public IParserBase
 {
     const char * getName() const override { return "window definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-// The WINDOW clause of a SELECT query that defines a list of named windows.
-// Returns an ASTExpressionList of ASTWindowListElement's.
-class ParserWindowList : public IParserBase
-{
-    const char * getName() const override { return "WINDOW clause"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -494,14 +465,6 @@ class ParserTTLElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of TTL expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// Part of the UPDATE command or TTL with GROUP BY of the form: col_name = expr
-class ParserAssignment : public IParserBase
-{
-protected:
-    const char * getName() const  override{ return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

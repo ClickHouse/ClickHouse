@@ -13,7 +13,7 @@ namespace DB
   *
   * While using this object, no other allocations in arena are possible.
   */
-class WriteBufferFromArena final : public WriteBuffer
+class WriteBufferFromArena : public WriteBuffer
 {
 private:
     Arena & arena;

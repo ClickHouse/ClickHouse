@@ -66,7 +66,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
         if (in->eof())
         {
             eof = true;
-            return !working_buffer.empty();
+            return working_buffer.size() != 0;
         }
         else
         {

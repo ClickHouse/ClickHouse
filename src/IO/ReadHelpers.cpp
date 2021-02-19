@@ -253,6 +253,9 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
+
+        if (buf.hasPendingData())
+            return;
     }
 }
 
@@ -683,7 +686,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /** CSV format can contain insignificant spaces and tabs.
               * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+              * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
               */
             size_t size = s.size();
             while (size > 0
@@ -1014,7 +1017,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
+Exception readException(ReadBuffer & buf, const String & additional_message)
 {
     int code = 0;
     String name;
@@ -1041,31 +1044,12 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 {
     readException(buf, additional_message).rethrow();
-}
-
-
-void skipToCarriageReturnOrEOF(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == '\r')
-        {
-            ++buf.position();
-            return;
-        }
-    }
 }
 
 

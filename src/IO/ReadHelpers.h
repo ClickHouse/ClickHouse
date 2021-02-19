@@ -536,7 +536,7 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
 
 template <typename ReturnType>
@@ -1046,14 +1046,10 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 
 
 /// Skip whitespace characters.
-inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
+inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {
-    if (!one_line)
-        while (!buf.eof() && isWhitespaceASCII(*buf.position()))
-            ++buf.position();
-    else
-        while (!buf.eof() && isWhitespaceASCIIOneLine(*buf.position()))
-            ++buf.position();
+    while (!buf.eof() && isWhitespaceASCII(*buf.position()))
+        ++buf.position();
 }
 
 /// Skips json value.
@@ -1065,7 +1061,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-Exception readException(ReadBuffer & buf, const String & additional_message = "", bool remote_exception = false);
+Exception readException(ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
@@ -1215,9 +1211,6 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
-
-/// Skip to next character after next \r. If no \r in stream, skip to end.
-void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);

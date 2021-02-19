@@ -1,10 +1,10 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Databases/IDatabase.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/IDisk.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
@@ -83,7 +83,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
-    extern const int INVALID_SHARD_ID;
 }
 
 namespace ActionLocks
@@ -347,7 +346,6 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
             NameAndTypePair("_table", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
-            NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
             NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
             NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
             NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
@@ -543,29 +541,22 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
+    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
     {
         throw Exception("Storage " + getName() + " must have own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
-
     /// If sharding key is not specified, then you can only write to a shard containing only one shard
-    if (!settings.insert_shard_id && !settings.insert_distributed_one_random_shard && !has_sharding_key && shard_num >= 2)
+    if (!settings.insert_distributed_one_random_shard && !has_sharding_key
+        && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
     {
-        throw Exception(
-            "Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER);
-    }
-
-    if (settings.insert_shard_id && settings.insert_shard_id > shard_num)
-    {
-        throw Exception("Shard id should be range from 1 to shard number", ErrorCodes::INVALID_SHARD_ID);
+        throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
+                        ErrorCodes::STORAGE_REQUIRES_PARAMETER);
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
+    bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
@@ -681,7 +672,7 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, co
 
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
-        it->second.directory_monitor->shutdownAndDropAllData();
+        it->second.shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
 
@@ -799,6 +790,16 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     return cluster;
 }
 
+void StorageDistributed::ClusterNodeData::flushAllData() const
+{
+    directory_monitor->flushAllData();
+}
+
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
+{
+    directory_monitor->shutdownAndDropAllData();
+}
+
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
@@ -882,24 +883,13 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::flushClusterNodesAllData(const Context & context)
+void StorageDistributed::flushClusterNodesAllData()
 {
-    /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
-    auto table_lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-
-    std::vector<std::shared_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
-
-    {
-        std::lock_guard lock(cluster_nodes_mutex);
-
-        directory_monitors.reserve(cluster_nodes_data.size());
-        for (auto & node : cluster_nodes_data)
-            directory_monitors.push_back(node.second.directory_monitor);
-    }
+    std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto & node : directory_monitors)
-        node->flushAllData();
+    for (auto & node : cluster_nodes_data)
+        node.second.flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-
+///
 inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     if (isColumnedAsDecimal(left_type))
@@ -30,9 +30,7 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
             return true;
     }
     else if (isNotDecimalButComparableToDecimal(left_type) && isColumnedAsDecimal(right_type))
-    {
         return true;
-    }
     return false;
 }
 
@@ -254,9 +252,9 @@ private:
         else
         {
             if constexpr (scale_left)
-                x = common::mulIgnoreOverflow(x, scale);
+                x *= scale;
             if constexpr (scale_right)
-                y = common::mulIgnoreOverflow(y, scale);
+                y *= scale;
         }
 
         return Op::apply(x, y);

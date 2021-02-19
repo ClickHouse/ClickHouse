@@ -1,46 +1,48 @@
-#include <Server/HTTPHandler.h>
+#include "HTTPHandler.h"
 
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
+#include "HTTPHandlerFactory.h"
+#include "HTTPHandlerRequestFilter.h"
+
+#include <chrono>
+#include <iomanip>
+#include <Poco/File.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerRequestImpl.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/NetException.h>
+#include <ext/scope_guard.h>
 #include <Core/ExternalTable.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <Disks/StoragePolicy.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <IO/ConcatReadBuffer.h>
-#include <IO/MemoryReadWriteBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/QueryParameterVisitor.h>
-#include <Interpreters/executeQuery.h>
-#include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
-#include <Server/IServer.h>
-#include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
 #include <common/getFQDNOrHostName.h>
-#include <ext/scope_guard.h>
+#include <Common/setThreadName.h>
+#include <Common/SettingsChanges.h>
+#include <Disks/StoragePolicy.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryParameterVisitor.h>
+#include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
+#include <Poco/Net/HTTPStream.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
-
-#include <Poco/File.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPStream.h>
-#include <Poco/Net/NetException.h>
-
-#include <chrono>
-#include <iomanip>
 
 
 namespace DB
@@ -217,11 +219,8 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
         }
     }
 
-    if (!read_buffers_raw_ptr.empty())
-    {
-        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
-    }
+    ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+    copyData(concat_read_buffer, *used_output.out_maybe_compressed);
 }
 
 
@@ -235,13 +234,15 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 void HTTPHandler::processQuery(
     Context & context,
-    HTTPServerRequest & request,
+    Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
-    HTTPServerResponse & response,
+    Poco::Net::HTTPServerResponse & response,
     Output & used_output,
     std::optional<CurrentThread::QueryScope> & query_scope)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
+
+    std::istream & istr = request.stream();
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -287,14 +288,13 @@ void HTTPHandler::processQuery(
     client_info.interface = ClientInfo::Interface::HTTP;
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
+    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
         http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
+    else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
-    client_info.http_referer = request.get("Referer", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
 
     /// This will also set client_info.current_user and current_address
@@ -352,8 +352,10 @@ void HTTPHandler::processQuery(
     }
 #endif
 
-    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context.setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    // Set the query id supplied by the user, if any, and also update the
+    // OpenTelemetry fields.
+    context.setCurrentQueryId(params.get("query_id",
+        request.get("X-ClickHouse-Query-Id", "")));
 
     client_info.initial_query_id = client_info.current_query_id;
 
@@ -399,11 +401,7 @@ void HTTPHandler::processQuery(
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response,
-        request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
-        keep_alive_timeout,
-        client_supports_http_compression,
-        http_response_compression_method);
+        request, response, keep_alive_timeout, client_supports_http_compression, http_response_compression_method);
 
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
@@ -457,8 +455,8 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str));
+    std::unique_ptr<ReadBuffer> in_post = wrapReadBufferWithCompressionMethod(
+        std::make_unique<ReadBufferFromIStream>(istr), chooseCompressionMethod({}, http_request_compression_method_str));
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -511,7 +509,7 @@ void HTTPHandler::processQuery(
     const auto & settings = context.getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
+    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
             context.setSetting("readonly", 2);
@@ -606,12 +604,26 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([&context, &request](const Progress &)
+        Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
+
+        append_callback([&context, &socket](const Progress &)
         {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
+            /// Assume that at the point this method is called no one is reading data from the socket any more.
+            /// True for read-only queries.
+            try
+            {
+                char b;
+                int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
+                if (status == 0)
+                    context.killCurrentQuery();
+            }
+            catch (Poco::TimeoutException &)
+            {
+            }
+            catch (...)
+            {
                 context.killCurrentQuery();
+            }
         });
     }
 
@@ -640,23 +652,22 @@ void HTTPHandler::processQuery(
     used_output.out->finalize();
 }
 
-void HTTPHandler::trySendExceptionToClient(
-    const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_code,
+    Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
+    Output & used_output)
 {
     try
     {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 
-        /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
             && response.getKeepAlive()
-            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
-            && !request.getStream().eof())
+            && !request.stream().eof()
+            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
-            request.getStream().ignoreAll();
+            request.stream().ignore(std::numeric_limits<std::streamsize>::max());
         }
 
         bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER ||
@@ -675,7 +686,7 @@ void HTTPHandler::trySendExceptionToClient(
         if (!response.sent() && !used_output.out_maybe_compressed)
         {
             /// If nothing was sent yet and we don't even know if we must compress the response.
-            *response.send() << s << std::endl;
+            response.send() << s << std::endl;
         }
         else if (used_output.out_maybe_compressed)
         {
@@ -700,12 +711,8 @@ void HTTPHandler::trySendExceptionToClient(
             writeChar('\n', *used_output.out_maybe_compressed);
 
             used_output.out_maybe_compressed->next();
+            used_output.out->next();
             used_output.out->finalize();
-        }
-        else
-        {
-            assert(false);
-            __builtin_unreachable();
         }
     }
     catch (...)
@@ -715,7 +722,7 @@ void HTTPHandler::trySendExceptionToClient(
 }
 
 
-void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
@@ -736,18 +743,17 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
-        if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
+        if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
+            !request.hasContentLength())
         {
-            throw Exception(
-                "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request",
-                ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
         processQuery(context, request, params, response, used_output, query_scope);
@@ -765,9 +771,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
-
-    if (used_output.out)
-        used_output.out->finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
@@ -791,8 +794,9 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
+
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
@@ -805,7 +809,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, request.getStream(), handler);
+    params.load(request, request.stream(), handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -835,7 +839,7 @@ bool PredefinedQueryHandler::customizeQueryParam(Context & context, const std::s
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::Context & context)
+void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & request, DB::Context & context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -871,26 +875,22 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::C
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string PredefinedQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        params.load(request, request.getStream(), handler);
+        params.load(request, request.stream(), handler);
     }
 
     return predefined_query;
 }
 
-HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
+Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
-
-    factory->addFiltersFromConfig(server.config(), config_prefix);
-
-    return factory;
+    std::string query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
 }
 
 static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
@@ -908,20 +908,18 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception(
-            "Cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error()
-                + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
-            ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw Exception("Cannot compile re2: " + expression + " for http handling rule, error: " +
+                        compiled_regex->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
 
     return compiled_regex;
 }
 
-HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
+Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     Poco::Util::AbstractConfiguration & configuration = server.config();
 
     if (!configuration.has(config_prefix + ".handler.query"))
-        throw Exception("There is no path '" + config_prefix + ".handler.query' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception("There is no path '" + config_prefix + ".handler.query" + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
@@ -943,8 +941,6 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
-    std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
-
     if (configuration.has(config_prefix + ".url"))
     {
         auto url_expression = configuration.getString(config_prefix + ".url");
@@ -954,23 +950,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
 
         auto regex = getCompiledRegex(url_expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
-        {
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-                server,
-                std::move(analyze_receive_params),
-                std::move(predefined_query),
-                std::move(regex),
-                std::move(headers_name_with_regex));
-            factory->addFiltersFromConfig(configuration, config_prefix);
-            return factory;
-        }
+            return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+                server, std::move(analyze_receive_params), std::move(predefined_query), std::move(regex),
+                std::move(headers_name_with_regex)), configuration, config_prefix);
     }
 
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{}, std::move(headers_name_with_regex));
-    factory->addFiltersFromConfig(configuration, config_prefix);
-
-    return factory;
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{} ,std::move(headers_name_with_regex)),
+        configuration, config_prefix);
 }
 
 }

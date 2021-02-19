@@ -120,6 +120,7 @@ struct FormatSettings
 
     struct
     {
+        bool write_row_delimiters = true;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,
          * and always send one row per message, so we can push there formats
@@ -127,7 +128,7 @@ struct FormatSettings
          * we have to enforce exporting at most one row in the format output,
          * because Protobuf without delimiters is not generally useful.
          */
-        bool allow_multiple_rows_without_delimiter = false;
+        bool allow_many_rows_no_delimiters = false;
     } protobuf;
 
     struct

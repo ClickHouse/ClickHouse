@@ -252,7 +252,7 @@ public:
 
 void registerFunctionRepeat(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRepeat>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRepeat>();
 }
 
 }

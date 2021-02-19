@@ -38,9 +38,6 @@ class TSV:
     def __str__(self):
         return '\n'.join(self.lines)
 
-    def __len__(self):
-        return len(self.lines)
-
     @staticmethod
     def toMat(contents):
         return [line.split("\t") for line in contents.split("\n") if line.strip()]

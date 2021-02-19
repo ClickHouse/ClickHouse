@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
-#include <DataTypes/DataTypeCustom_fwd.h>
 
 
 #include <functional>
@@ -34,7 +33,6 @@ public:
     DataTypePtr get(const String & full_name) const;
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
-    DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
 
     /// Register a type family by its name.
     void registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
@@ -86,6 +84,5 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerDataTypeOneElementTuple(DataTypeFactory & factory);
 
 }

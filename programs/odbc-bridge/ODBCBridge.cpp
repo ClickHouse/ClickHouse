@@ -11,6 +11,7 @@
 #    include <Poco/Data/ODBC/Connector.h>
 #endif
 
+#include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
 #include <Poco/Util/HelpFormatter.h>
@@ -22,7 +23,6 @@
 #include <ext/scope_guard.h>
 #include <ext/range.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Server/HTTP/HTTPServer.h>
 
 
 namespace DB
@@ -212,12 +212,8 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    auto server = HTTPServer(
-        context,
-        std::make_shared<HandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context),
-        server_pool,
-        socket,
-        http_params);
+    auto server = Poco::Net::HTTPServer(
+        new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
     server.start();
 
     LOG_INFO(log, "Listening http://{}", address.toString());

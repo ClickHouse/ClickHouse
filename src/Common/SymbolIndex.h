@@ -36,7 +36,7 @@ public:
         const void * address_begin;
         const void * address_end;
         std::string name;
-        std::shared_ptr<Elf> elf;
+        std::unique_ptr<Elf> elf;
     };
 
     /// Address in virtual memory should be passed. These addresses include offset where the object is loaded in memory.

@@ -26,7 +26,6 @@ SRCS(
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
-    HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
@@ -57,6 +56,7 @@ SRCS(
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp
+    WriteBufferFromHTTPServerResponse.cpp
     WriteBufferFromOStream.cpp
     WriteBufferFromPocoSocket.cpp
     WriteBufferFromTemporaryFile.cpp

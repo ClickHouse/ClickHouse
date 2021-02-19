@@ -18,7 +18,6 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -404,13 +403,13 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const TablesWithColumns & tables, const Aliases & aliases, ASTPtr & new_where_conditions)
+                          const TablesWithColumns & tables, const Aliases & aliases)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
         return;
 
-    auto & table_join = node->table_join->as<ASTTableJoin &>();
+    const auto & table_join = node->table_join->as<ASTTableJoin &>();
 
     if (table_join.using_expression_list)
     {
@@ -422,33 +421,15 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     {
         bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof, table_join.kind};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         if (is_asof)
-        {
             data.asofToJoinKeys();
-        }
-        else if (data.new_on_expression)
-        {
-            table_join.on_expression = data.new_on_expression;
-            new_where_conditions = data.new_where_conditions;
-        }
     }
 }
-
-/// Move joined key related to only one table to WHERE clause
-void moveJoinedKeyToWhere(ASTSelectQuery * select_query, ASTPtr & new_where_conditions)
-{
-    if (select_query->where())
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("and", new_where_conditions, select_query->where()));
-    else
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, new_where_conditions->clone());
-}
-
 
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
@@ -487,8 +468,6 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
         assertNoWindows(select_query.prewhere(), "in PREWHERE");
-    if (select_query.window())
-        assertNoWindows(select_query.window(), "in WINDOW");
 
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
@@ -506,9 +485,20 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
             }
         }
 
-        if (node->window_definition)
+        if (node->window_partition_by)
         {
-            assertNoWindows(node->window_definition, "inside window definition");
+            for (auto & arg : node->window_partition_by->children)
+            {
+                assertNoWindows(arg, "inside PARTITION BY of a window");
+            }
+        }
+
+        if (node->window_order_by)
+        {
+            for (auto & arg : node->window_order_by->children)
+            {
+                assertNoWindows(arg, "inside ORDER BY of a window");
+            }
         }
     }
 
@@ -538,12 +528,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
-        NamesAndTypesList columns_from_storage;
-        if (storage->supportsSubcolumns())
-            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
-        else
-            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
-
+        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -714,18 +699,12 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            String hint_name{};
+            ss << ", maybe you meant: ";
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
                 if (!hints.empty())
-                    hint_name = hint_name + " '" + toString(hints) + "'";
-            }
-
-            if (!hint_name.empty())
-            {
-                ss << ", maybe you meant: ";
-                ss << hint_name;
+                    ss << " '" << toString(hints) << "'";
             }
         }
         else
@@ -757,13 +736,6 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     required_source_columns.swap(source_columns);
 }
 
-NameSet TreeRewriterResult::getArrayJoinSourceNameSet() const
-{
-    NameSet forbidden_columns;
-    for (const auto & elem : array_join_result_to_source)
-        forbidden_columns.insert(elem.first);
-    return forbidden_columns;
-}
 
 TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
@@ -825,17 +797,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                         result.analyzed_join->table_join);
-
-    ASTPtr new_where_condition = nullptr;
-    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases, new_where_condition);
-    if (new_where_condition)
-        moveJoinedKeyToWhere(select_query, new_where_condition);
-
-    /// rewrite filters for select query, must go after getArrayJoinedColumns
-    if (settings.optimize_respect_aliases && result.metadata_snapshot)
-    {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), context);
-    }
+    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);

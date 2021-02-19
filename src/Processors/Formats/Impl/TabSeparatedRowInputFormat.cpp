@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -434,11 +433,10 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
     {
         pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
 
-        if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
-        else if (*pos == '\\')
+
+        if (*pos == '\\')
         {
             ++pos;
             if (loadAtPosition(in, memory, pos))

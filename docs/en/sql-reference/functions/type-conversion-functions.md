@@ -22,7 +22,7 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 -   `toInt128(expr)` — Results in the `Int128` data type.
 -   `toInt256(expr)` — Results in the `Int256` data type.
 
-**Arguments**
+**Parameters**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
@@ -88,7 +88,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 -   `toUInt64(expr)` — Results in the `UInt64` data type.
 -   `toUInt256(expr)` — Results in the `UInt256` data type.
 
-**Arguments**
+**Parameters**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
@@ -154,7 +154,7 @@ Converts an input string to a [Nullable(Decimal(P,S))](../../sql-reference/data-
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
 
-**Arguments**
+**Parameters**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
@@ -199,7 +199,7 @@ Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/dec
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
 
-**Arguments**
+**Parameters**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
@@ -303,48 +303,81 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpret(x, T) {#type_conversion_function-reinterpret}
+## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}
 
-Performs byte reinterpretation of ‘x’ as ‘t’ data type.
+## reinterpretAsInt(8\|16\|32\|64) {#reinterpretasint8163264}
 
-Following reinterpretations are allowed:
-1. Any type that has fixed size and value of that type can be represented continuously into FixedString.
-2. Any type that if value of that type can be represented continuously into String. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
-3. FixedString, String, types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
+## reinterpretAsFloat(32\|64) {#reinterpretasfloat3264}
+
+## reinterpretAsDate {#reinterpretasdate}
+
+## reinterpretAsDateTime {#reinterpretasdatetime}
+
+These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn’t long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
+
+## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
+
+This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+
+## reinterpretAsFixedString {#reinterpretasfixedstring}
+
+This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
+
+## reinterpretAsUUID {#reinterpretasuuid}
+
+This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
+**Syntax**
 
 ``` sql
-SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpret(toInt8(1), 'Float32') as int_to_float,
-    reinterpret('1', 'UInt32') as string_to_int;
+reinterpretAsUUID(fixed_string)
 ```
+
+**Parameters**
+
+-   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+
+**Returned value**
+
+-   The UUID type value. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
+
+**Examples**
+
+String to UUID.
+
+Query:
+
+``` sql
+SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
+```
+
+Result:
 
 ``` text
-┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
-│         255 │        1e-45 │            49 │
-└─────────────┴──────────────┴───────────────┘
+┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
+│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretAsUInt8163264256}
+Going back and forth from String to UUID.
 
-## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretAsInt8163264128256}
+Query:
 
-## reinterpretAsDecimal(32\|64\|128\|256) {#reinterpretAsDecimal3264128256}
+``` sql
+WITH
+    generateUUIDv4() AS uuid,
+    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
+    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
+SELECT uuid = uuid2;
+```
 
-## reinterpretAsFloat(32\|64) {#type_conversion_function-reinterpretAsFloat}
+Result:
 
-## reinterpretAsDate {#type_conversion_function-reinterpretAsDate}
-
-## reinterpretAsDateTime {#type_conversion_function-reinterpretAsDateTime}
-
-## reinterpretAsDateTime64 {#type_conversion_function-reinterpretAsDateTime64}
-
-## reinterpretAsString {#type_conversion_function-reinterpretAsString}
-
-## reinterpretAsFixedString {#type_conversion_function-reinterpretAsFixedString}
-
-## reinterpretAsUUID {#type_conversion_function-reinterpretAsUUID}
-
-These functions are aliases for `reinterpret` function.
+``` text
+┌─equals(uuid, uuid2)─┐
+│                   1 │
+└─────────────────────┘
+```
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
@@ -405,7 +438,7 @@ bounds of type T.
 
 Example
 ``` sql
-SELECT cast(-1, 'UInt8') as uint8;
+SELECT cast(-1, 'UInt8') as uint8; 
 ```
 
 
@@ -426,7 +459,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL
+Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
 if the casted value is not representable in the target type.
 
 Example:
@@ -471,7 +504,7 @@ toIntervalQuarter(number)
 toIntervalYear(number)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `number` — Duration of interval. Positive integer number.
 
@@ -509,7 +542,7 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
 parseDateTimeBestEffort(time_string [, time_zone]);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
@@ -621,7 +654,7 @@ This function is similar to [‘parseDateTimeBestEffort’](#parsedatetimebestef
 parseDateTimeBestEffortUS(time_string [, time_zone]);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
@@ -705,7 +738,7 @@ To convert data from the `LowCardinality` data type use the [CAST](#type_convers
 toLowCardinality(expr)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md#data_types).
 
@@ -745,7 +778,7 @@ Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Inpu
 toUnixTimestamp64Milli(value)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `value` — DateTime64 value with any precision.
 
@@ -797,7 +830,7 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 fromUnixTimestamp64Milli(value [, ti])
 ```
 
-**Arguments**
+**Parameters**
 
 -   `value` — `Int64` value with any precision.
 -   `timezone` — `String` (optional) timezone name of the result.
@@ -821,15 +854,15 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 
 ## formatRow {#formatrow}
 
-Converts arbitrary expressions into a string via given format.
+Converts arbitrary expressions into a string via given format. 
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 formatRow(format, x, y, ...)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
 -   `x`,`y`, ... — Expressions.
@@ -864,13 +897,13 @@ Result:
 
 Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 formatRowNoNewline(format, x, y, ...)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
 -   `x`,`y`, ... — Expressions.

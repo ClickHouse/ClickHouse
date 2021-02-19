@@ -20,7 +20,8 @@ class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
 public:
-    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+                                                       size_t unread_limit_ = 16 * DBMS_DEFAULT_BUFFER_SIZE);
 
     ~PeekableReadBuffer() override;
 
@@ -38,6 +39,11 @@ public:
             peeked_size = 0;
         }
         checkpoint.emplace(pos);
+
+        // FIXME: we are checking checkpoint existence in few places (rollbackToCheckpoint/dropCheckpoint)
+        // by simple if(checkpoint) but checkpoint can be nullptr after
+        // setCheckpoint called on empty (non initialized/eof) buffer
+        // and we can't just use simple if(checkpoint)
     }
 
     /// Forget checkpoint and all data between checkpoint and position
@@ -58,7 +64,7 @@ public:
 
     /// Sets position at checkpoint.
     /// All pointers (such as this->buffer().end()) may be invalidated
-    void rollbackToCheckpoint(bool drop = false);
+    void rollbackToCheckpoint();
 
     /// If checkpoint and current position are in different buffers, appends data from sub-buffer to own memory,
     /// so data between checkpoint and position will be in continuous memory.
@@ -89,6 +95,7 @@ private:
 
 
     ReadBuffer & sub_buf;
+    const size_t unread_limit;
     size_t peeked_size = 0;
     std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
