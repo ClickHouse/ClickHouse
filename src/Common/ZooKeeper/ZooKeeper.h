@@ -315,7 +315,7 @@ public:
         return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
-    void reset()
+    void setAlreadyRemoved()
     {
         need_remove = false;
     }

@@ -17,6 +17,7 @@ SRCS(
     DatabaseOnDisk.cpp
     DatabaseOrdinary.cpp
     DatabaseReplicated.cpp
+    DatabaseReplicatedSettings.cpp
     DatabaseReplicatedWorker.cpp
     DatabaseWithDictionaries.cpp
     DatabasesCommon.cpp

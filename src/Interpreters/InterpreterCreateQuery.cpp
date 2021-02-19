@@ -880,7 +880,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
         }
     }
 
@@ -1092,7 +1092,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
         if (!create.attach)
             assertOrSetUUID(create, database);
         guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
     }
 
     if (database->isDictionaryExist(dictionary_name))

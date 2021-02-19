@@ -117,8 +117,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
-struct MetadataTransaction;
-using MetadataTransactionPtr = std::shared_ptr<MetadataTransaction>;
+class ZooKeeperMetadataTransaction;
+using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -281,7 +281,7 @@ private:
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
 
-    MetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
+    ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
                                                     /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
                                                     /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
                                                     /// thousands of signatures.
@@ -746,8 +746,10 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
-    void initMetadataTransaction(MetadataTransactionPtr txn, bool attach_existing = false);
-    MetadataTransactionPtr getMetadataTransaction() const;
+    /// Initialize context of distributed DDL query with Replicated database.
+    void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
+    /// Returns context of current distributed DDL query or nullptr.
+    ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
     struct MySQLWireContext
     {

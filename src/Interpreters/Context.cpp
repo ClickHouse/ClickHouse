@@ -2553,14 +2553,14 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     return StorageID::createEmpty();
 }
 
-void Context::initMetadataTransaction(MetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
+void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
 {
     assert(!metadata_transaction);
     assert(attach_existing || query_context == this);
     metadata_transaction = std::move(txn);
 }
 
-MetadataTransactionPtr Context::getMetadataTransaction() const
+ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
 {
     assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;

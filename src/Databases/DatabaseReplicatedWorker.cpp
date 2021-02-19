@@ -30,7 +30,7 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
         {
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
-                database->tryConnectToZooKeeper(false);
+                database->tryConnectToZooKeeperAndInitDatabase(false);
             initializeReplication();
             initialized = true;
             return;
@@ -98,8 +98,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(database->replica_path + "/log_ptr"));
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     assert(our_log_ptr <= max_log_ptr);
-    constexpr UInt32 max_replication_lag = 16;
-    if (max_replication_lag < max_log_ptr - our_log_ptr)
+    if (database->db_settings.max_replication_lag_to_enqueue < max_log_ptr - our_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
                         "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
@@ -131,7 +130,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (zookeeper->expired() || stop_flag)
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
 
-    processTask(*task);
+    processTask(*task, zookeeper);
 
     if (!task->was_executed)
     {
@@ -139,7 +138,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
                         task->execution_status.code, task->execution_status.message);
     }
 
-    try_node->reset();
+    try_node->setAlreadyRemoved();
 
     return entry_path;
 }
@@ -178,7 +177,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
         LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
         constexpr size_t wait_time_ms = 1000;
-        constexpr size_t max_iterations = 3600;
+        size_t max_iterations = database->db_settings.wait_entry_commited_timeout_sec;
         size_t iteration = 0;
 
         while (!wait_committed_or_failed->tryWait(wait_time_ms))
@@ -194,7 +193,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
             if (max_iterations <= ++iteration)
             {
                 /// What can we do if initiator hangs for some reason? Seems like we can remove /try node.
-                /// Initiator will fail to commit entry to ZK (including ops for replicated table) if /try does not exist.
+                /// Initiator will fail to commit ZooKeeperMetadataTransaction (including ops for replicated table) if /try does not exist.
                 /// But it's questionable.
 
                 /// We use tryRemove(...) because multiple hosts (including initiator) may try to do it concurrently.

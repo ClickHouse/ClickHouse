@@ -115,11 +115,14 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
         std::unique_lock lock(mutex);
         table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
-        auto txn = context.getMetadataTransaction();
+        auto txn = context.getZooKeeperMetadataTransaction();
         if (txn && !context.isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
 
         /// NOTE: replica will be lost if server crashes before the following rename
+        /// We apply changes in ZooKeeper before applying changes in local metadata file
+        /// to reduce probability of failures between these operations
+        /// (it's more likely to lost connection, than to fail before applying local changes).
         /// TODO better detection and recovery
 
         Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);    /// Mark table as dropped
@@ -241,7 +244,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     }
 
     /// Table renaming actually begins here
-    auto txn = context.getMetadataTransaction();
+    auto txn = context.getZooKeeperMetadataTransaction();
     if (txn && !context.isInternalSubquery())
         txn->commit();     /// Commit point (a sort of) for Replicated database
 
@@ -302,7 +305,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         DatabaseCatalog::instance().addUUIDMapping(query.uuid);
         locked_uuid = true;
 
-        auto txn = query_context.getMetadataTransaction();
+        auto txn = query_context.getZooKeeperMetadataTransaction();
         if (txn && !query_context.isInternalSubquery())
             txn->commit();     /// Commit point (a sort of) for Replicated database
 
@@ -337,7 +340,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    auto txn = query_context.getMetadataTransaction();
+    auto txn = query_context.getZooKeeperMetadataTransaction();
     if (txn && !query_context.isInternalSubquery())
         txn->commit();      /// Commit point (a sort of) for Replicated database
 
