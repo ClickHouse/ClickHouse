@@ -474,19 +474,4 @@ ColumnPtr ColumnFixedString::compress() const
         });
 }
 
-
-void ColumnFixedString::alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size)
-{
-    size_t length = data.size() - old_size;
-    if (length < n)
-    {
-        data.resize_fill(old_size + n);
-    }
-    else if (length > n)
-    {
-        data.resize_assume_reserved(old_size);
-        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
-    }
-}
-
 }

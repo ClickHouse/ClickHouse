@@ -525,16 +525,16 @@ namespace
     {
     public:
         using ColumnType = std::conditional_t<is_fixed_string, ColumnFixedString, ColumnString>;
-        using StringDataType = std::conditional_t<is_fixed_string, DataTypeFixedString, DataTypeString>;
 
         ProtobufSerializerString(
-            const StringDataType & string_data_type_,
+            const std::shared_ptr<const DataTypeFixedString> & fixed_string_data_type_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            , fixed_string_data_type(fixed_string_data_type_)
+            , n(fixed_string_data_type->getN())
         {
             static_assert(is_fixed_string, "This constructor for FixedString only");
-            n = string_data_type_.getN();
             setFunctions();
             prepareEnumMapping();
         }
@@ -583,11 +583,11 @@ namespace
             {
                 if (row_num < old_size)
                 {
-                    ColumnFixedString::alignStringLength(text_buffer, n, 0);
+                    fixed_string_data_type->alignStringLength(text_buffer, 0);
                     memcpy(data.data() + row_num * n, text_buffer.data(), n);
                 }
                 else
-                    ColumnFixedString::alignStringLength(data, n, old_data_size);
+                    fixed_string_data_type->alignStringLength(data, old_data_size);
             }
             else
             {
@@ -817,7 +817,7 @@ namespace
                 auto str = default_function();
                 arr.insert(str.data(), str.data() + str.size());
                 if constexpr (is_fixed_string)
-                    ColumnFixedString::alignStringLength(arr, n, 0);
+                    fixed_string_data_type->alignStringLength(arr, 0);
                 default_string = std::move(arr);
             }
             return *default_string;
@@ -865,7 +865,8 @@ namespace
             str.insert(name.data(), name.data() + name.length());
         }
 
-        size_t n = 0;
+        const std::shared_ptr<const DataTypeFixedString> fixed_string_data_type;
+        const size_t n = 0;
         std::function<void(const std::string_view &)> write_function;
         std::function<void(PaddedPODArray<UInt8> &)> read_function;
         std::function<String()> default_function;
@@ -2765,7 +2766,7 @@ namespace
                 case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(field_descriptor, reader_or_writer);
-                case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(assert_cast<const DataTypeFixedString &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum16: return std::make_unique<ProtobufSerializerEnum<Int16>>(typeid_cast<std::shared_ptr<const DataTypeEnum16>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Decimal32: return std::make_unique<ProtobufSerializerDecimal<Decimal32>>(assert_cast<const DataTypeDecimal<Decimal32> &>(*data_type), field_descriptor, reader_or_writer);
