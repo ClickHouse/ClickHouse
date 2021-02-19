@@ -36,20 +36,13 @@ DEFAULT_ENV_NAME = '.env'
 
 SANITIZER_SIGN = "=================="
 
-
+# to create docker-compose env file
 def _create_env_file(path, variables):
     logging.debug("Env {} stored in {}".format(variables, path))
     with open(path, 'w') as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
     return path
-
-def env_to_compose_args(env):
-    args = []
-    for key, value in env.items():
-        args += ["-e", "{}={}".format(key, value)]
-    return args
-
 
 def run_and_check(args, env=None, shell=False):
     res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
@@ -174,7 +167,8 @@ class ClickHouseCluster:
         self.with_cassandra = False
 
         self.with_minio = False
-        self.minio_certs_dir = None
+        self.minio_dir = os.path.join(self.instances_dir, "minio")
+        self.minio_certs_dir = None # source for certificates 
         self.minio_host = "minio1"
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
@@ -347,6 +341,19 @@ class ClickHouseCluster:
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
         return self.base_mongo_cmd
 
+    def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_minio = True        
+        cert_d = p.join(self.minio_dir, "certs")
+        env_variables['MINIO_CERTS_DIR'] = cert_d
+        env_variables['MINIO_EXTERNAL_PORT'] = self.minio_port
+        env_variables['MINIO_INTERNAL_PORT'] = "9001"
+        env_variables['SSL_CERT_FILE'] = p.join(self.base_dir, cert_d, 'public.crt')
+
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
+        self.base_minio_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
+        return self.base_minio_cmd
+
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
                      with_zookeeper=False, with_mysql=False, with_mysql8=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
@@ -484,21 +491,13 @@ class ClickHouseCluster:
             cmds.append(self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_minio and not self.with_minio:
-            self.with_minio = True
-            self.minio_certs_dir = minio_certs_dir
-            if self.minio_certs_dir:
-                env_variables['MINIO_CERTS_DIR'] = p.join(self.base_dir, self.minio_certs_dir)
-                # Minio client (urllib3) uses SSL_CERT_FILE for certificate validation.
-                env_variables['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_certs_dir, 'public.crt')
+            cmds.append(self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir))
+
+        if minio_certs_dir is not None:
+            if self.minio_certs_dir is None:
+                self.minio_certs_dir = minio_certs_dir
             else:
-                # Attach empty certificates directory to ensure non-secure mode.
-                minio_certs_dir = p.join(self.instances_dir, 'empty_minio_certs_dir')
-                os.makedirs(minio_certs_dir, exist_ok=True)
-                env_variables['MINIO_CERTS_DIR'] = minio_certs_dir
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
-            self.base_minio_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
-            cmds.append(self.base_minio_cmd)
+                raise Exception("Overwriting minio certs dir") 
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
@@ -659,6 +658,7 @@ class ClickHouseCluster:
         raise Exception("Cannot wait ZooKeeper container")
 
     def make_hdfs_api(self, timeout=60, kerberized=False):
+        hdfs_api = None
         if kerberized:
             keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
             krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb_long.conf"))
@@ -666,27 +666,29 @@ class ClickHouseCluster:
             # logging.debug("kerberizedhdfs1 ip ", hdfs_ip)
             kdc_ip = self.get_instance_ip('hdfskerberos')
             # logging.debug("kdc_ip ", kdc_ip)
-            self.hdfs_api = HDFSApi(user="root",
-                               timeout=timeout,
-                               kerberized=True,
-                               principal="root@TEST.CLICKHOUSE.TECH",
-                               keytab=keytab,
-                               krb_conf=krb_conf,
-                               host="kerberizedhdfs1",
-                               protocol="http",
-                               proxy_port=50070,
-                               data_port=1006,
-                               hdfs_ip=hdfs_ip,
-                               kdc_ip=kdc_ip)
+            hdfs_api = HDFSApi(user="root",
+                              timeout=timeout,
+                              kerberized=True,
+                              principal="root@TEST.CLICKHOUSE.TECH",
+                              keytab=keytab,
+                              krb_conf=krb_conf,
+                              host="kerberizedhdfs1",
+                              protocol="http",
+                              proxy_port=50070,
+                              data_port=1006,
+                              hdfs_ip=hdfs_ip,
+                              kdc_ip=kdc_ip)
+                                      
         else:
-            self.hdfs_api = HDFSApi(user="root", host=self.hdfs_host)
+            logging.debug("Create HDFSApi host={}".format("localhost"))
+            hdfs_api = HDFSApi(user="root", host="localhost", data_port=self.hdfs_data_port, proxy_port=self.hdfs_name_port)
+        return hdfs_api
 
-
-    def wait_hdfs_to_start(self, timeout=60):
+    def wait_hdfs_to_start(self, hdfs_api, timeout=60):
         start = time.time()
         while time.time() - start < timeout:
             try:
-                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
+                hdfs_api.write_data("/somefilewithrandomname222", "1")
                 logging.debug("Connected to HDFS and SafeMode disabled! ")
                 return
             except Exception as ex:
@@ -710,7 +712,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=30, secure=False):
-        minio_client = Minio('localhost:9001',
+        minio_client = Minio('localhost:{}'.format(self.minio_port),
                              access_key='minio',
                              secret_key='minio123',
                              secure=secure)
@@ -840,14 +842,14 @@ class ClickHouseCluster:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
-                self.make_hdfs_api()
-                self.wait_hdfs_to_start(50)
+                hdfs_api = self.make_hdfs_api()
+                self.wait_hdfs_to_start(hdfs_api, 120)
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
-                self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(timeout=300)
+                hdfs_api = self.make_hdfs_api(kerberized=True)
+                self.wait_hdfs_to_start(hdfs_api, timeout=300)
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
@@ -860,6 +862,13 @@ class ClickHouseCluster:
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
+                # Copy minio certificates to minio/certs
+                os.mkdir(self.minio_dir)
+                if self.minio_certs_dir is None:
+                    os.mkdir(os.path.join(self.minio_dir, 'certs'))
+                else:
+                    shutil.copytree(self.minio_certs_dir, os.path.join(self.minio_dir, 'certs'))
+
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
