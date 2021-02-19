@@ -75,10 +75,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         {
             old_disks_minus_new_disks.erase(disk_name);
 
-            /// TODO: Ideally ClickHouse shall complain if disk has changed, but
-            /// implementing that may appear as not trivial task.
-
-            /// TODO: Implete updateFromConfigIfChanged for DiskS3
+            // TODO: Implement updateFromConfigIfChanged for DiskS3 (DiskLocal already done)
             result->getDisksMap().find(disk_name)->second->updateFromConfigIfChanged(config, disk_config_prefix, context);
         }
     }
