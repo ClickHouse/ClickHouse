@@ -865,7 +865,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         return;
 
     const auto & header = merge_tree_reader->getColumns();
-    size_t num_columns = header.size();
+    const auto num_columns = header.size();
 
     if (result.columns.size() != num_columns)
         throw Exception("Invalid number of columns passed to MergeTreeRangeReader. "
@@ -900,8 +900,25 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         if (prewhere_info->row_level_filter)
         {
             prewhere_info->row_level_filter->execute(block);
+
             const auto filter_column_pos = block.getPositionByName(prewhere_info->row_level_column_name);
             result.addFilter(block.getByPosition(filter_column_pos).column);
+
+            result.columns.clear();
+            result.columns.reserve(block.columns());
+
+            for (auto & col : block)
+                result.columns.emplace_back(std::move(col.column));
+
+            const auto * result_filter = result.getFilter();
+            filterColumns(result.columns, result_filter->getData());
+
+            auto it = block.begin();
+            for (auto & col : result.columns)
+                it++->column = std::move(col);
+
+            result.columns.clear();
+            result.clearFilter();
         }
 
         prewhere_info->prewhere_actions->execute(block);
