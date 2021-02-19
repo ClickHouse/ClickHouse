@@ -116,7 +116,9 @@ public:
                         getName(), value_type->getName()};
 
                 WhichDataType value_type_to_check(value_type);
-
+                
+                /// Do not promote decimal because of implementation issues of this function design
+                /// If we decide to make this function more efficient we should promote decimal type during summ
                 if (value_type_to_check.isDecimal())
                     result_type = value_type_without_nullable;
                 else
