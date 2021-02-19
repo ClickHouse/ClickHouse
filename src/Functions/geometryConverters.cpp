@@ -13,101 +13,117 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-// namespace
-// {
+template <typename Point>
+std::vector<Point> PointFromColumnParser<Point>::parse(size_t shift, size_t count) const
+{
+    const auto * tuple = typeid_cast<const ColumnTuple *>(col.get());
+    const auto & tuple_columns = tuple->getColumns();
 
-// size_t getArrayDepth(DataTypePtr data_type, size_t max_depth)
-// {
-//     size_t depth = 0;
-//     while (data_type && isArray(data_type) && depth != max_depth + 1)
-//     {
-//         depth++;
-//         data_type = static_cast<const DataTypeArray &>(*data_type).getNestedType();
-//     }
+    const auto * x_data = typeid_cast<const ColumnFloat64 *>(tuple_columns[0].get());
+    const auto * y_data = typeid_cast<const ColumnFloat64 *>(tuple_columns[1].get());
 
-//     return depth;
-// }
+    const auto * first_container = x_data->getData().data() + shift;
+    const auto * second_container = y_data->getData().data() + shift;
 
-// template <typename Geometry>
-// class ContainerCreator : public boost::static_visitor<Geometry>
-// {
-// public:
-//     template <class T>
-//     Geometry operator()(const T & parser) const
-//     {
-//         return parser.createContainer();
-//     }
-// };
+    std::vector<Point> answer(count);
 
-// template <typename Point>
-// class Getter : public boost::static_visitor<void>
-// {
-// public:
-//     constexpr Getter(Geometry<Point> & container_, size_t i_)
-//         : container(container_)
-//         , i(i_)
-//     {}
+    for (size_t i = 0; i < count; ++i)
+    {
+        const Float64 first = first_container[i];
+        const Float64 second = second_container[i];
 
-//     template <class T>
-//     void operator()(const T & parser) const
-//     {
-//         parser.get(container, i);
-//     }
+        if (isNaN(first) || isNaN(second))
+            throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-// private:
-//     Geometry<Point> & container;
-//     size_t i;
-// };
+        if (isinf(first) || isinf(second))
+            throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-// template <class DataType, class Parser>
-// Parser makeParser(const ColumnWithTypeAndName & col)
-// {
-//     auto wanted_data_type = DataType::nestedDataType();
-//     ColumnPtr casted = castColumn(col, DataType::nestedDataType());
-//     if (!casted)
-//     {
-//         throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
-//     }
-//     return Parser(std::move(casted->convertToFullColumnIfConst()));
-// }
+        answer[i] = Point(first, second);
+    }
 
-// }
+    return answer;
+}
 
-// template <typename Point>
-// Geometry<Point> createContainer(const GeometryFromColumnParser<Point> & parser)
-// {
-//     static ContainerCreator<Geometry<Point>> creator;
-//     return boost::apply_visitor(creator, parser);
-// }
+template <typename Point>
+std::vector<Ring<Point>> RingFromColumnParser<Point>::parse(size_t /*shift*/, size_t /*size*/) const
+{
+    size_t prev_offset = 0;
+    std::vector<Ring<Point>> answer;
+    answer.reserve(offsets.size());
+    for (size_t offset : offsets)
+    {
+        auto tmp = point_parser.parse(prev_offset, offset - prev_offset);
+        answer.emplace_back(tmp.begin(), tmp.end());
+        prev_offset = offset;
+    }
+    return answer;
+}
 
-// template <typename Point>
-// void get(const GeometryFromColumnParser<Point> & parser, Geometry<Point> & container, size_t i)
-// {
-//     boost::apply_visitor(Getter<Point>(container, i), parser);
-// }
+template <typename Point>
+std::vector<Polygon<Point>> PolygonFromColumnParser<Point>::parse(size_t /*shift*/, size_t /*size*/) const
+{
+    std::vector<Polygon<Point>> answer(offsets.size());
+    auto all_rings = ring_parser.parse(0, 0);
 
-// template <typename Point>
-// GeometryFromColumnParser<Point> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
-// {
-//     switch (getArrayDepth(col.type, 3))
-//     {
-//         case 0: return makeParser<DataTypeCustomPointSerialization, PointFromColumnParser<Point>>(col);
-//         case 1: return makeParser<DataTypeCustomRingSerialization, RingFromColumnParser<Point>>(col);
-//         case 2: return makeParser<DataTypeCustomPolygonSerialization, PolygonFromColumnParser<Point>>(col);
-//         case 3: return makeParser<DataTypeCustomMultiPolygonSerialization, MultiPolygonFromColumnParser<Point>>(col);
-//         default: throw Exception("Cannot parse geometry from column with type " + col.type->getName()
-//                 + ", array depth is too big", ErrorCodes::ILLEGAL_COLUMN);
-//     }
-// }
+    auto prev_offset = 0;
+    for (size_t iter = 0; iter < offsets.size(); ++iter)
+    {
+        const auto current_array_size = offsets[iter] - prev_offset;
+        answer[iter].outer() = std::move(all_rings[prev_offset]);
+        answer[iter].inners().reserve(current_array_size);
+        for (size_t inner_holes = prev_offset + 1; inner_holes < offsets[iter]; ++inner_holes)
+            answer[iter].inners().emplace_back(std::move(all_rings[inner_holes]));
+        prev_offset = offsets[iter];
+    }
 
-// /// Explicit instantiations to avoid linker errors.
+    return answer;
+}
 
-// template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> &);
-// template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> &);
-// template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
-// template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
-// template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
-// template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+
+template <typename Point>
+std::vector<MultiPolygon<Point>> MultiPolygonFromColumnParser<Point>::parse(size_t /*shift*/, size_t /*size*/) const
+{
+    size_t prev_offset = 0;
+    std::vector<MultiPolygon<Point>> answer(offsets.size());
+
+    auto all_polygons = polygon_parser.parse(0, 0);
+
+    for (size_t iter = 0; iter < offsets.size(); ++iter)
+    {
+        for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
+            answer[iter].emplace_back(std::move(all_polygons[polygon_iter])); 
+        prev_offset = offsets[iter];
+    }
+
+    return answer;
+}
+
+template <typename ContainterWithFigures>
+class ParserVisitor : public boost::static_visitor<ContainterWithFigures>
+{
+public:
+    template <class T>
+    ContainterWithFigures operator()(const T & parser) const
+    {
+        auto parsed = parser.parse(0, 0);
+        ContainterWithFigures figures;
+        figures.reserve(parsed.size());
+        for (auto & value : parsed)
+            figures.emplace_back(value);
+        return figures;
+    }
+};
+
+template <typename Point>
+std::vector<Figure<Point>> parseFigure(const GeometryFromColumnParser<Point> & parser)
+{
+    static ParserVisitor<std::vector<Figure<Point>>> creator;
+    return boost::apply_visitor(creator, parser);
+}
+
+
+template std::vector<Figure<CartesianPoint>> parseFigure(const GeometryFromColumnParser<CartesianPoint> &);
+template std::vector<Figure<GeographicPoint>> parseFigure(const GeometryFromColumnParser<GeographicPoint> &);
 
 
 template <typename Point, template<typename> typename Desired>
@@ -133,5 +149,30 @@ template void checkColumnTypeOrThrow<CartesianPoint, MultiPolygon>(const ColumnW
 template void checkColumnTypeOrThrow<GeographicPoint, Ring>(const ColumnWithTypeAndName &);
 template void checkColumnTypeOrThrow<GeographicPoint, Polygon>(const ColumnWithTypeAndName &);
 template void checkColumnTypeOrThrow<GeographicPoint, MultiPolygon>(const ColumnWithTypeAndName &);
+
+template <typename Point>
+GeometryFromColumnParser<Point> getConverterBasedOnType(const ColumnWithTypeAndName & column)
+{
+    if (DataTypeCustomRingSerialization::nestedDataType()->equals(*column.type))
+    {
+        return RingFromColumnParser<Point>(std::move(column.column->convertToFullColumnIfConst()));
+    } 
+    else if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*column.type)) 
+    {
+        return PolygonFromColumnParser<Point>(std::move(column.column->convertToFullColumnIfConst()));
+    }
+    else if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*column.type))
+    {
+        return MultiPolygonFromColumnParser<Point>(std::move(column.column->convertToFullColumnIfConst()));
+    }
+    else
+    {
+        throw Exception(fmt::format("Unexpected type of column {}", column.type->getName()), ErrorCodes::BAD_ARGUMENTS); 
+    }
+}
+
+
+template GeometryFromColumnParser<CartesianPoint> getConverterBasedOnType(const ColumnWithTypeAndName & column);
+template GeometryFromColumnParser<GeographicPoint> getConverterBasedOnType(const ColumnWithTypeAndName & column);
 
 }

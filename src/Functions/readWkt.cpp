@@ -75,6 +75,21 @@ public:
     }
 };
 
+
+class FunctionReadWktRing : public FunctionReadWkt<DataTypeCustomRingSerialization, CartesianPolygon, RingSerializer<CartesianPoint>>
+{
+public:
+    static inline const char * name = "readWktRing";
+    String getName() const override
+    {
+        return name;
+    }
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionReadWktRing>();
+    }
+};
+
 class FunctionReadWktPolygon : public FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, PolygonSerializer<CartesianPoint>>
 {
 public:
@@ -106,6 +121,7 @@ public:
 void registerFunctionReadWkt(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReadWktPoint>();
+    factory.registerFunction<FunctionReadWktRing>();
     factory.registerFunction<FunctionReadWktPolygon>();
     factory.registerFunction<FunctionReadWktMultiPolygon>();
 }
