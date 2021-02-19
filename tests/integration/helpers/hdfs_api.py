@@ -116,7 +116,8 @@ class HDFSApi(object):
             return response_data.content
 
     def write_data(self, path, content):
-        logging.debug("write_data protocol:{} host:{} port:{} path: {} user:{}".format(self.protocol, self.host, self.proxy_port, path, self.user))
+        logging.debug("write_data protocol:{} host:{} port:{} path: {} user:{}, principal:{}".format(
+            self.protocol, self.host, self.proxy_port, path, self.user, self.principal))
         named_file = NamedTemporaryFile(mode='wb+')
         fpath = named_file.name
         if isinstance(content, str):
@@ -126,7 +127,9 @@ class HDFSApi(object):
 
         if self.kerberized:
             self._run_kinit()
-            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
+            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, 
+            hostname_override="kerberizedhdfs1", 
+            principal=self.principal)
 
         response = requests.put(
             "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, host='localhost',

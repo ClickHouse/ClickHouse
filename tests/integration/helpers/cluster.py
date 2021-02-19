@@ -867,7 +867,7 @@ class ClickHouseCluster:
                 os.makedirs(self.hdfs_kerberized_logs_dir)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 hdfs_api = self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(hdfs_api, timeout=30)
+                self.wait_hdfs_to_start(hdfs_api, timeout=300)
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
