@@ -71,6 +71,9 @@ private:
     const int ER_DBACCESS_DENIED_ERROR = 1044;
     const int ER_BAD_DB_ERROR = 1049;
 
+    // https://dev.mysql.com/doc/mysql-errors/8.0/en/client-error-reference.html
+    const int CR_SERVER_LOST = 2013;
+
     struct Buffers
     {
         String database;
