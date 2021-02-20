@@ -303,7 +303,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpretAs(x, T) {#type_conversion_function-cast}
+## reinterpret(x, T) {#type_conversion_function-reinterpret}
 
 Performs byte reinterpretation of ‘x’ as ‘t’ data type.
 
@@ -313,9 +313,9 @@ Following reinterpretations are allowed:
 3. FixedString, String, types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
 
 ``` sql
-SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpretAs(toInt8(1), 'Float32') as int_to_float,
-    reinterpretAs('1', 'UInt32') as string_to_int;
+SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
+    reinterpret(toInt8(1), 'Float32') as int_to_float,
+    reinterpret('1', 'UInt32') as string_to_int;
 ```
 
 ``` text
@@ -324,23 +324,27 @@ SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
 └─────────────┴──────────────┴───────────────┘
 ```
 
-## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretasuint8163264256}
+## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretAsUInt8163264256}
 
-## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretasint8163264128256}
+## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretAsInt8163264128256}
 
-## reinterpretAsFloat(32\|64) {#reinterpretasfloat3264}
+## reinterpretAsDecimal(32\|64\|128\|256) {#reinterpretAsDecimal3264128256}
 
-## reinterpretAsDate {#reinterpretasdate}
+## reinterpretAsFloat(32\|64) {#type_conversion_function-reinterpretAsFloat}
 
-## reinterpretAsDateTime {#reinterpretasdatetime}
+## reinterpretAsDate {#type_conversion_function-reinterpretAsDate}
 
-## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
+## reinterpretAsDateTime {#type_conversion_function-reinterpretAsDateTime}
 
-## reinterpretAsFixedString {#reinterpretasfixedstring}
+## reinterpretAsDateTime64 {#type_conversion_function-reinterpretAsDateTime64}
 
-## reinterpretAsUUID {#reinterpretasuuid}
+## reinterpretAsString {#type_conversion_function-reinterpretAsString}
 
-These functions are aliases for `reinterpretAs`function.
+## reinterpretAsFixedString {#type_conversion_function-reinterpretAsFixedString}
+
+## reinterpretAsUUID {#type_conversion_function-reinterpretAsUUID}
+
+These functions are aliases for `reinterpret` function.
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
@@ -401,7 +405,7 @@ bounds of type T.
 
 Example
 ``` sql
-SELECT cast(-1, 'UInt8') as uint8; 
+SELECT cast(-1, 'UInt8') as uint8;
 ```
 
 
@@ -422,7 +426,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
+Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL
 if the casted value is not representable in the target type.
 
 Example:
@@ -817,9 +821,9 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 
 ## formatRow {#formatrow}
 
-Converts arbitrary expressions into a string via given format. 
+Converts arbitrary expressions into a string via given format.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 formatRow(format, x, y, ...)
@@ -860,7 +864,7 @@ Result:
 
 Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 formatRowNoNewline(format, x, y, ...)
