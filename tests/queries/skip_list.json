@@ -17,7 +17,8 @@
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
         "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
-        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy for TSan
+        "01641_memory_tracking_insert_optimize", /// INSERT lots of rows is too heavy for TSan
+        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "address-sanitizer": [
         "00877",
@@ -27,7 +28,8 @@
         "01103_check_cpu_instructions_at_startup",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "ub-sanitizer": [
         "capnproto",
@@ -48,7 +50,8 @@
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "debug-build": [
         "query_profiler",
