@@ -25,7 +25,7 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(const ColumnsWithTypeAndNa
         auto key = arguments[i];
         keys.emplace_back(std::move(key));
     }
-    return join->joinGet(keys, result_columns).column;
+    return join->join->joinGet(keys, result_columns).column;
 }
 
 template <bool or_null>
@@ -87,13 +87,13 @@ FunctionBaseImplPtr JoinGetOverloadResolver<or_null>::build(const ColumnsWithTyp
                 + ", should be greater or equal to 3",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     auto [storage_join, attr_name] = getJoin(arguments, context);
-    auto join = storage_join->getJoin();
+    auto join_holder = storage_join->getJoin();
     DataTypes data_types(arguments.size() - 2);
     for (size_t i = 2; i < arguments.size(); ++i)
         data_types[i - 2] = arguments[i].type;
-    auto return_type = join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
+    auto return_type = join_holder->join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
     auto table_lock = storage_join->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, join, attr_name, data_types, return_type);
+    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, join_holder, attr_name, data_types, return_type);
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)
