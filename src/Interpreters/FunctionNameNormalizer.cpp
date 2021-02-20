@@ -14,6 +14,8 @@ void FunctionNameNormalizer::visit(IAST * ast)
     if (!ast)
         return;
 
+    // Normalize only selected children. Avoid normalizing engine clause because some engine might
+    // have the same name as function, e.g. Log.
     if (auto * node_storage = ast->as<ASTStorage>())
     {
         visit(node_storage->partition_by);
@@ -24,6 +26,8 @@ void FunctionNameNormalizer::visit(IAST * ast)
         return;
     }
 
+    // Normalize only selected children. Avoid normalizing type clause because some type might
+    // have the same name as function, e.g. Date.
     if (auto * node_decl = ast->as<ASTColumnDeclaration>())
     {
         visit(node_decl->default_expression.get());
