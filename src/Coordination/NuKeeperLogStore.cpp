@@ -4,7 +4,8 @@ namespace DB
 {
 
 NuKeeperLogStore::NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_, bool force_sync_)
-    : changelog(changelogs_path, rotate_interval_)
+    : log(&Poco::Logger::get("NuKeeperLogStore"))
+    , changelog(changelogs_path, rotate_interval_, log)
     , force_sync(force_sync_)
 {
 }
