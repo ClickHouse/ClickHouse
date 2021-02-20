@@ -37,6 +37,12 @@ class MySQLNodeInstance:
         self.docker_compose = docker_compose
         self.project_name = project_name
 
+        self.base_dir = p.dirname(__file__)
+        self.instances_dir = p.join(self.base_dir, '_instances_mysql')
+        if not os.path.exists(self.instances_dir):
+            os.mkdir(self.instances_dir)
+        self.docker_logs_path = p.join(self.instances_dir, 'docker_mysql.log')
+
 
     def alloc_connection(self):
         if self.mysql_connection is None:
@@ -74,6 +80,16 @@ class MySQLNodeInstance:
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
+
+        with open(self.docker_logs_path, "w+") as f:
+            try:
+                run_and_check([
+                    'docker-compose',
+                    '-p', cluster.project_name,
+                    '-f', self.docker_compose, 'logs',
+                ], stdout=f)
+            except Exception as e:
+                print("Unable to get logs from docker mysql.")
 
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
