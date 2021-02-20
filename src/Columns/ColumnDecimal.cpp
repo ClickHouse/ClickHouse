@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Core/BigInt.h>
 
 #include <common/unaligned.h>
 #include <common/sort.h>
@@ -30,6 +29,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
+
+template class DecimalPaddedPODArray<Decimal32>;
+template class DecimalPaddedPODArray<Decimal64>;
+template class DecimalPaddedPODArray<Decimal128>;
+template class DecimalPaddedPODArray<Decimal256>;
+template class DecimalPaddedPODArray<DateTime64>;
 
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
@@ -371,4 +376,5 @@ template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
 template class ColumnDecimal<DateTime64>;
+
 }

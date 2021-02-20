@@ -13,7 +13,7 @@ Use it for tests or to process columns of types `AggregateFunction` and `Aggrega
 initializeAggregation (aggregate_function, column_1, column_2);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `aggregate_function` — Name of the aggregation function. The state of this function — the creating one. [String](../../../sql-reference/data-types/string.md#string).
 -   `column_n` — The column to translate it into the function as it's argument. [String](../../../sql-reference/data-types/string.md#string).

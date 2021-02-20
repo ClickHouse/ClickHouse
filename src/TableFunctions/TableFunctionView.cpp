@@ -38,7 +38,8 @@ ColumnsDescription TableFunctionView::getActualTableStructure(const Context & co
     return ColumnsDescription(sample.getNamesAndTypesList());
 }
 
-StoragePtr TableFunctionView::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionView::executeImpl(
+    const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
     auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
