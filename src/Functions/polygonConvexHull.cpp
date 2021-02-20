@@ -67,8 +67,8 @@ public:
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
-            if (std::is_same_v<Converter, MultiPolygonSerializer<Point>>)
-                throw Exception(fmt::format("The argument of function {} could not be a MultiPolygon", getName()), ErrorCodes::BAD_ARGUMENTS);
+            if constexpr (std::is_same_v<Converter, PointFromColumnConverter<Point>>)
+                throw Exception(fmt::format("The argument of function {} must not be a Point", getName()), ErrorCodes::BAD_ARGUMENTS);
             else
             {
                 Converter converter(arguments[0].column->convertToFullColumnIfConst());

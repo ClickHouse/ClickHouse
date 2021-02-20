@@ -75,12 +75,14 @@ template <typename Point>
 class PointFromColumnConverter
 {
 public:
-
     explicit PointFromColumnConverter(ColumnPtr col_) : col(col_)
     {
     }
 
-    std::vector<Point> convert() const;
+    std::vector<Point> convert() const
+    {
+        return convertImpl(0, col->size());
+    }
 
 private:
     std::vector<Point> convertImpl(size_t shift, size_t count) const;
@@ -113,8 +115,6 @@ template<class Point>
 class PolygonFromColumnConverter
 {
 public:
-    PolygonFromColumnConverter() = default;
-
     explicit PolygonFromColumnConverter(ColumnPtr col_)
         : col(col_)
         , ring_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
@@ -135,8 +135,6 @@ template<class Point>
 class MultiPolygonFromColumnConverter
 {
 public:
-    MultiPolygonFromColumnConverter() = default;
-
     explicit MultiPolygonFromColumnConverter(ColumnPtr col_)
         : col(col_)
         , polygon_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
@@ -334,11 +332,13 @@ template <typename Point, typename F>
 static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
     /// There is no Point type, because for most of geometry functions it is useless.
-    if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
+    if (DataTypeCustomPointSerialization::nestedDataType()->equals(*type))
+        return f(ConverterType<PointFromColumnConverter<Point>>());
+    else if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
         return f(ConverterType<RingFromColumnConverter<Point>>());
-    if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
+    else if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
         return f(ConverterType<PolygonFromColumnConverter<Point>>());
-    if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
+    else if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
         return f(ConverterType<MultiPolygonFromColumnConverter<Point>>());
     throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
 }

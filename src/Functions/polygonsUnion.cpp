@@ -20,6 +20,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
 template <typename Point>
 class FunctionPolygonsUnion : public IFunction
 {
@@ -65,22 +71,27 @@ public:
             using LeftConverter = typename LeftConverterType::Type;
             using RightConverter = typename RightConverterType::Type;
 
-            auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
-            auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
-
-            /// We are not interested in some pitfalls in third-party libraries
-            /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
-            for (size_t i = 0; i < input_rows_count; i++)
+            if constexpr (std::is_same_v<PointFromColumnConverter<Point>, LeftConverter> || std::is_same_v<PointFromColumnConverter<Point>, RightConverter>)
+                throw Exception(fmt::format("Any argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
             {
-                /// Orient the polygons correctly.
-                boost::geometry::correct(first[i]);
-                boost::geometry::correct(second[i]);
+                auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
+                auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
 
-                MultiPolygon<Point> polygons_union{};
-                /// Main work here.
-                boost::geometry::union_(first[i], second[i], polygons_union);
+                /// We are not interested in some pitfalls in third-party libraries
+                /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
+                for (size_t i = 0; i < input_rows_count; i++)
+                {
+                    /// Orient the polygons correctly.
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
 
-                serializer.add(polygons_union);
+                    MultiPolygon<Point> polygons_union{};
+                    /// Main work here.
+                    boost::geometry::union_(first[i], second[i], polygons_union);
+
+                    serializer.add(polygons_union);
+                }
             }
         });
 

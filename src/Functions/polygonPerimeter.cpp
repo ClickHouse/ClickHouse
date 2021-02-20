@@ -19,6 +19,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 
 template <typename Point>
 class FunctionPolygonPerimeter : public IFunction
@@ -63,11 +68,17 @@ public:
         {
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
-            Converter converter(arguments[0].column->convertToFullColumnIfConst());
-            auto geometries = converter.convert();
 
-            for (size_t i = 0; i < input_rows_count; i++)
-                res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
+            if constexpr (std::is_same_v<PointFromColumnConverter<Point>, Converter>)
+                throw Exception(fmt::format("The argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
+            {
+                Converter converter(arguments[0].column->convertToFullColumnIfConst());
+                auto geometries = converter.convert();
+
+                for (size_t i = 0; i < input_rows_count; i++)
+                    res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
+            }
         }
         );
 
