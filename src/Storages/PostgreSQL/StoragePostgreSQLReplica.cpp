@@ -336,6 +336,8 @@ void StoragePostgreSQLReplica::shutdownFinal()
 
 void StoragePostgreSQLReplica::dropNested()
 {
+    nested_loaded.store(false);
+
     auto table_id = nested_storage->getStorageID();
     auto ast_drop = std::make_shared<ASTDropQuery>();
 
@@ -348,7 +350,6 @@ void StoragePostgreSQLReplica::dropNested()
     auto interpreter = InterpreterDropQuery(ast_drop, context);
     interpreter.execute();
 
-    nested_loaded.store(false);
     nested_storage = nullptr;
 }
 
