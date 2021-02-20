@@ -34,7 +34,6 @@ public:
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-    const DataTypePtr & getNestedType() const { return nested; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
