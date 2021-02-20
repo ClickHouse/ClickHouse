@@ -157,7 +157,7 @@ if __name__ == "__main__":
     parallel_args = ""
     if args.parallel:
         parallel_args += "--dist=loadfile"
-        parallel_args += "-n {}".format(args.parallel)
+        parallel_args += " -n {}".format(args.parallel)
 
     net = ""
     if not args.disable_net_host:
