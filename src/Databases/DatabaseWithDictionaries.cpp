@@ -4,6 +4,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
+#include <Interpreters/DDLTask.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -193,6 +194,10 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
             detachDictionary(dictionary_name);
     });
 
+    auto txn = context.getZooKeeperMetadataTransaction();
+    if (txn && !context.isInternalSubquery())
+        txn->commit();      /// Commit point (a sort of) for Replicated database
+
     /// If it was ATTACH query and file with dictionary metadata already exist
     /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
     Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
@@ -205,7 +210,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     succeeded = true;
 }
 
-void DatabaseWithDictionaries::removeDictionary(const Context &, const String & dictionary_name)
+void DatabaseWithDictionaries::removeDictionary(const Context & context, const String & dictionary_name)
 {
     DictionaryAttachInfo attach_info;
     detachDictionaryImpl(dictionary_name, attach_info);
@@ -213,6 +218,11 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
     try
     {
         String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
+
+        auto txn = context.getZooKeeperMetadataTransaction();
+        if (txn && !context.isInternalSubquery())
+            txn->commit();      /// Commit point (a sort of) for Replicated database
+
         Poco::File(dictionary_metadata_path).remove();
         CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus,
                                  StorageID(attach_info.create_query).getInternalDictionaryName());
