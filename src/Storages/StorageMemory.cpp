@@ -6,6 +6,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MemorySettings.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
@@ -71,6 +72,8 @@ protected:
         for (const auto & elem : column_names_and_types)
         {
             auto current_column = src.getByName(elem.getNameInStorage()).column;
+            current_column = current_column->decompress();
+
             if (elem.isSubcolumn())
                 columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
             else
@@ -117,7 +120,19 @@ public:
     void write(const Block & block) override
     {
         metadata_snapshot->check(block, true);
-        new_blocks.emplace_back(block);
+
+        if (storage.compress)
+        {
+            Block compressed_block;
+            for (const auto & elem : block)
+                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+
+            new_blocks.emplace_back(compressed_block);
+        }
+        else
+        {
+            new_blocks.emplace_back(block);
+        }
     }
 
     void writeSuffix() override
@@ -149,8 +164,12 @@ private:
 };
 
 
-StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
-    : IStorage(table_id_), data(std::make_unique<const Blocks>())
+StorageMemory::StorageMemory(
+    const StorageID & table_id_,
+    ColumnsDescription columns_description_,
+    ConstraintsDescription constraints_,
+    bool compress_)
+    : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
@@ -245,9 +264,12 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
 
     in->readPrefix();
     Blocks out;
-    Block block;
-    while ((block = in->read()))
+    while (Block block = in->read())
     {
+        if (compress)
+            for (auto & elem : block)
+                elem.column = elem.column->compress();
+
         out.push_back(block);
     }
     in->readSuffix();
@@ -317,13 +339,19 @@ void registerStorageMemory(StorageFactory & factory)
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints);
+        bool has_settings = args.storage_def->settings;
+        MemorySettings settings;
+        if (has_settings)
+            settings.loadFromQuery(*args.storage_def);
+
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
     },
     {
+        .supports_settings = true,
         .supports_parallel_insert = true,
     });
 }
