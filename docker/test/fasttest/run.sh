@@ -326,7 +326,7 @@ function run_tests
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert
 
-        01541_max_memory_usage_for_user
+        01541_max_memory_usage_for_user_long
 
         # Require python libraries like scipy, pandas and numpy
         01322_ttest_scipy
