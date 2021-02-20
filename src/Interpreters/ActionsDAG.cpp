@@ -1217,8 +1217,8 @@ namespace
 
 struct ConjinctionNodes
 {
-    std::unordered_set<ActionsDAG::Node *> allowed;
-    std::unordered_set<ActionsDAG::Node *> rejected;
+    std::vector<ActionsDAG::Node *> allowed;
+    std::vector<ActionsDAG::Node *> rejected;
 };
 
 /// Take a node which result is predicate.
@@ -1228,6 +1228,8 @@ struct ConjinctionNodes
 ConjinctionNodes getConjinctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjinctionNodes conjunction;
+    std::unordered_set<ActionsDAG::Node *> allowed;
+    std::unordered_set<ActionsDAG::Node *> rejected;
 
     struct Frame
     {
@@ -1276,12 +1278,19 @@ ConjinctionNodes getConjinctionNodes(ActionsDAG::Node * predicate, std::unordere
             else if (is_conjunction)
             {
                 for (auto * child : cur.node->children)
+                {
                     if (allowed_nodes.count(child))
-                        conjunction.allowed.insert(child);
+                    {
+                        if (allowed.insert(child).second)
+                            conjunction.allowed.push_back(child);
+
+                    }
+                }
             }
             else if (cur.is_predicate)
             {
-                conjunction.rejected.insert(cur.node);
+                if (rejected.insert(cur.node).second)
+                    conjunction.rejected.push_back(cur.node);
             }
 
             stack.pop();
@@ -1291,7 +1300,7 @@ ConjinctionNodes getConjinctionNodes(ActionsDAG::Node * predicate, std::unordere
     if (conjunction.allowed.empty())
     {
         if (allowed_nodes.count(predicate))
-            conjunction.allowed.insert(predicate);
+            conjunction.allowed.push_back(predicate);
     }
 
     return conjunction;
@@ -1322,7 +1331,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const std::vector<ActionsDAG::No
 ///
 /// Result actions add single column with conjunction result (it is always last in index).
 /// No other columns are added or removed.
-ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::unordered_set<Node *> conjunction)
+ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction)
 {
     if (conjunction.empty())
         return nullptr;
@@ -1448,7 +1457,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
 
     /// Now, when actions are created, update current DAG.
 
-    if (conjunction.allowed.count(predicate))
+    if (conjunction.rejected.empty())
     {
         /// The whole predicate was split.
         if (can_remove_filter)

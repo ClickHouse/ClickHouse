@@ -314,7 +314,7 @@ private:
 
     void compileFunctions();
 
-    ActionsDAGPtr cloneActionsForConjunction(std::unordered_set<Node *> conjunction);
+    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction);
 };
 
 

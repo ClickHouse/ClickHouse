@@ -68,7 +68,7 @@ Filter column: notEquals(y, 0)
 9	10
 > one condition of filter should be pushed down after aggregating, other two conditions are ANDed
 Filter column
-FUNCTION and(minus(s, 4) :: 2, minus(s, 8) :: 1) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
+FUNCTION and(minus(s, 8) :: 1, minus(s, 4) :: 2) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
 0	1
@@ -83,7 +83,7 @@ Filter column: notEquals(y, 0)
 Filter column
 ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))
 Aggregating
-Filter column: and(minus(y, 4), notEquals(y, 0))
+Filter column: and(notEquals(y, 0), minus(y, 4))
 0	1
 1	2
 2	3
