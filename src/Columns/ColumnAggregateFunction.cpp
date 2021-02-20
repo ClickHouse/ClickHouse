@@ -77,18 +77,19 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
     if (func->hasTrivialDestructor() || src)
         return;
 
-    if (copied_data_info.empty())
-    {
-        for (auto * val : data)
-            func->destroy(val);
-
-        return;
-    }
-
     for (const auto & pair : copied_data_info)
     {
         size_t pos = pair.getValue().second;
         if (data[pos] != nullptr)
+        {
+            func->destroy(data[pos]);
+            data[pos] = nullptr;
+        }
+    }
+
+    for (size_t pos = 0; pos < data.size(); ++pos)
+    {
+        if (data[pos])
         {
             func->destroy(data[pos]);
             data[pos] = nullptr;
