@@ -74,27 +74,24 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
-    if (!func->hasTrivialDestructor() && !src)
+    if (func->hasTrivialDestructor() || src)
+        return;
+
+    if (copied_data_info.empty())
     {
-        if (copiedDataInfo.empty())
+        for (auto * val : data)
+            func->destroy(val);
+
+        return;
+    }
+
+    for (const auto & pair : copied_data_info)
+    {
+        size_t pos = pair.getValue().second;
+        if (data[pos] != nullptr)
         {
-            for (auto * val : data)
-            {
-                func->destroy(val);
-            }
-        }
-        else
-        {
-            size_t pos;
-            for (Map::iterator it = copiedDataInfo.begin(), it_end = copiedDataInfo.end(); it != it_end; ++it)
-            {
-                pos = it->getValue().second;
-                if (data[pos] != nullptr)
-                {
-                    func->destroy(data[pos]);
-                    data[pos] = nullptr;
-                }
-            }
+            func->destroy(data[pos]);
+            data[pos] = nullptr;
         }
     }
 }
@@ -488,10 +485,10 @@ void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
 {
     Map::LookupResult result;
-    result = copiedDataInfo.find(place);
+    result = copied_data_info.find(place);
     if (result == nullptr)
     {
-        copiedDataInfo[place] = data.size()-1;
+        copied_data_info[place] = data.size()-1;
         func->merge(data.back(), place, &createOrGetArena());
     }
     else

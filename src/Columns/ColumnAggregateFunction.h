@@ -93,7 +93,7 @@ private:
         HashTableGrower<3>,
         HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
 
-    Map copiedDataInfo;
+    Map copied_data_info;
 
     ColumnAggregateFunction() {}
 
