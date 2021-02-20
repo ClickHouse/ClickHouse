@@ -12,3 +12,4 @@ services:
             --default-time-zone='+3:00'
             --gtid-mode="ON"
             --enforce-gtid-consistency
+            --log-error-verbosity=3
