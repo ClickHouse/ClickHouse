@@ -589,10 +589,10 @@ class ClickHouseCluster:
             image_id = container_info.get('Image')
             image_info = self.docker_client.api.inspect_image(image_id)
             logging.debug(("Command failed in container {}: ".format(container_id)))
-            pprint.plogging.debug(container_info)
+            pprint.pprint(container_info)
             logging.debug("")
             logging.debug(("Container {} uses image {}: ".format(container_id, image_id)))
-            pprint.plogging.debug(image_info)
+            pprint.pprint(image_info)
             logging.debug("")
             message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id,
                                                                                            exit_code, output)
