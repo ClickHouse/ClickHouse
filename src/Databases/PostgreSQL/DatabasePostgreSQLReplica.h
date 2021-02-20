@@ -58,7 +58,6 @@ public:
 
     void shutdown() override;
 
-
 private:
     void startSynchronization();
 

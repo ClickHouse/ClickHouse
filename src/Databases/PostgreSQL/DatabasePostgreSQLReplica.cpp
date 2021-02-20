@@ -88,6 +88,7 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
                      : (global_context.getSettingsRef().max_insert_block_size.value),
             global_context.getMacros()->expand(settings->postgresql_tables_list.value));
 
+    /// TODO: may be no need to always fetch
     std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->conn());
 
     for (const auto & table_name : tables_to_replicate)
@@ -160,7 +161,9 @@ StoragePtr DatabasePostgreSQLReplica<Base>::tryGetTable(const String & name, con
     }
 
     auto table = tables.find(name);
-    if (table != tables.end() && table->second->as<StoragePostgreSQLReplica>()->isNestedLoaded())
+    /// Here it is possible that nested table is temporarily out of reach, but return storage anyway,
+    /// it will not allow to read if nested is unavailable at the moment
+    if (table != tables.end())
         return table->second;
 
     return StoragePtr{};
