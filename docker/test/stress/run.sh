@@ -53,10 +53,11 @@ handle SIGBUS stop print
 handle SIGABRT stop print
 continue
 thread apply all backtrace
-continue
+detach
+quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
 }
 
 configure
