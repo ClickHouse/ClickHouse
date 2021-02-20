@@ -860,20 +860,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             expressions.prewhere_info->row_level_filter_actions = std::move(expressions.filter_info->actions);
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
             expressions.prewhere_info->row_level_filter_actions->projectInput(false);
-            // if (expressions.filter_info->do_remove_column)
-            // {
-            //     /// Instead of removing column, add it to prewhere_actions input (but not in index).
-            //     /// It will be removed at prewhere_actions execution.
-            //     const auto & index = expressions.prewhere_info->row_level_filter_actions->getIndex();
-            //     auto it = index.find(expressions.prewhere_info->row_level_column_name);
-            //     if (it == index.end())
-            //         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column {} in row level security filter {}",
-            //                         expressions.prewhere_info->row_level_column_name, expressions.prewhere_info->row_level_filter_actions->dumpDAG());
-            //     const auto & node = *it;
-
-            //     expressions.prewhere_info->prewhere_actions->addInput(node->result_name, node->result_type, true, false);
-            // }
-
             expressions.filter_info = nullptr;
         }
     }
@@ -1409,32 +1395,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
     if (storage)
     {
-        /// Append columns from the table filter to required
-        // if (row_policy_filter)
-        // {
-        //     ActionsDAG * row_policy_dag = nullptr;
-        //     if (expressions.filter_info)
-        //         row_policy_dag = expressions.filter_info->actions.get();
-        //     else if (expressions.prewhere_info)
-        //     {
-        //         if (expressions.prewhere_info->row_level_filter_actions)
-        //             row_policy_dag = expressions.prewhere_info->row_level_filter_actions.get();
-        //         else if (expressions.prewhere_info->prewhere_actions)
-        //             row_policy_dag = expressions.prewhere_info->prewhere_actions.get();
-        //     }
-
-        //     if (row_policy_dag)
-        //     {
-        //         auto required_columns_from_filter = row_policy_dag->getRequiredColumns();
-
-        //         for (const auto & column : required_columns_from_filter)
-        //         {
-        //             if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-        //                 required_columns.push_back(column.name);
-        //         }
-        //     }
-        // }
-
         /// Detect, if ALIAS columns are required for query execution
         auto alias_columns_required = false;
         const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();

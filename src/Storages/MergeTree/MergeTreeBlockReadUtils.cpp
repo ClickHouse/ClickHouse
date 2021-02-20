@@ -304,13 +304,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         column_names = post_column_names;
     }
 
-    // std::cerr << "---------- Pre column names\n";
-    // for (const auto & col : pre_column_names)
-    //     std::cerr << col << std::endl;
-    // std::cerr << "----------- Post column names\n";
-    // for (const auto & col : column_names)
-    //     std::cerr << col << std::endl;
-
     MergeTreeReadTaskColumns result;
 
     if (check_columns)
