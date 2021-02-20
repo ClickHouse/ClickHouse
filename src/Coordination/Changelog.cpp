@@ -213,6 +213,8 @@ public:
 
                 logs.emplace(record.header.index, log_entry);
                 index_to_offset[record.header.index] = result.last_position;
+                if (result.entries_read % 50000 == 0)
+                    LOG_TRACE(log, "Reading changelog from path {}, entries {}", filepath, result.entries_read);
             }
         }
         catch (const Exception & ex)
@@ -228,6 +230,7 @@ public:
             result.error = true;
             tryLogCurrentException(log);
         }
+        LOG_TRACE(log, "Totally read from changelog {} {} entries", filepath, result.entries_read);
 
         return result;
     }
