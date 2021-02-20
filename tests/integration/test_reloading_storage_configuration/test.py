@@ -173,16 +173,14 @@ def test_update_disk(started_cluster):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
-        assert node1.query( "SELECT path, keep_free_space FROM system.disks where name = '%s'" % (name)) == TSV([
+        assert node1.query("SELECT path, keep_free_space FROM system.disks where name = 'jbod2'") == TSV([
                 ["/jbod2/", "10485760"]])
 
         update_disk(node1, "jbod2", "/jbod2/", "20971520")
         node1.query("SYSTEM RELOAD CONFIG")
 
-        assert node1.query(
-            "SELECT path, keep_free_space FROM system.disks where name = '%s'" % (name)) == TSV([
+        assert node1.query("SELECT path, keep_free_space FROM system.disks where name = 'jbod2'") == TSV([
                 ["/jbod2/", "20971520"]])
-
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
