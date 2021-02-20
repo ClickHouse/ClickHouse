@@ -22,6 +22,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 template <typename Point>
 class FunctionPolygonsDistance : public IFunction
 {
@@ -69,15 +74,20 @@ public:
             using LeftConverter = typename LeftConverterType::Type;
             using RightConverter = typename RightConverterType::Type;
 
-            auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
-            auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
-
-            for (size_t i = 0; i < input_rows_count; i++)
+            if constexpr (std::is_same_v<PointFromColumnConverter<Point>, LeftConverter> || std::is_same_v<PointFromColumnConverter<Point>, RightConverter>)
+                throw Exception(fmt::format("Any argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
             {
-                boost::geometry::correct(first[i]);
-                boost::geometry::correct(second[i]);
+                auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
+                auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
 
-                res_data.emplace_back(boost::geometry::distance(first[i], second[i]));
+                for (size_t i = 0; i < input_rows_count; i++)
+                {
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
+                    res_data.emplace_back(boost::geometry::distance(first[i], second[i]));
+                }
             }
         });
 

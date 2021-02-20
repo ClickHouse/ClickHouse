@@ -44,6 +44,7 @@ public:
         {
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
+
             Converter converter(arguments[0].column->convertToFullColumnIfConst());
             auto figures = converter.convert();
 
