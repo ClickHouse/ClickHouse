@@ -204,7 +204,7 @@ TEST(CoordinationTest, TestSummingRaft3)
     ChangelogDirTest test3("./logs3");
     SummingRaftServer s3(3, "localhost", 44446, "./logs3");
 
-    nuraft::srv_config first_config(1, "localhost:44444");
+    nuraft::srv_config first_config(1, 0, "localhost:44444", "", false, 0);
     auto ret1 = s2.raft_instance->add_srv(first_config);
     if (!ret1->get_accepted())
     {
@@ -219,7 +219,7 @@ TEST(CoordinationTest, TestSummingRaft3)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    nuraft::srv_config third_config(3, "localhost:44446");
+    nuraft::srv_config third_config(3, 0, "localhost:44446", "", false, 0);
     auto ret3 = s2.raft_instance->add_srv(third_config);
     if (!ret3->get_accepted())
     {
