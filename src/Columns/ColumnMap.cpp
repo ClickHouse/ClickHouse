@@ -1,4 +1,5 @@
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -241,6 +242,15 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
     return false;
+}
+
+ColumnPtr ColumnMap::compress() const
+{
+    auto compressed = nested->compress();
+    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
+    {
+        return ColumnMap::create(compressed->decompress());
+    });
 }
 
 }

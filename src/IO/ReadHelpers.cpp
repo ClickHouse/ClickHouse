@@ -1050,6 +1050,25 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 }
 
 
+void skipToCarriageReturnOrEOF(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\r')
+        {
+            ++buf.position();
+            return;
+        }
+    }
+}
+
+
 void skipToNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())

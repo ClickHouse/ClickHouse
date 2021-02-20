@@ -194,6 +194,7 @@ public:
     void removeChildren(const std::string & path);
 
     using WaitCondition = std::function<bool()>;
+
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
@@ -314,8 +315,15 @@ public:
         return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
+    void setAlreadyRemoved()
+    {
+        need_remove = false;
+    }
+
     ~EphemeralNodeHolder()
     {
+        if (!need_remove)
+            return;
         try
         {
             zookeeper.tryRemove(path);
@@ -331,6 +339,7 @@ private:
     std::string path;
     ZooKeeper & zookeeper;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
+    bool need_remove = true;
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
