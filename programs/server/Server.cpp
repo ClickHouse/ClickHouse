@@ -951,6 +951,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->shutdownKeeperStorageDispatcher();
         }
 
+        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
+        server_pool.joinAll();
+
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
