@@ -285,10 +285,9 @@
          Cache is used when 'use_uncompressed_cache' user setting turned on (off by default).
          Uncompressed cache is advantageous only for very short queries and in rare cases.
 
-         Note: uncompressed cache is pointless for lz4, because memory bandwidth is slower than multi-core decompression.
-         Enabling it will only make queries slower.
-         If number of CPU cores is in order of 100 and memory bandwidth is in range of 100-200 GB/sec,
-         there is a chance it is also being pointless for zstd.
+         Note: uncompressed cache can be pointless for lz4, because memory bandwidth
+         is slower than multi-core decompression on some server configurations.
+         Enabling it can sometimes paradoxically make queries slower.
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
