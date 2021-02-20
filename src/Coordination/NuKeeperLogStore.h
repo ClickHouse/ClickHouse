@@ -4,6 +4,7 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -43,6 +44,7 @@ public:
 
 private:
     mutable std::mutex changelog_lock;
+    Poco::Logger * log;
     Changelog changelog;
     bool force_sync;
 };
