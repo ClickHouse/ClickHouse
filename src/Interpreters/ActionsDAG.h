@@ -313,6 +313,8 @@ private:
     void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
 
     void compileFunctions();
+
+    ActionsDAGPtr cloneActionsForConjunction(std::unordered_set<Node *> conjunction);
 };
 
 
