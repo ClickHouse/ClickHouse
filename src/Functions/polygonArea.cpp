@@ -59,16 +59,16 @@ public:
 
         callOnGeometryDataType<Point>(arguments[0].type, [&] (const auto & type)
         {
-            using TypeParser = std::decay_t<decltype(type)>;
-            using Parser = typename TypeParser::Type;
-            Parser parser(arguments[0].column->convertToFullColumnIfConst());
-            auto figures = parser.parse();
+            using TypeConverter = std::decay_t<decltype(type)>;
+            using Converter = typename TypeConverter::Type;
+            Converter converter(arguments[0].column->convertToFullColumnIfConst());
+            auto geometries = converter.convert();
 
             auto & res_data = res_column->getData();
             res_data.reserve(input_rows_count);
 
             for (size_t i = 0; i < input_rows_count; i++)
-                res_data.emplace_back(boost::geometry::area(figures[i]));
+                res_data.emplace_back(boost::geometry::area(geometries[i]));
         }
         );
 

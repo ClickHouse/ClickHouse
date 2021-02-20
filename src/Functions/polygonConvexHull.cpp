@@ -1,89 +1,106 @@
-// #include <Functions/FunctionFactory.h>
-// #include <Functions/geometryConverters.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/geometryConverters.h>
 
-// #include <boost/geometry.hpp>
-// #include <boost/geometry/geometries/point_xy.hpp>
-// #include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
-// #include <common/logger_useful.h>
+#include <common/logger_useful.h>
 
-// #include <Columns/ColumnArray.h>
-// #include <Columns/ColumnTuple.h>
-// #include <Columns/ColumnsNumber.h>
-// #include <DataTypes/DataTypeArray.h>
-// #include <DataTypes/DataTypeTuple.h>
-// #include <DataTypes/DataTypeCustomGeo.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 
-// #include <memory>
-// #include <string>
+#include <memory>
+#include <string>
 
-// namespace DB
-// {
+namespace DB
+{
 
-// template <typename Point>
-// class FunctionPolygonConvexHull : public IFunction
-// {
-// public:
-//     static const char * name;
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
-//     explicit FunctionPolygonConvexHull() = default;
+template <typename Point>
+class FunctionPolygonConvexHull : public IFunction
+{
+public:
+    static const char * name;
 
-//     static FunctionPtr create(const Context &)
-//     {
-//         return std::make_shared<FunctionPolygonConvexHull>();
-//     }
+    explicit FunctionPolygonConvexHull() = default;
 
-//     String getName() const override
-//     {
-//         return name;
-//     }
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionPolygonConvexHull>();
+    }
 
-//     bool isVariadic() const override
-//     {
-//         return false;
-//     }
+    String getName() const override
+    {
+        return name;
+    }
 
-//     size_t getNumberOfArguments() const override
-//     {
-//         return 1;
-//     }
+    bool isVariadic() const override
+    {
+        return false;
+    }
 
-//     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-//     {
-//         return DataTypeCustomPolygonSerialization::nestedDataType();
-//     }
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
 
-//     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
-//     {
-//         auto parser = getConverterBasedOnType<Point>(arguments[0]);  
-//         auto figures = parseFigure(parser);
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return DataTypeCustomPolygonSerialization::nestedDataType();
+    }
 
-//         PolygonSerializer<Point> serializer;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    {
+        PolygonSerializer<Point> serializer;
 
-//         for (size_t i = 0; i < input_rows_count; i++)
-//         {
-//             Polygon<Point> convex_hull{};
-//             boost::geometry::convex_hull(figures[i], convex_hull);
-//             serializer.add(convex_hull);
-//         }
+        callOnGeometryDataType<Point>(arguments[0].type, [&] (const auto & type)
+        {
+            using TypeConverter = std::decay_t<decltype(type)>;
+            using Converter = typename TypeConverter::Type;
 
-//         return serializer.finalize();
-//     }
+            if (std::is_same_v<Converter, MultiPolygonSerializer<Point>>)
+                throw Exception(fmt::format("The argument of function {} could not be a MultiPolygon", getName()), ErrorCodes::BAD_ARGUMENTS);
+            else
+            {
+                Converter converter(arguments[0].column->convertToFullColumnIfConst());
+                auto geometries = converter.convert();
 
-//     bool useDefaultImplementationForConstants() const override
-//     {
-//         return true;
-//     }
-// };
+                for (size_t i = 0; i < input_rows_count; i++)
+                {
+                    Polygon<Point> convex_hull{};
+                    boost::geometry::convex_hull(geometries[i], convex_hull);
+                    serializer.add(convex_hull);
+                }
+            }
+        }
+        );
+
+        return serializer.finalize();
+    }
+
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+};
 
 
-// template <>
-// const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
+template <>
+const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
 
-// void registerFunctionPolygonConvexHull(FunctionFactory & factory)
-// {
-//     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
-// }
+void registerFunctionPolygonConvexHull(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
+}
 
-// }
+}

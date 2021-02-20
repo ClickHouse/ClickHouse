@@ -1,99 +1,105 @@
-// #include <Functions/FunctionFactory.h>
-// #include <Functions/geometryConverters.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/geometryConverters.h>
 
-// #include <boost/geometry.hpp>
-// #include <boost/geometry/geometries/point_xy.hpp>
-// #include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
-// #include <common/logger_useful.h>
+#include <common/logger_useful.h>
 
-// #include <Columns/ColumnArray.h>
-// #include <Columns/ColumnTuple.h>
-// #include <Columns/ColumnConst.h>
-// #include <DataTypes/DataTypeArray.h>
-// #include <DataTypes/DataTypeTuple.h>
-// #include <DataTypes/DataTypeCustomGeo.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 
-// #include <memory>
-// #include <utility>
+#include <memory>
+#include <utility>
 
-// namespace DB
-// {
+namespace DB
+{
 
-// template <typename Point>
-// class FunctionPolygonsSymDifference : public IFunction
-// {
-// public:
-//     static const char * name;
+template <typename Point>
+class FunctionPolygonsSymDifference : public IFunction
+{
+public:
+    static const char * name;
 
-//     explicit FunctionPolygonsSymDifference() = default;
+    explicit FunctionPolygonsSymDifference() = default;
 
-//     static FunctionPtr create(const Context &)
-//     {
-//         return std::make_shared<FunctionPolygonsSymDifference>();
-//     }
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionPolygonsSymDifference>();
+    }
 
-//     String getName() const override
-//     {
-//         return name;
-//     }
+    String getName() const override
+    {
+        return name;
+    }
 
-//     bool isVariadic() const override
-//     {
-//         return false;
-//     }
+    bool isVariadic() const override
+    {
+        return false;
+    }
 
-//     size_t getNumberOfArguments() const override
-//     {
-//         return 2;
-//     }
+    size_t getNumberOfArguments() const override
+    {
+        return 2;
+    }
 
-//     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-//     {
-//         return DataTypeCustomMultiPolygonSerialization::nestedDataType();
-//     }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return DataTypeCustomMultiPolygonSerialization::nestedDataType();
+    }
 
-//     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
-//     {
-//         auto first_parser = getConverterBasedOnType<Point>(arguments[0]);
-//         auto second_parser = getConverterBasedOnType<Point>(arguments[1]);     
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    {
+        MultiPolygonSerializer<Point> serializer;
 
-//         auto first = parseFigure(first_parser);
-//         auto second = parseFigure(second_parser);
+        callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type)
+        {
+            using LeftConverterType = std::decay_t<decltype(left_type)>;
+            using RightConverterType = std::decay_t<decltype(right_type)>;
 
-//         MultiPolygonSerializer<Point> serializer;
+            using LeftConverter = typename LeftConverterType::Type;
+            using RightConverter = typename RightConverterType::Type;
 
-//         /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
-//         for (size_t i = 0; i < input_rows_count; i++)
-//         {
-//             boost::geometry::correct(first[i]);
-//             boost::geometry::correct(second[i]);
+            auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
+            auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
 
-//             MultiPolygon<Point> sym_difference{};
-//             boost::geometry::sym_difference(first[i], second[i], sym_difference);
+            /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
+            for (size_t i = 0; i < input_rows_count; i++)
+            {
+                boost::geometry::correct(first[i]);
+                boost::geometry::correct(second[i]);
 
-//             serializer.add(sym_difference);
-//         }
+                MultiPolygon<Point> sym_difference{};
+                boost::geometry::sym_difference(first[i], second[i], sym_difference);
 
-//         return serializer.finalize();
-//     }
+                serializer.add(sym_difference);
+            }
+        });
 
-//     bool useDefaultImplementationForConstants() const override
-//     {
-//         return true;
-//     }
-// };
+        return serializer.finalize();
+    }
 
-// template <>
-// const char * FunctionPolygonsSymDifference<CartesianPoint>::name = "polygonsSymDifferenceCartesian";
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+};
 
-// template <>
-// const char * FunctionPolygonsSymDifference<GeographicPoint>::name = "polygonsSymDifferenceGeographic";
+template <>
+const char * FunctionPolygonsSymDifference<CartesianPoint>::name = "polygonsSymDifferenceCartesian";
 
-// void registerFunctionPolygonsSymDifference(FunctionFactory & factory)
-// {
-//     factory.registerFunction<FunctionPolygonsSymDifference<CartesianPoint>>();
-//     factory.registerFunction<FunctionPolygonsSymDifference<GeographicPoint>>();
-// }
+template <>
+const char * FunctionPolygonsSymDifference<GeographicPoint>::name = "polygonsSymDifferenceGeographic";
 
-// }
+void registerFunctionPolygonsSymDifference(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonsSymDifference<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsSymDifference<GeographicPoint>>();
+}
+
+}

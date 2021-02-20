@@ -1,103 +1,109 @@
-// #include <Functions/FunctionFactory.h>
-// #include <Functions/geometryConverters.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/geometryConverters.h>
 
-// #include <boost/geometry.hpp>
-// #include <boost/geometry/geometries/point_xy.hpp>
-// #include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
-// #include <common/logger_useful.h>
+#include <common/logger_useful.h>
 
-// #include <Columns/ColumnArray.h>
-// #include <Columns/ColumnTuple.h>
-// #include <Columns/ColumnConst.h>
-// #include <DataTypes/DataTypeArray.h>
-// #include <DataTypes/DataTypeTuple.h>
-// #include <DataTypes/DataTypeCustomGeo.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 
-// #include <memory>
-// #include <string>
+#include <memory>
+#include <string>
 
-// namespace DB
-// {
+namespace DB
+{
 
-// template <typename Point>
-// class FunctionPolygonsUnion : public IFunction
-// {
-// public:
-//     static inline const char * name;
+template <typename Point>
+class FunctionPolygonsUnion : public IFunction
+{
+public:
+    static inline const char * name;
 
-//     explicit FunctionPolygonsUnion() = default;
+    explicit FunctionPolygonsUnion() = default;
 
-//     static FunctionPtr create(const Context &)
-//     {
-//         return std::make_shared<FunctionPolygonsUnion>();
-//     }
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionPolygonsUnion>();
+    }
 
-//     String getName() const override
-//     {
-//         return name;
-//     }
+    String getName() const override
+    {
+        return name;
+    }
 
-//     bool isVariadic() const override
-//     {
-//         return false;
-//     }
+    bool isVariadic() const override
+    {
+        return false;
+    }
 
-//     size_t getNumberOfArguments() const override
-//     {
-//         return 2;
-//     }
+    size_t getNumberOfArguments() const override
+    {
+        return 2;
+    }
 
-//     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-//     {
-//         return DataTypeCustomMultiPolygonSerialization::nestedDataType();
-//     }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return DataTypeCustomMultiPolygonSerialization::nestedDataType();
+    }
 
-//     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
-//     {
-//         auto first_parser = getConverterBasedOnType<Point>(arguments[0]);
-//         auto second_parser = getConverterBasedOnType<Point>(arguments[1]);     
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    {
+        MultiPolygonSerializer<Point> serializer;
 
-//         auto first = parseFigure(first_parser);
-//         auto second = parseFigure(second_parser);
+        callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type)
+        {
+            using LeftConverterType = std::decay_t<decltype(left_type)>;
+            using RightConverterType = std::decay_t<decltype(right_type)>;
 
-//         MultiPolygonSerializer<Point> serializer;
+            using LeftConverter = typename LeftConverterType::Type;
+            using RightConverter = typename RightConverterType::Type;
 
-//         /// We are not interested in some pitfalls in third-party libraries
-//         /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
-//         for (size_t i = 0; i < input_rows_count; i++)
-//         {
-//             /// Orient the polygons correctly.
-//             boost::geometry::correct(first[i]);
-//             boost::geometry::correct(second[i]);
+            auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
+            auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
 
-//             MultiPolygon<Point> polygons_union{};
-//             /// Main work here.
-//             boost::geometry::union_(first[i], second[i], polygons_union);
+            /// We are not interested in some pitfalls in third-party libraries
+            /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
+            for (size_t i = 0; i < input_rows_count; i++)
+            {
+                /// Orient the polygons correctly.
+                boost::geometry::correct(first[i]);
+                boost::geometry::correct(second[i]);
 
-//             serializer.add(polygons_union);
-//         }
+                MultiPolygon<Point> polygons_union{};
+                /// Main work here.
+                boost::geometry::union_(first[i], second[i], polygons_union);
 
-//         return serializer.finalize();
-//     }
+                serializer.add(polygons_union);
+            }
+        });
 
-//     bool useDefaultImplementationForConstants() const override
-//     {
-//         return true;
-//     }
-// };
+        return serializer.finalize();
+    }
 
-// template <>
-// const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+};
 
-// template <>
-// const char * FunctionPolygonsUnion<GeographicPoint>::name = "polygonsUnionGeographic";
+template <>
+const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
+
+template <>
+const char * FunctionPolygonsUnion<GeographicPoint>::name = "polygonsUnionGeographic";
 
 
-// void registerFunctionPolygonsUnion(FunctionFactory & factory)
-// {
-//     factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
-//     factory.registerFunction<FunctionPolygonsUnion<GeographicPoint>>();
-// }
+void registerFunctionPolygonsUnion(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsUnion<GeographicPoint>>();
+}
 
-// }
+}
