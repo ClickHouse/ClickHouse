@@ -1410,30 +1410,30 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (storage)
     {
         /// Append columns from the table filter to required
-        if (row_policy_filter)
-        {
-            ActionsDAG * row_policy_dag = nullptr;
-            if (expressions.filter_info)
-                row_policy_dag = expressions.filter_info->actions.get();
-            else if (expressions.prewhere_info)
-            {
-                if (expressions.prewhere_info->row_level_filter_actions)
-                    row_policy_dag = expressions.prewhere_info->row_level_filter_actions.get();
-                else if (expressions.prewhere_info->prewhere_actions)
-                    row_policy_dag = expressions.prewhere_info->prewhere_actions.get();
-            }
+        // if (row_policy_filter)
+        // {
+        //     ActionsDAG * row_policy_dag = nullptr;
+        //     if (expressions.filter_info)
+        //         row_policy_dag = expressions.filter_info->actions.get();
+        //     else if (expressions.prewhere_info)
+        //     {
+        //         if (expressions.prewhere_info->row_level_filter_actions)
+        //             row_policy_dag = expressions.prewhere_info->row_level_filter_actions.get();
+        //         else if (expressions.prewhere_info->prewhere_actions)
+        //             row_policy_dag = expressions.prewhere_info->prewhere_actions.get();
+        //     }
 
-            if (row_policy_dag)
-            {
-                auto required_columns_from_filter = row_policy_dag->getRequiredColumns();
+        //     if (row_policy_dag)
+        //     {
+        //         auto required_columns_from_filter = row_policy_dag->getRequiredColumns();
 
-                for (const auto & column : required_columns_from_filter)
-                {
-                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-                        required_columns.push_back(column.name);
-                }
-            }
-        }
+        //         for (const auto & column : required_columns_from_filter)
+        //         {
+        //             if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
+        //                 required_columns.push_back(column.name);
+        //         }
+        //     }
+        // }
 
         /// Detect, if ALIAS columns are required for query execution
         auto alias_columns_required = false;
@@ -1463,11 +1463,14 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             if (prewhere_info)
             {
                 /// Get some columns directly from PREWHERE expression actions
-                auto prewhere_required_columns = (
-                    prewhere_info->row_level_filter_actions ?
-                    prewhere_info->row_level_filter_actions :
-                    prewhere_info->prewhere_actions)->getRequiredColumns().getNames();
+                auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
                 required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+
+                if (prewhere_info->row_level_filter_actions)
+                {
+                    auto row_level_required_columns = prewhere_info->row_level_filter_actions->getRequiredColumns().getNames();
+                    required_columns_from_prewhere.insert(row_level_required_columns.begin(), row_level_required_columns.end());
+                }
             }
 
             /// Expression, that contains all raw required columns
