@@ -86,7 +86,7 @@ if __name__ == "__main__":
     logging.info("All processes finished")
     if args.hung_check:
         logging.info("Will terminate gdb (if any)")
-        res = call("killall -TERM gdb", shell=True, stderr=STDOUT)
+        res = call("kill -TERM $(pidof clickhouse)", shell=True, stderr=STDOUT)
         logging.info("Checking if some queries hung")
         cmd = "{} {} {}".format(args.test_cmd, "--hung-check", "00001_select_1")
         res = call(cmd, shell=True, stderr=STDOUT)
