@@ -121,8 +121,6 @@ private:
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(size_t new_start_log_index);
 
-
-
 private:
     const std::string changelogs_dir;
     const size_t rotate_interval;
