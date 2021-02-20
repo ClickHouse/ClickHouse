@@ -83,8 +83,6 @@ static void loadDiskLocalConfig(const String & name,
     }
 }
 
-
-
 class DiskLocalReservation : public IReservation
 {
 public:
@@ -380,7 +378,6 @@ void DiskLocal::updateFromConfigIfChanged(const Poco::Util::AbstractConfiguratio
         keep_free_space_bytes = new_keep_free_space_bytes;
 }
 
-
 DiskPtr DiskLocalReservation::getDisk(size_t i) const
 {
     if (i != 0)
@@ -397,7 +394,6 @@ void DiskLocalReservation::update(UInt64 new_size)
     size = new_size;
     disk->reserved_bytes += size;
 }
-
 
 DiskLocalReservation::~DiskLocalReservation()
 {
