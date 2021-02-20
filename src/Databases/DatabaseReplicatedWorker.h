@@ -14,7 +14,7 @@ class DatabaseReplicated;
 /// 3. After creation of an entry in DDL queue initiator tries to execute the entry locally
 ///    and other hosts wait for query to finish on initiator host.
 ///    If query succeed on initiator, then all hosts must execute it, so they will retry until query succeed.
-///    We assume that cluster is homogenous, so if replicas are in consistent state and query succeed on one host,
+///    We assume that cluster is homogeneous, so if replicas are in consistent state and query succeed on one host,
 ///    then all hosts can execute it (maybe after several retries).
 /// 4. Each database replica stores its log pointer in ZooKeeper. Cleanup thread removes old entry
 ///    if its number < max_log_ptr - logs_to_keep.
