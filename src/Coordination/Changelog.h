@@ -10,7 +10,7 @@
 namespace DB
 {
 
-using Checksum = CityHash_v1_0_2::uint128;
+using Checksum = UInt64;
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 using LogEntries = std::vector<LogEntryPtr>;
@@ -27,7 +27,7 @@ enum class ChangelogVersion : uint8_t
 
 static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V0;
 
-struct __attribute__((__packed__)) ChangelogRecordHeader
+struct ChangelogRecordHeader
 {
     ChangelogVersion version = CURRENT_CHANGELOG_VERSION;
     size_t index; /// entry log number
@@ -115,12 +115,13 @@ public:
     ~Changelog();
 
 private:
+    /// Pack log_entry into changelog record
+    static ChangelogRecord buildRecord(size_t index, const LogEntryPtr & log_entry);
 
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(size_t new_start_log_index);
 
-    /// Pack log_entry into changelog record
-    static ChangelogRecord buildRecord(size_t index, const LogEntryPtr & log_entry);
+
 
 private:
     const std::string changelogs_dir;
