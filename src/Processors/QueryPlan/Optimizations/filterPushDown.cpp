@@ -58,30 +58,18 @@ static size_t tryAddNewFilterStep(
 
     const bool found_filter_column = it != expression->getIndex().end();
 
-    if (!found_filter_column && removes_filter)
+    if (!found_filter_column && !removes_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
                         filter_column_name, expression->dumpDAG());
 
+    /// Filter column was replaced to constant.
     const bool filter_is_constant = found_filter_column && (*it)->column && isColumnConst(*(*it)->column);
 
     if (!found_filter_column || filter_is_constant)
         /// This means that all predicates of filter were pused down.
         /// Replace current actions to expression, as we don't need to filter anything.
         parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
-
-    if (it == expression->getIndex().end())
-    {
-        /// Filter was removed after split.
-
-
-
-    }
-    else if ((*it)->column && isColumnConst(*(*it)->column))
-    {
-        /// Filter column was replaced to constant.
-        parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
-    }
 
     /// Add new Filter step before Aggregating.
     /// Expression/Filter -> Aggregating -> Something
@@ -108,20 +96,6 @@ static Names getAggregatinKeys(const Aggregator::Params & params)
 
     return keys;
 }
-
-// static NameSet getColumnNamesFromSortDescription(const SortDescription & sort_desc, const Block & header)
-// {
-//     NameSet names;
-//     for (const auto & column : sort_desc)
-//     {
-//         if (!column.column_name.empty())
-//             names.insert(column.column_name);
-//         else
-//             names.insert(header.safeGetByPosition(column.column_number).name);
-//     }
-
-//     return names;
-// }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
