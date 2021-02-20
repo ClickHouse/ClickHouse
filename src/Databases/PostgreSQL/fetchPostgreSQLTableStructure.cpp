@@ -72,7 +72,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
             else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Presicion {} and scale {} are too big and not supported", precision, scale);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
         }
         else
         {
