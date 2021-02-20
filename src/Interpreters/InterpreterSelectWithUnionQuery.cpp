@@ -130,7 +130,7 @@ using CustomizeASTSelectWithUnionQueryNormalizeVisitor
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
-    : IInterpreterUnionOrSelectQuery(query_ptr_->clone(), context_, options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
 
@@ -146,10 +146,21 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         /// After normalization, if it only has one ASTSelectWithUnionQuery child,
         /// we can lift it up, this can reduce one unnecessary recursion later.
+        /// NOTE: we just modify the content of the variable pointed by query_ptr,
+        /// but do not modify the variable pointed by query_ptr,
+        /// because query_ptr may also owned by other query.
         if (ast->list_of_selects->children.size() == 1 && ast->list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
         {
-            query_ptr = std::move(ast->list_of_selects->children.at(0));
-            ast = query_ptr->as<ASTSelectWithUnionQuery>();
+            auto * inner_union = ast->list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>();
+
+            ast->is_normalized = true;
+            ast->union_mode = inner_union->union_mode;
+
+            ASTs child_nodes;
+            for (auto & child : inner_union->list_of_selects->children)
+                child_nodes.push_back(std::move(child));
+
+            ast->list_of_selects->children = std::move(child_nodes);
         }
     }
 
