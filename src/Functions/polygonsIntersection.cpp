@@ -59,15 +59,16 @@ public:
     {
         MultiPolygonSerializer<Point> serializer;
 
-        callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type) {
-            using LeftParserType = std::decay_t<decltype(left_type)>;
-            using RightParserType = std::decay_t<decltype(right_type)>;
+        callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type)
+        {
+            using LeftConverterType = std::decay_t<decltype(left_type)>;
+            using RightConverterType = std::decay_t<decltype(right_type)>;
 
-            using LeftParser = typename LeftParserType::Type;
-            using RightParser = typename RightParserType::Type;
+            using LeftConverter = typename LeftConverterType::Type;
+            using RightConverter = typename RightConverterType::Type;
 
-            auto first = LeftParser(arguments[0].column->convertToFullColumnIfConst()).parse();
-            auto second = RightParser(arguments[1].column->convertToFullColumnIfConst()).parse();
+            auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
+            auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
 
             /// We are not interested in some pitfalls in third-party libraries
             /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)

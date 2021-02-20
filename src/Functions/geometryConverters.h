@@ -60,109 +60,106 @@ using GeographicGeometry = Geometry<GeographicPoint>;
 
 
 template<class Point>
-class RingFromColumnParser;
+class RingFromColumnConverter;
 
 template<class Point>
-class PolygonFromColumnParser;
+class PolygonFromColumnConverter;
 
 template<class Point>
-class MultiPolygonFromColumnParser;
+class MultiPolygonFromColumnConverter;
 
 /**
  * Class which takes some boost type and returns a pair of numbers.
  * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of geographic.
 */
 template <typename Point>
-class PointFromColumnParser
+class PointFromColumnConverter
 {
 public:
-    PointFromColumnParser() = default;
 
-    explicit PointFromColumnParser(ColumnPtr col_) : col(col_)
+    explicit PointFromColumnConverter(ColumnPtr col_) : col(col_)
     {
     }
 
-    std::vector<Point> parse() const;
+    std::vector<Point> convert() const;
 
 private:
-    std::vector<Point> parseImpl(size_t shift, size_t count) const;
+    std::vector<Point> convertImpl(size_t shift, size_t count) const;
 
-    friend class RingFromColumnParser<Point>;
+    friend class RingFromColumnConverter<Point>;
     ColumnPtr col{nullptr};
 };
 
 
 template<class Point>
-class RingFromColumnParser
+class RingFromColumnConverter
 {
 public:
-    RingFromColumnParser() = default;
-
-    explicit RingFromColumnParser(ColumnPtr col_)
+    explicit RingFromColumnConverter(ColumnPtr col_)
         : col(col_)
-        , point_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
+        , point_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
-    std::vector<Ring<Point>> parse() const;
+    std::vector<Ring<Point>> convert() const;
 
 private:
-    friend class PointFromColumnParser<Point>;
+    friend class PointFromColumnConverter<Point>;
     /// To prevent use-after-free and increase column lifetime.
     ColumnPtr col{nullptr};
-    const PointFromColumnParser<Point> point_parser{};
+    const PointFromColumnConverter<Point> point_converter{};
 };
 
 template<class Point>
-class PolygonFromColumnParser
+class PolygonFromColumnConverter
 {
 public:
-    PolygonFromColumnParser() = default;
+    PolygonFromColumnConverter() = default;
 
-    explicit PolygonFromColumnParser(ColumnPtr col_)
+    explicit PolygonFromColumnConverter(ColumnPtr col_)
         : col(col_)
-        , ring_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
+        , ring_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
-    std::vector<Polygon<Point>> parse() const;
+    std::vector<Polygon<Point>> convert() const;
 
 private:
-    friend class MultiPolygonFromColumnParser<Point>;
+    friend class MultiPolygonFromColumnConverter<Point>;
 
     /// To prevent use-after-free and increase column lifetime.
     ColumnPtr col{nullptr};
-    const RingFromColumnParser<Point> ring_parser{};
+    const RingFromColumnConverter<Point> ring_converter{};
 };
 
 template<class Point>
-class MultiPolygonFromColumnParser
+class MultiPolygonFromColumnConverter
 {
 public:
-    MultiPolygonFromColumnParser() = default;
+    MultiPolygonFromColumnConverter() = default;
 
-    explicit MultiPolygonFromColumnParser(ColumnPtr col_)
+    explicit MultiPolygonFromColumnConverter(ColumnPtr col_)
         : col(col_)
-        , polygon_parser(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
+        , polygon_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
-    std::vector<MultiPolygon<Point>> parse() const;
+    std::vector<MultiPolygon<Point>> convert() const;
 
 private:
     /// To prevent use-after-free and increase column lifetime.
     ColumnPtr col{nullptr};
-    const PolygonFromColumnParser<Point> polygon_parser{};
+    const PolygonFromColumnConverter<Point> polygon_converter{};
 };
 
 
-extern template class PointFromColumnParser<CartesianPoint>;
-extern template class PointFromColumnParser<GeographicPoint>;
-extern template class RingFromColumnParser<CartesianPoint>;
-extern template class RingFromColumnParser<GeographicPoint>;
-extern template class PolygonFromColumnParser<CartesianPoint>;
-extern template class PolygonFromColumnParser<GeographicPoint>;
-extern template class MultiPolygonFromColumnParser<CartesianPoint>;
-extern template class MultiPolygonFromColumnParser<GeographicPoint>;
+extern template class PointFromColumnConverter<CartesianPoint>;
+extern template class PointFromColumnConverter<GeographicPoint>;
+extern template class RingFromColumnConverter<CartesianPoint>;
+extern template class RingFromColumnConverter<GeographicPoint>;
+extern template class PolygonFromColumnConverter<CartesianPoint>;
+extern template class PolygonFromColumnConverter<GeographicPoint>;
+extern template class MultiPolygonFromColumnConverter<CartesianPoint>;
+extern template class MultiPolygonFromColumnConverter<GeographicPoint>;
 
 
 /// To serialize Geographic or Cartesian point (a pair of numbers in both cases).
@@ -207,6 +204,7 @@ private:
     ColumnFloat64::Container & second_container;
 };
 
+/// Serialize Point, Ring as Ring
 template <typename Point>
 class RingSerializer
 {
@@ -238,6 +236,7 @@ private:
     ColumnUInt64::MutablePtr offsets;
 };
 
+/// Serialize Point, Ring, Polygon as Polygon
 template <typename Point>
 class PolygonSerializer
 {
@@ -277,6 +276,7 @@ private:
     ColumnUInt64::MutablePtr offsets;
 };
 
+/// Serialize Point, Ring, Polygon, MultiPolygon as MultiPolygon
 template <typename Point>
 class MultiPolygonSerializer
 {
@@ -326,7 +326,7 @@ private:
 
 
 template <typename PType>
-struct ParserType
+struct ConverterType
 {
     using Type = PType;
 };
@@ -334,12 +334,13 @@ struct ParserType
 template <typename Point, typename F>
 static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
+    /// There is no Point type, because for most of geometry functions it is useless.
     if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
-        return f(ParserType<RingFromColumnParser<Point>>());
+        return f(ConverterType<RingFromColumnConverter<Point>>());
     if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
-        return f(ParserType<PolygonFromColumnParser<Point>>());
+        return f(ConverterType<PolygonFromColumnConverter<Point>>());
     if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
-        return f(ParserType<MultiPolygonFromColumnParser<Point>>());
+        return f(ConverterType<MultiPolygonFromColumnConverter<Point>>());
     throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -349,13 +350,13 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
 {
     return callOnGeometryDataType<Point>(left_type, [&](const auto & left_types)
     {
-        using LeftParserType = std::decay_t<decltype(left_types)>;
+        using LeftConverterType = std::decay_t<decltype(left_types)>;
 
         return callOnGeometryDataType<Point>(right_type, [&](const auto & right_types)
         {
-            using RightParserType = std::decay_t<decltype(right_types)>;
+            using RightConverterType = std::decay_t<decltype(right_types)>;
 
-            return func(LeftParserType(), RightParserType());
+            return func(LeftConverterType(), RightConverterType());
         });
     });
 }

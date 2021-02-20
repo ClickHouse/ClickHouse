@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 template <typename Point>
-std::vector<Point> PointFromColumnParser<Point>::parseImpl(size_t shift, size_t count) const
+std::vector<Point> PointFromColumnConverter<Point>::convertImpl(size_t shift, size_t count) const
 {
     const auto * tuple = typeid_cast<const ColumnTuple *>(col.get());
     const auto & tuple_columns = tuple->getColumns();
@@ -44,7 +44,7 @@ std::vector<Point> PointFromColumnParser<Point>::parseImpl(size_t shift, size_t 
 }
 
 template <typename Point>
-std::vector<Ring<Point>> RingFromColumnParser<Point>::parse() const
+std::vector<Ring<Point>> RingFromColumnConverter<Point>::convert() const
 {
     const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
     size_t prev_offset = 0;
@@ -52,7 +52,7 @@ std::vector<Ring<Point>> RingFromColumnParser<Point>::parse() const
     answer.reserve(offsets.size());
     for (size_t offset : offsets)
     {
-        auto tmp = point_parser.parseImpl(prev_offset, offset - prev_offset);
+        auto tmp = point_converter.convertImpl(prev_offset, offset - prev_offset);
         answer.emplace_back(tmp.begin(), tmp.end());
         prev_offset = offset;
     }
@@ -60,11 +60,11 @@ std::vector<Ring<Point>> RingFromColumnParser<Point>::parse() const
 }
 
 template <typename Point>
-std::vector<Polygon<Point>> PolygonFromColumnParser<Point>::parse() const
+std::vector<Polygon<Point>> PolygonFromColumnConverter<Point>::convert() const
 {
     const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
     std::vector<Polygon<Point>> answer(offsets.size());
-    auto all_rings = ring_parser.parse();
+    auto all_rings = ring_converter.convert();
 
     auto prev_offset = 0;
     for (size_t iter = 0; iter < offsets.size(); ++iter)
@@ -82,18 +82,18 @@ std::vector<Polygon<Point>> PolygonFromColumnParser<Point>::parse() const
 
 
 template <typename Point>
-std::vector<MultiPolygon<Point>> MultiPolygonFromColumnParser<Point>::parse() const
+std::vector<MultiPolygon<Point>> MultiPolygonFromColumnConverter<Point>::convert() const
 {
     const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
     size_t prev_offset = 0;
     std::vector<MultiPolygon<Point>> answer(offsets.size());
 
-    auto all_polygons = polygon_parser.parse();
+    auto all_polygons = polygon_converter.convert();
 
     for (size_t iter = 0; iter < offsets.size(); ++iter)
     {
         for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
-            answer[iter].emplace_back(std::move(all_polygons[polygon_iter])); 
+            answer[iter].emplace_back(std::move(all_polygons[polygon_iter]));
         prev_offset = offsets[iter];
     }
 
@@ -101,14 +101,14 @@ std::vector<MultiPolygon<Point>> MultiPolygonFromColumnParser<Point>::parse() co
 }
 
 
-template class PointFromColumnParser<CartesianPoint>;
-template class PointFromColumnParser<GeographicPoint>;
-template class RingFromColumnParser<CartesianPoint>;
-template class RingFromColumnParser<GeographicPoint>;
-template class PolygonFromColumnParser<CartesianPoint>;
-template class PolygonFromColumnParser<GeographicPoint>;
-template class MultiPolygonFromColumnParser<CartesianPoint>;
-template class MultiPolygonFromColumnParser<GeographicPoint>;
+template class PointFromColumnConverter<CartesianPoint>;
+template class PointFromColumnConverter<GeographicPoint>;
+template class RingFromColumnConverter<CartesianPoint>;
+template class RingFromColumnConverter<GeographicPoint>;
+template class PolygonFromColumnConverter<CartesianPoint>;
+template class PolygonFromColumnConverter<GeographicPoint>;
+template class MultiPolygonFromColumnConverter<CartesianPoint>;
+template class MultiPolygonFromColumnConverter<GeographicPoint>;
 
 template <typename Point, template<typename> typename Desired>
 void checkColumnTypeOrThrow(const ColumnWithTypeAndName & column)

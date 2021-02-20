@@ -42,10 +42,10 @@ public:
 
         callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
-            using TypeParser = std::decay_t<decltype(type)>;
-            using Parser = typename TypeParser::Type;
-            Parser parser(arguments[0].column->convertToFullColumnIfConst());
-            auto figures = parser.parse();
+            using TypeConverter = std::decay_t<decltype(type)>;
+            using Converter = typename TypeConverter::Type;
+            Converter converter(arguments[0].column->convertToFullColumnIfConst());
+            auto figures = converter.convert();
 
             for (size_t i = 0; i < input_rows_count; i++)
             {
@@ -56,7 +56,7 @@ public:
             }
         }
         );
-    
+
         return res_column;
     }
 
