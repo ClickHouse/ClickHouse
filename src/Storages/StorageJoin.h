@@ -14,6 +14,18 @@ class TableJoin;
 class HashJoin;
 using HashJoinPtr = std::shared_ptr<HashJoin>;
 
+class HashJoinHolder
+{
+    std::shared_lock<std::shared_mutex> lock;
+public:
+    HashJoinPtr join;
+
+    HashJoinHolder(std::shared_mutex & rwlock, HashJoinPtr join_)
+    : lock(rwlock)
+    , join(join_)
+    {
+    }
+};
 
 /** Allows you save the state for later use on the right side of the JOIN.
   * When inserted into a table, the data will be inserted into the state,
@@ -31,11 +43,8 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
     /// Access the innards.
-    HashJoinPtr & getJoin() { return join; }
+    std::shared_ptr<HashJoinHolder> getJoin() { return std::make_shared<HashJoinHolder>(rwlock, join); }
     HashJoinPtr getJoin(std::shared_ptr<TableJoin> analyzed_join) const;
-
-    /// Verify that the data structure is suitable for implementing this type of JOIN.
-    void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
     Pipe read(
         const Names & column_names,
@@ -60,6 +69,7 @@ private:
 
     std::shared_ptr<TableJoin> table_join;
     HashJoinPtr join;
+    mutable std::shared_mutex rwlock;
 
     void insertBlock(const Block & block) override;
     void finishInsert() override {}

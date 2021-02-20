@@ -423,19 +423,16 @@ bool HashJoin::empty() const
 
 size_t HashJoin::getTotalByteCount() const
 {
-    std::shared_lock lock(data->rwlock);
     return getTotalByteCountLocked();
 }
 
 size_t HashJoin::getTotalRowCount() const
 {
-    std::shared_lock lock(data->rwlock);
     return getTotalRowCountLocked();
 }
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    std::shared_lock lock(data->rwlock);
     return isInnerOrRight(getKind()) && data->empty && !overDictionary();
 }
 
@@ -652,7 +649,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     size_t total_bytes = 0;
 
     {
-        std::unique_lock lock(data->rwlock);
+        assert(storage_join_lock.mutex() == nullptr);
 
         data->blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &data->blocks.back();
@@ -1219,8 +1216,6 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
 {
-    std::shared_lock lock(data->rwlock);
-
     size_t num_keys = data_types.size();
     if (right_table_keys.columns() != num_keys)
         throw Exception(
@@ -1273,8 +1268,6 @@ ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & b
 // TODO: return array of values when strictness == ASTTableJoin::Strictness::All
 ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
-    std::shared_lock lock(data->rwlock);
-
     if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
         kind == ASTTableJoin::Kind::Left)
     {
@@ -1287,8 +1280,6 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    std::shared_lock lock(data->rwlock);
-
     const Names & key_names_left = table_join->keyNamesLeft();
     JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 

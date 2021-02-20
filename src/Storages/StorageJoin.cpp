@@ -97,11 +97,17 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
     join_clone->reuseJoinedData(*join);
+    join_clone->setLock(rwlock);
+
     return join_clone;
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
+void StorageJoin::insertBlock(const Block & block)
+{
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+    join->addJoinedBlock(block, true);
+}
 
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 std::optional<UInt64> StorageJoin::totalRows(const Settings &) const { return join->getTotalRowCount(); }
@@ -267,7 +273,6 @@ public:
     JoinSource(const HashJoin & parent_, UInt64 max_block_size_, Block sample_block_)
         : SourceWithProgress(sample_block_)
         , parent(parent_)
-        , lock(parent.data->rwlock)
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
@@ -312,7 +317,6 @@ protected:
 
 private:
     const HashJoin & parent;
-    std::shared_lock<std::shared_mutex> lock;
     UInt64 max_block_size;
     Block sample_block;
     Block restored_block; /// sample_block with parent column types

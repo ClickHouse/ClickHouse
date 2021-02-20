@@ -308,7 +308,7 @@ public:
     {
         /// Protect state for concurrent use in insertFromBlock and joinBlock.
         /// @note that these methods could be called simultaneously only while use of StorageJoin.
-        mutable std::shared_mutex rwlock;
+//        mutable std::shared_mutex rwlock;
 
         Type type = Type::EMPTY;
         bool empty = true;
@@ -321,6 +321,11 @@ public:
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
     };
+
+    void setLock(std::shared_mutex & rwlock)
+    {
+        storage_join_lock = std::shared_lock<std::shared_mutex>(rwlock);
+    }
 
     void reuseJoinedData(const HashJoin & join);
 
@@ -370,6 +375,8 @@ private:
     Poco::Logger * log;
 
     Block totals;
+
+    std::shared_lock<std::shared_mutex> storage_join_lock;
 
     void init(Type type_);
 
