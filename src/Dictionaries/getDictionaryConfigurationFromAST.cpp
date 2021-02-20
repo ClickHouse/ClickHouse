@@ -180,6 +180,32 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     return result;
 }
 
+void buildAttributeExpressionIfNeeded(
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
+    const ASTDictionaryAttributeDeclaration * dict_attr)
+{
+    if (dict_attr->expression != nullptr)
+    {
+        AutoPtr<Element> expression_element(doc->createElement("expression"));
+
+        /// EXPRESSION PROPERTY should be expression or string
+        String expression_str;
+        if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
+                literal && literal->value.getType() == Field::Types::String)
+        {
+            expression_str = getFieldAsString(literal->value);
+        }
+        else
+            expression_str = queryToString(dict_attr->expression);
+
+
+        AutoPtr<Text> expression(doc->createTextNode(expression_str));
+        expression_element->appendChild(expression);
+        root->appendChild(expression_element);
+    }
+}
+
 /**
   * Transofrms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
@@ -217,25 +243,7 @@ void buildSingleAttribute(
     null_value_element->appendChild(null_value);
     attribute_element->appendChild(null_value_element);
 
-    if (dict_attr->expression != nullptr)
-    {
-        AutoPtr<Element> expression_element(doc->createElement("expression"));
-
-        /// EXPRESSION PROPERTY should be expression or string
-        String expression_str;
-        if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
-                literal && literal->value.getType() == Field::Types::String)
-        {
-            expression_str = getFieldAsString(literal->value);
-        }
-        else
-            expression_str = queryToString(dict_attr->expression);
-
-
-        AutoPtr<Text> expression(doc->createTextNode(expression_str));
-        expression_element->appendChild(expression);
-        attribute_element->appendChild(expression_element);
-    }
+    buildAttributeExpressionIfNeeded(doc, attribute_element, dict_attr);
 
     if (dict_attr->hierarchical)
     {
@@ -286,6 +294,8 @@ void buildPrimaryKeyConfiguration(
     const Names & key_names,
     const ASTExpressionList * dictionary_attributes)
 {
+    const auto & children = dictionary_attributes->children;
+
     if (!complex)
     {
         if (key_names.size() != 1)
@@ -296,12 +306,16 @@ void buildPrimaryKeyConfiguration(
         root->appendChild(id_element);
         AutoPtr<Element> name_element(doc->createElement("name"));
         id_element->appendChild(name_element);
-        AutoPtr<Text> name(doc->createTextNode(*key_names.begin()));
+
+        const ASTDictionaryAttributeDeclaration * dict_attr = children.front()->as<const ASTDictionaryAttributeDeclaration>();
+
+        AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
         name_element->appendChild(name);
+
+        buildAttributeExpressionIfNeeded(doc, id_element, dict_attr);
     }
     else
     {
-        const auto & children = dictionary_attributes->children;
         if (children.size() < key_names.size())
             throw Exception(
                 "Primary key fields count is more, than dictionary attributes count.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
@@ -387,10 +401,16 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         {
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
-            auto result = function->execute({}, {}, 0);
+            function->prepare({});
+
+            /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
+            /// Such functions will return column with size equal to input_rows_count.
+            size_t input_rows_count = 1;
+            auto result = function->execute({}, function->getResultType(), input_rows_count);
 
             Field value;
             result->get(0, value);
+
             AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
             current_xml_element->appendChild(text_value);
         }

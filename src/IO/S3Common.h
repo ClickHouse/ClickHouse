@@ -7,6 +7,7 @@
 #include <common/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
+#include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
 namespace Aws::S3
@@ -23,7 +24,6 @@ namespace DB
 
 namespace DB::S3
 {
-
 class ClientFactory
 {
 public:
@@ -32,30 +32,15 @@ public:
     static ClientFactory & instance();
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const String & endpoint,
+        const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
-
-    std::shared_ptr<Aws::S3::S3Client> create(
-        const Aws::Client::ClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
-
-    std::shared_ptr<Aws::S3::S3Client> create(
-        const Aws::Client::ClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
+        const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
-        bool use_environment_credentials,
+        bool use_environment_credentials);
+
+    PocoHTTPClientConfiguration createClientConfiguration(
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 

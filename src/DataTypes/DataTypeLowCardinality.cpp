@@ -808,31 +808,6 @@ void DataTypeLowCardinality::serializeTextXML(const IColumn & column, size_t row
     serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
 }
 
-void DataTypeLowCardinality::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
-}
-
-void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    if (allow_add_row)
-    {
-        deserializeImpl(column, &IDataType::deserializeProtobuf, protobuf, true, row_added);
-        return;
-    }
-
-    row_added = false;
-    auto & low_cardinality_column= getColumnLowCardinality(column);
-    auto  nested_column = low_cardinality_column.getDictionary().getNestedColumn();
-    auto temp_column = nested_column->cloneEmpty();
-    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(low_cardinality_column.size() - 1);
-    temp_column->insertFrom(*nested_column, unique_row_number);
-    bool dummy;
-    dictionary_type.get()->deserializeProtobuf(*temp_column, protobuf, false, dummy);
-    low_cardinality_column.popBack(1);
-    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
-}
-
 template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
@@ -885,15 +860,17 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
         type = nullable_type->getNestedType().get();
 
-    if (isString(type))
+    WhichDataType which(type);
+
+    if (which.isString())
         return creator(static_cast<ColumnString *>(nullptr));
-    if (isFixedString(type))
+    else if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
-    if (typeid_cast<const DataTypeDate *>(type))
+    else if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    if (typeid_cast<const DataTypeDateTime *>(type))
+    else if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    if (isColumnedAsNumber(type))
+    else if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
         TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));

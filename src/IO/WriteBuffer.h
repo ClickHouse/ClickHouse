@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 #include <iostream>
+#include <cassert>
 
 #include <Common/Exception.h>
 #include <IO/BufferBase.h>
@@ -37,7 +38,7 @@ public:
       */
     inline void next()
     {
-        if (!offset() && available())
+        if (!offset())
             return;
         bytes += offset();
 
@@ -60,7 +61,7 @@ public:
     /** it is desirable in the derived classes to place the next() call in the destructor,
       * so that the last data is written
       */
-    virtual ~WriteBuffer() {}
+    virtual ~WriteBuffer() = default;
 
     inline void nextIfAtEnd()
     {
@@ -72,6 +73,9 @@ public:
     void write(const char * from, size_t n)
     {
         size_t bytes_copied = 0;
+
+        /// Produces endless loop
+        assert(!working_buffer.empty());
 
         while (bytes_copied < n)
         {
@@ -91,8 +95,15 @@ public:
         ++pos;
     }
 
-    virtual void sync() {}
-    virtual void finalize() {}
+    virtual void sync()
+    {
+        next();
+    }
+
+    virtual void finalize()
+    {
+        next();
+    }
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
