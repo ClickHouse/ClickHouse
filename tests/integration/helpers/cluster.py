@@ -172,7 +172,7 @@ class ClickHouseCluster:
         self.minio_host = "minio1"
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
-        self.minio_port = 9001
+        self.minio_port = get_open_port()
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_port = 8080
