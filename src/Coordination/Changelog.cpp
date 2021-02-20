@@ -272,7 +272,7 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_index)
         /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
         for (auto itr = existing_changelogs.upper_bound(incomplete_log_index); itr != existing_changelogs.end();)
         {
-            LOG_WARNING(log, "Removing changelog {}, beacuse it's goes after broken changelog entry", itr->second.path);
+            LOG_WARNING(log, "Removing changelog {}, because it's goes after broken changelog entry", itr->second.path);
             std::filesystem::remove(itr->second.path);
             itr = existing_changelogs.erase(itr);
         }
