@@ -208,8 +208,8 @@ def get_processlist(args):
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
-    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
+        cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
         return subprocess.check_output(cmd, shell=True).decode('utf-8')
     except Exception as ex:
         print("Error occured while receiving stack traces from gdb: {}".format(str(ex)))
@@ -805,6 +805,9 @@ def main(args):
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
                 print("\nCollecting stacktraces from all running threads with gdb:")
                 bt = get_stacktraces_from_gdb(server_pid)
+                if len(bt) < 1000:
+                    print("Got suspiciously small stacktraces: ", bt)
+                    bt = None
             if bt is None:
                 print("\nCollecting stacktraces from system.stacktraces table:")
                 bt = get_stacktraces_from_clickhouse(args.client)

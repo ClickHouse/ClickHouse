@@ -46,4 +46,5 @@ ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
 COPY run.sh /
+COPY process_functional_tests_result.py /
 CMD ["/bin/bash", "/run.sh"]
