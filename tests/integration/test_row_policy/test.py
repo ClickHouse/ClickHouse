@@ -166,7 +166,17 @@ def test_with_prewhere():
     assert node.query("SELECT c, d FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[3, 4]])
 
 
-def test_with_throwif_in_where():
+def test_throwif_error_in_where_with_same_condition_as_filter():
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a > 0, 'expected') = 0 SETTINGS optimize_move_to_prewhere = 0")
+
+
+def test_throwif_error_in_prewhere_with_same_condition_as_filter():
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE throwIf(a > 0, 'expected') = 0")
+
+
+def test_throwif_in_where_doesnt_expose_restricted_data():
     copy_policy_xml('no_filters.xml')
     assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'expected') = 0 SETTINGS optimize_move_to_prewhere = 0")
 
@@ -175,7 +185,7 @@ def test_with_throwif_in_where():
         [1, 2, 3, 4], [4, 3, 2, 1]])
 
 
-def test_with_throwif_in_prewhere():
+def test_throwif_in_prewhere_doesnt_expose_restricted_data():
     copy_policy_xml('no_filters.xml')
     assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE throwIf(a = 0, 'expected') = 0")
 
