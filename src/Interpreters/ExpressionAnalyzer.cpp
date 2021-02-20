@@ -1406,7 +1406,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             filter_info = filter_info_;
             filter_info->do_remove_column = true;
-            //query_analyzer.appendPreliminaryFilter(chain, filter_info->actions, filter_info->column_name);
         }
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
@@ -1575,12 +1574,6 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 {
     size_t next_step_i = 0;
 
-    // if (hasFilter())
-    // {
-    //     const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
-    //     filter_info->do_remove_column = step.can_remove_required_output.at(0);
-    // }
-
     if (hasPrewhere())
     {
         const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
@@ -1606,8 +1599,6 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
-    // if (hasFilter())
-    //     filter_info->actions->projectInput();
     if (hasWhere())
         before_where->projectInput();
     if (hasHaving())
