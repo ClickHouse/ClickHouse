@@ -56,7 +56,7 @@ struct ChangelogFileDescription
 
 class ChangelogWriter;
 
-/// Simpliest changelog with files rotation.
+/// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one
 /// Able to read broken files/entries and discard them.
 class Changelog
