@@ -58,7 +58,7 @@ public:
 
     /// Sets position at checkpoint.
     /// All pointers (such as this->buffer().end()) may be invalidated
-    void rollbackToCheckpoint();
+    void rollbackToCheckpoint(bool drop = false);
 
     /// If checkpoint and current position are in different buffers, appends data from sub-buffer to own memory,
     /// so data between checkpoint and position will be in continuous memory.
