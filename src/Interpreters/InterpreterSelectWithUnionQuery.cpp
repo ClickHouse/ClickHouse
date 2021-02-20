@@ -130,7 +130,7 @@ using CustomizeASTSelectWithUnionQueryNormalizeVisitor
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
-    : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_->clone(), context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
 
