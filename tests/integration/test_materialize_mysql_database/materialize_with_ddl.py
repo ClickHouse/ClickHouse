@@ -577,13 +577,13 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("DROP USER 'test'@'%'")
 
 
-def restore_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+def restore_instance_mysql_connections(clickhouse_node, pm, action='REJECT'):
     pm._check_instance(clickhouse_node)
     pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
     pm._delete_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
     time.sleep(5)
 
-def drop_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+def drop_instance_mysql_connections(clickhouse_node, pm, action='REJECT'):
     pm._check_instance(clickhouse_node)
     pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
     pm._add_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
