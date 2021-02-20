@@ -77,6 +77,14 @@ class MySQLNodeInstance:
             cursor.execute(executio_query)
             return cursor.fetchall()
 
+    def start_and_wait(self):
+        run_and_check(['docker-compose',
+            '-p', cluster.project_name,
+            '-f', self.docker_compose,
+            'up', '--no-recreate', '-d',
+        ])
+        self.wait_mysql_to_start(120)
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
@@ -111,9 +119,7 @@ def started_mysql_5_7():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
-        run_and_check(
-            ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
-        mysql_node.wait_mysql_to_start(120)
+        mysql_node.start_and_wait()
         yield mysql_node
     finally:
         mysql_node.close()
@@ -127,9 +133,7 @@ def started_mysql_8_0():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
-        run_and_check(
-            ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
-        mysql_node.wait_mysql_to_start(120)
+        mysql_node.start_and_wait()
         yield mysql_node
     finally:
         mysql_node.close()
