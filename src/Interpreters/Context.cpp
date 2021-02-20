@@ -345,6 +345,7 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
@@ -1554,6 +1555,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
     auto lock = getLock();
     if (shared->ddl_worker)
         throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
+    ddl_worker->startup();
     shared->ddl_worker = std::move(ddl_worker);
 }
 
@@ -2551,6 +2553,19 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
+}
+
+void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
+{
+    assert(!metadata_transaction);
+    assert(attach_existing || query_context == this);
+    metadata_transaction = std::move(txn);
+}
+
+ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
+{
+    assert(!metadata_transaction || hasQueryContext());
+    return metadata_transaction;
 }
 
 PartUUIDsPtr Context::getPartUUIDs()

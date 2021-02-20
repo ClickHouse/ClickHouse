@@ -57,6 +57,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('4')
     fi
 
+    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--replicated-database')
+    fi
+
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
             --test-runs "$NUM_TRIES" \
             "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
