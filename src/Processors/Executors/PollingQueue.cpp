@@ -88,11 +88,12 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
     event.data.ptr = nullptr;
     int num_events = 0;
 
-    while (num_events == 0)
+    while (num_events <= 0)
     {
-        num_events = epoll_wait(epoll_fd, &event, 1, 0);
-        if (num_events == -1)
-            throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+        num_events = epoll_wait(epoll_fd, &event, 1, -1);
+
+        if (num_events == -1 && errno != EINTR)
+                throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
     }
 
     lock.lock();
