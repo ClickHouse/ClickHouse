@@ -269,6 +269,7 @@ const char * auto_contributors[] {
     "Maks Skorokhod",
     "Maksim",
     "Maksim Fedotov",
+    "Maksim Kita",
     "Marat IDRISOV",
     "Marek Vavrusa",
     "Marek Vavruša",
