@@ -12,7 +12,7 @@ namespace ErrorCodes
 NuKeeperStateManager::NuKeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
     : my_server_id(server_id_)
     , my_port(port)
-    , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000, true))
+    , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000, false))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
