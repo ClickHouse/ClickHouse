@@ -181,7 +181,7 @@ void PostgreSQLReplicaConsumer::readTupleData(
                 Int32 col_len = readInt32(message, pos, size);
                 String value;
 
-                for (Int16 i = 0; i < col_len; ++i)
+                for (Int32 i = 0; i < col_len; ++i)
                     value += readInt8(message, pos, size);
 
                 insertValue(buffer, value, column_idx);

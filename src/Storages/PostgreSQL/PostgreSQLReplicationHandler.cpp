@@ -398,7 +398,7 @@ std::string PostgreSQLReplicationHandler::reloadFromSnapshot(NameSet & table_nam
         Storages sync_storages;
         for (const auto & table_name : table_names)
         {
-            auto storage = storages[table_name];
+            auto * storage = storages[table_name];
             sync_storages[table_name] = storage;
             storage->dropNested();
         }

@@ -97,6 +97,7 @@ private:
 
     std::atomic<bool> nested_loaded = false;
     StoragePtr nested_storage;
+    std::mutex nested_mutex;
 
     bool is_postgresql_replica_database = false;
 };
