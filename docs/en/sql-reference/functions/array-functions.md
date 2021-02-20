@@ -1378,7 +1378,6 @@ SELECT arrayMax([1, 2, 4]) AS res;
 
 Result:
 
-``` text
 ```text
 ┌─res─┐
 │   4 │
