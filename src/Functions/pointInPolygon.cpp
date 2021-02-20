@@ -434,7 +434,6 @@ private:
 
             out_container.emplace_back(x_data[i], y_data[i]);
         }
-            
     }
 
     void parseConstPolygonWithoutHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
