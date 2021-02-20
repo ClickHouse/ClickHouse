@@ -208,6 +208,8 @@ public:
             const Context & context,
             bool can_replace = false);
 
+    void addNodeToIndex(const Node * node) { index.insert(const_cast<Node *>(node)); }
+
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
     /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
