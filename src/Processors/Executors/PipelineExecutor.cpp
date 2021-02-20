@@ -491,7 +491,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
     while (!finished && !yield)
     {
         /// First, find any processor to execute.
-        /// Just travers graph and prepare any processor.
+        /// Just traverse graph and prepare any processor.
         while (!finished && node == nullptr)
         {
             {

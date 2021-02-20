@@ -23,3 +23,5 @@ for engine in "${ENGINES[@]}"; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM subcolumns"
     $CLICKHOUSE_CLIENT --query "SELECT n, n.null, a1, a1.size0, a2, a2.size0, a2.size1, a2.size2, a3, a3.size0, a3.null, t, t.s, t.v, m, m.keys, m.values FROM subcolumns"
 done
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE subcolumns"
