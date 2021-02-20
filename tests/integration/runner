@@ -199,7 +199,8 @@ if __name__ == "__main__":
     cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{parallel} {opts}' {img} {command}".format(
+        --volume={name}_volume:/var/lib/docker -e DOCKER_CLIENT_TIMEOUT=120 -e COMPOSE_HTTP_TIMEOUT=120 \
+        {env_tags} -e PYTEST_OPTS='{parallel} {opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
