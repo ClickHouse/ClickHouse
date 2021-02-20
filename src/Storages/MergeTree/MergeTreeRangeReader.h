@@ -153,10 +153,10 @@ public:
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
-        /// Apply a filter on top of the existing one (AND'ed) or set it if there isn't any.
-        void addFilter(const ColumnPtr & new_filter);
+        /// Set filter or replace old one. Filter must have more zeroes than previous.
+        void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize(bool can_read_incomplete_granules);
+        void optimize(bool can_read_incomplete_granules, bool allow_filter_columns);
         /// Remove all rows from granules.
         void clear();
 

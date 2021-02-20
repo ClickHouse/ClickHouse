@@ -271,10 +271,21 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     {
         if (prewhere_info->alias_actions)
             pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
-        else if (prewhere_info->row_level_filter)
-            pre_column_names = prewhere_info->row_level_filter->getRequiredColumns();
-        else if (prewhere_info->prewhere_actions)
+        else
+        {
             pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+
+            if (prewhere_info->row_level_filter)
+            {
+                NameSet names(pre_column_names.begin(), pre_column_names.end());
+
+                for (auto & name : prewhere_info->row_level_filter->getRequiredColumns())
+                {
+                    if (names.count(name) == 0)
+                        pre_column_names.push_back(name);
+                }
+            }
+        }
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
@@ -292,6 +303,13 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         column_names = post_column_names;
     }
+
+    // std::cerr << "---------- Pre column names\n";
+    // for (const auto & col : pre_column_names)
+    //     std::cerr << col << std::endl;
+    // std::cerr << "----------- Post column names\n";
+    // for (const auto & col : column_names)
+    //     std::cerr << col << std::endl;
 
     MergeTreeReadTaskColumns result;
 

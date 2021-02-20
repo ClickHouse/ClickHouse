@@ -141,7 +141,15 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
-    return expr_list->children.at(0)->getColumnName();
+    auto column_name = expr_list->children.at(0)->getColumnName();
+    actions->removeUnusedActions({column_name});
+    actions->projectInput(false);
+
+    ActionsDAG::Index index;
+    for (const auto * node : actions->getInputs())
+        actions->addNodeToIndex(node);
+
+    return column_name;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -444,16 +452,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage)
         {
-            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
-
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterDAGInfo>();
                 filter_info->column_name = generateFilterActions(filter_info->actions, required_columns);
-                source_header = metadata_snapshot->getSampleBlockForColumns(
-                    filter_info->actions->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
+
+                auto required_columns_from_filter = filter_info->actions->getRequiredColumns();
+
+                for (const auto & column : required_columns_from_filter)
+                {
+                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
+                        required_columns.push_back(column.name);
+                }
             }
+
+            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
         }
 
         /// Calculate structure of the result.
@@ -834,6 +848,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 expressions.prewhere_info = std::make_shared<PrewhereDAGInfo>(
                     std::move(expressions.filter_info->actions),
                     std::move(expressions.filter_info->column_name));
+                expressions.prewhere_info->prewhere_actions->projectInput(false);
                 expressions.prewhere_info->remove_prewhere_column = expressions.filter_info->do_remove_column;
                 expressions.prewhere_info->need_filter = true;
                 expressions.filter_info = nullptr;
@@ -845,19 +860,19 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             expressions.prewhere_info->row_level_filter_actions = std::move(expressions.filter_info->actions);
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
             expressions.prewhere_info->row_level_filter_actions->projectInput(false);
-            if (expressions.filter_info->do_remove_column)
-            {
-                /// Instead of removing column, add it to prewhere_actions input (but not in index).
-                /// It will be removed at prewhere_actions execution.
-                const auto & index = expressions.prewhere_info->row_level_filter_actions->getIndex();
-                auto it = index.find(expressions.prewhere_info->row_level_column_name);
-                if (it == index.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column {} in row level security filter {}",
-                                    expressions.prewhere_info->row_level_column_name, expressions.prewhere_info->row_level_filter_actions->dumpDAG());
-                const auto & node = *it;
+            // if (expressions.filter_info->do_remove_column)
+            // {
+            //     /// Instead of removing column, add it to prewhere_actions input (but not in index).
+            //     /// It will be removed at prewhere_actions execution.
+            //     const auto & index = expressions.prewhere_info->row_level_filter_actions->getIndex();
+            //     auto it = index.find(expressions.prewhere_info->row_level_column_name);
+            //     if (it == index.end())
+            //         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column {} in row level security filter {}",
+            //                         expressions.prewhere_info->row_level_column_name, expressions.prewhere_info->row_level_filter_actions->dumpDAG());
+            //     const auto & node = *it;
 
-                expressions.prewhere_info->prewhere_actions->addInput(node->result_name, node->result_type, true, false);
-            }
+            //     expressions.prewhere_info->prewhere_actions->addInput(node->result_name, node->result_type, true, false);
+            // }
 
             expressions.filter_info = nullptr;
         }
@@ -1285,7 +1300,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
                     header,
                     prewhere_info.row_level_filter,
                     prewhere_info.row_level_column_name,
-                    false);
+                    true);
             });
         }
 
