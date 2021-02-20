@@ -137,7 +137,7 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
         table_name_to_path.erase(table_name);
     }
     if (table->storesDataOnDisk())
-        tryRemoveSymlink(table_name)
+        tryRemoveSymlink(table_name);
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
