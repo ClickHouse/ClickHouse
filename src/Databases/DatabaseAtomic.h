@@ -58,11 +58,12 @@ public:
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
+    void setDetachedTableNotInUseForce(const UUID & uuid);
 
-private:
-    void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
+protected:
+    void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, const Context & query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                           const String & table_metadata_tmp_path, const String & table_metadata_path) override;
+                           const String & table_metadata_tmp_path, const String & table_metadata_path, const Context & query_context) override;
 
     void assertDetachedTableNotInUse(const UUID & uuid);
     typedef std::unordered_map<UUID, StoragePtr> DetachedTables;

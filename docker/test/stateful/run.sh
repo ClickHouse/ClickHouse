@@ -60,4 +60,8 @@ fi
 # more idiologically correct.
 read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    ADDITIONAL_OPTIONS+=('--replicated-database')
+fi
+
 clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
