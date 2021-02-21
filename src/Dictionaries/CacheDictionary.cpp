@@ -432,7 +432,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : cache_not_found_ids[id])
             out[row] = false;
         for (const auto row : cache_expired_ids[id])
-            out[row] = true;
+            out[row] = false;
     };
 
     auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
