@@ -179,7 +179,13 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
 }
 
 template <typename T>
-inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+static constexpr bool UseDefaultHashForBigInts =
+    std::is_same_v<T, DB::Int128>  ||
+    std::is_same_v<T, DB::UInt128> ||
+    (is_big_int_v<T> && sizeof(T) == 32);
+
+template <typename T>
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64) && UseDefaultHashForBigInts<T>), T> key)
 {
     if constexpr (std::is_same_v<T, DB::Int128>)
     {
@@ -196,6 +202,8 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
+
+    __builtin_unreachable();
 }
 
 template <typename T, typename Enable = void>
