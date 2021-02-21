@@ -374,7 +374,6 @@ Pipe StoragePostgreSQLReplica::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    /// TODO: are there other places where this lock is needed
     std::unique_lock lock(nested_mutex, std::defer_lock);
 
     if (nested_loaded && lock.try_lock())

@@ -19,7 +19,7 @@
 
 
 /// TODO: There is ALTER PUBLICATION command to dynamically add and remove tables for replicating (the command is transactional).
-///       This can also be supported. (Probably, if in a replication stream comes a relation name, which does not currenly
+///       This can also be supported. (Probably, if in a replication stream comes a relation name, which does not currently
 ///       exist in CH, it can be loaded from snapshot and handled the same way as some ddl by comparing lsn positions of wal,
 ///       but there is the case that a known table has been just renamed, then the previous version might be just dropped by user).
 
@@ -139,7 +139,7 @@ private:
     /// if relation definition has changed since the last relation definition message.
     std::unordered_map<Int32, SchemaData> schema_data;
 
-    /// skip_list contains relation ids for tables on which ddl was perfomed, which can break synchronization.
+    /// skip_list contains relation ids for tables on which ddl was performed, which can break synchronization.
     /// This breaking changes are detected in replication stream in according replication message and table is added to skip list.
     /// After it is finished, a temporary replication slot is created with 'export snapshot' option, and start_lsn is returned.
     /// Skipped tables are reloaded from snapshot (nested tables are also updated). Afterwards, if a replication message is

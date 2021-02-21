@@ -88,7 +88,6 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
                      : (global_context.getSettingsRef().max_insert_block_size.value),
             global_context.getMacros()->expand(settings->postgresql_tables_list.value));
 
-    /// TODO: may be no need to always fetch
     std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->conn());
 
     for (const auto & table_name : tables_to_replicate)
@@ -179,7 +178,6 @@ void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
             Base::createTable(context, name, table, query);
-            /// TODO: Update table cached tables list or not
             return;
         }
     }
@@ -191,7 +189,6 @@ void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const
 template<typename Base>
 void DatabasePostgreSQLReplica<Base>::dropTable(const Context & context, const String & name, bool no_delay)
 {
-    /// TODO: If called from non sync thread, add dropped storage to skip list
     Base::dropTable(context, name, no_delay);
 }
 
