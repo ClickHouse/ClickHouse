@@ -178,7 +178,7 @@ select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type
 
 ## mapContains {#mapcontains}
 
-Определяет, включает ли в себя `map.keys` параметр `key`.
+Определяет, включает ли в себя `map` параметр `key`.
 
 **Синтаксис**
 
@@ -188,12 +188,12 @@ mapContains(map, key)
 
 **Параметры** 
 
--   `map` — контейнер map. 
--   `key` — ключ. Тип соответстует типу `map.keys`.
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
+-   `key` — ключ. Тип соответстует типу ключей параметра  `map`.
 
 **Возвращаемое значение**
 
--   `1` если `map.keys` включает `key`, иначе `0`.
+-   `1` если `map` включает `key`, иначе `0`.
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -231,7 +231,7 @@ mapKeys(map)
 
 **Параметры**
 
--   `map` — контейнер map.
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
 
 **Возвращаемое значение**
 
@@ -272,7 +272,7 @@ mapKeys(map)
 
 **Параметры**
 
--   `map` — контейнер map.
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
 
 **Возвращаемое значение**
 
