@@ -35,16 +35,11 @@ bool ReadBufferFromPocoSocket::nextImpl()
     /// Add more details to exceptions.
     try
     {
-        if (!async_callback)
-            LOG_DEBUG(&Poco::Logger::get("ReadBufferFromPocoSocket"), "Don't have async callback");
-
         bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
 
         /// If async_callback is specified, and read is blocking, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        LOG_DEBUG(&Poco::Logger::get("ReadBufferFromPocoSocket"), "Don't have async callback");
-
         while (bytes_read < 0 && async_callback && errno == EAGAIN)
         {
             async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
@@ -86,7 +81,7 @@ ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, 
 {
 }
 
-bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
+bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds)
 {
     return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
 }
