@@ -23,7 +23,8 @@ ConnectionEstablisher::ConnectionEstablisher(
     const ConnectionTimeouts * timeouts_,
     const Settings * settings_,
     Poco::Logger * log_,
-    const QualifiedTableName * table_to_check_) : pool(pool_), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
+    const QualifiedTableName * table_to_check_)
+    : pool(pool_), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
 {
 }
 

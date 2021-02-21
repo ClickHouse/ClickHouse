@@ -117,7 +117,6 @@ private:
 
         if (is_pipe_ready)
         {
-            LOG_DEBUG(&Poco::Logger::get("PacketReceiver"), "pipe");
             drainPipe();
             return true;
         }
