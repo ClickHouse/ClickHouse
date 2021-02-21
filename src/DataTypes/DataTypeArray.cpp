@@ -6,7 +6,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -518,55 +517,6 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
             {
                 nested->deserializeAsTextQuoted(nested_column, rb, settings);
             }, true);
-    }
-}
-
-
-void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-    size_t offset = offsets[row_num - 1] + value_index;
-    size_t next_offset = offsets[row_num];
-    const IColumn & nested_column = column_array.getData();
-    size_t i;
-    for (i = offset; i < next_offset; ++i)
-    {
-        size_t element_stored = 0;
-        nested->serializeProtobuf(nested_column, i, protobuf, element_stored);
-        if (!element_stored)
-            break;
-    }
-    value_index += i - offset;
-}
-
-
-void DataTypeArray::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    ColumnArray & column_array = assert_cast<ColumnArray &>(column);
-    IColumn & nested_column = column_array.getData();
-    ColumnArray::Offsets & offsets = column_array.getOffsets();
-    size_t old_size = offsets.size();
-    try
-    {
-        bool nested_row_added;
-        do
-            nested->deserializeProtobuf(nested_column, protobuf, true, nested_row_added);
-        while (nested_row_added && protobuf.canReadMoreValues());
-        if (allow_add_row)
-        {
-            offsets.emplace_back(nested_column.size());
-            row_added = true;
-        }
-        else
-            offsets.back() = nested_column.size();
-    }
-    catch (...)
-    {
-        offsets.resize_assume_reserved(old_size);
-        nested_column.popBack(nested_column.size() - offsets.back());
-        throw;
     }
 }
 

@@ -561,10 +561,20 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
 
-    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    /// Do I need to perform the first part of the pipeline?
+    /// Running on remote servers during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=1 or when there is
+    /// only one remote server, it is equal to local query in terms of query
+    /// stages (or when due to optimize_distributed_group_by_sharding_key the query was processed up to Complete stage).
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
         && options.to_stage >= QueryProcessingStage::WithMergeableState;
-    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    /// Do I need to execute the second part of the pipeline?
+    /// Running on the initiating server during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=2 (i.e. when optimize_distributed_group_by_sharding_key takes place)
+    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregation,
+    /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
@@ -784,9 +794,22 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
+            /// NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
+            /// and after normalization, the height of the AST tree is at most 2
             for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
-                    return true;
+            {
+                if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & child_elem : child_union->list_of_selects->children)
+                        if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
+                            return true;
+                }
+                else
+                {
+                    if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
+                        return true;
+                }
+            }
         }
     }
 
@@ -1080,9 +1103,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 /** If there is an ORDER BY for distributed query processing,
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
+                  *
+                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregation
+                  * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
+                  * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
                   */
 
-                if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+                if (from_aggregation_stage)
+                    executeMergeSorted(query_plan, "for ORDER BY");
+                else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, query_info.input_order_info);
@@ -1847,26 +1876,36 @@ static bool windowDescriptionComparator(const WindowDescription * _left,
         {
             return true;
         }
-
-        if (left[i].column_number < right[i].column_number)
-        {
-            return true;
-        }
-
-        if (left[i].direction < right[i].direction)
-        {
-            return true;
-        }
-
-        if (left[i].nulls_direction < right[i].nulls_direction)
-        {
-            return true;
-        }
-
-        if (left[i] != right[i])
+        else if (left[i].column_name > right[i].column_name)
         {
             return false;
         }
+        else if (left[i].column_number < right[i].column_number)
+        {
+            return true;
+        }
+        else if (left[i].column_number > right[i].column_number)
+        {
+            return false;
+        }
+        else if (left[i].direction < right[i].direction)
+        {
+            return true;
+        }
+        else if (left[i].direction > right[i].direction)
+        {
+            return false;
+        }
+        else if (left[i].nulls_direction < right[i].nulls_direction)
+        {
+            return true;
+        }
+        else if (left[i].nulls_direction > right[i].nulls_direction)
+        {
+            return false;
+        }
+
+        assert(left[i] == right[i]);
     }
 
     // Note that we check the length last, because we want to put together the

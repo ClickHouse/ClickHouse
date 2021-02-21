@@ -156,6 +156,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    ColumnPtr compress() const override;
+
     void reserve(size_t size) override
     {
         chars.reserve(n * size);
@@ -182,7 +184,8 @@ public:
     const Chars & getChars() const { return chars; }
 
     size_t getN() const { return n; }
-};
 
+    static void alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size);
+};
 
 }

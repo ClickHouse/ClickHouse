@@ -60,6 +60,7 @@ add_subdirectory (Processors)
 add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
+add_subdirectory (Coordination)
 
 
 set(dbms_headers)
@@ -180,6 +181,7 @@ add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_server Server)
+add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -191,6 +193,10 @@ add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+
+if (USE_NURAFT)
+    add_object_library(clickhouse_coordination Coordination)
+endif()
 
 set (DBMS_COMMON_LIBRARIES)
 # libgcc_s does not provide an implementation of an atomics library. Instead,
@@ -314,7 +320,7 @@ if (USE_KRB5)
 endif()
 
 if (USE_NURAFT)
-    dbms_target_link_libraries(PRIVATE ${NURAFT_LIBRARY})
+    dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)
