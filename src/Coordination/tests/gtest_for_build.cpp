@@ -206,11 +206,14 @@ TEST(CoordinationTest, TestSummingRaft3)
 
     nuraft::srv_config first_config(1, 0, "localhost:44444", "", false, 0);
     auto ret1 = s2.raft_instance->add_srv(first_config);
-    if (!ret1->get_accepted())
+    while (!ret1->get_accepted())
     {
+
         std::cout << "failed to add server: "
                   << ret1->get_result_str() << std::endl;
-        EXPECT_TRUE(false);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ret1 = s2.raft_instance->add_srv(first_config);
     }
 
     while (s1.raft_instance->get_leader() != 2)
@@ -225,7 +228,9 @@ TEST(CoordinationTest, TestSummingRaft3)
     {
         std::cout << "failed to add server: "
                   << ret3->get_result_str() << std::endl;
-        EXPECT_TRUE(false);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ret3 = s2.raft_instance->add_srv(third_config);
     }
 
     while (s3.raft_instance->get_leader() != 2)
