@@ -447,7 +447,7 @@ LogEntryPtr Changelog::getLastEntry() const
     if (entry == logs.end())
         return fake_entry;
 
-    return makeClone(entry->second);
+    return entry->second;
 }
 
 LogEntriesPtr Changelog::getLogEntriesBetween(size_t start, size_t end)
@@ -472,7 +472,7 @@ LogEntryPtr Changelog::entryAt(size_t index)
         return nullptr;
 
     src = entry->second;
-    return makeClone(src);
+    return src;
 }
 
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(size_t index, int32_t count)
