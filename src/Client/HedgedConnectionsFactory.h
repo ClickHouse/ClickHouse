@@ -25,6 +25,7 @@ class HedgedConnectionsFactory
 {
 public:
     using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
+    using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
     enum class State
     {
@@ -35,11 +36,11 @@ public:
 
     struct ReplicaStatus
     {
-        ReplicaStatus(ConnectionEstablisher connection_stablisher_) : connection_establisher(std::move(connection_stablisher_))
+        explicit ReplicaStatus(ConnectionEstablisherAsync connection_stablisher_) : connection_establisher(std::move(connection_stablisher_))
         {
         }
 
-        ConnectionEstablisher connection_establisher;
+        ConnectionEstablisherAsync connection_establisher;
         TimerDescriptor change_replica_timeout;
         bool is_ready = false;
     };
@@ -57,10 +58,9 @@ public:
     /// if there is no events in epoll and blocking is false, return NOT_READY.
     /// Returned state might be READY, NOT_READY and CANNOT_CHOOSE.
     /// If state is READY, replica connection will be written in connection_out.
-    State getNextConnection(bool start_new_connection, bool blocking, Connection *& connection_out);
+    State waitForReadyConnections(bool blocking, Connection *& connection_out);
 
-    /// Check if we can try to produce new READY replica.
-//    bool canGetNewConnection() const { return ready_replicas_count + failed_pools_count < shuffled_pools.size(); }
+    State startNewConnection(Connection *& connection_out);
 
     /// Stop working with all replicas that are not READY.
     void stopChoosingReplicas();
@@ -71,14 +71,16 @@ public:
 
     const ConnectionTimeouts & getConnectionTimeouts() const { return timeouts; }
 
+    int numberOfProcessingReplicas() const;
+
+    void setSkipPredicate(std::function<bool(Connection *)> pred) { skip_predicate = std::move(pred); }
+
     ~HedgedConnectionsFactory();
 
 private:
     /// Try to start establishing connection to the new replica. Return
     /// the index of the new replica or -1 if cannot start new connection.
-    int startEstablishingNewConnection(Connection *& connection_out);
-
-    void processConnectionEstablisherStage(int replica_index, bool remove_from_epoll = false);
+    State startNewConnectionImpl(Connection *& connection_out);
 
     /// Find an index of the next free replica to start connection.
     /// Return -1 if there is no free replica.
@@ -86,11 +88,15 @@ private:
 
     int getReadyFileDescriptor(bool blocking);
 
-    void processFailedConnection(int replica_index, bool remove_from_epoll);
+    void processFailedConnection(int index, const std::string & fail_message);
 
-    void processConnectionEstablisherEvent(int replica_index, Connection *& connection_out);
+    State resumeConnectionEstablisher(int index, Connection *& connection_out);
 
-    void removeReplicaFromEpoll(int index);
+    State processFinishedConnection(int index, TryResult result, Connection *& connection_out);
+
+    void removeReplicaFromEpoll(int index, int fd);
+
+    void addNewReplicaToEpoll(int index, int fd);
 
     /// Return NOT_READY state if there is no ready events, READY if replica is ready
     /// and CANNOT_CHOOSE if there is no more events in epoll.
@@ -111,10 +117,7 @@ private:
     /// Map timeout for changing replica to replica index.
     std::unordered_map<int, int> timeout_fd_to_replica_index;
 
-    /// Indexes of replicas, that are in process of connection.
-    size_t replicas_in_process_count = 0;
-    /// Indexes of ready replicas.
-    size_t ready_replicas_count = 0;
+    std::function<bool(Connection *)> skip_predicate;
 
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
@@ -122,10 +125,14 @@ private:
     Epoll epoll;
     Poco::Logger * log;
     std::string fail_messages;
-    size_t entries_count;
-    size_t usable_count;
-    size_t failed_pools_count;
     size_t max_tries;
+    size_t entries_count = 0;
+    size_t usable_count = 0;
+    size_t up_to_date_count = 0;
+    size_t failed_pools_count= 0;
+    size_t replicas_in_process_count = 0;
+    size_t requested_connections_count = 0;
+    size_t ready_replicas_count = 0;
 };
 
 }

@@ -2,41 +2,86 @@
 
 #if defined(OS_LINUX)
 
+#include <variant>
+
 #include <Client/IConnections.h>
 #include <Common/FiberStack.h>
 #include <Common/Fiber.h>
+#include <Common/Epoll.h>
+#include <Common/TimerDescriptor.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_SOCKET;
+}
 
 /// Class for nonblocking packet receiving. It runs connection->receivePacket
 /// in fiber and sets special read callback which is called when
 /// reading from socket blocks. When read callback is called,
 /// socket and receive timeout are added in epoll and execution returns to the main program.
 /// So, you can poll this epoll file descriptor to determine when to resume
-/// packet receiving (beside polling epoll descriptor, you also need to check connection->hasPendingData(),
-/// because small packet can be read in buffer with the previous one, so new packet will be ready in buffer,
-/// but there is no data socket to poll).
+/// packet receiving.
 class PacketReceiver
 {
 public:
-    PacketReceiver(Connection * connection_) : connection(connection_)
+    explicit PacketReceiver(Connection * connection_) : connection(connection_)
     {
         epoll.add(receive_timeout.getDescriptor());
         epoll.add(connection->getSocket()->impl()->sockfd());
+
+        if (-1 == pipe2(pipe_fd, O_NONBLOCK))
+            throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
+        epoll.add(pipe_fd[0]);
+
         fiber = boost::context::fiber(std::allocator_arg_t(), fiber_stack, Routine{*this});
     }
 
+    ~PacketReceiver()
+    {
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+    }
+
     /// Resume packet receiving.
-    void resume()
+    std::variant<int, Packet, Poco::Timespan> resume()
     {
         /// If there is no pending data, check receive timeout.
         if (!connection->hasReadPendingData() && !checkReceiveTimeout())
-            return;
+        {
+            /// Receive timeout expired.
+            return Poco::Timespan();
+        }
 
+        /// Resume fiber.
         fiber = std::move(fiber).resume();
         if (exception)
             std::rethrow_exception(std::move(exception));
+
+        if (is_read_in_process)
+            return epoll.getFileDescriptor();
+
+        /// Write something in pipe when buffer has pending data, because
+        /// in this case socket won't be ready in epoll but we need to tell
+        /// outside that there is more data in buffer.
+        if (connection->hasReadPendingData())
+        {
+            uint64_t buf = 0;
+            while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
+            {
+                if (errno == EAGAIN)
+                    break;
+
+                if (errno != EINTR)
+                    throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            }
+        }
+
+        /// Receiving packet was finished.
+        return std::move(packet);
     }
 
     void cancel()
@@ -45,20 +90,16 @@ public:
         connection = nullptr;
     }
 
-    Packet getPacket() { return std::move(packet); }
-
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
-    bool isPacketReady() const { return !is_read_in_process; }
-
-    bool isReceiveTimeoutExpired() const { return is_receive_timeout_expired; }
-
 private:
-    /// When epoll file descriptor is ready, check if it's an expired timeout
+    /// When epoll file descriptor is ready, check if it's an expired timeout.
+    /// Return false if receive timeout expired and socket is not ready, return true otherwise.
     bool checkReceiveTimeout()
     {
         bool is_socket_ready = false;
-        is_receive_timeout_expired = false;
+        bool is_pipe_ready = false;
+        bool is_receive_timeout_expired = false;
 
         epoll_event events[2];
         events[0].data.fd = events[1].data.fd = -1;
@@ -68,8 +109,17 @@ private:
         {
             if (events[i].data.fd == connection->getSocket()->impl()->sockfd())
                 is_socket_ready = true;
+            if (events[i].data.fd == pipe_fd[0])
+                is_pipe_ready = true;
             if (events[i].data.fd == receive_timeout.getDescriptor())
                 is_receive_timeout_expired = true;
+        }
+
+        if (is_pipe_ready)
+        {
+            LOG_DEBUG(&Poco::Logger::get("PacketReceiver"), "pipe");
+            drainPipe();
+            return true;
         }
 
         if (is_receive_timeout_expired && !is_socket_ready)
@@ -79,6 +129,23 @@ private:
         }
 
         return true;
+    }
+
+    void drainPipe()
+    {
+        uint64_t buf;
+        while (true)
+        {
+            ssize_t res = read(pipe_fd[0], &buf, sizeof(buf));
+            if (res < 0)
+            {
+                if (errno == EAGAIN)
+                    break;
+
+                if (errno != EINTR)
+                    throwFromErrno("Cannot drain pipe_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            }
+        }
     }
 
     struct Routine
@@ -131,14 +198,28 @@ private:
     };
 
     Connection * connection;
-    TimerDescriptor receive_timeout;
-    Epoll epoll;
+    Packet packet;
+
     Fiber fiber;
     FiberStack fiber_stack;
-    Packet packet;
-    bool is_read_in_process = false;
-    bool is_receive_timeout_expired = false;
+
+    /// We use timer descriptor for checking socket receive timeout.
+    TimerDescriptor receive_timeout;
+
+    /// In read callback we add socket file descriptor and timer descriptor with receive timeout
+    /// in epoll, so we can return epoll file descriptor outside for polling.
+    Epoll epoll;
+
+    /// Pipe is used when there is pending data in buffer
+    /// after receiving packet socket won't be ready in epoll in this case),
+    /// so we add pipe_fd in epoll and write something in it to tell
+    /// outside that we are ready to receive new packet.
+    int pipe_fd[2];
+
+    /// If and exception occurred in fiber resume, we save it and rethrow.
     std::exception_ptr exception;
+
+    bool is_read_in_process = false;
 };
 
 }

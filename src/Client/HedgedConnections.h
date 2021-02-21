@@ -21,14 +21,15 @@ namespace DB
 class HedgedConnections : public IConnections
 {
 public:
+    using PacketReceiverPtr = std::unique_ptr<PacketReceiver>;
     struct ReplicaState
     {
-        ReplicaState(Connection * connection_) : connection(connection_), packet_receiver(connection_)
+        explicit ReplicaState(Connection * connection_) : connection(connection_), packet_receiver(std::make_unique<PacketReceiver>(connection_))
         {
         }
 
         Connection * connection = nullptr;
-        PacketReceiver packet_receiver;
+        PacketReceiverPtr packet_receiver;
         TimerDescriptor change_replica_timeout;
     };
 
@@ -119,13 +120,15 @@ private:
 
     void processReceivedFirstDataPacket(const ReplicaLocation & replica_location);
 
-    void tryGetNewReplica(bool start_new_connection);
+    void startNewReplica();
+
+    void checkNewReplica();
+
+    void processNewReplicaState(HedgedConnectionsFactory::State state, Connection * connection);
 
     void finishProcessReplica(ReplicaState & replica, bool disconnect);
 
     int getReadyFileDescriptor(AsyncCallback async_callback = {});
-
-    bool checkPendingData(ReplicaLocation & location_out);
 
     HedgedConnectionsFactory hedged_connections_factory;
 
@@ -159,9 +162,7 @@ private:
     /// If we didn't disabled it, we need to skip this replica.
     bool disable_two_level_aggregation = false;
 
-    /// This flag means we need to get connection with new replica, but no replica is ready.
-    /// When it's true, hedged_connections_factory.getFileDescriptor() is in epoll.
-    bool next_replica_in_process = false;
+    Packet last_received_packet;
 
     Epoll epoll;
     const Settings & settings;
