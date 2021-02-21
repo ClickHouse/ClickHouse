@@ -316,11 +316,22 @@ def test_table_schema_changes(started_cluster):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
 
     expected = instance.query("SELECT key, value1, value3 FROM test_database.postgresql_replica_3 ORDER BY key");
-    cursor.execute("ALTER TABLE postgresql_replica_{} DROP COLUMN value2".format(random.randint(0, 4)))
+
+    altered_table = random.randint(0, 4)
+    cursor.execute("ALTER TABLE postgresql_replica_{} DROP COLUMN value2".format(altered_table))
 
     for i in range(NUM_TABLES):
         cursor.execute("INSERT INTO postgresql_replica_{} VALUES (50, {}, {})".format(i, i, i))
         cursor.execute("UPDATE postgresql_replica_{} SET value3 = 12 WHERE key%2=0".format(i))
+
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+
+    for i in range(NUM_TABLES):
+        if i != altered_table:
+            instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 51 + number, {}, {}, {} from numbers(49)".format(i, i, i, i))
+        else:
+            instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 51 + number, {}, {} from numbers(49)".format(i, i, i))
 
     for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));

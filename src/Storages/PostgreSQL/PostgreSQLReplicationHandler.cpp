@@ -120,8 +120,15 @@ void PostgreSQLReplicationHandler::startSynchronization()
     {
         for (const auto & [table_name, storage] : storages)
         {
-            nested_storages[table_name] = storage->getNested();
-            storage->setNestedLoaded();
+            try
+            {
+                nested_storages[table_name] = storage->getNested();
+                storage->setNestedLoaded();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
     }
 
@@ -143,13 +150,15 @@ void PostgreSQLReplicationHandler::startSynchronization()
 }
 
 
-void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages)
+NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages)
 {
+    NameSet success_tables;
     for (const auto & storage_data : sync_storages)
     {
         try
         {
             auto tx = std::make_shared<pqxx::work>(*connection->conn());
+            const auto & table_name = storage_data.first;
 
             /// Specific isolation level is required to read from snapshot.
             tx->set_variable("transaction_isolation", "'repeatable read'");
@@ -157,7 +166,7 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name,
             std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
             tx->exec(query_str);
 
-            storage_data.second->createNestedIfNeeded([&]() { return fetchTableStructure(tx, storage_data.first); });
+            storage_data.second->createNestedIfNeeded([&]() { return fetchTableStructure(tx, table_name); });
             auto nested_storage = storage_data.second->getNested();
 
             /// Load from snapshot, which will show table state before creation of replication slot.
@@ -180,7 +189,12 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name,
             copyData(input, *block_io.out);
 
             storage_data.second->setNestedLoaded();
-            nested_storages[storage_data.first] = nested_storage;
+            nested_storages[table_name] = nested_storage;
+
+            /// This is needed if this method is called from reloadFromSnapshot() method below.
+            success_tables.insert(table_name);
+            if (consumer)
+                consumer->updateNested(table_name, nested_storage);
         }
         catch (Exception & e)
         {
@@ -191,23 +205,21 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name,
     }
 
     LOG_DEBUG(log, "Table dump end");
+    return success_tables;
 }
 
 
 void PostgreSQLReplicationHandler::consumerFunc()
 {
     auto start_time = std::chrono::steady_clock::now();
-    NameSet skipped_tables;
+    std::vector<std::pair<Int32, String>> skipped_tables;
 
     while (!stop_synchronization)
     {
         bool reschedule = !consumer->consume(skipped_tables);
 
         if (!skipped_tables.empty())
-        {
-            reloadFromSnapshot(skipped_tables);
-            skipped_tables.clear();
-        }
+            consumer->updateSkipList(reloadFromSnapshot(skipped_tables));
 
         if (reschedule)
             break;
@@ -350,7 +362,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 }
 
 
-std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_)
+NameSet PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_)
 {
     if (tables_list.empty())
     {
@@ -364,7 +376,7 @@ std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchRequiredTable
 }
 
 
-std::unordered_set<std::string> PostgreSQLReplicationHandler::fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_)
+NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_)
 {
     std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::unordered_set<std::string> tables;
@@ -385,19 +397,17 @@ PostgreSQLTableStructure PostgreSQLReplicationHandler::fetchTableStructure(
 }
 
 
-/// TODO: After temporary replication slot is created, we have a start lsn. In replication stream
-/// when get message for a table and this table turn out to be in a skip list, check
-/// if current lsn position is >= start lsn position for skipped table. If so, we can
-/// remove this table fromm skip list and consume changes without any loss.
-std::string PostgreSQLReplicationHandler::reloadFromSnapshot(NameSet & table_names)
+std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapshot(
+        const std::vector<std::pair<Int32, String>> & relation_data)
 {
-    String start_lsn;
+    std::unordered_map<Int32, String> tables_start_lsn;
     try
     {
         auto tx = std::make_shared<pqxx::work>(*connection->conn());
         Storages sync_storages;
-        for (const auto & table_name : table_names)
+        for (const auto & relation : relation_data)
         {
+            const auto & table_name = relation.second;
             auto * storage = storages[table_name];
             sync_storages[table_name] = storage;
             storage->dropNested();
@@ -408,19 +418,24 @@ std::string PostgreSQLReplicationHandler::reloadFromSnapshot(NameSet & table_nam
         replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
 
         auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
-        std::string snapshot_name;
+        std::string snapshot_name, start_lsn;
         createReplicationSlot(ntx, start_lsn, snapshot_name, true);
         ntx->commit();
 
-        loadFromSnapshot(snapshot_name, sync_storages);
+        auto success_tables = loadFromSnapshot(snapshot_name, sync_storages);
 
+        for (const auto & relation : relation_data)
+        {
+            if (success_tables.find(relation.second) != success_tables.end())
+                tables_start_lsn[relation.first] = start_lsn;
+        }
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    return start_lsn;
+    return tables_start_lsn;
 }
 
 }

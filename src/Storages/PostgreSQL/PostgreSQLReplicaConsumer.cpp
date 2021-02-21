@@ -43,8 +43,33 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
 {
     for (const auto & [table_name, storage] : storages)
     {
-        buffers.emplace(table_name, BufferData(storage));
+        buffers.emplace(table_name, Buffer(storage));
     }
+}
+
+
+void PostgreSQLReplicaConsumer::Buffer::fillBuffer(StoragePtr storage)
+{
+    const auto storage_metadata = storage->getInMemoryMetadataPtr();
+    description.init(storage_metadata->getSampleBlock());
+
+    columns = description.sample_block.cloneEmptyColumns();
+    const auto & storage_columns = storage_metadata->getColumns().getAllPhysical();
+    auto insert_columns = std::make_shared<ASTExpressionList>();
+
+    assert(description.sample_block.columns() == storage_columns.size());
+    size_t idx = 0;
+
+    for (const auto & column : storage_columns)
+    {
+        if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
+            preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
+        idx++;
+
+        insert_columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+    }
+
+    columnsAST = std::move(insert_columns);
 }
 
 
@@ -69,7 +94,7 @@ void PostgreSQLReplicaConsumer::readMetadata()
 }
 
 
-void PostgreSQLReplicaConsumer::insertValue(BufferData & buffer, const std::string & value, size_t column_idx)
+void PostgreSQLReplicaConsumer::insertValue(Buffer & buffer, const std::string & value, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     bool is_nullable = buffer.description.types[column_idx].second;
@@ -95,7 +120,7 @@ void PostgreSQLReplicaConsumer::insertValue(BufferData & buffer, const std::stri
 }
 
 
-void PostgreSQLReplicaConsumer::insertDefaultValue(BufferData & buffer, size_t column_idx)
+void PostgreSQLReplicaConsumer::insertDefaultValue(Buffer & buffer, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     insertDefaultPostgreSQLValue(*buffer.columns[column_idx], *sample.column);
@@ -160,7 +185,7 @@ Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos, [
 
 
 void PostgreSQLReplicaConsumer::readTupleData(
-        BufferData & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
+        Buffer & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
 {
     Int16 num_columns = readInt16(message, pos, size);
     LOG_DEBUG(log, "number of columns {}", num_columns);
@@ -251,6 +276,7 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
 
             final_lsn = current_lsn;
+            LOG_DEBUG(log, "Commit lsn: {}", getLSNValue(current_lsn));
             break;
         }
         case 'O': // Origin
@@ -275,18 +301,17 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
                     "INFO: relation id: {}, namespace: {}, relation name: {}, replica identity: {}, columns number: {}",
                     relation_id, relation_namespace, relation_name, replica_identity, num_columns);
 
-            /// Cache table schema data to be able to detect schema changes, because ddl is not
-            /// replicated with postgresql logical replication protocol, but some table schema info
-            /// is received if it is the first time we received dml message for given relation in current session or
-            /// if relation definition has changed since the last relation definition message.
+            if (!isSyncAllowed(relation_id))
+                return;
+
             Int8 key; /// Flags. 0 or 1 (if part of the key). Not needed for now.
             Int32 data_type_id;
             Int32 type_modifier; /// For example, n in varchar(n)
 
             bool new_relation_definition = false;
-            if (relation_id_to_name.find(relation_id) == relation_id_to_name.end())
+            if (schema_data.find(relation_id) == schema_data.end())
             {
-                relation_id_to_name.emplace(relation_id, relation_name);
+                relation_id_to_name[relation_id] = relation_name;
                 schema_data.emplace(relation_id, SchemaData(num_columns));
                 new_relation_definition = true;
             }
@@ -344,8 +369,8 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            if (skip_list.find(relation_id) != skip_list.end())
-                break;
+            if (!isSyncAllowed(relation_id))
+                return;
 
             Int8 new_tuple = readInt8(replication_message, pos, size);
 
@@ -365,10 +390,10 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            if (skip_list.find(relation_id) != skip_list.end())
-                break;
-
             LOG_DEBUG(log, "relationID {}, current insert table {}", relation_id, table_to_insert);
+
+            if (!isSyncAllowed(relation_id))
+                return;
 
             auto buffer = buffers.find(table_to_insert);
             auto proccess_identifier = [&](Int8 identifier) -> bool
@@ -415,8 +440,8 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            if (skip_list.find(relation_id) != skip_list.end())
-                break;
+            if (!isSyncAllowed(relation_id))
+                return;
 
             Int8 full_replica_identity = readInt8(replication_message, pos, size);
 
@@ -432,15 +457,6 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Unexpected byte1 value {} while parsing replication message", type);
     }
-}
-
-
-void PostgreSQLReplicaConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
-{
-    skip_list.insert(relation_id);
-    auto & buffer = buffers.find(relation_name)->second;
-    buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
-    LOG_DEBUG(log, "Table {} is skipped temporarily", relation_name);
 }
 
 
@@ -505,7 +521,39 @@ String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransactio
 }
 
 
-/// Read binary changes from replication slot via copy command.
+bool PostgreSQLReplicaConsumer::isSyncAllowed(Int32 relation_id)
+{
+    auto table_with_lsn = skip_list.find(relation_id);
+    if (table_with_lsn == skip_list.end())
+        return true;
+
+    const auto & table_start_lsn = table_with_lsn->second;
+    if (table_start_lsn.empty())
+        return false;
+
+    if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
+    {
+        skip_list.erase(table_with_lsn);
+        LOG_DEBUG(log, "Sync is allowed for relation id: {}", relation_id);
+
+        return true;
+    }
+
+    return false;
+}
+
+
+void PostgreSQLReplicaConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
+{
+    skip_list.insert({relation_id, ""});
+    schema_data.erase(relation_id);
+    auto & buffer = buffers.find(relation_name)->second;
+    buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+    LOG_DEBUG(log, "Table {} is skipped temporarily", relation_name);
+}
+
+
+/// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
 bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 {
     std::shared_ptr<pqxx::nontransaction> tx;
@@ -545,6 +593,7 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 
             slot_empty = false;
             current_lsn = (*row)[0];
+            LOG_DEBUG(log, "Current lsn: {}", getLSNValue(current_lsn));
 
             processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
@@ -575,17 +624,38 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 }
 
 
-bool PostgreSQLReplicaConsumer::consume(NameSet & skipped_tables)
+bool PostgreSQLReplicaConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
 {
     if (!readFromReplicationSlot() || !skip_list.empty())
     {
-        for (const auto & relation_id : skip_list)
-            skipped_tables.insert(relation_id_to_name[relation_id]);
+        for (const auto & [relation_id, lsn] : skip_list)
+        {
+            if (lsn.empty())
+                skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
+        }
 
         return false;
     }
 
     return true;
+}
+
+
+void PostgreSQLReplicaConsumer::updateNested(const String & table_name, StoragePtr nested_storage)
+{
+    storages[table_name] = nested_storage;
+    auto & buffer = buffers.find(table_name)->second;
+    buffer.fillBuffer(nested_storage);
+}
+
+
+void PostgreSQLReplicaConsumer::updateSkipList(const std::unordered_map<Int32, String> & tables_with_lsn)
+{
+    for (const auto & [relation_id, lsn] : tables_with_lsn)
+    {
+        if (!lsn.empty())
+            skip_list[relation_id] = lsn; /// start_lsn
+    }
 }
 
 }
