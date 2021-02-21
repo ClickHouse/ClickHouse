@@ -420,9 +420,9 @@ std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapsh
         auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
         std::string snapshot_name, start_lsn;
         createReplicationSlot(ntx, start_lsn, snapshot_name, true);
-        ntx->commit();
-
+        /// This snapshot is valid up to the end of the transaction, which exported it.
         auto success_tables = loadFromSnapshot(snapshot_name, sync_storages);
+        ntx->commit();
 
         for (const auto & relation : relation_data)
         {
