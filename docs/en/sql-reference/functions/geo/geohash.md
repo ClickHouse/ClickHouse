@@ -72,7 +72,7 @@ Returns an array of [geohash](#geohash)-encoded strings of given precision that 
 geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
 -   `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
