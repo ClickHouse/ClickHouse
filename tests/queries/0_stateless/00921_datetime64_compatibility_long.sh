@@ -11,6 +11,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # ${CURDIR}/00921_datetime64_compatibility.python
 
-python3 "${CURDIR}"/00921_datetime64_compatibility.python \
+python3 "${CURDIR}"/00921_datetime64_compatibility_long.python \
     | ${CLICKHOUSE_CLIENT} --ignore-error -T -nm --calculate_text_stack_trace 0 --log-level 'error' 2>&1 \
     | grep -v 'Received exception .*$' | sed 's/^\(Code: [0-9]\+\).*$/\1/g'
