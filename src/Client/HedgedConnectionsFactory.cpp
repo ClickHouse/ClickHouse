@@ -102,7 +102,6 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnection(Connection *& connection_out)
 {
-    LOG_DEBUG(log, "startNewConnection");
     ++requested_connections_count;
     State state = startNewConnectionImpl(connection_out);
     /// If we cannot start new connection but there are connections in epoll, return NOT_READY.
@@ -114,8 +113,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnection(Con
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnections(bool blocking, Connection *& connection_out)
 {
-    LOG_DEBUG(log, "waitForReadyConnections");
-
     State state = processEpollEvents(blocking, connection_out);
     if (state != State::CANNOT_CHOOSE)
         return state;
@@ -165,8 +162,6 @@ int HedgedConnectionsFactory::getNextIndex()
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl(Connection *& connection_out)
 {
-    LOG_DEBUG(log, "startNewConnectionImpl");
-
     int index;
     State state;
     do
@@ -184,13 +179,9 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(bool blocking, Connection *& connection_out)
 {
-    LOG_DEBUG(log, "processEpollEvents");
-
     int event_fd;
     while (!epoll.empty())
     {
-        LOG_DEBUG(log, "loop");
-
         event_fd = getReadyFileDescriptor(blocking);
 
         if (event_fd == -1)
@@ -211,10 +202,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
                 return state;
         }
         else if (timeout_fd_to_replica_index.contains(event_fd))
-        {
-            LOG_DEBUG(log, "change_replica_timeout");
             replicas[timeout_fd_to_replica_index[event_fd]].change_replica_timeout.reset();
-        }
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
 
@@ -238,8 +226,6 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking)
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    LOG_DEBUG(log, "resumeConnectionEstablisher");
-
     auto res = replicas[index].connection_establisher.resume();
 
     if (std::holds_alternative<TryResult>(res))
@@ -254,8 +240,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstabl
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnection(int index, TryResult result, Connection *& connection_out)
 {
-    LOG_DEBUG(log, "processFinishedConnection");
-
     const std::string & fail_message = replicas[index].connection_establisher.getFailMessage();
     if (!fail_message.empty())
         fail_messages += fail_message + "\n";
@@ -301,8 +285,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
 
 void HedgedConnectionsFactory::stopChoosingReplicas()
 {
-    LOG_DEBUG(log, "stopChoosingReplicas");
-
     for (auto & [fd, index] : fd_to_replica_index)
     {
         --replicas_in_process_count;
@@ -322,8 +304,6 @@ void HedgedConnectionsFactory::stopChoosingReplicas()
 
 void HedgedConnectionsFactory::addNewReplicaToEpoll(int index, int fd)
 {
-    LOG_DEBUG(log, "addNewReplicaToEpoll");
-
     ++replicas_in_process_count;
     epoll.add(fd);
     fd_to_replica_index[fd] = index;
@@ -336,8 +316,6 @@ void HedgedConnectionsFactory::addNewReplicaToEpoll(int index, int fd)
 
 void HedgedConnectionsFactory::removeReplicaFromEpoll(int index, int fd)
 {
-    LOG_DEBUG(log, "removeReplicaFromEpoll");
-
     --replicas_in_process_count;
     epoll.remove(fd);
     fd_to_replica_index.erase(fd);
@@ -357,8 +335,6 @@ int HedgedConnectionsFactory::numberOfProcessingReplicas() const
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(Connection *& connection_out)
 {
-    LOG_DEBUG(log, "setBestUsableReplica");
-
     std::vector<int> indexes;
     for (size_t i = 0; i != replicas.size(); ++i)
     {
