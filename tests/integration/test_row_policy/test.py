@@ -124,11 +124,11 @@ def test_cannot_trick_row_policy_with_keyword_with():
     assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 1], [1, 0]])
     assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 1], [1, 0]])
 
-    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3")                              == TSV([[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]])
-    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]])
-    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 AND a >= 0")   == TSV([[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]])
-    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]])
-    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3")                              == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 AND a >= 0")   == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 1, 0], [1, 0, 0]])
 
 
 def test_policy_from_users_xml_affects_only_user_assigned():
