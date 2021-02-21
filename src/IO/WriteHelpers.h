@@ -893,7 +893,7 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     auto components = DecimalUtils::split(datetime64, scale);
     writeIntText(components.whole, buf);
 
-    if (scale > 0)
+    if (scale > 0) //-V547
     {
         buf.write('.');
         writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
