@@ -8,7 +8,7 @@
 
 name: Docker Container Scan (clickhouse-server)
 
-on:
+"on":
   pull_request:
     paths:
       - docker/server/Dockerfile

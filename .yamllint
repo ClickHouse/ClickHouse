@@ -13,5 +13,3 @@ rules:
         min-spaces-from-content: 1
     document-start:
         present: false
-    truthy:
-        check-keys: false
