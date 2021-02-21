@@ -72,9 +72,9 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void detachTablePermanently(const String & table_name) override;
+    void detachTablePermanently(const Context & context, const String & table_name) override;
 
-    void dropTable(const Context &, const String & table_name, bool no_delay) override;
+    void dropTable(const Context & context, const String & table_name, bool no_delay) override;
 
     void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
