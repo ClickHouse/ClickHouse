@@ -146,8 +146,8 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         /// After normalization, if it only has one ASTSelectWithUnionQuery child,
         /// we can lift it up, this can reduce one unnecessary recursion later.
-        /// NOTE: we just modify the content of the variable pointed by query_ptr,
-        /// but do not modify the variable pointed by query_ptr,
+        /// NOTE: we just modify the content of the AST Node pointed by query_ptr,
+        /// but do not change the AST Node pointed by query_ptr,
         /// because query_ptr may also owned by other query.
         if (ast->list_of_selects->children.size() == 1 && ast->list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
         {
