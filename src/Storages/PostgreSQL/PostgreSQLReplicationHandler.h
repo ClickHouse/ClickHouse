@@ -36,7 +36,7 @@ public:
 
     void addStorage(const std::string & table_name, StoragePostgreSQLReplica * storage);
 
-    std::unordered_set<std::string> fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
+    NameSet fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
 
     PostgreSQLTableStructure fetchTableStructure(std::shared_ptr<pqxx::work> tx, const std::string & table_name);
 
@@ -62,11 +62,11 @@ private:
 
     void consumerFunc();
 
-    void loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages);
+    NameSet loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages);
 
-    std::unordered_set<std::string> fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_);
+    NameSet fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_);
 
-    std::string reloadFromSnapshot(NameSet & table_names);
+    std::unordered_map<Int32, String> reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
