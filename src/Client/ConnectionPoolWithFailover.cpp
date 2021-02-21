@@ -247,10 +247,10 @@ ConnectionPoolWithFailover::tryGetEntry(
         const Settings * settings,
         const QualifiedTableName * table_to_check)
 {
-    ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, table_to_check);
-    connection_establisher.establishConnection();
-    fail_message = connection_establisher.getFailMessage();
-    return connection_establisher.getResult();
+    ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
+    TryResult result;
+    connection_establisher.run(result, fail_message);
+    return result;
 }
 
 std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> ConnectionPoolWithFailover::getShuffledPools(const Settings * settings)

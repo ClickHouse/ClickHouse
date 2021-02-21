@@ -57,22 +57,19 @@ void Epoll::remove(int fd)
         throwFromErrno("Cannot remove descriptor from epoll", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback) const
+size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
 {
     if (events_count == 0)
         throw Exception("There is no events in epoll", ErrorCodes::LOGICAL_ERROR);
 
     int ready_size;
-    int timeout = blocking && !async_callback ? -1 : 0;
+    int timeout = blocking ? -1 : 0;
     do
     {
         ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);
 
         if (ready_size == -1 && errno != EINTR)
             throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
-
-        if (ready_size == 0 && blocking && async_callback)
-            async_callback(epoll_fd, 0, "epoll");
     }
     while (ready_size <= 0 && (ready_size != 0 || blocking));
 

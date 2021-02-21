@@ -31,10 +31,8 @@ public:
 
     /// Get events from epoll. Events are written in events_out, this function returns an amount of ready events.
     /// If blocking is false and there are no ready events,
-    /// return empty vector, otherwise wait for ready events. If blocking is true,
-    /// async_callback is given and there is no ready events, async_callback is called
-    /// with epoll file descriptor.
-    size_t getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback = {}) const;
+    /// return empty vector, otherwise wait for ready events.
+    size_t getManyReady(int max_events, epoll_event * events_out, bool blocking) const;
 
     int getFileDescriptor() const { return epoll_fd; }
 
@@ -42,11 +40,14 @@ public:
 
     bool empty() const { return events_count == 0; }
 
+    const std::string & getDescription() const { return fd_description; }
+
     ~Epoll();
 
 private:
     int epoll_fd;
     std::atomic<int> events_count;
+    const std::string fd_description = "epoll";
 };
 
 }
