@@ -10,7 +10,7 @@
             <snapshot_distance>200000</snapshot_distance>
             <reserved_log_items>0</reserved_log_items>
             <force_sync>false</force_sync>
-            <startup_timeout>60</startup_timeout>
+            <startup_timeout>60000</startup_timeout>
         </coordination_settings>
 
         <raft_configuration>
