@@ -25,6 +25,26 @@ WATCH [db.]live_view
 
 The virtual `_version` column in the query result indicates the current result version.
 
+**Example:**
+
+```sql
+CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
+WATCH lv
+```
+
+```bash
+┌───────────────now()─┬─_version─┐
+│ 2021-02-21 09:17:21 │        1 │
+└─────────────────────┴──────────┘
+┌───────────────now()─┬─_version─┐
+│ 2021-02-21 09:17:26 │        2 │
+└─────────────────────┴──────────┘
+┌───────────────now()─┬─_version─┐
+│ 2021-02-21 09:17:31 │        3 │
+└─────────────────────┴──────────┘
+...
+```
+
 By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
 ```sql
@@ -36,7 +56,24 @@ INSERT INTO [db.]table WATCH [db.]live_view ...
 The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query result version.
 
 ```sql
-WATCH [db.]live_view EVENTS LIMIT 1
+WATCH [db.]live_view EVENTS
+```
+
+**Example:**
+
+```sql
+CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
+WATCH lv EVENTS
+```
+
+```bash
+┌─version─┐
+│       1 │
+└─────────┘
+┌─version─┐
+│       2 │
+└─────────┘
+...
 ```
 
 ## LIMIT Clause {#limit-clause}
@@ -44,7 +81,20 @@ WATCH [db.]live_view EVENTS LIMIT 1
 The `LIMIT n` clause species the number of updates the `WATCH` query should wait for before terminating. By default there is no limit on the number of updates and therefore the query will not terminate. The value of `0` indicates that the `WATCH` query should not wait for any new query results and therefore will return immediately once query is evaluated.
 
 ```sql
-WATCH [db.]live_view LIMIT 2
+WATCH [db.]live_view LIMIT 1
+```
+
+**Example:**
+
+```sql
+CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
+WATCH lv EVENTS LIMIT 1
+```
+
+```bash
+┌─version─┐
+│       1 │
+└─────────┘
 ```
 
 ## FORMAT Clause {#format-clause}

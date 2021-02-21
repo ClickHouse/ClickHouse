@@ -41,7 +41,6 @@ SELECT a, b, c FROM (SELECT ...)
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
-
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
@@ -95,10 +94,61 @@ You can watch for changes in the live view query result using the [WATCH](../../
 WATCH [db.]live_view
 ```
 
+**Example:**
+
+```sql
+CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
+CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
+```
+
+Watch a live view while doing a parallel insert into the source table.
+
+```sql
+WATCH lv
+```
+
+```bash
+┌─sum(x)─┬─_version─┐
+│      1 │        1 │
+└────────┴──────────┘
+┌─sum(x)─┬─_version─┐
+│      2 │        2 │
+└────────┴──────────┘
+┌─sum(x)─┬─_version─┐
+│      6 │        3 │
+└────────┴──────────┘
+...
+```
+
+```sql
+INSERT INTO mt VALUES (1);
+INSERT INTO mt VALUES (2);
+INSERT INTO mt VALUES (3);
+```
+
 or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
 
 ```sql
 WATCH [db.]live_view EVENTS
+```
+
+**Example:**
+
+```sql
+WATCH lv EVENTS
+```
+
+```bash
+┌─version─┐
+│       1 │
+└─────────┘
+┌─version─┐
+│       2 │
+└─────────┘
+┌─version─┐
+│       3 │
+└─────────┘
+...
 ```
 
 You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view in the same way as for any regular view or a table. If the query result is cached it will return the result immediately without running the stored query on the underlying tables.
@@ -121,6 +171,13 @@ CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 
 If the timeout value is not specified then the value specified by the `temporary_live_view_timeout` setting is used.
 
+**Example:**
+
+```sql
+CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
+CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
+```
+
 ### With Refresh {#live-view-with-refresh}
 
 When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
@@ -131,11 +188,47 @@ CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 
 If the refresh value is not specified then the value specified by the `periodic_live_view_refresh` setting is used.
 
+**Example:**
+
+```sql
+CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
+WATCH lv
+```
+
+```bash
+┌───────────────now()─┬─_version─┐
+│ 2021-02-21 08:47:05 │        1 │
+└─────────────────────┴──────────┘
+┌───────────────now()─┬─_version─┐
+│ 2021-02-21 08:47:10 │        2 │
+└─────────────────────┴──────────┘
+┌───────────────now()─┬─_version─┐
+│ 2021-02-21 08:47:15 │        3 │
+└─────────────────────┴──────────┘
+```
+
 You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND` clause. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
 ```
+
+**Example:**
+
+```sql
+CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
+```
+
+After 15 sec the live view will be automatically dropped if there are no active `WATCH` queries.
+
+```sql
+WATCH lv
+```
+
+```
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist.. 
+```
+
 ### Usage
 
 Most common uses of live view tables include:
