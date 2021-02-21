@@ -13,7 +13,7 @@ Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal
 isNull(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — A value with a non-compound data type.
 
@@ -53,7 +53,7 @@ Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal
 isNotNull(x)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — A value with a non-compound data type.
 
@@ -93,7 +93,7 @@ Checks from left to right whether `NULL` arguments were passed and returns the f
 coalesce(x,...)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   Any number of parameters of a non-compound type. All parameters must be compatible by data type.
 
@@ -136,7 +136,7 @@ Returns an alternative value if the main argument is `NULL`.
 ifNull(x,alt)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — The value to check for `NULL`.
 -   `alt` — The value that the function returns if `x` is `NULL`.
@@ -176,7 +176,7 @@ Returns `NULL` if the arguments are equal.
 nullIf(x, y)
 ```
 
-**Parameters:**
+**Arguments:**
 
 `x`, `y` — Values for comparison. They must be compatible types, or ClickHouse will generate an exception.
 
@@ -215,7 +215,7 @@ Results in a value of type [Nullable](../../sql-reference/data-types/nullable.md
 assumeNotNull(x)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — The original value.
 
@@ -277,7 +277,7 @@ Converts the argument type to `Nullable`.
 toNullable(x)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — The value of any non-compound type.
 

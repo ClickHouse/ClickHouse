@@ -11,7 +11,7 @@ arraySort(used_table_functions)
 ['numbers']
 
 arraySort(used_functions)
-['addDays','array','arrayFlatten','cast','modulo','plus','substring','toDate','toDayOfYear','toTypeName','toWeek']
+['CAST','addDays','array','arrayFlatten','modulo','plus','substring','toDate','toDayOfYear','toTypeName','toWeek']
 
 arraySort(used_data_type_families)
 ['Array','Int32','Nullable','String']

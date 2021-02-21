@@ -4,8 +4,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
@@ -111,33 +109,6 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     return x;
 }
 
-template <typename T>
-void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], this->scale));
-}
-
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    T decimal;
-    if (!protobuf.readDecimal(decimal, this->precision, this->scale))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(decimal);
-        row_added = true;
-    }
-    else
-        container.back() = decimal;
-}
-
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -170,7 +141,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    UInt64 precision = DecimalUtils::maxPrecision<T>();
+    UInt64 precision = DecimalUtils::max_precision<T>;
     UInt64 scale = scale_arg->value.get<UInt64>();
 
     return createDecimal<DataTypeDecimal>(precision, scale);

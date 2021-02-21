@@ -131,6 +131,10 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
+    /// Requires squashing small blocks to large for optimal storage.
+    /// This is true for most storages that store data on disk.
+    virtual bool prefersLargeBlocks() const { return true; }
+
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
