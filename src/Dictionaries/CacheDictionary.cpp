@@ -1008,6 +1008,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
 
+#if defined(OS_LINUX) || defined(__FreeBSD__)
+
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
@@ -1102,6 +1104,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
     };
 
     factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);
+#endif
+
 }
 
 }

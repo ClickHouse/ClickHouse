@@ -182,7 +182,7 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 
 const char * ColumnTuple::skipSerializedInArena(const char * pos) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         pos = column->skipSerializedInArena(pos);
 
     return pos;

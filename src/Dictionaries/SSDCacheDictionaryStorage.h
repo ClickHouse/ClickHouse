@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__linux__) || defined(__FreeBSD__)
+
 #include <chrono>
 
 #include <pcg_random.hpp>
@@ -490,8 +492,8 @@ public:
 
         #if defined(__FreeBSD__)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
-        write_request.aio.aio_fildes = file_handler.fd;
-        write_request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer);
+        write_request.aio.aio_fildes = file.fd;
+        write_request.aio.aio_buf = reinterpret_cast<const volatile void *>(buffer);
         write_request.aio.aio_nbytes = block_size * buffer_size_in_blocks;
         write_request.aio.aio_offset = current_block_index * block_size;
         #else
@@ -527,7 +529,7 @@ public:
         ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
-            throwFromErrno("Not all data was written for asynchronous IO on file " + file_path + ". returned: " + std::to_string(bytes_written), ErrorCodes::AIO_WRITE_ERROR, -event.res);
+            throw Exception("Not all data was written for asynchronous IO on file " + file_path + ". returned: " + std::to_string(bytes_written), ErrorCodes::AIO_WRITE_ERROR);
 
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
@@ -551,7 +553,7 @@ public:
 
         #if defined(__FreeBSD__)
         request.aio.aio_lio_opcode = LIO_READ;
-        request.aio.aio_fildes = file_handler.fd;
+        request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
         request.aio.aio_nbytes = buffer_size_in_bytes;
         request.aio.aio_offset = block_start * block_size;
@@ -1239,3 +1241,5 @@ private:
 };
 
 }
+
+#endif
