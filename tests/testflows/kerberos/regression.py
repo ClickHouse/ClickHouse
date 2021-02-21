@@ -26,7 +26,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         "kerberos": ("kerberos", ),
     }
 
-    with Cluster(local, clickhouse_binary_path, nodes=nodes, stress=None, parallel=None) as cluster:
+    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
         self.context.cluster = cluster
 
         Feature(run=load("kerberos.tests.generic", "generic"), flags=TE)
