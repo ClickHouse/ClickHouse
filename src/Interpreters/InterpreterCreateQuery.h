@@ -95,5 +95,8 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
+
+    mutable String as_database_saved;
+    mutable String as_table_saved;
 };
 }

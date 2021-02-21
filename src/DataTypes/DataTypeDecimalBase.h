@@ -65,7 +65,7 @@ public:
 
     static constexpr bool is_parametric = true;
 
-    static constexpr size_t maxPrecision() { return DecimalUtils::maxPrecision<T>(); }
+    static constexpr size_t maxPrecision() { return DecimalUtils::max_precision<T>; }
 
     DataTypeDecimalBase(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
@@ -197,17 +197,17 @@ inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, cons
 template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
+    if (precision_value < DecimalUtils::min_precision || precision_value > DecimalUtils::max_precision<Decimal256>)
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
         throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (precision_value <= DecimalUtils::maxPrecision<Decimal32>())
+    if (precision_value <= DecimalUtils::max_precision<Decimal32>)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
+    else if (precision_value <= DecimalUtils::max_precision<Decimal64>)
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::maxPrecision<Decimal128>())
+    else if (precision_value <= DecimalUtils::max_precision<Decimal128>)
        return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
     return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
 }

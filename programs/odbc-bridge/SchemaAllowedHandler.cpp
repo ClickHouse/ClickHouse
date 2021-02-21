@@ -61,7 +61,15 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         bool result = isSchemaAllowed(hdbc);
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
-        writeBoolText(result, out);
+        try
+        {
+            writeBoolText(result, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            out.finalize();
+        }
     }
     catch (...)
     {
