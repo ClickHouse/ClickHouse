@@ -89,6 +89,9 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 
     for (size_t pos = 0; pos < data.size(); ++pos)
     {
+        if (shared_copied_data.count(pos))
+            continue;
+
         if (data[pos])
         {
             func->destroy(data[pos]);
@@ -498,6 +501,7 @@ void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
         if (pos != data.size() - 1)
         {
             data[data.size() - 1] = data[pos];
+            shared_copied_data.emplace(data.size() - 1);
         }
         else /// insert same data to same pos, merge them.
         {

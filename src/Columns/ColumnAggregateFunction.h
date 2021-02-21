@@ -94,6 +94,8 @@ private:
         HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
 
     Map copied_data_info;
+    /// FIXME: too hacky
+    std::unordered_set<size_t> shared_copied_data;
 
     ColumnAggregateFunction() {}
 
