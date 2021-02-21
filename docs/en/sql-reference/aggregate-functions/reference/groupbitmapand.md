@@ -10,7 +10,7 @@ Calculations the AND of a bitmap column, return cardinality of type UInt64, if a
 groupBitmapAnd(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
 

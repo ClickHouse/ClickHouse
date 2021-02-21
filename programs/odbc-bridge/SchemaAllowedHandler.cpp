@@ -2,12 +2,12 @@
 
 #if USE_ODBC
 
-#    include <IO/WriteBufferFromHTTPServerResponse.h>
+#    include <Server/HTTP/HTMLForm.h>
+#    include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #    include <IO/WriteHelpers.h>
 #    include <Poco/Data/ODBC/ODBCException.h>
 #    include <Poco/Data/ODBC/SessionImpl.h>
 #    include <Poco/Data/ODBC/Utility.h>
-#    include <Poco/Net/HTMLForm.h>
 #    include <Poco/Net/HTTPServerRequest.h>
 #    include <Poco/Net/HTTPServerResponse.h>
 #    include <common/logger_useful.h>
@@ -33,16 +33,16 @@ namespace
 }
 
 
-void SchemaAllowedHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    Poco::Net::HTMLForm params(request, request.stream());
+    HTMLForm params(request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            response.send() << message << std::endl;
+            *response.send() << message << std::endl;
         LOG_WARNING(log, message);
     };
 
@@ -60,8 +60,16 @@ void SchemaAllowedHandler::handleRequest(Poco::Net::HTTPServerRequest & request,
 
         bool result = isSchemaAllowed(hdbc);
 
-        WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
-        writeBoolText(result, out);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        try
+        {
+            writeBoolText(result, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            out.finalize();
+        }
     }
     catch (...)
     {
