@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <common/logger_useful.h>
 
 
 namespace ProfileEvents
