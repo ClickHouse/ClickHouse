@@ -414,6 +414,8 @@
         "01494_storage_join_persistency",
         "01516_drop_table_stress",
         "01541_max_memory_usage_for_user",
+        "01593_concurrent_alter_mutations_kill",
+        "01593_concurrent_alter_mutations_kill_many_replicas",
         "01676_dictget_in_default_expression",
         "01715_background_checker_blather_zookeeper",
         "attach",
