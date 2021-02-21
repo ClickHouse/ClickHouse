@@ -187,7 +187,7 @@ mapContains(map, key)
 **Parameters** 
 
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).
--   `key` — Key. Type matches the type of `key` parameter.
+-   `key` — Key. Type matches the type of keys of `map` parameter.
 
 **Returned value**
 
