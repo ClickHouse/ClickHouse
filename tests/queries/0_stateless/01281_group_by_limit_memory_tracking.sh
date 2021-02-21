@@ -33,7 +33,7 @@ function execute_group_by()
         "--max_memory_usage_for_user="$((150<<20))
         "--max_threads=2"
     )
-    execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(toUInt64(1e6)) GROUP BY number % 5e5'
+    execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5'
 }
 
 # This is needed to keep at least one running query for user for the time of test.
@@ -42,3 +42,6 @@ execute_group_by
 # if memory accounting will be incorrect, the second query will be failed with MEMORY_LIMIT_EXCEEDED
 execute_group_by
 wait
+
+# Reset max_memory_usage_for_user, so it will not affect other tests
+${CLICKHOUSE_CLIENT} --max_memory_usage_for_user=0 -q "SELECT 1 FORMAT Null"

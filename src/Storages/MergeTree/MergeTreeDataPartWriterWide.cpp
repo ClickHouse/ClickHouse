@@ -140,7 +140,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     /// If we didn't finished last granule than we will continue to write it from new block
     if (!last_granule.is_complete)
     {
-        if (settings.blocks_are_granules_size)
+        if (settings.can_use_adaptive_granularity && settings.blocks_are_granules_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete granules are not allowed while blocks are granules size. "
                 "Mark number {} (rows {}), rows written in last mark {}, rows to write in last mark from block {} (from row {}), total marks currently {}",
                 last_granule.mark_number, index_granularity.getMarkRows(last_granule.mark_number), rows_written_in_last_mark,
@@ -506,7 +506,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {
-        if (settings.blocks_are_granules_size)
+        if (settings.can_use_adaptive_granularity && settings.blocks_are_granules_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete granule is not allowed while blocks are granules size even for last granule. "
                 "Mark number {} (rows {}), rows written for last mark {}, total marks {}",
                 getCurrentMark(), index_granularity.getMarkRows(getCurrentMark()), rows_written_in_last_mark, index_granularity.getMarksCount());

@@ -1,4 +1,5 @@
 #include <IO/LZMADeflatingWriteBuffer.h>
+#include <Common/MemoryTracker.h>
 
 #if !defined(ARCADIA_BUILD)
 
@@ -48,16 +49,11 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    try
-    {
-        finish();
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock;
 
-        lzma_end(&lstr);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    finish();
+    lzma_end(&lstr);
 }
 
 void LZMADeflatingWriteBuffer::nextImpl()

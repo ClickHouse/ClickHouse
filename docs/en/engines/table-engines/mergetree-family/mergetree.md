@@ -104,7 +104,8 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `max_parts_in_total` — Maximum number of parts in all partitions.
 	-   `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
 	-   `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
-
+    -   `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) in the global setting.
+    
 **Example of Sections Setting**
 
 ``` sql
@@ -714,6 +715,7 @@ Configuration markup:
             <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
+            <server_side_encryption_customer_key_base64>your_base64_encoded_customer_key</server_side_encryption_customer_key_base64>
             <proxy>
                 <uri>http://proxy1</uri>
                 <uri>http://proxy2</uri>
@@ -749,7 +751,8 @@ Optional parameters:
 -   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
 -   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`. 
 -   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
--   `skip_access_check` — If true disk access checks will not be performed on disk start-up. Default value is `false`.
+-   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+-   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
 
 
 S3 disk can be configured as `main` or `cold` storage:

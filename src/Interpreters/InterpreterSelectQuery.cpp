@@ -69,7 +69,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -295,7 +294,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     // Only propagate WITH elements to subqueries if we're not a subquery
-    if (options.subquery_depth == 0)
+    if (!options.is_subquery)
     {
         if (context->getSettingsRef().enable_global_with_statement)
             ApplyWithAliasVisitor().visit(query_ptr);
@@ -390,13 +389,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
             {
+                /// Extract column compressed sizes.
+                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                for (const auto & [name, sizes] : column_sizes)
+                    column_compressed_sizes[name] = sizes.data_compressed;
+
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, *context, std::move(column_compressed_sizes), metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
 
@@ -557,10 +561,20 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
 
-    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    /// Do I need to perform the first part of the pipeline?
+    /// Running on remote servers during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=1 or when there is
+    /// only one remote server, it is equal to local query in terms of query
+    /// stages (or when due to optimize_distributed_group_by_sharding_key the query was processed up to Complete stage).
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
         && options.to_stage >= QueryProcessingStage::WithMergeableState;
-    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    /// Do I need to execute the second part of the pipeline?
+    /// Running on the initiating server during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=2 (i.e. when optimize_distributed_group_by_sharding_key takes place)
+    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregation,
+    /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
@@ -780,9 +794,22 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
+            /// NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
+            /// and after normalization, the height of the AST tree is at most 2
             for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
-                    return true;
+            {
+                if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & child_elem : child_union->list_of_selects->children)
+                        if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
+                            return true;
+                }
+                else
+                {
+                    if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
+                        return true;
+                }
+            }
         }
     }
 
@@ -1076,9 +1103,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 /** If there is an ORDER BY for distributed query processing,
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
+                  *
+                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregation
+                  * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
+                  * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
                   */
 
-                if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+                if (from_aggregation_stage)
+                    executeMergeSorted(query_plan, "for ORDER BY");
+                else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, query_info.input_order_info);
@@ -1831,46 +1864,130 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
     query_plan.addStep(std::move(expression_step));
 }
 
+static bool windowDescriptionComparator(const WindowDescription * _left,
+    const WindowDescription * _right)
+{
+    const auto & left = _left->full_sort_description;
+    const auto & right = _right->full_sort_description;
+
+    for (size_t i = 0; i < std::min(left.size(), right.size()); ++i)
+    {
+        if (left[i].column_name < right[i].column_name)
+        {
+            return true;
+        }
+        else if (left[i].column_name > right[i].column_name)
+        {
+            return false;
+        }
+        else if (left[i].column_number < right[i].column_number)
+        {
+            return true;
+        }
+        else if (left[i].column_number > right[i].column_number)
+        {
+            return false;
+        }
+        else if (left[i].direction < right[i].direction)
+        {
+            return true;
+        }
+        else if (left[i].direction > right[i].direction)
+        {
+            return false;
+        }
+        else if (left[i].nulls_direction < right[i].nulls_direction)
+        {
+            return true;
+        }
+        else if (left[i].nulls_direction > right[i].nulls_direction)
+        {
+            return false;
+        }
+
+        assert(left[i] == right[i]);
+    }
+
+    // Note that we check the length last, because we want to put together the
+    // sort orders that have common prefix but different length.
+    return left.size() > right.size();
+}
+
+static bool sortIsPrefix(const WindowDescription & _prefix,
+    const WindowDescription & _full)
+{
+    const auto & prefix = _prefix.full_sort_description;
+    const auto & full = _full.full_sort_description;
+
+    if (prefix.size() > full.size())
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if (full[i] != prefix[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 {
+    // Try to sort windows in such an order that the window with the longest
+    // sort description goes first, and all window that use its prefixes follow.
+    std::vector<const WindowDescription *> windows_sorted;
     for (const auto & [_, w] : query_analyzer->windowDescriptions())
     {
-        const Settings & settings = context->getSettingsRef();
+        windows_sorted.push_back(&w);
+    }
 
-        auto partial_sorting = std::make_unique<PartialSortingStep>(
-            query_plan.getCurrentDataStream(),
-            w.full_sort_description,
-            0 /* LIMIT */,
-            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
-                settings.sort_overflow_mode));
-        partial_sorting->setStepDescription("Sort each block for window '"
-            + w.window_name + "'");
-        query_plan.addStep(std::move(partial_sorting));
+    std::sort(windows_sorted.begin(), windows_sorted.end(),
+        windowDescriptionComparator);
 
-        auto merge_sorting_step = std::make_unique<MergeSortingStep>(
-            query_plan.getCurrentDataStream(),
-            w.full_sort_description,
-            settings.max_block_size,
-            0 /* LIMIT */,
-            settings.max_bytes_before_remerge_sort,
-            settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort,
-            context->getTemporaryVolume(),
-            settings.min_free_disk_space_for_temporary_data);
-        merge_sorting_step->setStepDescription("Merge sorted blocks for window '"
-            + w.window_name + "'");
-        query_plan.addStep(std::move(merge_sorting_step));
+    const Settings & settings = context->getSettingsRef();
+    for (size_t i = 0; i < windows_sorted.size(); ++i)
+    {
+        const auto & w = *windows_sorted[i];
+        if (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1]))
+        {
+            auto partial_sorting = std::make_unique<PartialSortingStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                0 /* LIMIT */,
+                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
+                    settings.sort_overflow_mode));
+            partial_sorting->setStepDescription("Sort each block for window '"
+                + w.window_name + "'");
+            query_plan.addStep(std::move(partial_sorting));
 
-        // First MergeSorted, now MergingSorted.
-        auto merging_sorted = std::make_unique<MergingSortedStep>(
-            query_plan.getCurrentDataStream(),
-            w.full_sort_description,
-            settings.max_block_size,
-            0 /* LIMIT */);
-        merging_sorted->setStepDescription("Merge sorted streams for window '"
-            + w.window_name + "'");
-        query_plan.addStep(std::move(merging_sorted));
+            auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                settings.max_block_size,
+                0 /* LIMIT */,
+                settings.max_bytes_before_remerge_sort,
+                settings.remerge_sort_lowered_memory_bytes_ratio,
+                settings.max_bytes_before_external_sort,
+                context->getTemporaryVolume(),
+                settings.min_free_disk_space_for_temporary_data);
+            merge_sorting_step->setStepDescription(
+                "Merge sorted blocks for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(merge_sorting_step));
+
+            // First MergeSorted, now MergingSorted.
+            auto merging_sorted = std::make_unique<MergingSortedStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                settings.max_block_size,
+                0 /* LIMIT */);
+            merging_sorted->setStepDescription(
+                "Merge sorted streams for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(merging_sorted));
+        }
 
         auto window_step = std::make_unique<WindowStep>(
             query_plan.getCurrentDataStream(),

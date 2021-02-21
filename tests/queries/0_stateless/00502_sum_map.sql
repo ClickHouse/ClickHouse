@@ -38,3 +38,19 @@ select sumMap(val, cnt) from ( SELECT [ CAST(1.01, 'Decimal(10,2)') ] as val, [1
 
 select sumMap(val, cnt) from ( SELECT [ CAST('a', 'FixedString(1)'), CAST('b', 'FixedString(1)' ) ] as val, [1, 2] as cnt );
 select sumMap(val, cnt) from ( SELECT [ CAST('abc', 'String'), CAST('ab', 'String'), CAST('a', 'String') ] as val, [1, 2, 3] as cnt );
+
+DROP TABLE IF EXISTS sum_map_decimal;
+
+CREATE TABLE sum_map_decimal(
+    statusMap Nested(
+        goal_id UInt16,
+        revenue Decimal32(5)
+    )
+) ENGINE = Log;
+
+INSERT INTO sum_map_decimal VALUES ([1, 2, 3], [1.0, 2.0, 3.0]), ([3, 4, 5], [3.0, 4.0, 5.0]), ([4, 5, 6], [4.0, 5.0, 6.0]), ([6, 7, 8], [6.0, 7.0, 8.0]);
+
+SELECT sumMap(statusMap.goal_id, statusMap.revenue) FROM sum_map_decimal;
+SELECT sumMapWithOverflow(statusMap.goal_id, statusMap.revenue) FROM sum_map_decimal;
+
+DROP TABLE sum_map_decimal;

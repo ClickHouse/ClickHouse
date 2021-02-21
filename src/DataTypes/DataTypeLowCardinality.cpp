@@ -808,31 +808,6 @@ void DataTypeLowCardinality::serializeTextXML(const IColumn & column, size_t row
     serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
 }
 
-void DataTypeLowCardinality::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
-}
-
-void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    if (allow_add_row)
-    {
-        deserializeImpl(column, &IDataType::deserializeProtobuf, protobuf, true, row_added);
-        return;
-    }
-
-    row_added = false;
-    auto & low_cardinality_column= getColumnLowCardinality(column);
-    auto  nested_column = low_cardinality_column.getDictionary().getNestedColumn();
-    auto temp_column = nested_column->cloneEmpty();
-    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(low_cardinality_column.size() - 1);
-    temp_column->insertFrom(*nested_column, unique_row_number);
-    bool dummy;
-    dictionary_type.get()->deserializeProtobuf(*temp_column, protobuf, false, dummy);
-    low_cardinality_column.popBack(1);
-    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
-}
-
 template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
