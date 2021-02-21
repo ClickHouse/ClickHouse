@@ -103,7 +103,7 @@ struct ArrayAggregateImpl
             {
                 using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
                 UInt32 scale = getDecimalScale(*expression_return);
-                result = std::make_shared<DataTypeDecimal<DecimalReturnType>>(DecimalUtils::maxPrecision<DecimalReturnType>(), scale);
+                result = std::make_shared<DataTypeDecimal<DecimalReturnType>>(DecimalUtils::max_precision<DecimalReturnType>, scale);
 
                 return true;
             }

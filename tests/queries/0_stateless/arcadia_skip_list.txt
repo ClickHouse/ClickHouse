@@ -197,6 +197,7 @@
 01181_db_atomic_drop_on_cluster
 01658_test_base64Encode_mysql_compatibility
 01659_test_base64Decode_mysql_compatibility
+01674_htm_xml_coarse_parse
 01675_data_type_coroutine
 01676_clickhouse_client_autocomplete
 01671_aggregate_function_group_bitmap_data
@@ -205,3 +206,4 @@
 01683_dist_INSERT_block_structure_mismatch
 01702_bitmap_native_integers
 01686_event_time_microseconds_part_log
+01017_uniqCombined_memory_usage
