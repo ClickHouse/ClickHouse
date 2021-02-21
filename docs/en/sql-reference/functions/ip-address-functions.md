@@ -285,7 +285,7 @@ Determines whether the input string is an IPv4 address or not. If `string` is IP
 isIPv4String(string)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
@@ -323,7 +323,7 @@ Determines whether the input string is an IPv6 address or not. If `string` is IP
 isIPv6String(string)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 

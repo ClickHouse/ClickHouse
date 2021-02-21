@@ -17,7 +17,7 @@ If in one query several values are inserted into the same position, the function
 -   If a query is executed in a single thread, the first one of the inserted values is used.
 -   If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
 
-**Parameters**
+**Arguments**
 
 -   `x` — Value to be inserted. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../../sql-reference/data-types/index.md).
 -   `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
