@@ -10,7 +10,7 @@ Calculations the OR of a bitmap column, return cardinality of type UInt64, if ad
 groupBitmapOr(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
 

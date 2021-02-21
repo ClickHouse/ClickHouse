@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UInt128.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeWithSimpleSerialization.h>
 
@@ -44,9 +45,6 @@ public:
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
-
     MutableColumnPtr createColumn() const override;
 
     bool isParametric() const override { return false; }
@@ -69,5 +67,22 @@ public:
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
 };
+
+/// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types
+
+extern template class DataTypeNumberBase<UInt8>;
+extern template class DataTypeNumberBase<UInt16>;
+extern template class DataTypeNumberBase<UInt32>;
+extern template class DataTypeNumberBase<UInt64>;
+extern template class DataTypeNumberBase<UInt128>; // base for UUID
+extern template class DataTypeNumberBase<UInt256>;
+extern template class DataTypeNumberBase<Int16>;
+extern template class DataTypeNumberBase<Int8>;
+extern template class DataTypeNumberBase<Int32>;
+extern template class DataTypeNumberBase<Int64>;
+extern template class DataTypeNumberBase<Int128>;
+extern template class DataTypeNumberBase<Int256>;
+extern template class DataTypeNumberBase<Float32>;
+extern template class DataTypeNumberBase<Float64>;
 
 }
