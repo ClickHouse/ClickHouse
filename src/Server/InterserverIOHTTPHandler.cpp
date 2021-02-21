@@ -1,18 +1,17 @@
-#include <Server/InterserverIOHTTPHandler.h>
-
-#include <Server/IServer.h>
-
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterserverIOHandler.h>
-#include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Common/setThreadName.h>
-#include <common/logger_useful.h>
+#include "InterserverIOHTTPHandler.h"
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <common/logger_useful.h>
+#include <Common/HTMLForm.h>
+#include <Common/setThreadName.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/InterserverIOHandler.h>
+#include "IServer.h"
 
 namespace DB
 {
@@ -23,7 +22,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
+std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
 {
     const auto & config = server.config();
 
@@ -51,7 +50,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
 {
     HTMLForm params(request);
 
@@ -60,7 +59,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
-    auto & body = request.getStream();
+    ReadBufferFromIStream body(request.stream());
 
     auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
@@ -80,19 +79,18 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
 
     /// In order to work keep-alive.
-    if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
+    if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
     const auto & config = server.config();
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive_timeout);
 
     try
     {
@@ -103,7 +101,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         }
         else
         {
-            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
+            response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString(message, *used_output.out);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());

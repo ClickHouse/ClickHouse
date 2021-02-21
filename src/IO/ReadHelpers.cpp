@@ -96,7 +96,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw ParsingException(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 
@@ -194,12 +194,12 @@ inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const ch
     s.insert(rb.position(), end);
 }
 
-template <char... chars, typename Vector>
-void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
+template <typename Vector>
+void readStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -210,28 +210,19 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<'\t', '\n'>(s, buf);
-}
-
-template <typename Vector>
-void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<' '>(s, buf);
-}
-
-template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
-    readStringUntilCharsInto<'\0'>(s, buf);
-    buf.ignore();
-}
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
 
-void readStringUntilWhitespace(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilWhitespaceInto(s, buf);
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            break;
+    }
+    buf.ignore();
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -253,6 +244,9 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
+
+        if (buf.hasPendingData())
+            return;
     }
 }
 
@@ -500,7 +494,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
     {
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
             "Cannot parse quoted string: expected opening quote '{}', got '{}'",
             std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
     }
@@ -535,7 +529,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
             parseComplexEscapeSequence(s, buf);
     }
 
-    throw ParsingException("Cannot parse quoted string: expected closing quote",
+    throw Exception("Cannot parse quoted string: expected closing quote",
         ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
@@ -683,7 +677,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /** CSV format can contain insignificant spaces and tabs.
               * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+              * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
               */
             size_t size = s.size();
             while (size > 0
@@ -713,7 +707,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(message, code);
+            throw Exception(message, code);
         return ReturnType(false);
     };
 
@@ -858,7 +852,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -896,7 +890,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         else
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw Exception("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -1014,7 +1008,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
+Exception readException(ReadBuffer & buf, const String & additional_message)
 {
     int code = 0;
     String name;
@@ -1041,31 +1035,12 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 {
     readException(buf, additional_message).rethrow();
-}
-
-
-void skipToCarriageReturnOrEOF(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == '\r')
-        {
-            ++buf.position();
-            return;
-        }
-    }
 }
 
 
@@ -1123,9 +1098,9 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     assert(current >= in.position());
     assert(current <= in.buffer().end());
 
-    const size_t old_bytes = memory.size();
-    const size_t additional_bytes = current - in.position();
-    const size_t new_bytes = old_bytes + additional_bytes;
+    const int old_bytes = memory.size();
+    const int additional_bytes = current - in.position();
+    const int new_bytes = old_bytes + additional_bytes;
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)

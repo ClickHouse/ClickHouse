@@ -127,7 +127,7 @@ FROM
     ) AS `--.s`
     CROSS JOIN t3
 ) AS `--.s`
-ALL INNER JOIN t4 ON ((a = `--t1.a`) AND (a = `--t2.a`)) AND (a = `--t3.a`)
+ALL INNER JOIN t4 ON (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
 WHERE (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
 SELECT `--t1.a` AS `t1.a`
 FROM 

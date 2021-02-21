@@ -1,5 +1,5 @@
 ---
-toc_priority: 67
+toc_priority: 66
 toc_title: Other
 ---
 
@@ -19,7 +19,7 @@ Gets a named value from the [macros](../../operations/server-configuration-param
 getMacro(name);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
@@ -108,7 +108,7 @@ Extracts the trailing part of a string after the last slash or backslash. This f
 basename( expr )
 ```
 
-**Arguments**
+**Parameters**
 
 -   `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
@@ -182,103 +182,6 @@ If `NULL` is passed to the function as input, then it returns the `Nullable(Noth
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
-## byteSize {#function-bytesize}
-
-Returns estimation of uncompressed byte size of its arguments in memory.
-
-**Syntax**
-
-```sql
-byteSize(argument [, ...])
-```
-
-**Arguments**
-
--   `argument` — Value.
-
-**Returned value**
-
--   Estimation of byte size of the arguments in memory.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
-
-**Examples**
-
-For [String](../../sql-reference/data-types/string.md) arguments the funtion returns the string length + 9 (terminating zero + length).
-
-Query:
-
-```sql
-SELECT byteSize('string');
-```
-
-Result:
-
-```text
-┌─byteSize('string')─┐
-│                 15 │
-└────────────────────┘
-```
-
-Query:
-
-```sql
-CREATE TABLE test
-(
-    `key` Int32,
-    `u8` UInt8,
-    `u16` UInt16,
-    `u32` UInt32,
-    `u64` UInt64,
-    `i8` Int8,
-    `i16` Int16,
-    `i32` Int32,
-    `i64` Int64,
-    `f32` Float32,
-    `f64` Float64
-)
-ENGINE = MergeTree
-ORDER BY key;
-
-INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
-
-SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
-```
-
-Result:
-
-``` text
-Row 1:
-──────
-key:               1
-byteSize(UInt8):   1
-byteSize(UInt16):  2
-byteSize(UInt32):  4
-byteSize(UInt64):  8
-byteSize(Int8):    1
-byteSize(Int16):   2
-byteSize(Int32):   4
-byteSize(Int64):   8
-byteSize(Float32): 4
-byteSize(Float64): 8
-```
-
-If the function takes multiple arguments, it returns their combined byte size.
-
-Query:
-
-```sql
-SELECT byteSize(NULL, 1, 0.3, '');
-```
-
-Result:
-
-```text
-┌─byteSize(NULL, 1, 0.3, '')─┐
-│                         19 │
-└────────────────────────────┘
-```
-
 ## materialize(x) {#materializex}
 
 Turns a constant into a full column containing just one value.
@@ -349,7 +252,7 @@ The function is intended for development, debugging and demonstration.
 isConstant(x)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `x` — Expression to check.
 
@@ -420,7 +323,7 @@ Checks whether floating point value is finite.
 
     ifNotFinite(x,y)
 
-**Arguments**
+**Parameters**
 
 -   `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
 -   `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
@@ -460,7 +363,7 @@ Allows building a unicode-art diagram.
 
 `bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
-**Arguments**
+Parameters:
 
 -   `x` — Size to display.
 -   `min, max` — Integer constants. The value must fit in `Int64`.
@@ -645,7 +548,7 @@ Accepts the time delta in seconds. Returns a time delta with (year, month, day, 
 formatReadableTimeDelta(column[, maximum_unit])
 ```
 
-**Arguments**
+**Parameters**
 
 -   `column` — A column with numeric time delta.
 -   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
@@ -730,7 +633,7 @@ The result of the function depends on the affected data blocks and the order of 
 The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
 To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
 
-**Arguments**
+**Parameters**
 
 -   `column` — A column name or scalar expression.
 -   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
@@ -909,66 +812,6 @@ WHERE diff != 1
 
 Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
-## runningConcurrency {#runningconcurrency}
-
-Given a series of beginning time and ending time of events, this function calculates concurrency of the events at each of the data point, that is, the beginning time.
-
-!!! warning "Warning"
-    Events spanning multiple data blocks will not be processed correctly. The function resets its state for each new data block.
-
-The result of the function depends on the order of data in the block. It assumes the beginning time is sorted in ascending order.
-
-**Syntax**
-
-``` sql
-runningConcurrency(begin, end)
-```
-
-**Arguments**
-
--   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-Note that two columns `begin` and `end` must have the same type.
-
-**Returned values**
-
--   The concurrency of events at the data point.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md)
-
-**Example**
-
-Input table:
-
-``` text
-┌───────────────begin─┬─────────────────end─┐
-│ 2020-12-01 00:00:00 │ 2020-12-01 00:59:59 │
-│ 2020-12-01 00:30:00 │ 2020-12-01 00:59:59 │
-│ 2020-12-01 00:40:00 │ 2020-12-01 01:30:30 │
-│ 2020-12-01 01:10:00 │ 2020-12-01 01:30:30 │
-│ 2020-12-01 01:50:00 │ 2020-12-01 01:59:59 │
-└─────────────────────┴─────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT runningConcurrency(begin, end) FROM example
-```
-
-Result:
-
-``` text
-┌─runningConcurrency(begin, end)─┐
-│                              1 │
-│                              2 │
-│                              3 │
-│                              2 │
-│                              1 │
-└────────────────────────────────┘
-```
-
 ## MACNumToString(num) {#macnumtostringnum}
 
 Accepts a UInt64 number. Interprets it as a MAC address in big endian. Returns a string containing the corresponding MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form).
@@ -989,7 +832,7 @@ Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
 getSizeOfEnumType(value)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `value` — Value of type `Enum`.
 
@@ -1018,7 +861,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Arguments**
+**Parameters**
 
 -   `value` — Any value.
 
@@ -1050,7 +893,7 @@ Returns the name of the class that represents the data type of the column in RAM
 toColumnTypeName(value)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `value` — Any type of value.
 
@@ -1090,7 +933,7 @@ Outputs a detailed description of data structures in RAM
 dumpColumnStructure(value)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `value` — Any type of value.
 
@@ -1120,7 +963,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfArgumentType(expression)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
@@ -1162,7 +1005,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfTypeName(type)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `type` — A string representing a type name.
 
@@ -1204,7 +1047,7 @@ Used for internal implementation of [arrayJoin](../../sql-reference/functions/ar
 SELECT replicate(x, arr);
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
 -   `x` — The value that the resulting array will be filled with.
@@ -1329,104 +1172,7 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
-
-**Syntax** 
-
-``` sql
-finalizeAggregation(state)
-```
-
-**Arguments**
-
--   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
-
-**Returned value(s)**
-
--   Value/values that was aggregated.
-
-Type: Value of any types that was aggregated. 
-
-**Examples**
-
-Query:
-
-```sql
-SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(_subquery16)─┐
-│                               10 │
-└──────────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(_subquery20)─┐
-│                               45 │
-└──────────────────────────────────┘
-```
-
-Note that `NULL` values are ignored. 
-
-Query:
-
-```sql
-SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
-│                                                          2 │
-└────────────────────────────────────────────────────────────┘
-```
-
-Combined example:
-
-Query:
-
-```sql
-WITH initializeAggregation('sumState', number) AS one_row_sum_state
-SELECT
-    number,
-    finalizeAggregation(one_row_sum_state) AS one_row_sum,
-    runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(10);
-```
-
-Result:
-
-```text
-┌─number─┬─one_row_sum─┬─cumulative_sum─┐
-│      0 │           0 │              0 │
-│      1 │           1 │              1 │
-│      2 │           2 │              3 │
-│      3 │           3 │              6 │
-│      4 │           4 │             10 │
-│      5 │           5 │             15 │
-│      6 │           6 │             21 │
-│      7 │           7 │             28 │
-│      8 │           8 │             36 │
-│      9 │           9 │             45 │
-└────────┴─────────────┴────────────────┘
-```
-
-**See Also** 
-
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+Takes state of aggregate function. Returns result of aggregation (finalized state).
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1441,7 +1187,7 @@ Accumulates states of an aggregate function for each row of a data block.
 runningAccumulate(agg_state[, grouping]);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 -   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
@@ -1547,7 +1293,7 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` st
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 -   `value_column` — name of the column of the table that contains required data.
@@ -1651,7 +1397,7 @@ Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/AS
 randomPrintableASCII(length)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — Resulting string length. Positive integer.
 
@@ -1687,7 +1433,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomString(length)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — String length. Positive integer.
 
@@ -1735,7 +1481,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomFixedString(length);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1773,7 +1519,7 @@ Generates a random string of a specified length. Result string contains valid UT
 randomStringUTF8(length);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1845,7 +1591,7 @@ Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is
 isDecimalOverflow(d, [p])
 ```
 
-**Arguments**
+**Parameters**
 
 -   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
 -   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
@@ -1882,7 +1628,7 @@ Returns number of decimal digits you need to represent the value.
 countDigits(x)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
 
@@ -1930,45 +1676,5 @@ Result:
 ``` text
 UNSUPPORTED_METHOD
 ```
-
-## tcpPort {#tcpPort}
-
-Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
-
-**Syntax**
-
-``` sql
-tcpPort()
-```
-
-**Arguments**
-
--   None.
-
-**Returned value**
-
--   The TCP port number.
-
-Type: [UInt16](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT tcpPort();
-```
-
-Result:
-
-``` text
-┌─tcpPort()─┐
-│      9000 │
-└───────────┘
-```
-
-**See Also**
-
--   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

@@ -289,8 +289,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     while (filt_pos < filt_end_sse)
     {
-        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
 
         if (0 == mask)
         {
@@ -444,20 +443,6 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
 
     get(min_idx, min);
     get(max_idx, max);
-}
-
-void ColumnFixedString::alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size)
-{
-    size_t length = data.size() - old_size;
-    if (length < n)
-    {
-        data.resize_fill(old_size + n);
-    }
-    else if (length > n)
-    {
-        data.resize_assume_reserved(old_size);
-        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
-    }
 }
 
 }

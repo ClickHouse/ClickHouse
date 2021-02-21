@@ -5,7 +5,6 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/IntervalKind.h>
 
 namespace DB
@@ -75,52 +74,6 @@ private:
     char result_separator;
 };
 
-class ParserUnionList : public IParserBase
-{
-public:
-    ParserUnionList(ParserPtr && elem_parser_, ParserPtr && s_union_parser_, ParserPtr && s_all_parser_, ParserPtr && s_distinct_parser_)
-        : elem_parser(std::move(elem_parser_))
-        , s_union_parser(std::move(s_union_parser_))
-        , s_all_parser(std::move(s_all_parser_))
-        , s_distinct_parser(std::move(s_distinct_parser_))
-    {
-    }
-
-    template <typename ElemFunc, typename SepFunc>
-    static bool parseUtil(Pos & pos, const ElemFunc & parse_element, const SepFunc & parse_separator)
-    {
-        Pos begin = pos;
-        if (!parse_element())
-        {
-            pos = begin;
-            return false;
-        }
-
-        while (true)
-        {
-            begin = pos;
-            if (!parse_separator() || !parse_element())
-            {
-                pos = begin;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    auto getUnionModes() const { return union_modes; }
-
-protected:
-    const char * getName() const override { return "list of union elements"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-private:
-    ParserPtr elem_parser;
-    ParserPtr s_union_parser;
-    ParserPtr s_all_parser;
-    ParserPtr s_distinct_parser;
-    ASTSelectWithUnionQuery::UnionModes union_modes;
-};
 
 /** An expression with an infix binary left-associative operator.
   * For example, a + b - c + d.
@@ -436,26 +389,13 @@ protected:
 };
 
 
-// It's used to parse expressions in table function.
-class ParserTableFunctionExpression : public IParserBase
-{
-private:
-    ParserLambdaExpression elem_parser;
-
-protected:
-    const char * getName() const override { return "table function expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 using ParserExpression = ParserLambdaExpression;
 
 
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function = false);
+    ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword);
 protected:
     ParserPtr impl;
 
@@ -472,12 +412,11 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 public:
-    explicit ParserExpressionList(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
+    ParserExpressionList(bool allow_alias_without_as_keyword_)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
 protected:
     bool allow_alias_without_as_keyword;
-    bool is_table_function; // This expression list is used by a table function
 
     const char * getName() const override { return "list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -487,7 +426,7 @@ protected:
 class ParserNotEmptyExpressionList : public IParserBase
 {
 public:
-    explicit ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
+    ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
         : nested_parser(allow_alias_without_as_keyword) {}
 private:
     ParserExpressionList nested_parser;

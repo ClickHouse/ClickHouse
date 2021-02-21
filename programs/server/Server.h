@@ -14,13 +14,6 @@
   * 3. Interserver HTTP - for replication.
   */
 
-namespace Poco
-{
-    namespace Net
-    {
-        class ServerSocket;
-    }
-}
 
 namespace DB
 {
@@ -51,7 +44,6 @@ public:
     }
 
     void defineOptions(Poco::Util::OptionSet & _options) override;
-
 protected:
     int run() override;
 
@@ -65,11 +57,6 @@ protected:
 
 private:
     Context * global_context_ptr = nullptr;
-
-    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
-
-    using CreateServerFunc = std::function<void(UInt16)>;
-    void createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func) const;
 };
 
 }

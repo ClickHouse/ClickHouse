@@ -225,18 +225,6 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (ANTLR debug)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "debug",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
         "Functional stateful tests (release)": {
             "required_build_properties": {
                 "compiler": "clang-11",
@@ -333,18 +321,6 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (pytest)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
                 "compiler": "gcc-9",
@@ -429,18 +405,6 @@
                 "with_coverage": false
             }
         },
-        "Stress test (debug)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "debug",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
         "Integration tests (asan)": {
             "required_build_properties": {
                 "compiler": "clang-11",
@@ -471,18 +435,6 @@
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "Integration tests (memory)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",
@@ -609,60 +561,12 @@
                 "with_coverage": false
             }
         },
-        "AST fuzzer (debug)": {
+        "AST fuzzer": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "debug",
                 "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "AST fuzzer (ASan)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "binary",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "address",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "AST fuzzer (MSan)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "binary",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "memory",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "AST fuzzer (TSan)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "binary",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "thread",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "AST fuzzer (UBSan)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "binary",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",

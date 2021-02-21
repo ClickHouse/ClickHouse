@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -424,21 +423,19 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();
-    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
         pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
 
-        if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
-        else if (*pos == '\\')
+
+        if (*pos == '\\')
         {
             ++pos;
             if (loadAtPosition(in, memory, pos))
@@ -446,9 +443,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
         }
         else if (*pos == '\n' || *pos == '\r')
         {
-            if (*pos == '\n')
-                ++number_of_rows;
-
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                 need_more_data = false;
             ++pos;
@@ -457,7 +451,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
     saveUpToPosition(in, memory, pos);
 
-    return {loadAtPosition(in, memory, pos), number_of_rows};
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)

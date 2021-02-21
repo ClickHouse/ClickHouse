@@ -10,7 +10,7 @@ Applies bitwise `XOR` for series of numbers.
 groupBitXor(expr)
 ```
 
-**Arguments**
+**Parameters**
 
 `expr` – An expression that results in `UInt*` type.
 

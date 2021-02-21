@@ -10,7 +10,7 @@ Applies bitwise `OR` for series of numbers.
 groupBitOr(expr)
 ```
 
-**Arguments**
+**Parameters**
 
 `expr` – An expression that results in `UInt*` type.
 

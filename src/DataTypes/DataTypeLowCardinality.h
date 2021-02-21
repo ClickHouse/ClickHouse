@@ -22,33 +22,32 @@ public:
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void serializeBinaryBulkStatePrefixImpl(
+    void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffixImpl(
+    void serializeBinaryBulkStateSuffix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefixImpl(
+    void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreamsImpl(
+    void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
             size_t offset,
             size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
+    void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsCache * cache) const override;
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -65,6 +64,8 @@ public:
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
