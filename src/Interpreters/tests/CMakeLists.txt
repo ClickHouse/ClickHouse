@@ -40,9 +40,6 @@ add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.
 target_link_libraries (in_join_subqueries_preprocessor PRIVATE clickhouse_aggregate_functions dbms clickhouse_parsers)
 add_check(in_join_subqueries_preprocessor)
 
-add_executable (context context.cpp)
-target_link_libraries (context PRIVATE dbms)
-
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)
     target_link_libraries (internal_iotop PRIVATE dbms)
