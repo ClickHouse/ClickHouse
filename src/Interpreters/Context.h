@@ -40,7 +40,6 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
-    class TestKeeperStorageDispatcher;
 }
 
 
@@ -109,6 +108,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
+class NuKeeperStorageDispatcher;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -117,6 +117,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
+class ZooKeeperMetadataTransaction;
+using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -254,6 +256,7 @@ private:
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
+    std::shared_ptr<Context> buffer_context;/// Buffer context. Could be equal to this.
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for
@@ -277,6 +280,12 @@ private:
                                    /// logger, some query identification information, profiling guards, etc. This field is
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
+
+    ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
+                                                    /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
+                                                    /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
+                                                    /// thousands of signatures.
+                                                    /// And I hope it will be replaced with more common Transaction sometime.
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -533,6 +542,7 @@ public:
     const Context & getQueryContext() const;
     Context & getQueryContext();
     bool hasQueryContext() const { return query_context != nullptr; }
+    bool isInternalSubquery() const { return hasQueryContext() && query_context != this; }
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
@@ -541,6 +551,8 @@ public:
     const Context & getGlobalContext() const;
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
+
+    const Context & getBufferContext() const;
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
@@ -578,8 +590,11 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
-
-    std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & getTestKeeperStorageDispatcher() const;
+#if USE_NURAFT
+    std::shared_ptr<NuKeeperStorageDispatcher> & getNuKeeperStorageDispatcher() const;
+#endif
+    void initializeNuKeeperStorageDispatcher() const;
+    void shutdownNuKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -730,6 +745,11 @@ public:
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
+
+    /// Initialize context of distributed DDL query with Replicated database.
+    void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
+    /// Returns context of current distributed DDL query or nullptr.
+    ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
     struct MySQLWireContext
     {

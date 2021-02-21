@@ -312,7 +312,7 @@ Enables or disables parsing enum values as enum ids for TSV input format.
 Possible values:
 
 -   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
@@ -2591,6 +2591,18 @@ Possible values:
 -   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
+
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
+
+Possible values:
+
+-   0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
+-   1 — The trace for all executed queries is enabled.
+
+Default value: `0`.
 
 ## optimize_on_insert {#optimize-on-insert}
 

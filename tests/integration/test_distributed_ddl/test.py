@@ -14,7 +14,7 @@ from .cluster import ClickHouseClusterWithDDLHelpers
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def test_cluster(request):
-    cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param)
+    cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param, request.param)
 
     try:
         cluster.prepare()
