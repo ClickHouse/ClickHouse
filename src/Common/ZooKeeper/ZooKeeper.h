@@ -11,7 +11,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <unistd.h>
 
 
@@ -28,6 +27,9 @@ namespace CurrentMetrics
 
 namespace zkutil
 {
+
+const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -51,10 +53,10 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const std::string & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT,
+              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper");
+              const std::string & implementation = "zookeeper");
 
     /** Config of the form:
         <zookeeper>
@@ -84,8 +86,6 @@ public:
     /// after the session has expired.
     /// This object remains unchanged, and the new session is returned.
     Ptr startNewSession() const;
-
-    bool configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const;
 
     /// Returns true, if the session has expired.
     bool expired();
@@ -184,12 +184,6 @@ public:
     /// result would be the same as for the single call.
     void tryRemoveRecursive(const std::string & path);
 
-    /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
-    /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
-    /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
-    void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
@@ -251,6 +245,9 @@ private:
 
     void init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
+
+    void removeChildrenRecursive(const std::string & path);
+    void tryRemoveChildrenRecursive(const std::string & path);
 
     /// The following methods don't throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -323,7 +320,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 

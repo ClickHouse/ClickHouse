@@ -44,7 +44,7 @@ En el terminal de línea de comandos, ejecute:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Nota: por favor, sustituye *your_github_username* con lo que es apropiado!
+Nota: por favor, sustituye *your\_github\_username* con lo que es apropiado!
 
 Este comando creará un directorio `ClickHouse` que contiene la copia de trabajo del proyecto.
 
@@ -135,13 +135,13 @@ ClickHouse utiliza varias bibliotecas externas para la construcción. Todos ello
 
 # Compilador de C ++ {#c-compiler}
 
-Los compiladores GCC a partir de la versión 10 y Clang versión 8 o superior son compatibles para construir ClickHouse.
+Los compiladores GCC a partir de la versión 9 y Clang versión 8 o superior son compatibles para construir ClickHouse.
 
 Las compilaciones oficiales de Yandex actualmente usan GCC porque genera código de máquina de un rendimiento ligeramente mejor (con una diferencia de hasta varios por ciento según nuestros puntos de referencia). Y Clang es más conveniente para el desarrollo generalmente. Sin embargo, nuestra plataforma de integración continua (CI) ejecuta verificaciones de aproximadamente una docena de combinaciones de compilación.
 
 Para instalar GCC en Ubuntu, ejecute: `sudo apt install gcc g++`
 
-Compruebe la versión de gcc: `gcc --version`. Si está por debajo de 9, siga las instrucciones aquí: https://clickhouse.tech/docs/es/development/build/#install-gcc-10.
+Compruebe la versión de gcc: `gcc --version`. Si está por debajo de 9, siga las instrucciones aquí: https://clickhouse.tech/docs/es/development/build/#install-gcc-9.
 
 La compilación de Mac OS X solo es compatible con Clang. Sólo tiene que ejecutar `brew install llvm`
 
@@ -154,13 +154,13 @@ Ahora que está listo para construir ClickHouse, le recomendamos que cree un dir
     mkdir build
     cd build
 
-Puede tener varios directorios diferentes (build_release, build_debug, etc.) para diferentes tipos de construcción.
+Puede tener varios directorios diferentes (build\_release, build\_debug, etc.) para diferentes tipos de construcción.
 
-Mientras que dentro de la `build` directorio, configure su compilación ejecutando CMake. Antes de la primera ejecución, debe definir variables de entorno que especifiquen el compilador (compilador gcc versión 10 en este ejemplo).
+Mientras que dentro de la `build` directorio, configure su compilación ejecutando CMake. Antes de la primera ejecución, debe definir variables de entorno que especifiquen el compilador (compilador gcc versión 9 en este ejemplo).
 
 Linux:
 
-    export CC=gcc-10 CXX=g++-10
+    export CC=gcc-9 CXX=g++-9
     cmake ..
 
 Mac OS X:
@@ -257,8 +257,8 @@ El desarrollo de ClickHouse a menudo requiere cargar conjuntos de datos realista
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

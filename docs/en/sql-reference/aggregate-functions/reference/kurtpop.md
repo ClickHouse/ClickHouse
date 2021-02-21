@@ -10,7 +10,7 @@ Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 kurtPop(expr)
 ```
 
-**Arguments**
+**Parameters**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 

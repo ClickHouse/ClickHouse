@@ -6,7 +6,7 @@ toc_title: Encoding
 # Encoding Functions {#encoding-functions}
 
 ## char {#char}
-    
+
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
 **Syntax**
@@ -15,7 +15,7 @@ Returns the string with the length as the number of passed arguments and each by
 char(number_1, [number_2, ..., number_n]);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
 
@@ -107,7 +107,7 @@ For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal 
 
 Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
 
-**Arguments**
+**Parameters**
 
 -   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 

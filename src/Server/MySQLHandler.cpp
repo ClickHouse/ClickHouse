@@ -24,7 +24,6 @@
 #include <regex>
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
-#include <Common/setThreadName.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -87,10 +86,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
-    ThreadStatus thread_status;
     connection_context.makeSessionContext();
-    connection_context.getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -188,7 +184,6 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
                 packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }
@@ -267,7 +262,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
         packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
+    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)
@@ -289,7 +284,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
+            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
         packet_endpoint->sendPacket(column_definition);
     }
@@ -333,19 +328,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         Context query_context = connection_context;
 
-        std::atomic<size_t> affected_rows {0};
-        auto prev = query_context.getProgressCallback();
-        query_context.setProgressCallback([&, prev = prev](const Progress & progress)
-        {
-            if (prev)
-                prev(progress);
-
-            affected_rows += progress.written_rows;
-        });
-
-        CurrentThread::QueryScope query_scope{query_context};
-
-        executeQuery(should_replace ? replacement : payload, *out, false, query_context,
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context,
             [&with_output](const String &, const String &, const String &, const String &)
             {
                 with_output = true;
@@ -353,7 +336,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         );
 
         if (!with_output)
-            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, affected_rows, 0, 0), true);
+            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
     }
 }
 
@@ -411,7 +394,6 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
-        "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
         , std::regex::icase};
     return 1 == std::regex_match(query, expr);

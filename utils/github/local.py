@@ -6,15 +6,15 @@ import os
 import re
 
 
-class RepositoryBase:
+class RepositoryBase(object):
     def __init__(self, repo_path):
         import git
 
         self._repo = git.Repo(repo_path, search_parent_directories=(not repo_path))
 
-        # comparator of commits
+        # commit comparator
         def cmp(x, y):
-            if str(x) == str(y):
+            if x == y:
                 return 0
             if self._repo.is_ancestor(x, y):
                 return -1

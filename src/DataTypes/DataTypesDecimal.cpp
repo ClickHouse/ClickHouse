@@ -4,6 +4,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
@@ -27,7 +29,9 @@ namespace ErrorCodes
 template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
-    return fmt::format("Decimal({}, {})", this->precision, this->scale);
+    std::stringstream ss;
+    ss << "Decimal(" << this->precision << ", " << this->scale << ")";
+    return ss.str();
 }
 
 
@@ -107,6 +111,33 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
+}
+
+template <typename T>
+void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], this->scale));
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T decimal;
+    if (!protobuf.readDecimal(decimal, this->precision, this->scale))
+        return;
+
+    auto & container = assert_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(decimal);
+        row_added = true;
+    }
+    else
+        container.back() = decimal;
 }
 
 

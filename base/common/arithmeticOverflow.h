@@ -1,8 +1,6 @@
 #pragma once
 
-#include <common/extended_types.h>
-#include <common/defines.h>
-
+#include <common/types.h>
 
 namespace common
 {
@@ -33,8 +31,8 @@ namespace common
     template <>
     inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        static constexpr __int128 min_int128 = minInt128();
-        static constexpr __int128 max_int128 = maxInt128();
+        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
         res = x + y;
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
@@ -81,8 +79,8 @@ namespace common
     template <>
     inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        static constexpr __int128 min_int128 = minInt128();
-        static constexpr __int128 max_int128 = maxInt128();
+        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
         res = x - y;
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
     }
@@ -157,12 +155,5 @@ namespace common
         if (!x || !y)
             return false;
         return (x * y) / y != x;
-    }
-
-    /// Multiply and ignore overflow.
-    template <typename T1, typename T2>
-    inline auto NO_SANITIZE_UNDEFINED mulIgnoreOverflow(T1 x, T2 y)
-    {
-        return x * y;
     }
 }

@@ -57,11 +57,6 @@ public:
         return chars.size() + sizeof(n);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return n;
-    }
-
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + sizeof(n);
@@ -182,8 +177,7 @@ public:
     const Chars & getChars() const { return chars; }
 
     size_t getN() const { return n; }
-
-    static void alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size);
 };
+
 
 }

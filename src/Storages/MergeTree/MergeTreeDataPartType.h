@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -49,8 +49,6 @@ public:
 
     void fromString(const String & str);
     String toString() const;
-
-    Value getValue() const { return value; }
 
 private:
     Value value;

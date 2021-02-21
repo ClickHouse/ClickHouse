@@ -32,14 +32,16 @@ add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
 target_include_directories(radix_sort SYSTEM PRIVATE ${PDQSORT_INCLUDE_DIR})
 
+if (USE_OPENCL)
+    add_executable (bitonic_sort bitonic_sort.cpp)
+    target_link_libraries (bitonic_sort PRIVATE clickhouse_common_io ${OPENCL_LINKER_FLAGS} ${OpenCL_LIBRARIES})
+endif ()
+
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
 add_executable (pod_array pod_array.cpp)
 target_link_libraries (pod_array PRIVATE clickhouse_common_io)
-
-add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
-target_link_libraries (lru_hash_map_perf PRIVATE clickhouse_common_io)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
@@ -79,6 +81,3 @@ target_link_libraries (procfs_metrics_provider_perf PRIVATE clickhouse_common_io
 
 add_executable (average average.cpp)
 target_link_libraries (average PRIVATE clickhouse_common_io)
-
-add_executable (shell_command_inout shell_command_inout.cpp)
-target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)

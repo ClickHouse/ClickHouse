@@ -1,5 +1,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
@@ -144,17 +146,12 @@ void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (settings.tsv.input_format_enum_as_number)
-        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
-    else
-    {
-        /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
-        std::string field_name;
-        readEscapedString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
-    }
+    /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
+    std::string field_name;
+    readEscapedString(field_name, istr);
+    assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
@@ -172,16 +169,11 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (settings.tsv.input_format_enum_as_number)
-        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
-    else
-    {
-        std::string field_name;
-        readString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
-    }
+    std::string field_name;
+    readString(field_name, istr);
+    assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
@@ -193,20 +185,15 @@ void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_nu
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeXMLString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (!istr.eof() && *istr.position() != '"')
-        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
-    else
-    {
-        std::string field_name;
-        readJSONString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
-    }
+    std::string field_name;
+    readJSONString(field_name, istr);
+    assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
@@ -218,14 +205,9 @@ void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num
 template <typename Type>
 void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.csv.input_format_enum_as_number)
-        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
-    else
-    {
-        std::string field_name;
-        readCSVString(field_name, istr, settings.csv);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
-    }
+    std::string field_name;
+    readCSVString(field_name, istr, settings.csv);
+    assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
@@ -250,6 +232,34 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
     x.resize(initial_size + limit);
     const auto size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
+}
+
+template <typename Type>
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    protobuf.prepareEnumMapping(values);
+    value_index = static_cast<bool>(protobuf.writeEnum(assert_cast<const ColumnType &>(column).getData()[row_num]));
+}
+
+template<typename Type>
+void DataTypeEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    protobuf.prepareEnumMapping(values);
+    row_added = false;
+    Type value;
+    if (!protobuf.readEnum(value))
+        return;
+
+    auto & container = assert_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
 }
 
 template <typename Type>

@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializeMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -120,13 +120,6 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
                     String engine_name = storage->getName();
 
-#if USE_MYSQL
-                    if (auto * proxy = dynamic_cast<StorageMaterializeMySQL *>(storage.get()))
-                    {
-                        auto nested = proxy->getNested();
-                        storage.swap(nested);
-                    }
-#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
@@ -233,7 +226,7 @@ StoragesInfo StoragesInfoStream::next()
 Pipe StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,

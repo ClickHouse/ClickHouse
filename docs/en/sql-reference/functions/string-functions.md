@@ -32,12 +32,12 @@ The function also works for arrays.
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## char_length, CHAR_LENGTH {#char-length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## character_length, CHARACTER_LENGTH {#character-length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
@@ -76,9 +76,9 @@ Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running i
 toValidUTF8( input_string )
 ```
 
-**Arguments**
+Parameters:
 
--   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+-   input\_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
@@ -104,7 +104,7 @@ Repeats a string as many times as specified and concatenates the replicated valu
 repeat(s, n)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
 -   `n` — The number of times to repeat the string. [UInt](../../sql-reference/data-types/int-uint.md).
@@ -173,7 +173,7 @@ Concatenates the strings listed in the arguments, without a separator.
 concat(s1, s2, ...)
 ```
 
-**Arguments**
+**Parameters**
 
 Values of type String or FixedString.
 
@@ -211,7 +211,7 @@ The function is named “injective” if it always returns different result for 
 concatAssumeInjective(s1, s2, ...)
 ```
 
-**Arguments**
+**Parameters**
 
 Values of type String or FixedString.
 
@@ -328,7 +328,7 @@ By default removes all consecutive occurrences of common whitespace (ASCII chara
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `trim_character` — specified characters for trim. [String](../../sql-reference/data-types/string.md).
 -   `input_string` — string for trim. [String](../../sql-reference/data-types/string.md).
@@ -367,7 +367,7 @@ trimLeft(input_string)
 
 Alias: `ltrim(input_string)`.
 
-**Arguments**
+**Parameters**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -405,7 +405,7 @@ trimRight(input_string)
 
 Alias: `rtrim(input_string)`.
 
-**Arguments**
+**Parameters**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -443,7 +443,7 @@ trimBoth(input_string)
 
 Alias: `trim(input_string)`.
 
-**Arguments**
+**Parameters**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -486,118 +486,5 @@ The result type is UInt32.
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
-
-## normalizeQuery {#normalized-query}
-
-Replaces literals, sequences of literals and complex aliases with placeholders.
-
-**Syntax** 
-``` sql
-normalizeQuery(x)
-```
-
-**Arguments** 
-
--   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Sequence of characters with placeholders.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('[1, 2, 3, x]') AS query;
-```
-
-Result:
-
-``` text
-┌─query────┐
-│ [?.., x] │
-└──────────┘
-```
-
-## normalizedQueryHash {#normalized-query-hash}
-
-Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
-
-**Syntax** 
-
-``` sql
-normalizedQueryHash(x)
-```
-
-**Arguments** 
-
--   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Hash value.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
-```
-
-Result:
-
-``` text
-┌─res─┐
-│   1 │
-└─────┘
-```
-
-## encodeXMLComponent {#encode-xml-component}
-
-Escapes characters to place string into XML text node or attribute.
-
-The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
-
-**Syntax** 
-
-``` sql
-encodeXMLComponent(x)
-```
-
-**Arguments** 
-
--   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   The sequence of characters with escape characters.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT encodeXMLComponent('Hello, "world"!');
-SELECT encodeXMLComponent('<123>');
-SELECT encodeXMLComponent('&clickhouse');
-SELECT encodeXMLComponent('\'foo\'');
-```
-
-Result:
-
-``` text
-Hello, &quot;world&quot;!
-&lt;123&gt;
-&amp;clickhouse
-&apos;foo&apos;
-```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

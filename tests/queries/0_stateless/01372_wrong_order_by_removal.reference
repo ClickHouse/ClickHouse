@@ -1,14 +1,14 @@
-SELECT
+SELECT 
     k,
     groupArrayMovingSum(v)
 FROM 
 (
-    SELECT
+    SELECT 
         k,
         dt,
         v
     FROM moving_sum_num
-    ORDER BY
+    ORDER BY 
         k ASC,
         dt ASC
 )

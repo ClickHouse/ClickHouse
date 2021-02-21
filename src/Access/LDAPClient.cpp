@@ -1,14 +1,6 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
-#include <common/logger_useful.h>
-
-#include <Poco/Logger.h>
-#include <boost/algorithm/string/predicate.hpp>
-
-#include <mutex>
-#include <utility>
-#include <vector>
 
 #include <cstring>
 
@@ -35,13 +27,16 @@ LDAPClient::~LDAPClient()
     closeConnection();
 }
 
+void LDAPClient::openConnection()
+{
+    const bool graceful_bind_failure = false;
+    diag(openConnection(graceful_bind_failure));
+}
+
 #if USE_LDAP
 
 namespace
 {
-
-    std::recursive_mutex ldap_global_mutex;
-
     auto escapeForLDAP(const String & src)
     {
         String dest;
@@ -68,64 +63,36 @@ namespace
 
         return dest;
     }
-
-    auto replacePlaceholders(const String & src, const std::vector<std::pair<String, String>> & pairs)
-    {
-        String dest = src;
-
-        for (const auto & pair : pairs)
-        {
-            const auto & placeholder = pair.first;
-            const auto & value = pair.second;
-            for (
-                 auto pos = dest.find(placeholder);
-                 pos != std::string::npos;
-                 pos = dest.find(placeholder, pos)
-            )
-            {
-                dest.replace(pos, placeholder.size(), value);
-                pos += value.size();
-            }
-        }
-
-        return dest;
-    }
-
 }
 
-void LDAPClient::diag(const int rc, String text)
+void LDAPClient::diag(const int rc)
 {
-    std::scoped_lock lock(ldap_global_mutex);
-
     if (rc != LDAP_SUCCESS)
     {
+        String text;
         const char * raw_err_str = ldap_err2string(rc);
-        if (raw_err_str && *raw_err_str != '\0')
-        {
-            if (!text.empty())
-                text += ": ";
-            text += raw_err_str;
-        }
+
+        if (raw_err_str)
+            text = raw_err_str;
 
         if (handle)
         {
+            String message;
             char * raw_message = nullptr;
-
-            SCOPE_EXIT({
-                if (raw_message)
-                {
-                    ldap_memfree(raw_message);
-                    raw_message = nullptr;
-                }
-            });
-
             ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, &raw_message);
 
-            if (raw_message && *raw_message != '\0')
+            if (raw_message)
+            {
+                message = raw_message;
+                ldap_memfree(raw_message);
+                raw_message = nullptr;
+            }
+
+            if (!message.empty())
             {
                 if (!text.empty())
                     text += ": ";
-                text += raw_message;
+                text += message;
             }
         }
 
@@ -133,10 +100,8 @@ void LDAPClient::diag(const int rc, String text)
     }
 }
 
-void LDAPClient::openConnection()
+int LDAPClient::openConnection(const bool graceful_bind_failure)
 {
-    std::scoped_lock lock(ldap_global_mutex);
-
     closeConnection();
 
     {
@@ -267,31 +232,32 @@ void LDAPClient::openConnection()
     if (params.enable_tls == LDAPServerParams::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
+    int rc = LDAP_OTHER;
+
     switch (params.sasl_mechanism)
     {
         case LDAPServerParams::SASLMechanism::SIMPLE:
         {
-            const auto escaped_user_name = escapeForLDAP(params.user);
-            const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", escaped_user_name} });
+            const String dn = params.auth_dn_prefix + escapeForLDAP(params.user) + params.auth_dn_suffix;
 
             ::berval cred;
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
-            diag(ldap_sasl_bind_s(handle, bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr));
+            rc = ldap_sasl_bind_s(handle, dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+
+            if (!graceful_bind_failure)
+                diag(rc);
 
             break;
         }
-
-        default:
-            throw Exception("Unknown SASL mechanism", ErrorCodes::LDAP_ERROR);
     }
+
+    return rc;
 }
 
 void LDAPClient::closeConnection() noexcept
 {
-    std::scoped_lock lock(ldap_global_mutex);
-
     if (!handle)
         return;
 
@@ -299,207 +265,54 @@ void LDAPClient::closeConnection() noexcept
     handle = nullptr;
 }
 
-LDAPSearchResults LDAPClient::search(const LDAPSearchParams & search_params)
+bool LDAPSimpleAuthClient::check()
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    if (params.user.empty())
+        throw Exception("LDAP authentication of a user with an empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
 
-    LDAPSearchResults result;
+    if (params.password.empty())
+        return false; // Silently reject authentication attempt if the password is empty as if it didn't match.
 
-    int scope = 0;
-    switch (search_params.scope)
+    SCOPE_EXIT({ closeConnection(); });
+
+    const bool graceful_bind_failure = true;
+    const auto rc = openConnection(graceful_bind_failure);
+
+    bool result = false;
+
+    switch (rc)
     {
-        case LDAPSearchParams::Scope::BASE:      scope = LDAP_SCOPE_BASE;     break;
-        case LDAPSearchParams::Scope::ONE_LEVEL: scope = LDAP_SCOPE_ONELEVEL; break;
-        case LDAPSearchParams::Scope::SUBTREE:   scope = LDAP_SCOPE_SUBTREE;  break;
-        case LDAPSearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
-    }
-
-    const auto escaped_user_name = escapeForLDAP(params.user);
-    const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", escaped_user_name} });
-    const auto base_dn = replacePlaceholders(search_params.base_dn, { {"{user_name}", escaped_user_name}, {"{bind_dn}", bind_dn} });
-    const auto search_filter = replacePlaceholders(search_params.search_filter, { {"{user_name}", escaped_user_name}, {"{bind_dn}", bind_dn}, {"{base_dn}", base_dn} });
-    char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
-    ::timeval timeout = { params.search_timeout.count(), 0 };
-    LDAPMessage* msgs = nullptr;
-
-    SCOPE_EXIT({
-        if (msgs)
+        case LDAP_SUCCESS:
         {
-            ldap_msgfree(msgs);
-            msgs = nullptr;
+            result = true;
+            break;
         }
-    });
 
-    diag(ldap_search_ext_s(handle, base_dn.c_str(), scope, search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
-
-    for (
-         auto * msg = ldap_first_message(handle, msgs);
-         msg != nullptr;
-         msg = ldap_next_message(handle, msg)
-    )
-    {
-        switch (ldap_msgtype(msg))
+        case LDAP_INVALID_CREDENTIALS:
         {
-            case LDAP_RES_SEARCH_ENTRY:
-            {
-                BerElement * ber = nullptr;
+            result = false;
+            break;
+        }
 
-                SCOPE_EXIT({
-                    if (ber)
-                    {
-                        ber_free(ber, 0);
-                        ber = nullptr;
-                    }
-                });
-
-                for (
-                     auto * attr = ldap_first_attribute(handle, msg, &ber);
-                     attr != nullptr;
-                     attr = ldap_next_attribute(handle, msg, ber)
-                )
-                {
-                    SCOPE_EXIT({
-                        ldap_memfree(attr);
-                        attr = nullptr;
-                    });
-
-                    if (search_params.attribute.empty() || boost::iequals(attr, search_params.attribute))
-                    {
-                        auto ** vals = ldap_get_values_len(handle, msg, attr);
-                        if (vals)
-                        {
-                            SCOPE_EXIT({
-                                ldap_value_free_len(vals);
-                                vals = nullptr;
-                            });
-
-                            for (std::size_t i = 0; vals[i]; i++)
-                            {
-                                if (vals[i]->bv_val && vals[i]->bv_len > 0)
-                                    result.emplace(vals[i]->bv_val, vals[i]->bv_len);
-                            }
-                        }
-                    }
-                }
-
-                break;
-            }
-
-            case LDAP_RES_SEARCH_REFERENCE:
-            {
-                char ** referrals = nullptr;
-                diag(ldap_parse_reference(handle, msg, &referrals, nullptr, 0));
-
-                if (referrals)
-                {
-                    SCOPE_EXIT({
-//                      ldap_value_free(referrals);
-                        ber_memvfree(reinterpret_cast<void **>(referrals));
-                        referrals = nullptr;
-                    });
-
-                    for (std::size_t i = 0; referrals[i]; i++)
-                    {
-                        LOG_WARNING(&Poco::Logger::get("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
-                    }
-                }
-
-                break;
-            }
-
-            case LDAP_RES_SEARCH_RESULT:
-            {
-                int rc = LDAP_SUCCESS;
-                char * matched_msg = nullptr;
-                char * error_msg = nullptr;
-
-                diag(ldap_parse_result(handle, msg, &rc, &matched_msg, &error_msg, nullptr, nullptr, 0));
-
-                if (rc != LDAP_SUCCESS)
-                {
-                    String message = "LDAP search failed";
-
-                    const char * raw_err_str = ldap_err2string(rc);
-                    if (raw_err_str && *raw_err_str != '\0')
-                    {
-                        message += ": ";
-                        message += raw_err_str;
-                    }
-
-                    if (error_msg && *error_msg != '\0')
-                    {
-                        message += ", ";
-                        message += error_msg;
-                    }
-
-                    if (matched_msg && *matched_msg != '\0')
-                    {
-                        message += ", matching DN part: ";
-                        message += matched_msg;
-                    }
-
-                    throw Exception(message, ErrorCodes::LDAP_ERROR);
-                }
-
-                break;
-            }
-
-            case -1:
-                throw Exception("Failed to process LDAP search message", ErrorCodes::LDAP_ERROR);
+        default:
+        {
+            result = false;
+            diag(rc);
+            break;
         }
     }
 
     return result;
 }
 
-bool LDAPSimpleAuthClient::authenticate(const LDAPSearchParamsList * search_params, LDAPSearchResultsList * search_results)
-{
-    if (params.user.empty())
-        throw Exception("LDAP authentication of a user with empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
-
-    if (!search_params != !search_results)
-        throw Exception("Cannot return LDAP search results", ErrorCodes::BAD_ARGUMENTS);
-
-    // Silently reject authentication attempt if the password is empty as if it didn't match.
-    if (params.password.empty())
-        return false;
-
-    SCOPE_EXIT({ closeConnection(); });
-
-    // Will throw on any error, including invalid credentials.
-    openConnection();
-
-    // While connected, run search queries and save the results, if asked.
-    if (search_params)
-    {
-        search_results->clear();
-        search_results->reserve(search_params->size());
-
-        try
-        {
-            for (const auto & single_search_params : *search_params)
-            {
-                search_results->emplace_back(search(single_search_params));
-            }
-        }
-        catch (...)
-        {
-            search_results->clear();
-            throw;
-        }
-    }
-
-    return true;
-}
-
 #else // USE_LDAP
 
-void LDAPClient::diag(const int, String)
+void LDAPClient::diag(const int)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
 
-void LDAPClient::openConnection()
+int LDAPClient::openConnection(const bool)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
@@ -508,12 +321,7 @@ void LDAPClient::closeConnection() noexcept
 {
 }
 
-LDAPSearchResults LDAPClient::search(const LDAPSearchParams &)
-{
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
-}
-
-bool LDAPSimpleAuthClient::authenticate(const LDAPSearchParamsList *, LDAPSearchResultsList *)
+bool LDAPSimpleAuthClient::check()
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }

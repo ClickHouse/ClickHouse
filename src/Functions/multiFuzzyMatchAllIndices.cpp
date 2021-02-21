@@ -5,8 +5,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameMultiFuzzyMatchAllIndices
 {
@@ -17,8 +15,6 @@ using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<
     MultiMatchAllIndicesImpl<UInt64, true>,
     NameMultiFuzzyMatchAllIndices,
     std::numeric_limits<UInt32>::max()>;
-
-}
 
 void registerFunctionMultiFuzzyMatchAllIndices(FunctionFactory & factory)
 {

@@ -1,8 +1,3 @@
----
-toc_priority: 55
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0049\u0050\u002d\u0430\u0434\u0440\u0435\u0441\u0430\u043c\u0438"
----
-
 # Функции для работы с IP-адресами {#funktsii-dlia-raboty-s-ip-adresami}
 
 ## IPv4NumToString(num) {#ipv4numtostringnum}
@@ -241,83 +236,6 @@ SELECT
 ┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
 │ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
 └───────────────────────────────────┴──────────────────────────────────┘
-```
-
-## isIPv4String {#isipv4string}
-
-Определяет, является ли строка адресом IPv4 или нет. Также вернет `0`, если `string` — адрес IPv6.
-
-**Синтаксис**
-
-```sql
-isIPv4String(string)
-```
-
-**Параметры**
-
--   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   `1` если `string` является адресом IPv4 , иначе — `0`.
-
-Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Примеры**
-
-Запрос:
-
-```sql
-SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr
-```
-
-Результат:
-
-``` text
-┌─addr─────────────┬─isIPv4String(addr)─┐
-│ 0.0.0.0          │                  1 │
-│ 127.0.0.1        │                  1 │
-│ ::ffff:127.0.0.1 │                  0 │
-└──────────────────┴────────────────────┘
-```
-
-## isIPv6String {#isipv6string}
-
-Определяет, является ли строка адресом IPv6 или нет. Также вернет `0`, если `string` — адрес IPv4.
-
-**Синтаксис**
-
-```sql
-isIPv6String(string)
-```
-
-**Параметры**
-
--   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   `1` если `string` является адресом IPv6 , иначе — `0`.
-
-Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr
-```
-
-Результат:
-
-``` text
-┌─addr─────────────┬─isIPv6String(addr)─┐
-│ ::               │                  1 │
-│ 1111::ffff       │                  1 │
-│ ::ffff:127.0.0.1 │                  1 │
-│ 127.0.0.1        │                  0 │
-└──────────────────┴────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->

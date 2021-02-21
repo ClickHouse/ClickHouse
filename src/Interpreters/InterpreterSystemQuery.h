@@ -5,7 +5,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
-#include <Disks/IVolume.h>
 
 
 namespace Poco { class Logger; }
@@ -37,12 +36,14 @@ public:
 
     BlockIO execute() override;
 
+    bool ignoreQuota() const override { return true; }
+    bool ignoreLimits() const override { return true; }
+
 private:
     ASTPtr query_ptr;
     Context & context;
     Poco::Logger * log = nullptr;
     StorageID table_id = StorageID::createEmpty();      /// Will be set up if query contains table name
-    VolumePtr volume_ptr;
 
     /// Tries to get a replicated table and restart it
     /// Returns pointer to a newly created table if the restart was successful

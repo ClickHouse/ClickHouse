@@ -3,10 +3,9 @@
 #if USE_ODBC
 
 #    include <Interpreters/Context.h>
-#    include <Server/HTTP/HTTPRequestHandler.h>
-#    include <Common/config.h>
-
 #    include <Poco/Logger.h>
+#    include <Poco/Net/HTTPRequestHandler.h>
+#    include <Common/config.h>
 
 /** The structure of the table is taken from the query "SELECT * FROM table WHERE 1=0".
   * TODO: It would be much better to utilize ODBC methods dedicated for columns description.
@@ -15,7 +14,7 @@
 namespace DB
 {
 
-class ODBCColumnsInfoHandler : public HTTPRequestHandler
+class ODBCColumnsInfoHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
     ODBCColumnsInfoHandler(size_t keep_alive_timeout_, Context & context_)
@@ -23,7 +22,7 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     Poco::Logger * log;

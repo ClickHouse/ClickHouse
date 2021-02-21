@@ -1,8 +1,3 @@
----
-toc_priority: 54
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0055\u0052\u004c"
----
-
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}
 
 Все функции работают не по RFC - то есть, максимально упрощены ради производительности.
@@ -115,183 +110,17 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 Например, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
-### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
-
-Возвращает часть домена, включающую поддомены верхнего уровня до первого существенного поддомена. Принимает имя пользовательского [списка доменов верхнего уровня](https://ru.wikipedia.org/wiki/Список_доменов_верхнего_уровня).
-
-Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
-
-Пример конфигурации:
-
-```xml
-<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
-<top_level_domains_lists>
-    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
-</top_level_domains_lists>
-```
-
-**Синтаксис**
-
-``` sql
-cutToFirstSignificantSubdomain(URL, TLD)
-```
-
-**Parameters**
-
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Часть домена, включающая поддомены верхнего уровня до первого существенного поддомена.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
-```
-
-Результат:
-
-```text
-┌─cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
-│ foo.there-is-no-such-domain                                                                   │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Смотрите также**
-
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
-
-### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
-
-Возвращает часть домена, включающую поддомены верхнего уровня до первого существенного поддомена, не опуская "www". Принимает имя пользовательского списка доменов верхнего уровня.
-
-Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
-
-Пример конфигурации:
-
-```xml
-<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
-<top_level_domains_lists>
-    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
-</top_level_domains_lists>
-```
-
-**Синтаксис**
-
-```sql
-cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
-```
-
-**Параметры**
-
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Часть домена, включающая поддомены верхнего уровня до первого существенного поддомена, без удаления `www`.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');
-```
-
-Результат:
-
-```text
-┌─cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')─┐
-│ www.foo                                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Смотрите также**
-
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
-
-### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
-
-Возвращает первый существенный поддомен. Принимает имя пользовательского списка доменов верхнего уровня.
-
-Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
-
-Пример конфигурации:
-
-```xml
-<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
-<top_level_domains_lists>
-    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
-</top_level_domains_lists>
-```
-
-**Синтаксис**
-
-```sql
-firstSignificantSubdomainCustom(URL, TLD)
-```
-
-**Параметры**
-
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Первый существенный поддомен.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
-```
-
-Результат:
-
-```text 
-┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
-│ foo                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Смотрите также**
-
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
-
-### port(URL[, default_port = 0]) {#port}
-
-Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 
-
 ### path {#path}
 
 Возвращает путь. Пример: `/top/news.html` Путь не включает в себя query string.
 
 ### pathFull {#pathfull}
 
-То же самое, но включая query string и fragment. Пример: /top/news.html?page=2#comments
+То же самое, но включая query string и fragment. Пример: /top/news.html?page=2\#comments
 
 ### queryString {#querystring}
 
-Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также # и всё, что после #.
+Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также \# и всё, что после \#.
 
 ### fragment {#fragment}
 
@@ -299,7 +128,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Возвращает query string и fragment identifier. Пример: страница=1#29390.
+Возвращает query string и fragment identifier. Пример: страница=1\#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 
