@@ -114,7 +114,7 @@ Result:
 
 ## mapContains {#mapcontains}
 
-Determines  whether `map.keys` contains the `key` parameter.
+Determines  whether the `map` contains the `key` parameter.
 
 **Syntax**
 
@@ -124,12 +124,12 @@ mapContains(map, key)
 
 **Parameters** 
 
--   `map` — Map. 
--   `key` — Key. Type matches the type of `map.keys`.
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+-   `key` — Key. Type matches the type of `key` parameter.
 
 **Returned value**
 
--   `1` if `map.keys` contains `key`, `0` if not.
+-   `1` if `map` contains `key`, `0` if not.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -157,7 +157,7 @@ Result:
 
 ## mapKeys {#mapkeys}
 
-Returns all the keys from `map` parameter.
+Returns all keys from the `map` parameter.
 
 **Syntax**
 
@@ -167,11 +167,11 @@ mapKeys(map)
 
 **Parameters**
 
--   `map` — Map.
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
--   Array containing all the keys from `map`.
+-   Array containing all keys from the `map`.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -198,7 +198,7 @@ Result:
 
 ## mapValues {#mapvalues}
 
-Returns all the values from `map` parameter.
+Returns all values from the `map` parameter.
 
 **Syntax**
 
@@ -208,7 +208,7 @@ mapKeys(map)
 
 **Parameters**
 
--   `map` — Map.
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
