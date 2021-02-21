@@ -36,14 +36,35 @@ namespace
             const Context & context;
         };
 
-        static bool needChildVisit(ASTPtr & node, ASTPtr &)
-        {
-            return !node->as<ASTSelectQuery>();
-        }
+        static bool needChildVisit(ASTPtr & node, ASTPtr &) { return !node->as<ASTSelectQuery>() && !node->as<ASTSelectWithUnionQuery>(); }
 
         static void visit(ASTPtr & ast, Data & data)
         {
-            if (auto * select = ast->as<ASTSelectQuery>())
+            if (auto * union_node = ast->as<ASTSelectWithUnionQuery>())
+            {
+                InterpreterSelectWithUnionQuery interpreter(
+                    ast, data.context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+
+                /// After normalization, the height of the ASTSelectWithUnionQuery AST tree is at most 2.
+                for (auto & child : union_node->list_of_selects->children)
+                {
+                    if (auto * inner_union = child->as<ASTSelectWithUnionQuery>())
+                    {
+                        for (auto & inner_node : inner_union->list_of_selects->children)
+                        {
+                            auto * inner_select = inner_node->as<ASTSelectQuery>();
+                            visit(*inner_select, inner_node, data);
+                        }
+                    }
+                    else
+                    {
+                        auto * select = child->as<ASTSelectQuery>();
+                        visit(*select, child, data);
+                    }
+                }
+            }
+
+            else if (auto * select = ast->as<ASTSelectQuery>())
                 visit(*select, ast, data);
         }
 
