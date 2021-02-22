@@ -1313,7 +1313,7 @@ public:
             else if constexpr (std::is_same_v<Name, NameToDecimal256>)
                 return createDecimalMaxPrecision<Decimal256>(scale);
 
-            throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         else
         {
@@ -1337,7 +1337,7 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
             else
                 return std::make_shared<ToDataType>();
         }

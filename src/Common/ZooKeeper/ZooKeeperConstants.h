@@ -24,6 +24,7 @@ enum class OpNum : int32_t
     Get = 4,
     Set = 5,
     SimpleList = 8,
+    Sync = 9,
     Heartbeat = 11,
     List = 12,
     Check = 13,

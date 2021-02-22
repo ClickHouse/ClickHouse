@@ -266,7 +266,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
     ParserKeyword all("ALL");
-    ParserExpressionList contents(false);
+    ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
     ParserKeyword over("OVER");
 
@@ -277,6 +277,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr query;
     ASTPtr expr_list_args;
     ASTPtr expr_list_params;
+
+    if (is_table_function)
+    {
+        if (ParserTableFunctionView().parse(pos, node, expected))
+            return true;
+    }
 
     if (!id_parser.parse(pos, identifier, expected))
         return false;
@@ -309,36 +315,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             expected = old_expected;
             has_all = false;
             has_distinct = false;
-        }
-    }
-
-    if (!has_distinct && !has_all)
-    {
-        auto old_pos = pos;
-        auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
-
-        if (select.parse(pos, query, expected))
-        {
-            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
-            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
-            {
-                // It's an subquery. Bail out.
-                pos = old_pos;
-            }
-            else
-            {
-                if (pos->type != TokenType::ClosingRoundBracket)
-                    return false;
-                ++pos;
-                auto function_node = std::make_shared<ASTFunction>();
-                tryGetIdentifierNameInto(identifier, function_node->name);
-                auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
-                expr_list_with_single_query->children.push_back(query);
-                function_node->arguments = expr_list_with_single_query;
-                function_node->children.push_back(function_node->arguments);
-                node = function_node;
-                return true;
-            }
         }
     }
 
@@ -473,6 +449,49 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    node = function_node;
+    return true;
+}
+
+bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserKeyword view("VIEW");
+    ParserSelectWithUnionQuery select;
+
+    ASTPtr identifier;
+    ASTPtr query;
+
+    if (!view.ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+
+    ++pos;
+
+    bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    if (!select.parse(pos, query, expected))
+        return false;
+
+    auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+    if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+    {
+        // It's an subquery. Bail out.
+        return false;
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+    auto function_node = std::make_shared<ASTFunction>();
+    tryGetIdentifierNameInto(identifier, function_node->name);
+    auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
+    expr_list_with_single_query->children.push_back(query);
+    function_node->name = "view";
+    function_node->arguments = expr_list_with_single_query;
+    function_node->children.push_back(function_node->arguments);
     node = function_node;
     return true;
 }
@@ -845,7 +864,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         expr_list_args->children.push_back(std::move(type_literal));
 
         auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = "cast";
+        func_node->name = "CAST";
         func_node->arguments = std::move(expr_list_args);
         func_node->children.push_back(func_node->arguments);
 

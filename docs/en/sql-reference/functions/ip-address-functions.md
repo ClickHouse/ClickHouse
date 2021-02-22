@@ -265,32 +265,81 @@ SELECT toIPv6('127.0.0.1')
 └─────────────────────┘
 ```
 
-## isIPv4String
+## isIPv4String {#isipv4string}
 
-Determines if the input string is an IPv4 address or not. Returns `1` if true `0` otherwise.
+Determines whether the input string is an IPv4 address or not. If `string` is IPv6 address returns `0`.
 
-``` sql
-SELECT isIPv4String('127.0.0.1')
+**Syntax**
+
+```sql
+isIPv4String(string)
 ```
+
+**Arguments**
+
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `1` if `string` is IPv4 address, `0` otherwise.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr
+```
+
+Result:
 
 ``` text
-┌─isIPv4String('127.0.0.1')─┐
-│                         1 │
-└───────────────────────────┘
+┌─addr─────────────┬─isIPv4String(addr)─┐
+│ 0.0.0.0          │                  1 │
+│ 127.0.0.1        │                  1 │
+│ ::ffff:127.0.0.1 │                  0 │
+└──────────────────┴────────────────────┘
 ```
 
-## isIPv6String
+## isIPv6String {#isipv6string}
 
-Determines if the input string is an IPv6 address or not. Returns `1` if true `0` otherwise.
+Determines whether the input string is an IPv6 address or not. If `string` is IPv4 address returns `0`.
+
+**Syntax**
+
+```sql
+isIPv6String(string)
+```
+
+**Arguments**
+
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `1` if `string` is IPv6 address, `0` otherwise.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
 
 ``` sql
-SELECT isIPv6String('2001:438:ffff::407d:1bc1')
+SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr
 ```
 
+Result:
+
 ``` text
-┌─isIPv6String('2001:438:ffff::407d:1bc1')─┐
-│                                        1 │
-└──────────────────────────────────────────┘
+┌─addr─────────────┬─isIPv6String(addr)─┐
+│ ::               │                  1 │
+│ 1111::ffff       │                  1 │
+│ ::ffff:127.0.0.1 │                  1 │
+│ 127.0.0.1        │                  0 │
+└──────────────────┴────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

@@ -3836,7 +3836,7 @@ std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
 
     return JobAndPool{[this, moving_tagger] () mutable
     {
-        moveParts(moving_tagger);
+        return moveParts(moving_tagger);
     }, PoolType::MOVE};
 }
 

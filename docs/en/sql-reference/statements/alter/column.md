@@ -20,10 +20,12 @@ The following actions are supported:
 
 -   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames the column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 
 These actions are described in detail below.
 
@@ -76,6 +78,22 @@ Example:
 
 ``` sql
 ALTER TABLE visits DROP COLUMN browser
+```
+
+## RENAME COLUMN {#alter_rename-column}
+
+``` sql
+RENAME COLUMN [IF EXISTS] name to new_name
+```
+
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+
+**NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`. 
+
+Example:
+
+``` sql
+ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
 ## CLEAR COLUMN {#alter_clear-column}
@@ -165,6 +183,22 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ## See Also
 
 - [REMOVE TTL](ttl.md).
+
+## RENAME COLUMN {#alter_rename-column}
+
+Renames an existing column.
+
+Syntax:
+
+```sql
+ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name;
+```
+
+**Example**
+
+```sql
+ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
+```
 
 ## Limitations {#alter-query-limitations}
 
