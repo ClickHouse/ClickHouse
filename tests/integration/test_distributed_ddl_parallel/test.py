@@ -10,6 +10,25 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+# By default the exceptions that was throwed in threads will be ignored
+# (they will not mark the test as failed, only printed to stderr).
+#
+# Wrap thrading.Thread and re-throw exception on join()
+class SafeThread(threading.Thread):
+    def __init__(self, target):
+        super().__init__()
+        self.target = target
+        self.exception = None
+    def run(self):
+        try:
+            self.target()
+        except Exception as e: # pylint: disable=broad-except
+            self.exception = e
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self.exception:
+            raise self.exception
+
 def add_instance(name):
     main_configs=[
         'configs/ddl.xml',
@@ -68,11 +87,11 @@ def test_all_in_parallel():
     def inner_test():
         threads = []
         for _ in range(2):
-            threads.append(threading.Thread(target=thread_reload_dictionary))
+            threads.append(SafeThread(target=thread_reload_dictionary))
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join()
+            thread.join(60)
     inner_test()
 
 def test_two_in_parallel_two_queued():
@@ -81,11 +100,11 @@ def test_two_in_parallel_two_queued():
     def inner_test():
         threads = []
         for _ in range(4):
-            threads.append(threading.Thread(target=thread_reload_dictionary))
+            threads.append(SafeThread(target=thread_reload_dictionary))
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join()
+            thread.join(60)
     inner_test()
 
 def test_smoke():
