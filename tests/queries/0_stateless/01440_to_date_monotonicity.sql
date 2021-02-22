@@ -4,7 +4,7 @@ CREATE TABLE tdm (x DateTime('Europe/Moscow')) ENGINE = MergeTree ORDER BY x SET
 INSERT INTO tdm VALUES (now());
 SELECT count(x) FROM tdm WHERE toDate(x) < today() SETTINGS max_rows_to_read = 1;
 
-SELECT toDate(-1), toDate(10000000000000), toDate(100), toDate(65536), toDate(65535);
+SELECT toDate(-1), toDate(10000000000000), toDate(100), toDate(65536, 'UTC'), toDate(65535);
 SELECT toDateTime(-1, 'Europe/Moscow'), toDateTime(10000000000000, 'Europe/Moscow'), toDateTime(1000, 'Europe/Moscow');
 
 CREATE TABLE tdm2 (timestamp UInt32) ENGINE = MergeTree ORDER BY timestamp SETTINGS index_granularity = 1;
