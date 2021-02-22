@@ -83,10 +83,11 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
             connection->conn_str(),
             metadata_path + METADATA_SUFFIX,
             std::make_shared<Context>(global_context),
-            settings->postgresql_max_block_size.changed
-                     ? settings->postgresql_max_block_size.value
+            settings->postgresql_replica_max_block_size.changed
+                     ? settings->postgresql_replica_max_block_size.value
                      : (global_context.getSettingsRef().max_insert_block_size.value),
-            global_context.getMacros()->expand(settings->postgresql_tables_list.value));
+            settings->postgresql_replica_allow_minimal_ddl, true,
+            settings->postgresql_replica_tables_list.value);
 
     std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->conn());
 

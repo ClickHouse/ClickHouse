@@ -30,6 +30,8 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     const std::string & metadata_path,
     const std::string & start_lsn,
     const size_t max_block_size_,
+    bool allow_minimal_ddl_,
+    bool is_postgresql_replica_database_engine_,
     Storages storages_)
     : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
     , context(context_)
@@ -39,6 +41,8 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     , connection(std::move(connection_))
     , current_lsn(start_lsn)
     , max_block_size(max_block_size_)
+    , allow_minimal_ddl(allow_minimal_ddl_)
+    , is_postgresql_replica_database_engine(is_postgresql_replica_database_engine_)
     , storages(storages_)
 {
     for (const auto & [table_name, storage] : storages)
@@ -188,12 +192,9 @@ void PostgreSQLReplicaConsumer::readTupleData(
         Buffer & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
 {
     Int16 num_columns = readInt16(message, pos, size);
-    LOG_DEBUG(log, "number of columns {}", num_columns);
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        char id = identifier;
-        LOG_DEBUG(log, "Identifier: {}", id);
         switch (identifier)
         {
             case 'n': /// NULL
@@ -212,7 +213,10 @@ void PostgreSQLReplicaConsumer::readTupleData(
                 insertValue(buffer, value, column_idx);
                 break;
             }
-            case 'u': /// Toasted (unchanged) value TODO:!
+            case 'u': /// TOAST value && unchanged at the same time. Actual value is not sent.
+                /// TOAST values are not supported. (TOAST values are values that are considered in postgres
+                /// to be too large to be stored directly)
+                insertDefaultValue(buffer, column_idx);
                 break;
         }
     };
@@ -238,7 +242,8 @@ void PostgreSQLReplicaConsumer::readTupleData(
         }
         case PostgreSQLQuery::UPDATE:
         {
-            if (old_value) /// Only if replica identity is set to full
+            /// Process old value in case changed value is a primary key.
+            if (old_value)
                 buffer.columns[num_columns]->insert(Int8(-1));
             else
                 buffer.columns[num_columns]->insert(Int8(1));
@@ -258,8 +263,6 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
     size_t pos = 2;
     char type = readInt8(replication_message, pos, size);
 
-    LOG_DEBUG(log, "Type of replication message: {}", type);
-
     switch (type)
     {
         case 'B': // Begin
@@ -268,103 +271,6 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
             break;
         }
-        case 'C': // Commit
-        {
-            readInt8(replication_message, pos, size);  /// unused flags
-            readInt64(replication_message, pos, size); /// Int64 commit lsn
-            readInt64(replication_message, pos, size); /// Int64 transaction end lsn
-            readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
-
-            final_lsn = current_lsn;
-            LOG_DEBUG(log, "Commit lsn: {}", getLSNValue(current_lsn));
-            break;
-        }
-        case 'O': // Origin
-            break;
-        case 'R': // Relation
-        {
-            Int32 relation_id = readInt32(replication_message, pos, size);
-
-            String relation_namespace, relation_name;
-
-            readString(replication_message, pos, size, relation_namespace);
-            readString(replication_message, pos, size, relation_name);
-
-            table_to_insert = relation_name;
-            tables_to_sync.insert(table_to_insert);
-
-            /// TODO: Add replica identity settings to metadata (needed for update)
-            Int8 replica_identity = readInt8(replication_message, pos, size);
-            Int16 num_columns = readInt16(replication_message, pos, size);
-
-            LOG_DEBUG(log,
-                    "INFO: relation id: {}, namespace: {}, relation name: {}, replica identity: {}, columns number: {}",
-                    relation_id, relation_namespace, relation_name, replica_identity, num_columns);
-
-            if (!isSyncAllowed(relation_id))
-                return;
-
-            Int8 key; /// Flags. 0 or 1 (if part of the key). Not needed for now.
-            Int32 data_type_id;
-            Int32 type_modifier; /// For example, n in varchar(n)
-
-            bool new_relation_definition = false;
-            if (schema_data.find(relation_id) == schema_data.end())
-            {
-                relation_id_to_name[relation_id] = relation_name;
-                schema_data.emplace(relation_id, SchemaData(num_columns));
-                new_relation_definition = true;
-            }
-
-            auto & current_schema_data = schema_data.find(relation_id)->second;
-
-            if (current_schema_data.number_of_columns != num_columns)
-            {
-                markTableAsSkipped(relation_id, relation_name);
-                return;
-            }
-
-            for (uint16_t i = 0; i < num_columns; ++i)
-            {
-                String column_name;
-                key = readInt8(replication_message, pos, size);
-                readString(replication_message, pos, size, column_name);
-
-                data_type_id = readInt32(replication_message, pos, size);
-                type_modifier = readInt32(replication_message, pos, size);
-
-                LOG_DEBUG(log,
-                        "Key: {}, column name: {}, data type id: {}, type modifier: {}",
-                        key, column_name, data_type_id, type_modifier);
-
-                if (new_relation_definition)
-                {
-                    current_schema_data.column_identifiers.emplace_back(std::make_tuple(data_type_id, type_modifier));
-                }
-                else
-                {
-                    if (current_schema_data.column_identifiers[i].first != data_type_id
-                            || current_schema_data.column_identifiers[i].second != type_modifier)
-                    {
-                        markTableAsSkipped(relation_id, relation_name);
-                        return;
-                    }
-                }
-            }
-
-            if (storages.find(table_to_insert) == storages.end())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Storage for table {} does not exist, but is included in replication stream", table_to_insert);
-            }
-
-            [[maybe_unused]] auto buffer_iter = buffers.find(table_to_insert);
-            assert(buffer_iter != buffers.end());
-
-            break;
-        }
-        case 'Y': // Type
-            break;
         case 'I': // Insert
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
@@ -373,46 +279,44 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
                 return;
 
             Int8 new_tuple = readInt8(replication_message, pos, size);
+            const auto & table_name = relation_id_to_name[relation_id];
+            auto buffer = buffers.find(table_name);
 
-            LOG_DEBUG(log, "relationID: {}, newTuple: {}, current insert table: {}", relation_id, new_tuple, table_to_insert);
-
-            auto buffer = buffers.find(table_to_insert);
             if (buffer == buffers.end())
-            {
-                throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Buffer for table {} does not exist", table_to_insert);
-            }
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Buffer for table {} does not exist", table_name);
 
-            readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::INSERT);
+            if (new_tuple)
+                readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::INSERT);
+
             break;
         }
         case 'U': // Update
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            LOG_DEBUG(log, "relationID {}, current insert table {}", relation_id, table_to_insert);
-
             if (!isSyncAllowed(relation_id))
                 return;
 
-            auto buffer = buffers.find(table_to_insert);
+            const auto & table_name = relation_id_to_name[relation_id];
+            auto buffer = buffers.find(table_name);
+
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
-                char id = identifier;
-                LOG_DEBUG(log, "Identifier: {}", id);
                 bool read_next = true;
                 switch (identifier)
                 {
-                    case 'K': /// TODO:!
+                    case 'K':
                     {
-                        /// Only if changed column(s) are part of replica identity index
+                        /// Only if changed column(s) are part of replica identity index (for now it can be only
+                        /// be primary key - default values for replica identity index). In this case, first comes a tuple
+                        /// with old replica identity indexes and all other values will come as nulls. Then comes a full new row.
+                        readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
                         break;
                     }
                     case 'O':
                     {
-                        /// Old row. Only of replica identity is set to full.
-                        /// (For the case when a table does not have any primary key.)
-                        /// TODO: Need to find suitable order_by for nested table (Now it throws if no primary key)
+                        /// Old row. Only if replica identity is set to full. (For the case when a table does not have any
+                        /// primary key, for now not supported, requires to find suitable order by key(s) for nested table.)
                         readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
                         break;
                     }
@@ -443,14 +347,118 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             if (!isSyncAllowed(relation_id))
                 return;
 
-            Int8 full_replica_identity = readInt8(replication_message, pos, size);
+             /// 0 or 1 if replica identity is set to full. For now only default replica identity is supported (with primary keys).
+            readInt8(replication_message, pos, size);
 
-            LOG_DEBUG(log, "relationID: {}, full replica identity: {}", relation_id, full_replica_identity);
-
-            auto buffer = buffers.find(table_to_insert);
+            const auto & table_name = relation_id_to_name[relation_id];
+            auto buffer = buffers.find(table_name);
             readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::DELETE);
+
             break;
         }
+        case 'C': // Commit
+        {
+            readInt8(replication_message, pos, size);  /// unused flags
+            readInt64(replication_message, pos, size); /// Int64 commit lsn
+            readInt64(replication_message, pos, size); /// Int64 transaction end lsn
+            readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
+
+            final_lsn = current_lsn;
+            LOG_DEBUG(log, "Commit lsn: {}", getLSNValue(current_lsn)); /// Will be removed
+
+            break;
+        }
+        case 'R': // Relation
+        {
+            Int32 relation_id = readInt32(replication_message, pos, size);
+
+            String relation_namespace, relation_name;
+
+            readString(replication_message, pos, size, relation_namespace);
+            readString(replication_message, pos, size, relation_name);
+
+            if (!isSyncAllowed(relation_id))
+                return;
+
+            /// 'd' - default (primary key if any)
+            /// 'n' - nothing
+            /// 'f' - all columns (set replica identity full)
+            /// 'i' - user defined index with indisreplident set
+            /// For database engine now supported only 'd', for table engine 'f' is also allowed.
+            char replica_identity = readInt8(replication_message, pos, size);
+
+            if (replica_identity != 'd' && (replica_identity != 'f' || is_postgresql_replica_database_engine))
+            {
+                LOG_WARNING(log,
+                        "Table has replica identity {} - not supported. "
+                        "For database engine only default (with primary keys) replica identity is supported."
+                        "For table engine full replica identity is also supported. Table will be skipped.");
+                markTableAsSkipped(relation_id, relation_name);
+                return;
+            }
+
+            Int16 num_columns = readInt16(replication_message, pos, size);
+
+            Int32 data_type_id;
+            Int32 type_modifier; /// For example, n in varchar(n)
+
+            bool new_relation_definition = false;
+            if (schema_data.find(relation_id) == schema_data.end())
+            {
+                relation_id_to_name[relation_id] = relation_name;
+                schema_data.emplace(relation_id, SchemaData(num_columns));
+                new_relation_definition = true;
+            }
+
+            auto & current_schema_data = schema_data.find(relation_id)->second;
+
+            if (current_schema_data.number_of_columns != num_columns)
+            {
+                markTableAsSkipped(relation_id, relation_name);
+                return;
+            }
+
+            for (uint16_t i = 0; i < num_columns; ++i)
+            {
+                String column_name;
+                readInt8(replication_message, pos, size); /// Marks column as part of replica identity index
+                readString(replication_message, pos, size, column_name);
+
+                data_type_id = readInt32(replication_message, pos, size);
+                type_modifier = readInt32(replication_message, pos, size);
+
+                if (new_relation_definition)
+                {
+                    current_schema_data.column_identifiers.emplace_back(std::make_tuple(data_type_id, type_modifier));
+                }
+                else
+                {
+                    if (current_schema_data.column_identifiers[i].first != data_type_id
+                            || current_schema_data.column_identifiers[i].second != type_modifier)
+                    {
+                        markTableAsSkipped(relation_id, relation_name);
+                        return;
+                    }
+                }
+            }
+
+            if (storages.find(relation_name) == storages.end())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Storage for table {} does not exist, but is included in replication stream", relation_name);
+            }
+
+            [[maybe_unused]] auto buffer_iter = buffers.find(relation_name);
+            assert(buffer_iter != buffers.end());
+
+            tables_to_sync.insert(relation_name);
+
+            break;
+        }
+        case 'O': // Origin
+            break;
+        case 'Y': // Type
+            break;
         case 'T': // Truncate
             break;
         default:
@@ -533,8 +541,10 @@ bool PostgreSQLReplicaConsumer::isSyncAllowed(Int32 relation_id)
 
     if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
     {
+        LOG_TRACE(log, "Synchronization is resumed for table: {} (start_lsn: {})",
+                relation_id_to_name[relation_id], table_start_lsn);
+
         skip_list.erase(table_with_lsn);
-        LOG_DEBUG(log, "Sync is allowed for relation id: {}", relation_id);
 
         return true;
     }
@@ -549,7 +559,10 @@ void PostgreSQLReplicaConsumer::markTableAsSkipped(Int32 relation_id, const Stri
     schema_data.erase(relation_id);
     auto & buffer = buffers.find(relation_name)->second;
     buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
-    LOG_DEBUG(log, "Table {} is skipped temporarily", relation_name);
+    if (!allow_minimal_ddl)
+        LOG_WARNING(log, "Table {} is skipped, because table schema has changed", relation_name);
+    else
+        LOG_TRACE(log, "Table {} is skipped temporarily. ID: {}", relation_name, relation_id);
 }
 
 
@@ -593,7 +606,6 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 
             slot_empty = false;
             current_lsn = (*row)[0];
-            LOG_DEBUG(log, "Current lsn: {}", getLSNValue(current_lsn));
 
             processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
@@ -619,19 +631,26 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
         return false;
     }
 
-    syncTables(tx);
+    if (!tables_to_sync.empty())
+    {
+        syncTables(tx);
+    }
+
     return true;
 }
 
 
 bool PostgreSQLReplicaConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
 {
-    if (!readFromReplicationSlot() || !skip_list.empty())
+    if (!readFromReplicationSlot())
     {
-        for (const auto & [relation_id, lsn] : skip_list)
+        if (allow_minimal_ddl && !skip_list.empty())
         {
-            if (lsn.empty())
-                skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
+            for (const auto & [relation_id, lsn] : skip_list)
+            {
+                if (lsn.empty())
+                    skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
+            }
         }
 
         return false;

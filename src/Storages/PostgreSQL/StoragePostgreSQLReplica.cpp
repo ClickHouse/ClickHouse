@@ -61,11 +61,10 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
             connection_str,
             metadata_path,
             global_context,
-            replication_settings->postgresql_max_block_size.changed
-                     ? replication_settings->postgresql_max_block_size.value
-                     : (global_context->getSettingsRef().max_insert_block_size.value)
-
-    );
+            replication_settings->postgresql_replica_max_block_size.changed
+                     ? replication_settings->postgresql_replica_max_block_size.value
+                     : global_context->getSettingsRef().max_insert_block_size.value,
+            replication_settings->postgresql_replica_allow_minimal_ddl.value, false);
 }
 
 
