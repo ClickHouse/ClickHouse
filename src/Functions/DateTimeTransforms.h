@@ -733,4 +733,52 @@ struct ToYYYYMMDDhhmmssImpl
     using FactorTransform = DateTime::ZeroTransform;
 };
 
+
+template <typename FromType, typename ToType, typename Transform>
+struct Transformer
+{
+    template <typename FromTypeVector, typename ToTypeVector>
+    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
+    {
+        size_t size = vec_from.size();
+        vec_to.resize(size);
+
+        for (size_t i = 0; i < size; ++i)
+            vec_to[i] = transform.execute(vec_from[i], time_zone);
+    }
+};
+
+
+template <typename FromDataType, typename ToDataType, typename Transform>
+struct DateTimeTransformImpl
+{
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+    {
+        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
+
+        size_t time_zone_argument_position = 1;
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            time_zone_argument_position = 2;
+
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
+
+        const ColumnPtr source_col = arguments[0].column;
+        if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
+        {
+            auto mutable_result_col = result_type->createColumn();
+            auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
+
+            Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+
+            return mutable_result_col;
+        }
+        else
+        {
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                + " of first argument of function " + Transform::name,
+                ErrorCodes::ILLEGAL_COLUMN);
+        }
+    }
+};
+
 }

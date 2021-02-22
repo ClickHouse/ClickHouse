@@ -81,6 +81,7 @@ toc_title: Adopters
 | <a href="https://posthog.com/" class="favicon">PostHog</a> | Product Analytics | Main Product | — | — | [Release Notes, Oct 2020](https://posthog.com/blog/the-posthog-array-1-15-0) |
 | <a href="https://postmates.com/" class="favicon">Postmates</a> | Delivery | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=188) |
 | <a href="http://www.pragma-innovation.fr/" class="favicon">Pragma Innovation</a> | Telemetry and Big Data Analysis | Main product | — | — | [Slides in English, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup18/4_pragma_innovation.pdf) |
+| <a href="https://prana-system.com/en/" class="favicon">PRANA</a> | Industrial predictive analytics | Main product | — | — | [News (russian), Feb 2021](https://habr.com/en/news/t/541392/) |
 | <a href="https://www.qingcloud.com/" class="favicon">QINGCLOUD</a> | Cloud services | Main product | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/4.%20Cloud%20%2B%20TSDB%20for%20ClickHouse%20张健%20QingCloud.pdf) |
 | <a href="https://qrator.net" class="favicon">Qrator</a> | DDoS protection | Main product | — | — | [Blog Post, March 2019](https://blog.qrator.net/en/clickhouse-ddos-mitigation_37/) |
 | <a href="https://www.rbinternational.com/" class="favicon">Raiffeisenbank</a> | Banking | Analytics | — | — | [Lecture in Russian, December 2020](https://cs.hse.ru/announcements/421965599.html) |
