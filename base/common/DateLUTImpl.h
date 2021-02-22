@@ -119,8 +119,9 @@ public:
         UInt8 days_in_month;
 
         /// For days, when offset from UTC was changed due to daylight saving time or permanent change, following values could be non zero.
-        Int8 amount_of_offset_change_value; /// Usually -3600 or 3600, but look at Lord Howe Island. multiply by OffsetChangeFactor
-        UInt8 time_at_offset_change_value; /// In seconds from beginning of the day. multiply by OffsetChangeFactor
+        /// All in OffsetChangeFactor (15 minute) intervals.
+        Int8 amount_of_offset_change_value; /// Usually -4 or 4, but look at Lord Howe Island. Multiply by OffsetChangeFactor
+        UInt8 time_at_offset_change_value; /// In seconds from beginning of the day. Multiply by OffsetChangeFactor
 
         inline Int32 amount_of_offset_change() const
         {
