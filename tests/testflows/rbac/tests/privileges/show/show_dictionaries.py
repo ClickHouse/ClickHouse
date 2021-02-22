@@ -71,7 +71,7 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, dict_name
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowDictionaries_Query("1.0"),
+    RQ_SRS_006_RBAC_ShowDictionaries_RequiredPrivilege("1.0"),
 )
 def show_dict(self, privilege, on, grant_target_name, user_name, dict_name, node=None):
     """Check that user is only able to see a dictionary in SHOW DICTIONARIES
@@ -115,7 +115,7 @@ def show_dict(self, privilege, on, grant_target_name, user_name, dict_name, node
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ExistsDictionary("1.0"),
+    RQ_SRS_006_RBAC_ExistsDictionary_RequiredPrivilege("1.0"),
 )
 def exists(self, privilege, on, grant_target_name, user_name, dict_name, node=None):
     """Check that user is able to execute EXISTS on a dictionary if and only if the user has SHOW DICTIONARY privilege
@@ -159,7 +159,7 @@ def exists(self, privilege, on, grant_target_name, user_name, dict_name, node=No
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowCreateDictionary("1.0"),
+    RQ_SRS_006_RBAC_ShowCreateDictionary_RequiredPrivilege("1.0"),
 )
 def show_create(self, privilege, on, grant_target_name, user_name, dict_name, node=None):
     """Check that user is able to execute SHOW CREATE on a dictionary if and only if the user has SHOW DICTIONARY privilege
@@ -204,7 +204,7 @@ def show_create(self, privilege, on, grant_target_name, user_name, dict_name, no
 @TestFeature
 @Name("show dictionaries")
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowDictionaries("1.0"),
+    RQ_SRS_006_RBAC_ShowDictionaries_Privilege("1.0"),
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW DICTIONARIES.

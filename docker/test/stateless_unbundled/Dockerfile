@@ -83,3 +83,4 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
+

@@ -36,7 +36,6 @@ class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public I
 public:
     std::string getName() const override { return "Kafka"; }
 
-    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;

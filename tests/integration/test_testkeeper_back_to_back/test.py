@@ -8,7 +8,7 @@ from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=['configs/enable_test_keeper.xml', 'configs/logs_conf.xml'], with_zookeeper=True)
-from kazoo.client import KazooClient
+from kazoo.client import KazooClient, KazooState
 
 _genuine_zk_instance = None
 _fake_zk_instance = None
@@ -25,7 +25,14 @@ def get_fake_zk():
     global _fake_zk_instance
     if not _fake_zk_instance:
         print("node", cluster.get_instance_ip("node"))
-        _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
+        _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181", timeout=30.0)
+        def reset_last_zxid_listener(state):
+            print("Fake zk callback called for state", state)
+            global _fake_zk_instance
+            if state != KazooState.CONNECTED:
+                _fake_zk_instance._reset()
+
+        _fake_zk_instance.add_listener(reset_last_zxid_listener)
         _fake_zk_instance.start()
     return _fake_zk_instance
 

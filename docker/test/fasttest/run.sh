@@ -107,6 +107,18 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -120,7 +132,7 @@ function clone_root
                 git checkout FETCH_HEAD
                 echo 'Clonned merge head'
             else
-                git fetch
+                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
                 git checkout "$COMMIT_SHA"
                 echo 'Checked out to commit'
             fi
@@ -163,6 +175,7 @@ function clone_submodules
             contrib/xz
             contrib/dragonbox
             contrib/fast_float
+            contrib/NuRaft
         )
 
         git submodule sync
@@ -182,6 +195,7 @@ function run_cmake
         "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
+        "-DENABLE_NURAFT=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -251,8 +265,13 @@ function run_tests
         00701_rollup
         00834_cancel_http_readonly_queries_on_client_close
         00911_tautological_compare
+
+        # Hyperscan
         00926_multimatch
         00929_multi_match_edit_distance
+        01681_hyperscan_debug_assertion
+
+        01176_mysql_client_interactive          # requires mysql client
         01031_mutations_interpreter_and_context
         01053_ssd_dictionary # this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
         01083_expressions_in_engine_arguments
@@ -269,6 +288,8 @@ function run_tests
         01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
         01318_encrypt                           # Depends on OpenSSL
         01318_decrypt                           # Depends on OpenSSL
+        01663_aes_msan                          # Depends on OpenSSL
+        01667_aes_args_check                    # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -313,11 +334,12 @@ function run_tests
 
          # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
         01504_rocksdb
+        01686_rocksdb
 
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert
 
-        01541_max_memory_usage_for_user
+        01541_max_memory_usage_for_user_long
 
         # Require python libraries like scipy, pandas and numpy
         01322_ttest_scipy
@@ -329,12 +351,17 @@ function run_tests
 
         # nc - command not found
         01601_proxy_protocol
+        01622_defaults_for_url_engine
+
+        # JSON functions
+        01666_blns
+        01674_htm_xml_coarse_parse
     )
 
-    time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+    (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
     # substr is to remove semicolon after test name
-    readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
+    readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
 
     # We will rerun sequentially any tests that have failed during parallel run.
     # They might have failed because there was some interference from other tests
@@ -354,7 +381,7 @@ function run_tests
 
         echo "Going to run again: ${FAILED_TESTS[*]}"
 
-        clickhouse-test --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
+        clickhouse-test --hung-check --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
     else
         echo "No failed tests"
     fi

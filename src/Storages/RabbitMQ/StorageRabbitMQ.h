@@ -29,7 +29,6 @@ class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, pub
 public:
     std::string getName() const override { return "RabbitMQ"; }
 
-    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
@@ -95,6 +94,7 @@ private:
     String address;
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
+    String vhost;
 
     std::unique_ptr<uv_loop_t> loop;
     std::shared_ptr<RabbitMQHandler> event_handler;

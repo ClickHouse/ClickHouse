@@ -5,6 +5,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <numeric>
 
@@ -90,6 +92,61 @@ const DictionaryStructure & IPolygonDictionary::getStructure() const
 bool IPolygonDictionary::isInjective(const std::string &) const
 {
     return false;
+}
+
+ColumnPtr IPolygonDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_values_column) const
+{
+    ColumnPtr result;
+
+    const auto index = getAttributeIndex(attribute_name);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+
+    auto keys_size = key_columns.front()->size();
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+        const auto & null_value = std::get<AttributeType>(null_values[index]);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+            auto * out = column.get();
+
+            getItemsImpl<String, StringRef>(
+                index,
+                key_columns,
+                [&](const size_t, const StringRef & value) { out->insertData(value.data, value.size); },
+                default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+
+            getItemsImpl<AttributeType, AttributeType>(
+                index,
+                key_columns,
+                [&](const size_t row, const auto value) { return out[row] = value; },
+                default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
+
+    return result;
 }
 
 BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_t) const
@@ -255,8 +312,12 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     return result;
 }
 
-void IPolygonDictionary::has(const Columns & key_columns, const DataTypes &, PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
+    auto size = key_columns.front()->size();
+    auto result = ColumnUInt8::create(size);
+    auto& out = result->getData();
+
     size_t row = 0;
     for (const auto & pt : extractPoints(key_columns))
     {
@@ -266,6 +327,8 @@ void IPolygonDictionary::has(const Columns & key_columns, const DataTypes &, Pad
     }
 
     query_count.fetch_add(row, std::memory_order_relaxed);
+
+    return result;
 }
 
 size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name) const
@@ -276,152 +339,12 @@ size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name)
     return it->second;
 }
 
-#define DECLARE(TYPE) \
-    void IPolygonDictionary::get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-\
-        const auto null_value = std::get<TYPE>(null_values[ind]); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            ind, \
-            key_columns, \
-            [&](const size_t row, const auto value) { out[row] = value; }, \
-            [&](const size_t) { return null_value; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-void IPolygonDictionary::getString(
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const
-{
-    const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
-
-    const auto & null_value = StringRef{std::get<String>(null_values[ind])};
-
-    getItemsImpl<String, StringRef>(
-            ind,
-            key_columns,
-            [&](const size_t, const StringRef & value) { out->insertData(value.data, value.size); },
-            [&](const size_t) { return null_value; });
-}
-
-#define DECLARE(TYPE) \
-    void IPolygonDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes &, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            ind, \
-            key_columns, \
-            [&](const size_t row, const auto value) { out[row] = value; }, \
-            [&](const size_t row) { return def[row]; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-void IPolygonDictionary::getString(
-        const std::string & attribute_name,
-        const Columns & key_columns,
-        const DataTypes &,
-        const ColumnString * const def,
-        ColumnString * const out) const
-{
-    const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<String, StringRef>(
-            ind,
-            key_columns,
-            [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-            [&](const size_t row) { return def->getDataAt(row); });
-}
-
-#define DECLARE(TYPE) \
-    void IPolygonDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes &, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            ind, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-void IPolygonDictionary::getString(
-        const std::string & attribute_name,
-        const Columns & key_columns,
-        const DataTypes &,
-        const String & def,
-        ColumnString * const out) const
-{
-    const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<String, StringRef>(
-            ind,
-            key_columns,
-            [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-            [&](const size_t) { return StringRef{def}; });
-}
-
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPolygonDictionary::getItemsImpl(
-        size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+        size_t attribute_ind,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const
 {
     const auto points = extractPoints(key_columns);
 
@@ -437,7 +360,7 @@ void IPolygonDictionary::getItemsImpl(
         id = ids[id];
         if (!found)
         {
-            set_value(i, static_cast<OutputType>(get_default(i)));
+            set_value(i, static_cast<OutputType>(default_value_extractor[i]));
             continue;
         }
         if constexpr (std::is_same<AttributeType, String>::value)

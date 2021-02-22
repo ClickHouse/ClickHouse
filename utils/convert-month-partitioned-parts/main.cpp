@@ -97,6 +97,8 @@ void run(String part_path, String date_column, String dest_path)
     Poco::File(new_tmp_part_path_str + "checksums.txt").setWriteable();
     WriteBufferFromFile checksums_out(new_tmp_part_path_str + "checksums.txt", 4096);
     checksums.write(checksums_out);
+    checksums_in.close();
+    checksums_out.close();
 
     Poco::File(new_tmp_part_path).renameTo(new_part_path.toString());
 }

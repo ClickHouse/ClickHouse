@@ -35,7 +35,7 @@ Takes any integer and converts it into [binary form](https://en.wikipedia.org/wi
 SELECT bitTest(number, index)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `number` – integer number.
 -   `index` – position of bit.
@@ -100,7 +100,7 @@ The conjuction for bitwise operations:
 SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `number` – integer number.
 -   `index1`, `index2`, `index3`, `index4` – positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
@@ -165,7 +165,7 @@ The disjunction for bitwise operations:
 SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `number` – integer number.
 -   `index1`, `index2`, `index3`, `index4` – positions of bit.
@@ -220,7 +220,7 @@ Calculates the number of bits set to one in the binary representation of a numbe
 bitCount(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — [Integer](../../sql-reference/data-types/int-uint.md) or [floating-point](../../sql-reference/data-types/float.md) number. The function uses the value representation in memory. It allows supporting floating-point numbers.
 

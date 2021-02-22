@@ -6,8 +6,6 @@
 #include <common/DateLUT.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -30,7 +28,7 @@ namespace ErrorCodes
 static constexpr UInt32 max_scale = 9;
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
       TimezoneMixin(time_zone_name)
 {
     if (scale > max_scale)
@@ -39,7 +37,7 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
       TimezoneMixin(time_zone_info)
 {
     if (scale > max_scale)
@@ -180,30 +178,6 @@ void DataTypeDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         assertChar(maybe_quote, istr);
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-void DataTypeDateTime64::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeDateTime64(assert_cast<const ColumnType &>(column).getData()[row_num], scale));
-}
-
-void DataTypeDateTime64::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    DateTime64 t = 0;
-    if (!protobuf.readDateTime64(t, scale))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(t);
-        row_added = true;
-    }
-    else
-        container.back() = t;
 }
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
