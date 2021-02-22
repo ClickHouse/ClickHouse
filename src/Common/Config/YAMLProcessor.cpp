@@ -221,7 +221,7 @@ void YAMLProcessor::doIncludesRecursive(
         const zkutil::EventPtr & zk_changed_event,
         std::unordered_set<std::string> & contributing_zk_paths)
 {
-    if (node.Type() == YAML::Node::Scalar) //text from poco
+    /*if (node.Type() == YAML::Node::Scalar) //text from poco
     {
         for (auto & substitution : substitutions)
         {
@@ -375,7 +375,7 @@ void YAMLProcessor::doIncludesRecursive(
         Node * child = nullptr;
         for (size_t i = 0; (child = children->item(i)); ++i)
             doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
-    }
+    }*/
 }
 
 YAMLProcessor::Files YAMLProcessor::getConfigMergeFiles(const std::string & config_path)
@@ -436,7 +436,7 @@ YMLDocumentPtr YAMLProcessor::processConfig(
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
-            config = fopen("embedded.yaml", "r");
+            config = fopen("embedded.xml", "r"); // to be added: switch to XML loader, because embedded config is considered to be XML
         }
         else
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
@@ -573,7 +573,6 @@ YAMLProcessor::LoadedConfig YAMLProcessor::loadConfigWithZooKeeperIncludes(
         config_yml = fopen(preprocessed_path, "r");
     }
 
-    //ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_yml, path};
 }
