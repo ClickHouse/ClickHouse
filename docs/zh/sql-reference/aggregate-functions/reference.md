@@ -621,48 +621,6 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## median {#median}
-
-`median*` 函数是 `quantile*` 函数的别名。 它们计算数字数据样本的中位数。
-
-函数:
-
--   `median` — [quantile](#quantile)别名。
--   `medianDeterministic` — [quantileDeterministic](#quantiledeterministic)别名。
--   `medianExact` — [quantileExact](#quantileexact)别名。
--   `medianExactWeighted` — [quantileExactWeighted](#quantileexactweighted)别名。
--   `medianTiming` — [quantileTiming](#quantiletiming)别名。
--   `medianTimingWeighted` — [quantileTimingWeighted](#quantiletimingweighted)别名。
--   `medianTDigest` — [quantileTDigest](#quantiletdigest)别名。
--   `medianTDigestWeighted` — [quantileTDigestWeighted](#quantiletdigestweighted)别名。
-
-**示例**
-
-输入表:
-
-``` text
-┌─val─┐
-│   1 │
-│   1 │
-│   2 │
-│   3 │
-└─────┘
-```
-
-查询:
-
-``` sql
-SELECT medianDeterministic(val, 1) FROM t
-```
-
-结果:
-
-``` text
-┌─medianDeterministic(val, 1)─┐
-│                         1.5 │
-└─────────────────────────────┘
-```
-
 ## quantiles(level1, level2, …)(x) {#quantiles}
 
 所有分位数函数也有相应的函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`。这些函数一次计算所列层次的所有分位数，并返回结果值的数组。
