@@ -8,6 +8,7 @@
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -933,6 +934,10 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
+
+    /// Rewrite function names to their canonical ones.
+    if (settings.normalize_function_names)
+        FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, settings);
