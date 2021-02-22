@@ -70,7 +70,7 @@ def rabbitmq_setup_teardown():
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_initial_load_from_snapshot(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -93,7 +93,7 @@ def test_initial_load_from_snapshot(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_no_connection_at_startup(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -120,7 +120,7 @@ def test_no_connection_at_startup(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_detach_attach_is_ok(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -145,13 +145,16 @@ def test_detach_attach_is_ok(started_cluster):
     instance.query('DETACH TABLE test.postgresql_replica')
     instance.query('ATTACH TABLE test.postgresql_replica')
 
-    time.sleep(0.5)
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
+    while postgresql_replica_check_result(result) == False:
+        time.sleep(0.5)
+        result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
+
     cursor.execute('DROP TABLE postgresql_replica;')
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_replicating_insert_queries(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -192,7 +195,7 @@ def test_replicating_insert_queries(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_replicating_delete_queries(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -230,7 +233,7 @@ def test_replicating_delete_queries(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_replicating_update_queries(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -261,7 +264,7 @@ def test_replicating_update_queries(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_resume_from_written_version(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -303,7 +306,7 @@ def test_resume_from_written_version(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(320)
 def test_many_replication_messages(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -318,7 +321,7 @@ def test_many_replication_messages(started_cluster):
             PRIMARY KEY(key))
             ENGINE = PostgreSQLReplica(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            SETTINGS postgresql_max_block_size = 50000;
+            SETTINGS postgresql_replica_max_block_size = 50000;
         ''')
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
@@ -361,7 +364,7 @@ def test_many_replication_messages(started_cluster):
     cursor.execute('DROP TABLE postgresql_replica;')
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(320)
 def test_connection_loss(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()

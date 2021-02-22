@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <allow_experimental_database_postgresql_replica>1</allow_experimental_database_postgresql_replica>
+        </default>
+    </profiles>
+</yandex>

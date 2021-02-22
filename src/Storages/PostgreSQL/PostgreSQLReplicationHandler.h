@@ -26,6 +26,8 @@ public:
             const std::string & metadata_path_,
             std::shared_ptr<Context> context_,
             const size_t max_block_size_,
+            bool allow_minimal_ddl_,
+            bool is_postgresql_replica_database_engine_,
             const String tables_list = "");
 
     void startup();
@@ -52,7 +54,7 @@ private:
 
     void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
 
-    void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name);
+    void dropReplicationSlot(NontransactionPtr tx, bool temporary = false);
 
     void dropPublication(NontransactionPtr ntx);
 
@@ -72,6 +74,7 @@ private:
     std::shared_ptr<Context> context;
     const std::string database_name, connection_str, metadata_path;
     const size_t max_block_size;
+    bool allow_minimal_ddl, is_postgresql_replica_database_engine;
     std::string tables_list, replication_slot, publication_name;
 
     PostgreSQLConnectionPtr connection;

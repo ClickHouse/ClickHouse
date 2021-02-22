@@ -39,19 +39,19 @@ public:
             const std::string & metadata_path,
             const std::string & start_lsn,
             const size_t max_block_size_,
+            bool allow_minimal_ddl_,
+            bool is_postgresql_replica_database_engine_,
             Storages storages_);
 
     void readMetadata();
 
     bool consume(std::vector<std::pair<Int32, String>> & skipped_tables);
 
-    void updateNested(const String & table_name, StoragePtr nested_table);
+    void updateNested(const String & table_name, StoragePtr nested_storage);
 
     void updateSkipList(const std::unordered_map<Int32, String> & tables_with_lsn);
 
 private:
-    void synchronizationStream();
-
     bool readFromReplicationSlot();
 
     void syncTables(std::shared_ptr<pqxx::nontransaction> tx);
@@ -99,9 +99,9 @@ private:
     /// lsn - log sequnce nuumber, like wal offset (64 bit).
     Int64 getLSNValue(const std::string & lsn)
     {
-        Int64 upper_half, lower_half;
-        std::sscanf(lsn.data(), "%lX/%lX", &upper_half, &lower_half);
-        return (upper_half << 32) + lower_half;
+        UInt32 upper_half, lower_half;
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half);
+        return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 
     Poco::Logger * log;
@@ -113,6 +113,7 @@ private:
 
     std::string current_lsn, final_lsn;
     const size_t max_block_size;
+    bool allow_minimal_ddl, is_postgresql_replica_database_engine;
 
     std::string table_to_insert;
 
@@ -145,10 +146,9 @@ private:
     /// Skipped tables are reloaded from snapshot (nested tables are also updated). Afterwards, if a replication message is
     /// related to a table in a skip_list, we compare current lsn with start_lsn, which was returned with according snapshot.
     /// If current_lsn >= table_start_lsn, we can safely remove table from skip list and continue its synchronization.
+    /// No needed message, related to reloaded table will be missed, because messages are not consumed in the meantime,
+    /// i.e. we will not miss the first start_lsn position for reloaded table.
     std::unordered_map<Int32, String> skip_list;
-
-    /// Mapping from table name which is currently in a skip_list to a table_start_lsn for future comparison with current_lsn.
-    //NameToNameMap start_lsn_for_skipped;
 };
 
 }

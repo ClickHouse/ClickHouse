@@ -24,6 +24,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & metadata_path_,
     std::shared_ptr<Context> context_,
     const size_t max_block_size_,
+    bool allow_minimal_ddl_,
+    bool is_postgresql_replica_database_engine_,
     const String tables_list_)
     : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
     , context(context_)
@@ -31,6 +33,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , connection_str(conn_str)
     , metadata_path(metadata_path_)
     , max_block_size(max_block_size_)
+    , allow_minimal_ddl(allow_minimal_ddl_)
+    , is_postgresql_replica_database_engine(is_postgresql_replica_database_engine_)
     , tables_list(tables_list_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
 {
@@ -113,7 +117,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
         /// In case of some failure, the following cases are possible (since publication and replication slot are reused):
         /// 1. If replication slot exists and metadata file (where last synced version is written) does not exist, it is not ok.
         /// 2. If created a new publication and replication slot existed before it was created, it is not ok.
-        dropReplicationSlot(ntx, replication_slot);
+        dropReplicationSlot(ntx);
         initial_sync();
     }
     else
@@ -142,6 +146,8 @@ void PostgreSQLReplicationHandler::startSynchronization()
             metadata_path,
             start_lsn,
             max_block_size,
+            allow_minimal_ddl,
+            is_postgresql_replica_database_engine,
             nested_storages);
 
     consumer_task->activateAndSchedule();
@@ -310,32 +316,41 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 {
     std::string query_str;
 
-    if (!temporary)
-        query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", replication_slot);
+    std::string slot_name;
+    if (temporary)
+        slot_name = replication_slot + "_tmp";
     else
-        query_str = fmt::format("CREATE_REPLICATION_SLOT {} TEMPORARY LOGICAL pgoutput EXPORT_SNAPSHOT", replication_slot + "_tmp");
+        slot_name = replication_slot;
+
+    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", slot_name);
 
     try
     {
         pqxx::result result{ntx->exec(query_str)};
         start_lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
-        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}, snapshot: {}",
-                replication_slot, start_lsn, snapshot_name);
+        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}", replication_slot, start_lsn);
     }
     catch (Exception & e)
     {
-        e.addMessage("while creating PostgreSQL replication slot {}", replication_slot);
+        e.addMessage("while creating PostgreSQL replication slot {}", slot_name);
         throw;
     }
 }
 
 
-void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, std::string & slot_name)
+void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, bool temporary)
 {
+    std::string slot_name;
+    if (temporary)
+        slot_name = replication_slot + "_tmp";
+    else
+        slot_name = replication_slot;
+
     std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
+
     ntx->exec(query_str);
-    LOG_TRACE(log, "Dropped replication slot {}", slot_name);
+    LOG_TRACE(log, "Dropped replication slot: {}", slot_name);
 }
 
 
@@ -356,7 +371,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
     dropPublication(tx);
     if (isReplicationSlotExist(tx, replication_slot))
-        dropReplicationSlot(tx, replication_slot);
+        dropReplicationSlot(tx);
 
     tx->commit();
 }
