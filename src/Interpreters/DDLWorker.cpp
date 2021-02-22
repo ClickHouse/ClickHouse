@@ -365,7 +365,7 @@ void DDLWorker::scheduleTasks()
 
         if (worker_pool)
         {
-            worker_pool->scheduleOrThrowOnError([this, &saved_task, &zookeeper]()
+            worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
                 processTask(saved_task, zookeeper);
