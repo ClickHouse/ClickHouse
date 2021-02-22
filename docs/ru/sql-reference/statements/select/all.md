@@ -2,7 +2,7 @@
 toc_title: ALL
 ---
 
-# ALL Clause {#select-all}
+# Секция ALL {#select-all}
 
 Поведение запроса `SELECT ALL` точно такое же, как и `SELECT` без аргумента `DISTINCT`.
 
