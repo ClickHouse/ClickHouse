@@ -105,7 +105,9 @@ def remove_control_characters(s):
     s = re.sub(r"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
 
-def get_db_engine(args):
+def get_db_engine(args, database_name):
+    if args.replicated_database:
+        return " ENGINE=Replicated('/test/clickhouse/db/{}', 's1', 'r1')".format(database_name)
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
@@ -128,12 +130,15 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         try:
-            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)), timeout=args.timeout)
+            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args, database)), timeout=args.timeout)
         except TimeoutExpired:
             total_time = (datetime.now() - start_time).total_seconds()
             return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
+
+    # This is for .sh tests
+    os.environ.setdefault("CLICKHOUSE_LOG_COMMENT", case_file)
 
     params = {
         'client': args.client + ' --database=' + database,
@@ -158,7 +163,12 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
-    if not args.database:
+    need_drop_database = not args.database
+    if need_drop_database and args.no_drop_if_fail:
+        maybe_passed = (proc.returncode == 0) and (proc.stderr is None) and (proc.stdout is None or 'Exception' not in proc.stdout)
+        need_drop_database = not maybe_passed
+
+    if need_drop_database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
         try:
@@ -179,7 +189,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     # Normalize randomized database names in stdout, stderr files.
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
+    if not args.show_db_name:
+        os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
@@ -345,9 +356,10 @@ def run_tests_array(all_tests_with_params):
                             SERVER_DIED = True
                             break
 
+                    file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
                     reference_file = os.path.join(suite_dir, name) + '.reference'
-                    stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
-                    stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
+                    stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
+                    stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
                     proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
 
@@ -424,15 +436,26 @@ def run_tests_array(all_tests_with_params):
                                 status += print_test_time(total_time)
                                 status += " - result differs with reference:\n{}\n".format(diff)
                             else:
-                                passed_total += 1
-                                failures_chain = 0
-                                status += MSG_OK
-                                status += print_test_time(total_time)
-                                status += "\n"
-                                if os.path.exists(stdout_file):
-                                    os.remove(stdout_file)
-                                if os.path.exists(stderr_file):
-                                    os.remove(stderr_file)
+                                if args.test_runs > 1 and total_time > 30 and 'long' not in name:
+                                    # We're in Flaky Check mode, check the run time as well while we're at it.
+                                    failures += 1
+                                    failures_chain += 1
+                                    status += MSG_FAIL
+                                    status += print_test_time(total_time)
+                                    status += " - Long test not marked as 'long'"
+                                else:
+                                    passed_total += 1
+                                    failures_chain = 0
+                                    status += MSG_OK
+                                    status += print_test_time(total_time)
+                                    status += "\n"
+                                    if os.path.exists(stdout_file):
+                                        os.remove(stdout_file)
+                                    if os.path.exists(stderr_file):
+                                        os.remove(stderr_file)
+
+            if status and not status.endswith('\n'):
+                status += '\n'
 
             sys.stdout.write(status)
             sys.stdout.flush()
@@ -511,6 +534,8 @@ class BuildFlags():
     RELEASE = 'release-build'
     DATABASE_ORDINARY = 'database-ordinary'
     POLYMORPHIC_PARTS = 'polymorphic-parts'
+    ANTLR = 'antlr'
+    DATABASE_REPLICATED = 'database-replicated'
 
 
 def collect_build_flags(client):
@@ -592,7 +617,9 @@ def main(args):
 
     build_flags = collect_build_flags(args.client)
     if args.antlr:
-        build_flags.append('antlr')
+        build_flags.append(BuildFlags.ANTLR)
+    if args.replicated_database:
+        build_flags.append(BuildFlags.DATABASE_REPLICATED)
 
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
@@ -645,10 +672,10 @@ def main(args):
 
     if args.database and args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args)))
+        clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args, args.database)))
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-    clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args)))
+    clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args, 'test')))
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -721,6 +748,7 @@ def main(args):
             all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
             if args.test:
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
+            all_tests = all_tests * args.test_runs
             all_tests.sort(key=key_func)
 
             jobs = args.jobs
@@ -891,13 +919,17 @@ if __name__ == '__main__':
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
+    parser.add_argument('--no-drop-if-fail', action='store_true', help='Do not drop database for test if test has failed')
+    parser.add_argument('--show-db-name', action='store_true', help='Do not replace random database name with "default"')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
+    parser.add_argument('--test-runs', default=1, nargs='?', type=int, help='Run each test many times (useful for e.g. flaky check)')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--skip-list-path', help="Path to skip-list file")
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
+    parser.add_argument('--replicated-database', action='store_true', default=False, help='Run tests with Replicated database engine')
 
     parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')

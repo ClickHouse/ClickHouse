@@ -1,6 +1,6 @@
 #include <common/types.h>
 #include <Common/hex.h>
-#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <IO/HexWriteBuffer.h>
 
 
@@ -22,14 +22,9 @@ void HexWriteBuffer::nextImpl()
 
 HexWriteBuffer::~HexWriteBuffer()
 {
-    try
-    {
-        nextImpl();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock;
+    nextImpl();
 }
 
 }

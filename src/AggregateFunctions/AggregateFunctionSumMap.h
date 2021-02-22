@@ -115,7 +115,14 @@ public:
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
                         getName(), value_type->getName()};
 
-                result_type = value_type_without_nullable->promoteNumericType();
+                WhichDataType value_type_to_check(value_type);
+
+                /// Do not promote decimal because of implementation issues of this function design
+                /// If we decide to make this function more efficient we should promote decimal type during summ
+                if (value_type_to_check.isDecimal())
+                    result_type = value_type_without_nullable;
+                else
+                    result_type = value_type_without_nullable->promoteNumericType();
             }
 
             types.emplace_back(std::make_shared<DataTypeArray>(result_type));
@@ -136,7 +143,7 @@ public:
         }
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns_, const size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns_, const size_t row_num, Arena *) const override
     {
         const auto & columns = getArgumentColumns(columns_);
 
@@ -212,7 +219,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -231,7 +238,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
@@ -245,7 +252,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
@@ -268,7 +275,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         size_t num_columns = values_types.size();
 

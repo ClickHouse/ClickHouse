@@ -283,11 +283,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_empty_as_default {#settings-input-format-tsv-empty-as-default}
 
-Если эта настройка включена, замените пустые поля ввода в TSV значениями по умолчанию. Для сложных выражений по умолчанию также должна быть включена настройка `input_format_defaults_for_omitted_fields`.
+Если эта настройка включена, все пустые поля во входящем TSV заменяются значениями по умолчанию. Для сложных выражений по умолчанию также должна быть включена настройка `input_format_defaults_for_omitted_fields`.
 
 По умолчанию отключена.
-
-Disabled by default.
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
@@ -406,20 +404,45 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 Возможные значения:
 
--   `'best_effort'` — включает расширенный парсинг.
+-   `best_effort` — включает расширенный парсинг.
 
-ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
+ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `2018-06-08T01:02:03.000Z`.
 
--   `'basic'` — используется базовый парсер.
+-   `basic` — используется базовый парсер.
 
-ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `'2019-08-20 10:18:56'` или `2019-08-20`.
+ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `2019-08-20 10:18:56` или `2019-08-20`.
 
-Значение по умолчанию: `'basic'`.
+Значение по умолчанию: `basic`.
 
 См. также:
 
 -   [Тип данных DateTime.](../../sql-reference/data-types/datetime.md)
 -   [Функции для работы с датой и временем.](../../sql-reference/functions/date-time-functions.md)
+
+## date_time_output_format {#settings-date_time_output_format}
+
+Позволяет выбрать разные выходные форматы текстового представления даты и времени.
+
+Возможные значения:
+
+-   `simple` - простой выходной формат.
+
+    Выходные дата и время Clickhouse в формате `YYYY-MM-DD hh:mm:ss`. Например, `2019-08-20 10:18:56`. Расчет выполняется в соответствии с часовым поясом типа данных (если он есть) или часовым поясом сервера.
+
+-   `iso` - выходной формат ISO.
+
+    Выходные дата и время Clickhouse в формате [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ`. Например, `2019-08-20T10:18:56Z`. Обратите внимание, что выходные данные отображаются в формате UTC (`Z` означает UTC).
+
+-   `unix_timestamp` - выходной формат Unix.
+
+    Выходные дата и время в формате [Unix](https://en.wikipedia.org/wiki/Unix_time). Например `1566285536`.
+
+Значение по умолчанию: `simple`.
+
+См. также:
+
+-   [Тип данных DateTime](../../sql-reference/data-types/datetime.md)
+-   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -683,7 +706,7 @@ ClickHouse использует этот параметр при чтении д
 
 Установка логирования запроса.
 
-Запросы, переданные в ClickHouse с этой установкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
+Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
 
 Пример:
 
@@ -1496,7 +1519,7 @@ ClickHouse генерирует исключение
 -   Тип: секунды
 -   Значение по умолчанию: 60 секунд
 
-Управляет скоростью обнуления ошибок в распределенных таблицах. Если реплика недоступна в течение некоторого времени, накапливает 5 ошибок, а distributed_replica_error_half_life установлена на 1 секунду, то реплика считается нормальной через 3 секунды после последней ошибки.
+Управляет скоростью обнуления счетчика ошибок в распределенных таблицах. Предположим, реплика остается недоступна в течение какого-то времени, и за этот период накопилось 5 ошибок. Если настройка `distributed_replica_error_half_life` установлена в значение 1 секунда, то реплика снова будет считаться доступной через 3 секунды после последней ошибки.
 
 См. также:
 
@@ -1648,7 +1671,7 @@ ClickHouse генерирует исключение
 -   Тип: bool
 -   Значение по умолчанию: True
 
-Обеспечивает параллельный анализ форматов данных с сохранением порядка. Поддерживается только для форматов TSV, TKSV, CSV и JSONEachRow.
+Включает режим, при котором входящие данные парсятся параллельно, но с сохранением исходного порядка следования. Поддерживается только для форматов TSV, TKSV, CSV и JSONEachRow.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -1962,7 +1985,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## output_format_pretty_grid_charset {#output-format-pretty-grid-charset}
 
-Позволяет изменить кодировку, которая используется для печати грид-границ. Доступны следующие кодировки: UTF-8, ASCII.
+Позволяет изменить кодировку, которая используется для отрисовки таблицы при выводе результатов запросов. Доступны следующие кодировки: UTF-8, ASCII.
 
 **Пример**
 
@@ -2447,5 +2470,71 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 -   0 или 1 — настройка отключена. `SELECT` запросы выполняются в один поток.
 
 Значение по умолчанию: `16`.
+
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Задает вероятность того, что ClickHouse начнет трассировку для выполненных запросов (если не указан [входящий контекст](https://www.w3.org/TR/trace-context/) трассировки).
+
+Возможные значения:
+
+-   0 — трассировка для выполненных запросов отключена (если не указан входящий контекст трассировки).
+-   Положительное число с плавающей точкой в диапазоне [0..1]. Например, при значении настройки, равной `0,5`, ClickHouse начнет трассировку в среднем для половины запросов.
+-   1 — трассировка для всех выполненных запросов включена.
+
+Значение по умолчанию: `0`.
+
+## optimize_on_insert {#optimize-on-insert}
+
+Включает или выключает преобразование данных перед добавлением в таблицу, как будто над добавляемым блоком предварительно было произведено слияние (в соответствии с движком таблицы).
+
+Возможные значения:
+
+-   0 — выключена
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+**Пример**
+
+Сравните добавление данных при включенной и выключенной настройке:
+
+Запрос:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Результат:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

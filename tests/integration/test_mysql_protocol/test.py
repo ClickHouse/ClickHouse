@@ -217,7 +217,7 @@ def test_mysql_replacement_query(mysql_client, server_address):
         --password=123 -e "select database();"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout.decode() == 'database()\ndefault\n'
+    assert stdout.decode() == 'DATABASE()\ndefault\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default

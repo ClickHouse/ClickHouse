@@ -38,26 +38,29 @@ class TSV:
     def __str__(self):
         return '\n'.join(self.lines)
 
+    def __len__(self):
+        return len(self.lines)
+
     @staticmethod
     def toMat(contents):
         return [line.split("\t") for line in contents.split("\n") if line.strip()]
 
 
 def assert_eq_with_retry(instance, query, expectation, retry_count=20, sleep_time=0.5, stdin=None, timeout=None,
-                         settings=None, user=None, ignore_error=False):
+                         settings=None, user=None, ignore_error=False, get_result=lambda x: x):
     expectation_tsv = TSV(expectation)
     for i in range(retry_count):
         try:
-            if TSV(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
-                                  ignore_error=ignore_error)) == expectation_tsv:
+            if TSV(get_result(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
+                                  ignore_error=ignore_error))) == expectation_tsv:
                 break
             time.sleep(sleep_time)
         except Exception as ex:
             print(("assert_eq_with_retry retry {} exception {}".format(i + 1, ex)))
             time.sleep(sleep_time)
     else:
-        val = TSV(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
-                                 ignore_error=ignore_error))
+        val = TSV(get_result(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
+                                 ignore_error=ignore_error)))
         if expectation_tsv != val:
             raise AssertionError("'{}' != '{}'\n{}".format(expectation_tsv, val, '\n'.join(
                 expectation_tsv.diff(val, n1="expectation", n2="query"))))
