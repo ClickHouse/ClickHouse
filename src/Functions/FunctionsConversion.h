@@ -518,19 +518,19 @@ struct ToDateTime64TransformSigned
 };
 
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
+    : DateTime::TransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime64, ToDateTime64TransformSigned<Int16>> {};
+    : DateTime::TransformImpl<DataTypeInt16, DataTypeDateTime64, ToDateTime64TransformSigned<Int16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime64, ToDateTime64TransformSigned<Int32>> {};
+    : DateTime::TransformImpl<DataTypeInt32, DataTypeDateTime64, ToDateTime64TransformSigned<Int32>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime64, ToDateTime64TransformSigned<Int64>> {};
+    : DateTime::TransformImpl<DataTypeInt64, DataTypeDateTime64, ToDateTime64TransformSigned<Int64>> {};
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64>> {};
+    : DateTime::TransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformSigned<Float32>> {};
+    : DateTime::TransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformSigned<Float32>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformSigned<Float64>> {};
+    : DateTime::TransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformSigned<Float64>> {};
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
  */
