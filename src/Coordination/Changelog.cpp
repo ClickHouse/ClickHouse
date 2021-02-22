@@ -264,12 +264,20 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_index)
     size_t incomplete_log_index = 0;
     ChangelogReadResult result{};
 
+    bool started = false;
     for (const auto & [changelog_start_index, changelog_description] : existing_changelogs)
     {
         entries_in_last = changelog_description.to_log_index - changelog_description.from_log_index + 1;
 
         if (changelog_description.to_log_index >= from_log_index)
         {
+            if (!started)
+            {
+                if (changelog_description.from_log_index > start_index)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot read changelog from index {}, smallest available index {}", start_index, changelog_description.from_log_index);
+                started = true;
+            }
+
             ChangelogReader reader(changelog_description.path);
             result = reader.readChangelog(logs, from_log_index, index_to_start_pos, log);
             total_read += result.entries_read;
@@ -282,6 +290,9 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_index)
             }
         }
     }
+
+    if (!started && start_index != 1)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Required to read data from {}, but we don't have any active changelogs", from_log_index);
 
     if (incomplete_log_index != 0)
     {

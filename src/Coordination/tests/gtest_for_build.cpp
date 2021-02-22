@@ -917,6 +917,31 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
 
+TEST(CoordinationTest, ChangelogTestLostFiles)
+{
+    ChangelogDirTest test("./logs");
+
+    DB::NuKeeperLogStore changelog("./logs", 20, true);
+    changelog.init(1);
+
+    for (size_t i = 0; i < 35; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
+        changelog.append(entry);
+    }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin"));
+
+    fs::remove("./logs/changelog_1_20.bin");
+
+    DB::NuKeeperLogStore changelog_reader("./logs", 20, true);
+    EXPECT_THROW(changelog_reader.init(5), DB::Exception);
+
+    fs::remove("./logs/changelog_21_40.bin");
+    EXPECT_THROW(changelog_reader.init(3), DB::Exception);
+}
+
 int main(int argc, char ** argv)
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
