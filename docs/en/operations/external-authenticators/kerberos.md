@@ -1,11 +1,6 @@
-# LDAP {#external-authenticators-ldap}
+# Kerberos {#external-authenticators-kerberos}
 
-LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
-
-- use LDAP as an external authenticator for existing users, which are defined in `users.xml` or in local access control paths
-- use LDAP as an external user directory and allow locally undefined users to be authenticated if they exist on the LDAP server
-
-For both of these approaches, an internally named LDAP server must be defined in the ClickHouse config so that other parts of config are able to refer to it.
+Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol. 
 
 ## LDAP Server Definition {#ldap-server-definition}
 

@@ -11,3 +11,4 @@ ClickHouse supports authenticating and managing users using external services.
 The following external authenticators and directories are supported:
 
 - [LDAP](./ldap.md#external-authenticators-ldap) [Authenticator](./ldap.md#ldap-external-authenticator) and [Directory](./ldap.md#ldap-external-user-directory)
+- [Kerberos](./kerberos.md#external-authenticators-kerberos)
