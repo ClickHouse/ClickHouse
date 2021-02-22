@@ -70,7 +70,9 @@ def longer_then(sec):
 
 # It takes 7 seconds to load slow_dict.
 def thread_reload_dictionary():
-    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster slow_dict')
+    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster slow_dict', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
 
 # NOTE: uses inner function to exclude slow start_cluster() from timeout.
 
@@ -91,7 +93,7 @@ def test_all_in_parallel():
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join(60)
+            thread.join(70)
     inner_test()
 
 def test_two_in_parallel_two_queued():
@@ -104,9 +106,11 @@ def test_two_in_parallel_two_queued():
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join(60)
+            thread.join(70)
     inner_test()
 
 def test_smoke():
     for _ in range(100):
-        initiator.query('DROP DATABASE IF EXISTS foo ON CLUSTER cluster')
+        initiator.query('DROP DATABASE IF EXISTS foo ON CLUSTER cluster', settings={
+            'distributed_ddl_task_timeout': 60,
+        })
