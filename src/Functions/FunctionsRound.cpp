@@ -8,7 +8,7 @@ namespace DB
 void registerFunctionsRound(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRound>("round", FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionRoundBankers>("roundBankers", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRoundBankers>("roundBankers", FunctionFactory::CaseSensitive);
     factory.registerFunction<FunctionFloor>("floor", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionCeil>("ceil", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTrunc>("trunc", FunctionFactory::CaseInsensitive);
