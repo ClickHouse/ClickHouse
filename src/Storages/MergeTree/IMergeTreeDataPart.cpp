@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/DirectorySyncGuard.h>
 #include <Common/CurrentMetrics.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
@@ -1002,9 +1001,9 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     volume->getDisk()->moveFile(from, to);
     relative_path = new_relative_path;
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
-        sync_guard.emplace(volume->getDisk(), to);
+        sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
 }
 
 
@@ -1276,6 +1275,18 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     {
         /// Move TTL is not calculated
         if (!ttl_infos.moves_ttl.count(move_desc.result_column))
+            return false;
+    }
+
+    for (const auto & group_by_desc : metadata_snapshot->getGroupByTTLs())
+    {
+        if (!ttl_infos.group_by_ttl.count(group_by_desc.result_column))
+            return false;
+    }
+
+    for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTLs())
+    {
+        if (!ttl_infos.rows_where_ttl.count(rows_where_desc.result_column))
             return false;
     }
 

@@ -262,18 +262,20 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))", "12")
 
 
-def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
+def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
+    cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
     node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
 
-def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
+def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
+    cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
     for i in range(100):
         try:
@@ -340,3 +342,25 @@ def test_bridge_dies_with_parent(started_cluster):
 
     assert clickhouse_pid is None
     assert bridge_pid is None
+
+
+def test_odbc_postgres_date_data_type(started_cluster):
+    conn = get_postgres_conn();
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS clickhouse.test_date (column1 integer, column2 date)")
+
+    cursor.execute("INSERT INTO clickhouse.test_date VALUES (1, '2020-12-01')")
+    cursor.execute("INSERT INTO clickhouse.test_date VALUES (2, '2020-12-02')")
+    cursor.execute("INSERT INTO clickhouse.test_date VALUES (3, '2020-12-03')")
+    conn.commit()
+
+    node1.query(
+        '''
+        CREATE TABLE test_date (column1 UInt64, column2 Date)
+        ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_date')''')
+
+    expected = '1\t2020-12-01\n2\t2020-12-02\n3\t2020-12-03\n'
+    result = node1.query('SELECT * FROM test_date');
+    assert(result == expected)
+
+

@@ -261,6 +261,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    ColumnPtr compress() const override;
+
     void reserve(size_t n) override;
 
     void getExtremes(Field & min, Field & max) const override;

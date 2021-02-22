@@ -5,6 +5,6 @@ services:
         hostname: hdfs1
         restart: always
         ports:
-          - 50075:50075
-          - 50070:50070
+            - 50075:50075
+            - 50070:50070
         entrypoint: /etc/bootstrap.sh -d
