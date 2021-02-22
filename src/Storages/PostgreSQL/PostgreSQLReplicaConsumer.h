@@ -18,11 +18,6 @@
 #include "pqxx/pqxx" // Y_IGNORE
 
 
-/// TODO: There is ALTER PUBLICATION command to dynamically add and remove tables for replicating (the command is transactional).
-///       This can also be supported. (Probably, if in a replication stream comes a relation name, which does not currently
-///       exist in CH, it can be loaded from snapshot and handled the same way as some ddl by comparing lsn positions of wal,
-///       but there is the case that a known table has been just renamed, then the previous version might be just dropped by user).
-
 namespace DB
 {
 

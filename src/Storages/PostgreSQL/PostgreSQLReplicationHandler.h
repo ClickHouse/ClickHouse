@@ -14,6 +14,11 @@
 namespace DB
 {
 
+/// IDEA: There is ALTER PUBLICATION command to dynamically add and remove tables for replicating (the command is transactional).
+///       (Probably, if in a replication stream comes a relation name, which does not currently
+///       exist in CH, it can be loaded via snapshot while stream is stopped and then comparing wal positions with
+///       current lsn and table start lsn.
+
 class StoragePostgreSQLReplica;
 
 class PostgreSQLReplicationHandler
