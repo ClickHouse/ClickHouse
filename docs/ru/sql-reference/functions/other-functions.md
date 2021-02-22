@@ -183,6 +183,103 @@ SELECT visibleWidth(NULL)
 Получить размер блока.
 В ClickHouse выполнение запроса всегда идёт по блокам (наборам кусочков столбцов). Функция позволяет получить размер блока, для которого её вызвали.
 
+## byteSize {#function-bytesize}
+
+Возвращает оценку в байтах размера аргументов в памяти в несжатом виде.
+
+**Синтаксис**
+
+```sql
+byteSize(argument [, ...])
+```
+
+**Параметры**
+
+-   `argument` — значение.
+
+**Возвращаемое значение**
+
+-   Оценка размера аргументов в памяти в байтах.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Для аргументов типа [String](../../sql-reference/data-types/string.md) функция возвращает длину строки + 9 (нуль-терминатор + длина)
+
+Запрос:
+
+```sql
+SELECT byteSize('string');
+```
+
+Результат:
+
+```text
+┌─byteSize('string')─┐
+│                 15 │
+└────────────────────┘
+```
+
+Запрос:
+
+```sql
+CREATE TABLE test
+(
+    `key` Int32,
+    `u8` UInt8,
+    `u16` UInt16,
+    `u32` UInt32,
+    `u64` UInt64,
+    `i8` Int8,
+    `i16` Int16,
+    `i32` Int32,
+    `i64` Int64,
+    `f32` Float32,
+    `f64` Float64
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
+
+SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+key:               1
+byteSize(UInt8):   1
+byteSize(UInt16):  2
+byteSize(UInt32):  4
+byteSize(UInt64):  8
+byteSize(Int8):    1
+byteSize(Int16):   2
+byteSize(Int32):   4
+byteSize(Int64):   8
+byteSize(Float32): 4
+byteSize(Float64): 8
+```
+
+Если функция принимает несколько аргументов, то она возвращает их совокупный размер в байтах.
+
+Запрос:
+
+```sql
+SELECT byteSize(NULL, 1, 0.3, '');
+```
+
+Результат:
+
+```text
+┌─byteSize(NULL, 1, 0.3, '')─┐
+│                         19 │
+└────────────────────────────┘
+```
+
 ## materialize(x) {#materializex}
 
 Превращает константу в полноценный столбец, содержащий только одно значение.

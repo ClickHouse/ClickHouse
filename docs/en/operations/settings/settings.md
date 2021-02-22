@@ -312,7 +312,7 @@ Enables or disables parsing enum values as enum ids for TSV input format.
 Possible values:
 
 -   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
@@ -428,7 +428,7 @@ Possible values:
 
 -   `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `'2019-08-20 10:18:56'` or `2019-08-20`.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
 
 Default value: `'basic'`.
 
@@ -443,19 +443,19 @@ Allows choosing different output formats of the text representation of date and 
 
 Possible values:
 
--   `'simple'` - Simple output format.
+-   `simple` - Simple output format.
 
-    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `'2019-08-20 10:18:56'`. Calculation is performed according to the data type's time zone (if present) or server time zone.
+    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
--   `'iso'` - ISO output format.
+-   `iso` - ISO output format.
 
-    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `'2019-08-20T10:18:56Z'`. Note that output is in UTC (`Z` means UTC).
+    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
--   `'unix_timestamp'` - Unix timestamp output format.
+-   `unix_timestamp` - Unix timestamp output format.
 
-    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `'1566285536'`.
+    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
-Default value: `'simple'`.
+Default value: `simple`.
 
 See also:
 
@@ -1944,6 +1944,21 @@ Possible values:
 
 Default value: 16.
 
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Sets the number of threads performing background tasks for message streaming. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**See Also**
+
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine
+
 ## validate_polygons {#validate_polygons}
 
 Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
@@ -2577,4 +2592,90 @@ Possible values:
 
 Default value: `16`.
 
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
+
+Possible values:
+
+-   0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
+-   1 — The trace for all executed queries is enabled.
+
+Default value: `0`.
+
+## optimize_on_insert {#optimize-on-insert}
+
+Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Result:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+
+## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
+
+Allows to select data from a file engine table without file.
+
+Possible values:
+- 0 — `SELECT` throws exception.
+- 1 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
+
+Enables or disables truncate before insert in file engine tables.
+
+Possible values:
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.

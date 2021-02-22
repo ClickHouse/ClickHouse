@@ -1,3 +1,5 @@
+SET database_atomic_wait_for_drop_and_detach_synchronously=1;
+
 SELECT uniqArray([1, 1, 2]),
        SUBSTRING('Hello, world', 7, 5),
        POW(1, 2), ROUND(TANh(1)), CrC32(''),
@@ -58,3 +60,5 @@ WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query 
 ORDER BY query_start_time DESC LIMIT 1 FORMAT TabSeparatedWithNames;
 SELECT '';
 
+DROP TABLE test_query_log_factories_info1.memory_table;
+DROP DATABASE test_query_log_factories_info1;

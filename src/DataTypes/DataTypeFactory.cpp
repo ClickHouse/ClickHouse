@@ -29,8 +29,14 @@ namespace ErrorCodes
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
+    /// Data type parser can be invoked from coroutines with small stack.
+    /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
+    /// let's make the threshold significantly lower.
+    /// It is impractical for user to have complex data types with this depth.
+    static constexpr size_t data_type_max_parse_depth = 200;
+
     ParserDataType parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
     return get(ast);
 }
 

@@ -26,9 +26,6 @@ class Field;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
-class ProtobufReader;
-class ProtobufWriter;
-
 struct NameAndTypePair;
 
 
@@ -234,10 +231,6 @@ public:
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
-
-    /** Serialize to a protobuf. */
-    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
-    virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */
