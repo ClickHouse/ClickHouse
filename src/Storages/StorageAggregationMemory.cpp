@@ -170,28 +170,6 @@ Pipe StorageAggregatingMemory::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    if (delay_read_for_global_subqueries)
-    {
-        /// Note: for global subquery we use single source.
-        /// Mainly, the reason is that at this point table is empty,
-        /// and we don't know the number of blocks are going to be inserted into it.
-        ///
-        /// It may seem to be not optimal, but actually data from such table is used to fill
-        /// set for IN or hash table for JOIN, which can't be done concurrently.
-        /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
-
-        return Pipe(std::make_shared<MemorySource>(
-            column_names,
-            *this,
-            metadata_snapshot,
-            nullptr /* data */,
-            nullptr /* parallel execution index */,
-            [this](std::shared_ptr<const Blocks> & data_to_initialize)
-            {
-                data_to_initialize = data.get();
-            }));
-    }
-
     auto current_data = data.get();
     size_t size = current_data->size();
 
