@@ -341,7 +341,7 @@ void DDLWorker::scheduleTasks()
         auto & min_task = current_tasks.front();
         String min_entry_name = last_skipped_entry_name ? std::min(min_task->entry_name, *last_skipped_entry_name) : min_task->entry_name;
         begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_entry_name);
-        current_tasks.clear();
+        current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
     }
 
     assert(current_tasks.empty());
