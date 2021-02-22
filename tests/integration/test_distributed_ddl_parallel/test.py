@@ -87,3 +87,7 @@ def test_two_in_parallel_two_queued():
         for thread in threads:
             thread.join()
     inner_test()
+
+def test_smoke():
+    for _ in range(100):
+        initiator.query('DROP DATABASE IF EXISTS foo ON CLUSTER cluster')
