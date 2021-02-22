@@ -59,6 +59,7 @@ SRCS(
     ExternalModelsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
+    FunctionNameNormalizer.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
