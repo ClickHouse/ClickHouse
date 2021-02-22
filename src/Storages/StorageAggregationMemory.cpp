@@ -45,7 +45,7 @@ public:
     {
     }
 
-    String getName() const override { return "Memory"; }
+    String getName() const override { return "AggregatingMemory"; }
 
 protected:
     Chunk generate() override
