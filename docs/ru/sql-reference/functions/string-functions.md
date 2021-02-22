@@ -555,4 +555,88 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 └─────┘
 ```
 
+## encodeXMLComponent {#encode-xml-component}
+
+Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
+
+Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
+
+**Синтаксис** 
+
+``` sql
+encodeXMLComponent(x)
+```
+
+**Параметры** 
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка, в которой зарезервированные символы экранированы.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT encodeXMLComponent('Hello, "world"!');
+SELECT encodeXMLComponent('<123>');
+SELECT encodeXMLComponent('&clickhouse');
+SELECT encodeXMLComponent('\'foo\'');
+```
+
+Результат:
+
+``` text
+Hello, &quot;world&quot;!
+&lt;123&gt;
+&amp;clickhouse
+&apos;foo&apos;
+```
+
+
+## decodeXMLComponent {#decode-xml-component}
+
+Заменяет символами предопределенные мнемоники XML: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+Также эта функция заменяет числовые ссылки соответствующими символами юникод. Поддерживаются десятичная (например, `&#10003;`) и шестнадцатеричная (`&#x2713;`) формы.
+
+**Синтаксис**
+
+``` sql
+decodeXMLComponent(x)
+```
+
+**Параметры**
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка с произведенными заменами.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT decodeXMLComponent('&apos;foo&apos;');
+SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
+```
+
+Результат:
+
+``` text
+'foo' 
+< Σ >
+```
+
+**Смотрите также**
+
+-   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

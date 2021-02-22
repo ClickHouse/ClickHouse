@@ -8,7 +8,7 @@
 -   `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — значение метрики.
 -   `description` ([String](../../sql-reference/data-types/string.md)) — описание метрики.
 
-Список поддержанных метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
+Список поддерживаемых метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
 **Пример**
 

@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -221,6 +222,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
@@ -289,6 +291,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    htmlOrXmlCoarseParse.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -408,8 +411,6 @@ SRCS(
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAs.cpp
-    reinterpretAsFixedString.cpp
-    reinterpretAsString.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
@@ -424,9 +425,11 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
+    sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp
@@ -452,6 +455,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
     toDayOfMonth.cpp

@@ -70,8 +70,19 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
             }
             else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
-                const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
-                res.emplace_back(ColumnWithTypeAndName{ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
+
+                ColumnPtr nullable_res;
+                if (nullable_column)
+                {
+                    const auto & nested_col = nullable_column->getNestedColumnPtr();
+                    nullable_res = ColumnConst::create(nested_col, col.column->size());
+                }
+                else
+                {
+                    nullable_res = makeNullable(col.column);
+                }
+                res.emplace_back(ColumnWithTypeAndName{ nullable_res, nested_type, col.name });
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
@@ -210,6 +221,14 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
             throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
     }
     return {nested_columns, offsets->data()};
+}
+
+bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    const auto & lhs_name = lhs->getName();
+    const auto & rhs_name = rhs->getName();
+
+    return lhs_name == rhs_name;
 }
 
 }

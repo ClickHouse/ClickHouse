@@ -151,7 +151,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r2
 
 $CLICKHOUSE_CLIENT --query="SELECT 'After restart';"
 $CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICA dst_r1;"
-$CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICAS;"
+$CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 

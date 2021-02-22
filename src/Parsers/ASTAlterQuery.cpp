@@ -344,6 +344,32 @@ void ASTAlterCommand::formatImpl(
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
+bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const
+{
+    if (command_list)
+    {
+        if (command_list->children.empty())
+            return false;
+        for (const auto & child : command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type != type)
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool ASTAlterQuery::isSettingsAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING);
+}
+
+bool ASTAlterQuery::isFreezeAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL);
+}
 
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
