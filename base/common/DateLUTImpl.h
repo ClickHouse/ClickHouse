@@ -105,7 +105,7 @@ public:
     /// The order of fields matters for alignment and sizeof.
     struct Values
     {
-        /// Least significat 64 bits from time_t at beginning of the day.
+        /// time_t at beginning of the day.
         Int64 date;
 
         /// Properties of the day.
