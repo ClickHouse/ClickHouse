@@ -41,7 +41,7 @@ ActionsDAGPtr addMissingDefaults(
         }
     }
 
-    auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+    auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName(), QueryProcessingStage::Complete);
 
     FunctionOverloadResolverPtr func_builder_replicate = FunctionFactory::instance().get("replicate", context);
 

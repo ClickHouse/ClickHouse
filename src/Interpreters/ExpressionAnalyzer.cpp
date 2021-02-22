@@ -184,7 +184,7 @@ void ExpressionAnalyzer::analyzeAggregation()
             auto array_join = addMultipleArrayJoinAction(temp_actions, is_array_join_left);
             auto sample_columns = temp_actions->getResultColumns();
             array_join->prepare(sample_columns);
-            temp_actions = std::make_shared<ActionsDAG>(sample_columns);
+            temp_actions = std::make_shared<ActionsDAG>(sample_columns, to_stage);
 
             NamesAndTypesList new_columns_after_array_join;
             NameSet added_columns;
@@ -213,7 +213,7 @@ void ExpressionAnalyzer::analyzeAggregation()
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             auto sample_columns = temp_actions->getResultColumns();
             analyzedJoin().addJoinedColumnsAndCorrectNullability(sample_columns);
-            temp_actions = std::make_shared<ActionsDAG>(sample_columns);
+            temp_actions = std::make_shared<ActionsDAG>(sample_columns, to_stage);
         }
 
         columns_after_join = columns_after_array_join;
@@ -935,7 +935,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         }
 
         chain.steps.emplace_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(
-                std::make_shared<ActionsDAG>(std::move(columns))));
+                std::make_shared<ActionsDAG>(std::move(columns), to_stage)));
         chain.steps.back()->additional_input = std::move(unused_source_columns);
         chain.getLastActions();
         chain.addStep();
@@ -1332,7 +1332,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 {
-    ExpressionActionsChain new_chain(context);
+    ExpressionActionsChain new_chain(context, to_stage);
     appendSelect(new_chain, false);
     return new_chain.getLastActions();
 }
@@ -1340,6 +1340,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 ExpressionAnalysisResult::ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
         const StorageMetadataPtr & metadata_snapshot,
+        QueryProcessingStage::Enum to_stage_,
         bool first_stage_,
         bool second_stage_,
         bool only_types,
@@ -1386,7 +1387,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     }
 
     {
-        ExpressionActionsChain chain(context);
+        ExpressionActionsChain chain(context, to_stage_);
         Names additional_required_columns_after_prewhere;
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))

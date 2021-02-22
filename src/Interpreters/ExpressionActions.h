@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <variant>
@@ -132,7 +133,10 @@ private:
   */
 struct ExpressionActionsChain
 {
-    explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
+    explicit ExpressionActionsChain(const Context & context_, QueryProcessingStage::Enum to_stage_)
+        : context(context_)
+        , to_stage(to_stage_)
+    {}
 
 
     struct Step
@@ -234,6 +238,7 @@ struct ExpressionActionsChain
     using Steps = std::vector<StepPtr>;
 
     const Context & context;
+    QueryProcessingStage::Enum to_stage;
     Steps steps;
 
     void addStep(NameSet non_constant_inputs = {});

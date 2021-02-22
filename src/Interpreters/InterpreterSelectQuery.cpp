@@ -534,7 +534,8 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
                 query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
                 result_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name,
-                true);
+                true,
+                options.to_stage);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
@@ -581,6 +582,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     analysis_result = ExpressionAnalysisResult(
             *query_analyzer,
             metadata_snapshot,
+            options.to_stage,
             first_stage,
             second_stage,
             options.only_analyze,

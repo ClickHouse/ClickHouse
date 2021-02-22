@@ -3,6 +3,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Core/QueryProcessingStage.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -182,7 +183,7 @@ public:
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
-    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, QueryProcessingStage::Enum to_stage_);
 
     const Nodes & getNodes() const { return nodes; }
     const Index & getIndex() const { return index; }
@@ -252,7 +253,8 @@ public:
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
-        bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
+        bool ignore_constant_values = false, /// Do not check that constants are same. Use value from result_header.
+        QueryProcessingStage::Enum to_stage = QueryProcessingStage::Complete);
 
     /// Create expression which add const column and then materialize it.
     static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);

@@ -108,3 +108,6 @@ SELECT c.host_name, any(_shard_num) s
 FROM cluster(test_cluster_two_shards, system.one) a
 JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'
 GROUP BY c.host_name; -- { serverError 403 }
+
+-- LIMIT BY
+select _shard_num, * from remote('127.{1,2}', system.one) limit 1 by dummy;

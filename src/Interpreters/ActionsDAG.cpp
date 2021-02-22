@@ -34,7 +34,7 @@ ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
         addInput(input.name, input.type, true);
 }
 
-ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
+ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, QueryProcessingStage::Enum to_stage_)
 {
     for (const auto & input : inputs_)
     {
@@ -48,7 +48,12 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
             ///   without any respect to header structure. So, it is a way to drop materialized column and use
             ///   constant value from header.
             /// We cannot remove such input right now cause inputs positions are important in some cases.
-            addColumn(input, true);
+            ///
+            /// But only when the query is processed up to the Complete stage,
+            /// otherwise those constants may be required on some intermediate stages
+            /// (and those stages may be processed on different nodes).
+            if (to_stage_ == QueryProcessingStage::Complete)
+                addColumn(input, true);
         }
         else
             addInput(input.name, input.type, true);
@@ -679,7 +684,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
-    bool ignore_constant_values)
+    bool ignore_constant_values,
+    QueryProcessingStage::Enum to_stage)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -687,7 +693,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
-    auto actions_dag = std::make_shared<ActionsDAG>(source);
+    auto actions_dag = std::make_shared<ActionsDAG>(source, to_stage);
     std::vector<Node *> projection(num_result_columns);
 
     FunctionOverloadResolverPtr func_builder_materialize =

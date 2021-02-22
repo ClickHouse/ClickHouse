@@ -100,7 +100,7 @@ private:
 
     struct Stage
     {
-        Stage(const Context & context_) : expressions_chain(context_) {}
+        Stage(const Context & context_) : expressions_chain(context_, QueryProcessingStage::Complete) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;

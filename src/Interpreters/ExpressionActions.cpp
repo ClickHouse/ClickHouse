@@ -613,7 +613,8 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(
+        columns, to_stage)));
 }
 
 void ExpressionActionsChain::finalize()
