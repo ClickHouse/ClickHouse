@@ -34,6 +34,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 
 namespace fs = std::filesystem;
@@ -427,7 +428,12 @@ Pipe StorageFile::read(
         paths = {""};   /// when use fd, paths are empty
     else
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
-            throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+        {
+            if (context.getSettingsRef().engine_file_empty_if_not_exists)
+                return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+            else
+                throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+        }
 
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
@@ -469,7 +475,8 @@ public:
         std::unique_lock<std::shared_timed_mutex> && lock_,
         const CompressionMethod compression_method,
         const Context & context,
-        const std::optional<FormatSettings> & format_settings)
+        const std::optional<FormatSettings> & format_settings,
+        int & flags)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
@@ -485,13 +492,14 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd, DBMS_DEFAULT_BUFFER_SIZE);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            flags |= O_WRONLY | O_APPEND | O_CREAT;
+            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
         /// In case of CSVWithNames we have already written prefix.
@@ -546,7 +554,12 @@ BlockOutputStreamPtr StorageFile::write(
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
+    int flags = 0;
+
     std::string path;
+    if (context.getSettingsRef().engine_file_truncate_on_insert)
+        flags |= O_TRUNC;
+
     if (!paths.empty())
     {
         path = paths[0];
@@ -559,7 +572,8 @@ BlockOutputStreamPtr StorageFile::write(
         std::unique_lock{rwlock, getLockTimeout(context)},
         chooseCompressionMethod(path, compression_method),
         context,
-        format_settings);
+        format_settings,
+        flags);
 }
 
 bool StorageFile::storesDataOnDisk() const
