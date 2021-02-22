@@ -482,7 +482,7 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
 
     optimize_on_insert = clickhouse_node.query("SELECT value FROM system.settings WHERE name='optimize_on_insert'").strip()
     if optimize_on_insert == "0":
-        res = ["3\n", "2\n", "1\n"]
+        res = ["3\n", "2\n", "2\n"]
     else:
         res = ["2\n", "2\n", "1\n"]
     check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", res[0])
