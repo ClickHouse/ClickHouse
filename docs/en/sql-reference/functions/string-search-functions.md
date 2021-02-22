@@ -12,7 +12,10 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Returns the position (in bytes) of the found substring in the string, starting from 1.
+Returns the position (in bytes) of the found substring in the string, starting from 1. 
+
+Function position now supports position(needle in haystack) synax for SQL compatibility.
+Enhanced function position to support SQL compatibility syntax: position(needle in haystack), which is same as position(haystack, needle).
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
