@@ -102,6 +102,7 @@ def write_results(results_file, status_file, results, status):
         out = csv.writer(f, delimiter='\t')
         out.writerow(status)
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     parser = argparse.ArgumentParser(description="ClickHouse script for parsing results of functional tests")
