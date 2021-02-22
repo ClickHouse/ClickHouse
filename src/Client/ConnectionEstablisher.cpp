@@ -103,6 +103,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     }
 }
 
+#if defined(OS_LINUX)
+
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     IConnectionPool * pool_,
     const ConnectionTimeouts * timeouts_,
@@ -233,5 +235,7 @@ void ConnectionEstablisherAsync::destroyFiber()
     Fiber to_destroy = std::move(fiber);
     fiber_created = false;
 }
+
+#endif
 
 }
