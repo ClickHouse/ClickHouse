@@ -97,14 +97,13 @@ YAMLProcessor::~YAMLProcessor()
 /// Serves as a unique identifier of the element contents for comparison.
 using ElementIdentifier = std::vector<std::string>;
 
-using NamedNodeMapPtr = Poco::AutoPtr<Poco::XML::NamedNodeMap>;
-/// NOTE getting rid of iterating over the result of Node.childNodes() call is a good idea
+using NamedNodeMapPtr = Poco::AutoPtr<Poco::XML::NamedNodeMap>;/// NOTE getting rid of iterating over the result of Node.childNodes() call is a good idea
 /// because accessing the i-th element of this list takes O(i) time.
 using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 
 static ElementIdentifier getElementIdentifier(YAML::Node element)
 {
-    /*const NamedNodeMapPtr attrs = element->attributes(); //get yaml node attr
+    const NamedNodeMapPtr attrs = element->attributes(); //get yaml node attr
     std::vector<std::pair<std::string, std::string>> attrs_kv;
     for (size_t i = 0, size = attrs->length(); i < size; ++i)
     {
@@ -127,7 +126,7 @@ static ElementIdentifier getElementIdentifier(YAML::Node element)
         res.push_back(attr.second);
     }
 
-    return res;*/
+    return res;
 }
 
 static YAML::Node getRootNode(YAML::Node input)
@@ -226,7 +225,7 @@ void YAMLProcessor::doIncludesRecursive(
     {
         for (auto & substitution : substitutions)
         {
-            std::string value = node->nodeValue();
+            std::string value = node[0];
 
             bool replace_occured = false;
             size_t pos;
@@ -237,11 +236,11 @@ void YAMLProcessor::doIncludesRecursive(
             }
 
             if (replace_occured)
-                node->setNodeValue(value);
+                node[0] = setNodeValue(value);
         }
     }
 
-    if (node->nodeType() != Node::ELEMENT_NODE)
+    if (node.Type() != YAML::Node::Scalar)
         return;
 
     /// Substitute <layer> for the number extracted from the hostname only if there is an
@@ -433,7 +432,7 @@ YMLDocumentPtr YAMLProcessor::processConfig(
     {
         if (path == "config.yml" || path == "config.yaml")
         {
-            auto resource = getResource("embedded.yaml");
+            auto resource = getResource("embedded.xml");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
@@ -571,12 +570,12 @@ YAMLProcessor::LoadedConfig YAMLProcessor::loadConfigWithZooKeeperIncludes(
 
         LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
-        //config_xml = dom_parser.parse(preprocessed_path);
+        config_yml = fopen(preprocessed_path, "r");
     }
 
     //ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
+    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_yml, path};
 }
 
 void YAMLProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
