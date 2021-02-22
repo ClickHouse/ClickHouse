@@ -1,5 +1,13 @@
 #pragma once
 
+/// __has_feature supported only by clang.
+///
+/// But libcxx/libcxxabi overrides it to 0, thus the checks for __has_feature will be wrong,
+/// undefine it again to avoid such issues.
+#if defined(__has_feature) && !defined(__clang__)
+#  undef __has_feature
+#endif
+
 #if defined(_MSC_VER)
 #   if !defined(likely)
 #      define likely(x)   (x)
