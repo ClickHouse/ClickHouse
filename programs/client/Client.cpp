@@ -932,6 +932,10 @@ private:
             std::cerr << "Received exception from server (version "
                 << server_version << "):" << std::endl << "Code: "
                 << server_exception->code() << ". " << text << std::endl;
+            if (is_interactive)
+            {
+                std::cerr << std::endl;
+            }
         }
 
         if (client_exception)
@@ -939,6 +943,10 @@ private:
             fmt::print(stderr,
                 "Error on processing query '{}':\n{}\n",
                 full_query, client_exception->message());
+            if (is_interactive)
+            {
+                fmt::print(stderr, "\n");
+            }
         }
 
         // A debug check -- at least some exception must be set, if the error
@@ -1366,7 +1374,30 @@ private:
             {
                 // Probably the server is dead because we found an assertion
                 // failure. Fail fast.
-                fmt::print(stderr, "Lost connection to the server\n");
+                fmt::print(stderr, "Lost connection to the server.\n");
+
+                // Print the changed settings because they might be needed to
+                // reproduce the error.
+                const auto & changes = context.getSettingsRef().changes();
+                if (!changes.empty())
+                {
+                    fmt::print(stderr, "Changed settings: ");
+                    for (size_t i = 0; i < changes.size(); ++i)
+                    {
+                        if (i)
+                        {
+                            fmt::print(stderr, ", ");
+                        }
+                        fmt::print(stderr, "{} = '{}'", changes[i].name,
+                            toString(changes[i].value));
+                    }
+                    fmt::print(stderr, "\n");
+                }
+                else
+                {
+                    fmt::print(stderr, "No changed settings.\n");
+                }
+
                 return false;
             }
 
@@ -1711,7 +1742,7 @@ private:
             }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
-            parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
+            parsed_insert_query->end = parsed_insert_query->data + data_in.count();
         }
         else if (!is_interactive)
         {
@@ -1892,6 +1923,9 @@ private:
 
         switch (packet.type)
         {
+            case Protocol::Server::PartUUIDs:
+                return true;
+
             case Protocol::Server::Data:
                 if (!cancelled)
                     onData(packet.block);

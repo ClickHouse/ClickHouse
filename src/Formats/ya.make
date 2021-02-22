@@ -20,9 +20,9 @@ SRCS(
     NativeFormat.cpp
     NullFormat.cpp
     ParsedTemplateFormatString.cpp
-    ProtobufColumnMatcher.cpp
     ProtobufReader.cpp
     ProtobufSchemas.cpp
+    ProtobufSerializer.cpp
     ProtobufWriter.cpp
     registerFormats.cpp
     verbosePrintString.cpp

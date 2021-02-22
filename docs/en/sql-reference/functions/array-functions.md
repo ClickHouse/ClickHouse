@@ -61,7 +61,7 @@ Combines arrays passed as arguments.
 arrayConcat(arrays)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `arrays` – Arbitrary number of arguments of [Array](../../sql-reference/data-types/array.md) type.
     **Example**
@@ -111,7 +111,7 @@ Checks whether one array is a subset of another.
 hasAll(set, subset)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `set` – Array of any type with a set of elements.
 -   `subset` – Array of any type with elements that should be tested to be a subset of `set`.
@@ -149,7 +149,7 @@ Checks whether two arrays have intersection by some elements.
 hasAny(array1, array2)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array1` – Array of any type with a set of elements.
 -   `array2` – Array of any type with a set of elements.
@@ -191,7 +191,7 @@ For Example:
 - `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
 - `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
 
-**Parameters**
+**Arguments**
 
 -   `array1` – Array of any type with a set of elements.
 -   `array2` – Array of any type with a set of elements.
@@ -369,7 +369,7 @@ Removes the last item from the array.
 arrayPopBack(array)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – Array.
 
@@ -393,7 +393,7 @@ Removes the first item from the array.
 arrayPopFront(array)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – Array.
 
@@ -417,7 +417,7 @@ Adds one item to the end of the array.
 arrayPushBack(array, single_value)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – Array.
 -   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
@@ -442,7 +442,7 @@ Adds one element to the beginning of the array.
 arrayPushFront(array, single_value)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – Array.
 -   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
@@ -467,7 +467,7 @@ Changes the length of the array.
 arrayResize(array, size[, extender])
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `array` — Array.
 -   `size` — Required length of the array.
@@ -509,7 +509,7 @@ Returns a slice of the array.
 arraySlice(array, offset[, length])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – Array of data.
 -   `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
@@ -751,7 +751,7 @@ Calculates the difference between adjacent array elements. Returns an array wher
 arrayDifference(array)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
@@ -803,7 +803,7 @@ Takes an array, returns an array containing the distinct elements only.
 arrayDistinct(array)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
@@ -871,7 +871,7 @@ Applies an aggregate function to array elements and returns its result. The name
 arrayReduce(agg_func, arr1, arr2, ..., arrN)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
 -   `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
@@ -936,7 +936,7 @@ Applies an aggregate function to array elements in given ranges and returns an a
 arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
 -   `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
@@ -1007,7 +1007,7 @@ flatten(array_of_arrays)
 
 Alias: `flatten`.
 
-**Parameters**
+**Arguments**
 
 -   `array_of_arrays` — [Array](../../sql-reference/data-types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
 
@@ -1033,7 +1033,7 @@ Removes consecutive duplicate elements from an array. The order of result values
 arrayCompact(arr)
 ```
 
-**Parameters**
+**Arguments**
 
 `arr` — The [array](../../sql-reference/data-types/array.md) to inspect.
 
@@ -1069,7 +1069,7 @@ Combines multiple arrays into a single array. The resulting array contains the c
 arrayZip(arr1, arr2, ..., arrN)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `arrN` — [Array](../../sql-reference/data-types/array.md).
 
@@ -1107,7 +1107,7 @@ Calculate AUC (Area Under the Curve, which is a concept in machine learning, see
 arrayAUC(arr_scores, arr_labels)
 ```
 
-**Parameters**
+**Arguments**
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
@@ -1288,72 +1288,225 @@ Returns the index of the first element in the `arr1` array for which `func` retu
 
 Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
-## arrayMin(\[func,\] arr1, …) {#array-min}
+## arrayMin {#array-min}
 
-Returns the min of the `func` values. If the function is omitted, it just returns the min of the array elements.
+Returns the minimum of elements in the source array. 
+
+If the `func` function is specified, returns the mininum of elements converted by this function.
 
 Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax**
+
 ```sql
-SELECT arrayMin([1, 2, 4]) AS res
+arrayMin([func,] arr)
+```
+
+**Arguments**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+-   The minimum of function values (or the array minimum). 
+
+Type: if `func` is specified, matches `func` return value type, else matches the array elements type. 
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayMin([1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │   1 │
 └─────┘
+```
 
+Query:
 
-SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res
+```sql
+SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │  -4 │
 └─────┘
 ```
 
-## arrayMax(\[func,\] arr1, …) {#array-max}
+## arrayMax {#array-max}
 
-Returns the max of the `func` values. If the function is omitted, it just returns the max of the array elements.
+Returns the maximum of elements in the source array. 
+
+If the `func` function is specified, returns the maximum of elements converted by this function.
 
 Note that the `arrayMax` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax**
+
 ```sql
-SELECT arrayMax([1, 2, 4]) AS res
+arrayMax([func,] arr)
+```
+
+**Arguments**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+-   The maximum of function values (or the array maximum). 
+
+Type: if `func` is specified, matches `func` return value type, else matches the array elements type. 
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayMax([1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │   4 │
 └─────┘
+```
 
+Query:
 
-SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res
+```sql
+SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │  -1 │
 └─────┘
 ```
 
-## arraySum(\[func,\] arr1, …) {#array-sum}
+## arraySum {#array-sum}
 
-Returns the sum of the `func` values. If the function is omitted, it just returns the sum of the array elements.
+Returns the sum of elements in the source array. 
+
+If the `func` function is specified, returns the sum of elements converted by this function.
 
 Note that the `arraySum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax**
+
 ```sql
-SELECT arraySum([2,3]) AS res
+arraySum([func,] arr)
+```
+
+**Arguments**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).   
+
+**Returned value**
+
+-   The sum of the function values (or the array sum).
+
+Type: for decimal numbers in source array (or for converted values, if `func` is specified) — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [UInt64](../../sql-reference/data-types/int-uint.md), and for numeric signed — [Int64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arraySum([2, 3]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │   5 │
 └─────┘
+```
 
+Query:
 
-SELECT arraySum(x -> x*x, [2, 3]) AS res
+```sql
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
+```
+
+Result:
+
+```text
 ┌─res─┐
 │  13 │
 └─────┘
 ```
 
+## arrayAvg {#array-avg}
 
-## arrayAvg(\[func,\] arr1, …) {#array-avg}
+Returns the average of elements in the source array. 
 
-Returns the average of the `func` values. If the function is omitted, it just returns the average of the array elements.
+If the `func` function is specified, returns the average of elements converted by this function.
 
 Note that the `arrayAvg` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+
+**Syntax**
+
+```sql
+arrayAvg([func,] arr)
+```
+
+**Arguments**
+
+-   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).   
+
+**Returned value**
+
+-   The average of function values (or the array average).
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayAvg([1, 2, 4]) AS res;
+```
+
+Result:
+
+```text
+┌────────────────res─┐
+│ 2.3333333333333335 │
+└────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
+```
+
+Result:
+
+```text
+┌─res─┐
+│  10 │
+└─────┘
+```
 
 ## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 

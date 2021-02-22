@@ -331,7 +331,7 @@ public:
 class IKeeper
 {
 public:
-    virtual ~IKeeper() {}
+    virtual ~IKeeper() = default;
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;

@@ -186,5 +186,16 @@ Possible values:
 Default value: auto (number of CPU cores).
 
 During startup ClickHouse reads all parts of all tables (reads files with metadata of parts) to build a list of all parts in memory. In some systems with a large number of parts this process can take a long time, and this time might be shortened by increasing `max_part_loading_threads` (if this process is not CPU and disk I/O bound).
+## max_partitions_to_read {#max-partitions-to-read}
+
+Limits the maximum number of partitions that can be accessed in one query.
+
+The setting value specified when the table is created can be overridden via query-level setting.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: -1 (unlimited).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->

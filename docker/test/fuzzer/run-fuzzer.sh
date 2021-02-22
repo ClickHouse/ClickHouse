@@ -21,13 +21,16 @@ function clone
 
     git init
     git remote add origin https://github.com/ClickHouse/ClickHouse
-    git fetch --depth=100 origin "$SHA_TO_TEST"
-    git fetch --depth=100 origin master # Used to obtain the list of modified or added tests
+
+    # Network is unreliable. GitHub neither.
+    for _ in {1..100}; do git fetch --depth=100 origin "$SHA_TO_TEST" && break; sleep 1; done
+    # Used to obtain the list of modified or added tests
+    for _ in {1..100}; do git fetch --depth=100 origin master && break; sleep 1; done
 
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
     then
-        git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
+        for _ in {1..100}; do git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*" && break; sleep 1; done
     fi
 
     git checkout "$SHA_TO_TEST"
@@ -187,16 +190,16 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
-            echo "Lost connection to server. See the logs" > description.txt
+            echo "Lost connection to server. See the logs." > description.txt
         fi
     else
         # Something different -- maybe the fuzzer itself died? Don't grep the
         # server log in this case, because we will find a message about normal
         # server termination (Received signal 15), which is confusing.
         echo "failure" > status.txt
-        echo "Fuzzer failed ($fuzzer_exit_code). See the logs" > description.txt
+        echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
     fi
     ;&
 "report")

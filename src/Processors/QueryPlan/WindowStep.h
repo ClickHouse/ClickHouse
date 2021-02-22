@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 
-#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/WindowDescription.h>
 
 namespace DB
 {
