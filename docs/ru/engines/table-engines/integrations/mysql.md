@@ -18,12 +18,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../../engines/table-engines/integrations/mysql.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
 
 Структура таблицы может отличаться от исходной структуры таблицы MySQL:
 
 -   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../engines/table-engines/integrations/mysql.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
 
 **Параметры движка**
 
