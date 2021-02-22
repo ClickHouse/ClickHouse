@@ -338,7 +338,7 @@ void DDLWorker::scheduleTasks()
     if (!server_startup)
     {
         /// We will recheck status of last executed tasks. It's useful if main thread was just restarted.
-        auto & min_task = *std::min_element(current_tasks.begin(), current_tasks.end());
+        auto & min_task = current_tasks.front();
         String min_entry_name = last_skipped_entry_name ? std::min(min_task->entry_name, *last_skipped_entry_name) : min_task->entry_name;
         begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_entry_name);
         current_tasks.clear();
