@@ -4,17 +4,21 @@ toc_priority: 142
 
 # minMap {#agg_functions-minmap}
 
-Syntax: `minMap(key, value)` or `minMap(Tuple(key, value))`
+语法:
 
-Calculates the minimum from `value` array according to the keys specified in the `key` array.
+```sql
+`minMap(key, value)`
+或
+`minMap(Tuple(key, value))`
+```
 
-Passing a tuple of keys and value ​​arrays is identical to passing two arrays of keys and values.
+根据 `key` 数组中指定的键对 `value` 数组计算最小值。
 
-The number of elements in `key` and `value` must be the same for each row that is totaled.
+传递 `key` 和 `value` 数组的元组与传递 `key` 和 `value` 的两个数组是同义的。
+要总计的每一行的 `key` 和 `value` (数组)元素的数量必须相同。
+返回两个数组组成的元组: 排好序的 `key`  和对应 `key` 的 `value` 计算值(最小值)。
 
-Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys.
-
-Example:
+示例:
 
 ``` sql
 SELECT minMap(a, b)
