@@ -314,11 +314,14 @@ void DDLWorker::scheduleTasks()
     {
         /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
         /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
-        bool task_still_exists = zookeeper->exists(task->entry_path);
-        bool status_written = zookeeper->exists(task->getFinishedNodePath());
-        if (task->was_executed && !status_written && task_still_exists)
+        if (task->was_executed)
         {
-            processTask(*task, zookeeper);
+            bool task_still_exists = zookeeper->exists(task->entry_path);
+            bool status_written = zookeeper->exists(task->getFinishedNodePath());
+            if (!status_written && task_still_exists)
+            {
+                processTask(*task, zookeeper);
+            }
         }
     }
 
