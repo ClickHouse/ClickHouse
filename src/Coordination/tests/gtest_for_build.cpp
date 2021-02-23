@@ -247,8 +247,11 @@ TEST(CoordinationTest, TestSummingRaft3)
     std::cerr << "Starting to add entries\n";
     auto entry = getBuffer(1);
     auto ret = s2.raft_instance->append_entries({entry});
-    EXPECT_TRUE(ret->get_accepted()) << "failed to replicate: entry 1" << ret->get_result_code();
-    EXPECT_EQ(ret->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 1" << ret->get_result_code();
+    while (!ret->get_accepted() || ret->get_result_code() != nuraft::cmd_result_code::OK)
+    {
+        std::cerr <<  ret->get_accepted() << "failed to replicate: entry 1" << ret->get_result_code() << std::endl;
+        ret = s2.raft_instance->append_entries({entry});
+    }
 
     while (s1.state_machine->getValue() != 1)
     {
@@ -283,8 +286,11 @@ TEST(CoordinationTest, TestSummingRaft3)
 
     auto leader_entry = getBuffer(77);
     auto ret_leader = s2.raft_instance->append_entries({leader_entry});
-    EXPECT_TRUE(ret_leader->get_accepted()) << "failed to replicate: entry 78" << ret_leader->get_result_code();
-    EXPECT_EQ(ret_leader->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 78" << ret_leader->get_result_code();
+    while (!ret_leader->get_accepted() || ret_leader->get_result_code() != nuraft::cmd_result_code::OK)
+    {
+        std::cerr << "failed to replicate: entry 78" << ret_leader->get_result_code() << std::endl;
+        ret_leader = s2.raft_instance->append_entries({leader_entry});
+    }
 
     while (s1.state_machine->getValue() != 78)
     {
