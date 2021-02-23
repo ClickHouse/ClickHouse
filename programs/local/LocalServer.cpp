@@ -452,7 +452,16 @@ void LocalServer::setupUsers()
 
     if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
     {
-        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
+        /// If path to users' config isn't absolute, try to find it in dir of main config.
+        String users_config_path = config().getString("users_config", "");
+        String config_path = config().getString("config-file", "config.xml");
+        String config_dir = std::filesystem::path{config_path}.remove_filename().string();
+
+        if (users_config_path.empty())
+            users_config_path = config_path;
+        else if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+            users_config_path = config_dir + users_config_path;
+
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
         config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
