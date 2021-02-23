@@ -13,6 +13,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import shlex
 
 import cassandra.cluster
 import docker
@@ -1080,6 +1081,13 @@ class ClickHouseInstance:
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
+
+    def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
+        start_time = time.time()
+        result = self.exec_in_container(
+            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Eqm {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
+        current_time = time.time()
+        print('Log line matching "{}" appeared in a {} seconds'.format(regexp, current_time - start_time))
 
     def file_exists(self, path):
         return self.exec_in_container(

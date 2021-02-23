@@ -2042,7 +2042,7 @@ def test_kafka_rebalance(kafka_cluster):
     assert result == 1, 'Messages from kafka get duplicated!'
 
 
-@pytest.mark.timeout(1200)
+@pytest.mark.timeout(120)
 def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(1)]
     kafka_produce('no_holes_when_write_suffix_failed', messages)
@@ -2076,23 +2076,15 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
 
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.kafka
-            WHERE NOT sleepEachRow(1);
+            WHERE NOT sleepEachRow(0.1);
     ''')
 
     # the tricky part here is that disconnect should happen after write prefix, but before write suffix
-    # so i use sleepEachRow
-
-    time.sleep(3)
+    instance.wait_for_log_line("Polled batch of 20 messages")
     pm.drop_instance_zk_connections(instance)
-    time.sleep(20)
+    instance.wait_for_log_line("Coordination.*while write prefix to view")
     pm.heal_all()
-
-    # connection restored and it will take a while until next block will be flushed
-    # it takes years on CI :\
-    time.sleep(45)
-
-    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
-    assert instance.contains_in_log("ZooKeeper session has been expired.: while write prefix to view")
+    instance.wait_for_log_line("Committed offset 23")
 
     result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
     print(result)
