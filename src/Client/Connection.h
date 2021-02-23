@@ -27,7 +27,6 @@
 #include <atomic>
 #include <optional>
 
-
 namespace DB
 {
 
@@ -199,10 +198,9 @@ public:
     /// Each time read from socket blocks and async_callback is set, it will be called. You can poll socket inside it.
     void setAsyncCallback(AsyncCallback async_callback_)
     {
+        async_callback = std::move(async_callback_);
         if (in)
             in->setAsyncCallback(std::move(async_callback_));
-        else
-            async_callback = std::move(async_callback_);
     }
 
 private:
