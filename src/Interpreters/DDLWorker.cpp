@@ -305,22 +305,25 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
     std::sort(all_nodes.begin(), all_nodes.end());
 }
 
-void DDLWorker::scheduleTasks()
+void DDLWorker::scheduleTasks(bool reinitialized)
 {
     LOG_DEBUG(log, "Scheduling tasks");
     auto zookeeper = tryGetZooKeeper();
 
-    for (auto & task : current_tasks)
+    /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
+    /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
+    if (reinitialized)
     {
-        /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
-        /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
-        if (task->was_executed)
+        for (auto & task : current_tasks)
         {
-            bool task_still_exists = zookeeper->exists(task->entry_path);
-            bool status_written = zookeeper->exists(task->getFinishedNodePath());
-            if (!status_written && task_still_exists)
+            if (task->was_executed)
             {
-                processTask(*task, zookeeper);
+                bool task_still_exists = zookeeper->exists(task->entry_path);
+                bool status_written = zookeeper->exists(task->getFinishedNodePath());
+                if (!status_written && task_still_exists)
+                {
+                    processTask(*task, zookeeper);
+                }
             }
         }
     }
@@ -992,6 +995,8 @@ void DDLWorker::runMainThread()
     {
         try
         {
+            bool reinitialized = !initialized;
+
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required
             if (!initialized)
             {
@@ -1000,7 +1005,7 @@ void DDLWorker::runMainThread()
             }
 
             cleanup_event->set();
-            scheduleTasks();
+            scheduleTasks(reinitialized);
 
             LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
