@@ -4,38 +4,37 @@ toc_priority: 200
 
 # quantile {#quantile}
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+计算数字序列的近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
+此函数应用[水塘抽样][reservoir sampling] (https://en.wikipedia.org/wiki/Reservoir_sampling)，使用高达8192的水塘大小和随机数发生器采样。
+结果是不确定的。要获得精确的分位数，使用 [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact) 函数。
+当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
 
-This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling. The result is non-deterministic. To get an exact quantile, use the [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact) function.
-
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
-
-**Syntax**
+**语法**
 
 ``` sql
 quantile(level)(expr)
 ```
 
-Alias: `median`.
+别名: `median`。
 
-**Parameters**
+**参数**
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md).
 
-**Returned value**
+**返回值**
 
--   Approximate quantile of the specified level.
+-   指定层次的分位数。
 
-Type:
+类型:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) 用于数字数据类型输入。
+-   [Date](../../../sql-reference/data-types/date.md) 如果输入值是 `Date` 类型。
+-   [DateTime](../../../sql-reference/data-types/datetime.md) 如果输入值是 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─val─┐
@@ -46,13 +45,13 @@ Input table:
 └─────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantile(val) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantile(val)─┐
@@ -60,7 +59,7 @@ Result:
 └───────────────┘
 ```
 
-**See Also**
+**参见**
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
