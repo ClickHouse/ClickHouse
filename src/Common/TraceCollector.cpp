@@ -22,7 +22,9 @@ namespace
 {
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    constexpr size_t QUERY_ID_MAX_LEN = 1024;
+    ///
+    /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
+    constexpr size_t QUERY_ID_MAX_LEN = sizeof("00000000-0000-0000-0000-000000000000") - 1; // 36
 }
 
 LazyPipeFDs pipe;
