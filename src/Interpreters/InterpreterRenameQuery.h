@@ -57,7 +57,7 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
-    BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
+    BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
     static BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
     AccessRightsElements getRequiredAccess() const;

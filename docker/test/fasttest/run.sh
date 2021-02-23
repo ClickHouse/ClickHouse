@@ -107,6 +107,18 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -259,6 +271,7 @@ function run_tests
         00929_multi_match_edit_distance
         01681_hyperscan_debug_assertion
 
+        01176_mysql_client_interactive          # requires mysql client
         01031_mutations_interpreter_and_context
         01053_ssd_dictionary # this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
         01083_expressions_in_engine_arguments
@@ -326,7 +339,7 @@ function run_tests
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert
 
-        01541_max_memory_usage_for_user
+        01541_max_memory_usage_for_user_long
 
         # Require python libraries like scipy, pandas and numpy
         01322_ttest_scipy

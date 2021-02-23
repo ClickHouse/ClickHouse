@@ -94,6 +94,23 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
+    auto write_response = [&](const std::string & message)
+    {
+        if (response.sent())
+            return;
+
+        auto & out = *used_output.out;
+        try
+        {
+            writeString(message, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            out.finalize();
+        }
+    };
+
     try
     {
         if (auto [message, success] = checkAuthentication(request); success)
@@ -104,8 +121,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         else
         {
             response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
-            if (!response.sent())
-                writeString(message, *used_output.out);
+            write_response(message);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
         }
     }
@@ -120,8 +136,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
 
         std::string message = getCurrentExceptionMessage(is_real_error);
-        if (!response.sent())
-            writeString(message, *used_output.out);
+        write_response(message);
 
         if (is_real_error)
             LOG_ERROR(log, message);
@@ -132,8 +147,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         std::string message = getCurrentExceptionMessage(false);
-        if (!response.sent())
-            writeString(message, *used_output.out);
+        write_response(message);
 
         LOG_ERROR(log, message);
     }
