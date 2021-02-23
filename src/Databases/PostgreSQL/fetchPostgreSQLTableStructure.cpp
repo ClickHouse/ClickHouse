@@ -60,8 +60,8 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         if (type.ends_with(")"))
         {
             res = DataTypeFactory::instance().get(type);
-            uint32_t precision = getDecimalPrecision(*res);
-            uint32_t scale = getDecimalScale(*res);
+            precision = getDecimalPrecision(*res);
+            scale = getDecimalScale(*res);
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
