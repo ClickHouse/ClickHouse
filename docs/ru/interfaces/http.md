@@ -166,7 +166,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 - `xz`
 
 Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. 
-Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](#settings-http_zlib_compression_level).
+Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
 !!! note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
