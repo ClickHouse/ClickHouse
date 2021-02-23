@@ -66,4 +66,7 @@ echo 'OK'
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER test_01541";
 
+# Reset max_memory_usage_for_user, so it will not affect other tests
+${CLICKHOUSE_CLIENT} --max_memory_usage_for_user=0 -q "SELECT 1 FORMAT Null"
+
 exit 0

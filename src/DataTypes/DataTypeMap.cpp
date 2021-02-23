@@ -336,16 +336,6 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
     nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
 }
 
-void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
-}
-
-void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
-}
-
 MutableColumnPtr DataTypeMap::createColumn() const
 {
     return ColumnMap::create(nested->createColumn());

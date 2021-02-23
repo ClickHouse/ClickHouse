@@ -1,3 +1,5 @@
+SET database_atomic_wait_for_drop_and_detach_synchronously=1;
+
 SELECT uniqArray([1, 1, 2]),
        SUBSTRING('Hello, world', 7, 5),
        flatten([[[BIT_AND(123)]], [[mod(3, 2)], [CAST('1' AS INTEGER)]]]),
