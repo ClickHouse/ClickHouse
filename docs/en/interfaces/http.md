@@ -155,8 +155,7 @@ You can use compression to reduce network traffic when transmitting a large amou
 
 You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you need `clickhouse-compressor` program to work with it. It is installed with the `clickhouse-client` package. To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) setting.
 
-If you specify `compress=1` in the URL, the server will compress the data it sends to you.
-If you specify `decompress=1` in the URL, the server will decompress the data which you pass in the `POST` method.
+If you specify `compress=1` in the URL, the server will compress the data it sends to you. If you specify `decompress=1` in the URL, the server will decompress the data which you pass in the `POST` method.
 
 You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse supports the following [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens):
 
@@ -165,14 +164,22 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `deflate`
 - `xz`
 
-To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`. Example:
+To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
+In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
+
+!!! note "Note"
+    Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
+
+**Examples**
+
 ``` bash
+# Sending compressed data to the server
 $ echo "SELECT 1" | gzip -c | \
   curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
-In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
 ``` bash
+# Receiving compressed data from the server
 $ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
     -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
 $ zcat result.gz
@@ -180,10 +187,6 @@ $ zcat result.gz
 1
 2
 ```
-
-!!! note "Note"
-    Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
-
 
 ## Default Database {#default-database}
 
