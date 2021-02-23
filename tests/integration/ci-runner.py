@@ -5,9 +5,7 @@ import subprocess
 import os
 import time
 import shutil
-import pipes
 from collections import defaultdict
-import requests
 import random
 import json
 import csv
