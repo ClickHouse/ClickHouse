@@ -24,6 +24,7 @@ The table structure can differ from the original PostgreSQL table structure:
 
 -   Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
 -   Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default is 1, if 0 - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
 
 **Engine Parameters**
 
@@ -46,6 +47,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 INSERT Queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
 PostgreSQL Array types converts into ClickHouse arrays.
+Be careful in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse only allows multidimensional arrays of the same dimension in all rows.
 
 ## Usage Example {#usage-example}
 
