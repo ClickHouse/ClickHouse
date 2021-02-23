@@ -2659,3 +2659,23 @@ Result:
 Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+
+## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
+
+Allows to select data from a file engine table without file.
+
+Possible values:
+- 0 — `SELECT` throws exception.
+- 1 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
+
+Enables or disables truncate before insert in file engine tables.
+
+Possible values:
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.

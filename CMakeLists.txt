@@ -711,7 +711,7 @@ endif()
 if (FASTBUILD_FUNCTIONS_UNITY)
     # This is the list of targets to activate Unity builds on.
     set(FUNCTIONS_TARGETS
-        clickhouse_functions_gatherutils clickhouse_functions_array clickhouse_functions_array clickhouse_functions)
+        clickhouse_functions_gatherutils clickhouse_functions_array clickhouse_functions)
 
     # Turn on Unity builds at a moderate batch size.
     set_target_properties(${FUNCTIONS_TARGETS}
@@ -723,8 +723,12 @@ if (FASTBUILD_FUNCTIONS_UNITY)
     # Wsubobject-linkage thinks .cpp files are header files and treats them accordingly when doing unity builds.
     # As a result, it runs checks on source files that were only ever meant to be ran on actual, header-style includes.
     # This creates false-warnings. Working around these warnings in a more "correct way" creates unnecessary exports.
+    # Likewise, -Wno-redundant-decls seeks to detect redundant declarations; this is fine when function prototypes in
+    # one file are resolved by fully defined functions in another file. When files are combined and the prototypes are
+    # resolved within a single file, gcc may warn about this with -Wredundant-decls, but that is both fine and expected.
     if (COMPILER_GCC)
-        target_compile_options(${FUNCTION_TARGETS} -Wno-subobject-linkage)
+        foreach(TARGET ${FUNCTIONS_TARGETS})
+            target_compile_options(${TARGET} PRIVATE -Wno-subobject-linkage -Wno-redundant-decls)
+        endforeach()
     endif()
-
 endif()
