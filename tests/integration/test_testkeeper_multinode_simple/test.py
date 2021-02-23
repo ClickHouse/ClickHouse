@@ -6,6 +6,7 @@ import os
 import time
 from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/enable_test_keeper1.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
@@ -234,6 +235,6 @@ def test_simple_replicated_table(started_cluster):
     node1.query("SYSTEM SYNC REPLICA t", timeout=10)
     node3.query("SYSTEM SYNC REPLICA t", timeout=10)
 
-    assert node1.query("SELECT COUNT() FROM t") == "10\n"
-    assert node2.query("SELECT COUNT() FROM t") == "10\n"
-    assert node3.query("SELECT COUNT() FROM t") == "10\n"
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM t", "10")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM t", "10")
+    assert_eq_with_retry(node3, "SELECT COUNT() FROM t", "10")
