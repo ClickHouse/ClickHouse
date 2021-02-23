@@ -32,6 +32,7 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two elements:
+
 -   calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 

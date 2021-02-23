@@ -126,6 +126,8 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         std::string exception_message = getCurrentExceptionMessage(false, true);
         trySendExceptionToClient(exception_message, exception_code, request, response, *out);
     }
+
+    out->finalize();
 }
 
 void StaticRequestHandler::writeResponse(WriteBuffer & out)
