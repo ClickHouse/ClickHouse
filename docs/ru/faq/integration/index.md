@@ -1,11 +1,11 @@
 ---
-title: Вопросы об интеграции ClickHouse с другими системами
+title: Интеграция ClickHouse с другими системами
 toc_hidden_folder: true
 toc_priority: 4
 toc_title: Интеграция
 ---
 
-# Вопросы об интеграции ClickHouse с другими системами {#question-about-integrating-clickhouse-and-other-systems-rus}
+# Интеграция ClickHouse с другими системами {#question-about-integrating-clickhouse-and-other-systems-rus}
 
 Вопросы:
 
@@ -16,4 +16,4 @@ toc_title: Интеграция
 !!! info "Если вы не нашли то, что искали"
     Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
 
-{## [Original article](https://clickhouse.tech/docs/ru/faq/integration/) ##}
+[Original article](https://clickhouse.tech/docs/ru/faq/integration/)

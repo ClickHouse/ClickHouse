@@ -5,14 +5,14 @@ toc_priority: 3
 toc_title: Операции
 ---
 
-# Вопросы о производительности серверов и кластеров ClickHouse {#voprosy-ob-operating-clickhouse-servers-and-clusters}
+# Вопросы о производительности серверов и кластеров ClickHouse {#question-about-operating-clickhouse-servers-and-clusters}
 
 Вопросы:
 
--   [Какую версию ClickHouse использовать в Production?](production.md)
--   [Возможно ли удалить старые записи из таблицы ClickHouse??](delete-old-data.md)
+-   [Какую версию ClickHouse использовать?](production.md)
+-   [Возможно ли удалить старые записи из таблицы ClickHouse?](delete-old-data.md)
 
-    !!! info "Don’t see what you were looking for?"
-        Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
+!!! info "Если вы не нашли то, что искали"
+    Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
 
-    {## [Original article](https://clickhouse.tech/docs/en/faq/production/) ##}
+[Original article](https://clickhouse.tech/docs/en/faq/operations/)

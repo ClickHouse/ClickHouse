@@ -1,5 +1,5 @@
 ---
-title: Какой версией ClickHouse пользоваться?
+title: Какую версию ClickHouse использовать?
 toc_hidden: true
 toc_priority: 10
 ---

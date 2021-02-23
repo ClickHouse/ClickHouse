@@ -10,33 +10,33 @@ toc_priority: 20
 
 ## TTL {#ttl}
 
-ClickHouse позволяет автоматически сбрасывать значения при выполнении некоторого условия. Это условие конфигурируется как выражение на основании любых столбцов, обычно это статическое смещение allows to automatically drop values when some condition happens. This condition is configured as an expression based on any columns, usually just static offset for any timestamp column.
+ClickHouse позволяет автоматически удалять данные при выполнении некоторых условий. Эти условия задаются как выражение, вычисляемое на основе значений любых столбцов, обычно это просто разница между текущим моментом времени и значением какого-то столбца, содержащего дату и время.
 
-Ключевое преимущество такого подхода в том, что не нужно никакой внешней системы для тригера, The key advantage of this approach is that it doesn’t need any external system to trigger, once TTL is configured, data removal happens automatically in background.
+Ключевое преимущество такого подхода в том, что не нужно использовать внешнюю систему, чтобы запустить процесс — когда заданы условия TTL, удаление данных выполняется автоматически в фоновом режиме.
 
 !!! note "Note"
-    TTL можно использовать не только для перемещения на [/dev/null](https://en.wikipedia.org/wiki/Null_device), но еще и между системами хранения, например, с SSD на HDD.
+    TTL можно использовать не только для перемещения на [/dev/null](https://en.wikipedia.org/wiki/Null_device), но еще и между дисками, например, с SSD на HDD.
 
 [Подробнее о конфигурировании TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 ## ALTER DELETE {#alter-delete}
 
-ClickHouse doesn’t have real-time point deletes like in [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) databases. The closest thing to them are mutations. They are issued as `ALTER ... DELETE` or `ALTER ... UPDATE` queries to distinguish from normal `DELETE` or `UPDATE` as they are asynchronous batch operations, not immediate modifications. The rest of syntax after `ALTER TABLE` prefix is similar.
+ClickHouse не удаляет данные в реальном времени, как СУБД [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing). Больше всего на такое удаление похожи мутации. Они выполняются с помощью запросов `ALTER ... DELETE` или `ALTER ... UPDATE`. В отличие от обычных запросов `DELETE` и `UPDATE`, мутации выполняются асинхронно, в пакетном режиме, не в реальном времени. В остальном после слов `ALTER TABLE` синтаксис обычных запросов и мутаций одинаковый.
 
-`ALTER DELETE` can be issued to flexibly remove old data. If you need to do it regularly, the main downside will be the need to have an external system to submit the query. There are also some performance considerations since mutation rewrite complete parts even there’s only a single row to be deleted.
+`ALTER DELETE` можно использовать для гибкого удаления устаревших данных. Если вам нужно делать это регулярно, единственный недостаток такого подхода будет заключаться в том, что потребуется внешняя система для запуска запроса. Кроме того, могут возникнуть некоторые проблемы с производительностью, поскольку мутации перезаписывают целые куски данных если в них содержится хотя бы одна строка, которую нужно удалить.
 
-Это самый распространенный подход к тому, чтобы сделать вашу систему на CH отвечающей принципам [GDPR](https://gdpr-info.eu).
+Это самый распространенный подход к тому, чтобы обеспечить соблюдение принципов [GDPR](https://gdpr-info.eu) в вашей системе на ClickHouse.
 
-More details on [mutations](../../sql-reference/statements/alter/index.md#alter-mutations).
+Подробнее смотрите в разделе [Мутации](../../sql-reference/statements/alter/index.md#alter-mutations).
 
 ## DROP PARTITION {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION` provides a cost-efficient way to drop a whole partition. It’s not that flexible and needs proper partitioning scheme configured on table creation, but still covers most common cases. Like mutations need to be executed from an external system for regular use.
+Запрос `ALTER TABLE ... DROP PARTITION` позволяет эффективно удалять целые партиции. Этот способ не такой гибкий, важно правильно сконфигурировать партиции при создании таблицы, но он подходит для достаточно широкого спектра типовых задач. Как и для мутаций, для регулярного запуска таких запросов нужна внешняя система.
 
-More details on [manipulating partitions](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
+Подробнее смотрите в разделе [Манипулирование с партициями и кусками](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
 
 ## TRUNCATE {#truncate}
 
-Достаточно радикальный способ — очищать всю таблицу от данных, но очень подходящий в отдельных случаях.
+Это достаточно радикальный способ, он удаляет все данные в таблице, но хорошо подходит для отдельных случаевх.
 
-More details on [table truncation](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
+Подробнее смотрите в разделе об [удалении партиций](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
