@@ -69,7 +69,7 @@ protected:
     ZooKeeperPtr getAndSetZooKeeper();
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
-    void scheduleTasks();
+    void scheduleTasks(bool reinitialized);
 
     DDLTaskBase & saveTask(DDLTaskPtr && task);
 
