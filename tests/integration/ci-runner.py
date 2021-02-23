@@ -120,7 +120,8 @@ def clear_ip_tables_and_restart_daemons():
 
     try:
         for i in xrange(1000):
-            subprocess.check_call("iptables -D DOCKER-USER 1", shell=True)  # when rules will be empty, it will raise exception
+            # when rules will be empty, it will raise exception
+            subprocess.check_call("iptables -D DOCKER-USER 1", shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
     except:
         logging.info("All iptables rules cleared")
 
@@ -208,13 +209,13 @@ class ClickhouseIntegrationTestsRunner:
         return None, None
 
     def _compress_logs(self, path, result_path):
-        subprocess.check_call("tar czf {} -C {} .".format(result_path, path), shell=True)
+        subprocess.check_call("tar czf {} -C {} .".format(result_path, path), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
         cmd = "cd {}/tests/integration && ./runner {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' > all_tests.txt".format(repo_path, image_cmd)
         logging.info("Getting all tests with cmd '%s'", cmd)
-        subprocess.check_call(cmd, shell=True)
+        subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
         all_tests_file_path = "{}/tests/integration/all_tests.txt".format(repo_path)
         if not os.path.isfile(all_tests_file_path) or os.path.getsize(all_tests_file_path) == 0:
