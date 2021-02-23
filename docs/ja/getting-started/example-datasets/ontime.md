@@ -142,7 +142,7 @@ CREATE TABLE `ontime`
     `Div5TailNum`                     String
 ) ENGINE = MergeTree
       PARTITION BY Year
-      ORDER BY (FlightDate)
+      ORDER BY (IATA_CODE_Reporting_Airline, FlightDate)
       SETTINGS index_granularity = 8192;
 ```
 
@@ -213,10 +213,10 @@ LIMIT 10;
 Q4. 2007年のキャリア別の遅延の数
 
 ``` sql
-SELECT Carrier, count(*)
+SELECT IATA_CODE_Reporting_Airline AS Carrier, count(*)
 FROM ontime
 WHERE DepDelay>10 AND Year=2007
-GROUP BY Carrier
+GROUP BY IATA_CODE_Reporting_Airline
 ORDER BY count(*) DESC;
 ```
 
@@ -227,32 +227,32 @@ SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
-        Carrier,
+        IATA_CODE_Reporting_Airline AS Carrier,
         count(*) AS c
     FROM ontime
     WHERE DepDelay>10
         AND Year=2007
     GROUP BY Carrier
-)
+) q
 JOIN
 (
     SELECT
-        Carrier,
+        IATA_CODE_Reporting_Airline AS Carrier,
         count(*) AS c2
     FROM ontime
     WHERE Year=2007
     GROUP BY Carrier
-) USING Carrier
+) qq USING Carrier
 ORDER BY c3 DESC;
 ```
 
 同じクエリのより良いバージョン:
 
 ``` sql
-SELECT Carrier, avg(DepDelay>10)*100 AS c3
+SELECT IATA_CODE_Reporting_Airline AS Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
-GROUP BY Carrier
+GROUP BY IATA_CODE_Reporting_Airline
 ORDER BY c3 DESC
 ```
 
@@ -263,29 +263,29 @@ SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
-        Carrier,
+        IATA_CODE_Reporting_Airline AS Carrier,
         count(*) AS c
     FROM ontime
     WHERE DepDelay>10
         AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
-)
+) q
 JOIN
 (
     SELECT
-        Carrier,
+        IATA_CODE_Reporting_Airline AS Carrier,
         count(*) AS c2
     FROM ontime
     WHERE Year>=2000 AND Year<=2008
     GROUP BY Carrier
-) USING Carrier
+) qq USING Carrier
 ORDER BY c3 DESC;
 ```
 
 同じクエリのより良いバージョン:
 
 ``` sql
-SELECT Carrier, avg(DepDelay>10)*100 AS c3
+SELECT IATA_CODE_Reporting_Airline AS Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
 GROUP BY Carrier
@@ -304,7 +304,7 @@ FROM
     from ontime
     WHERE DepDelay>10
     GROUP BY Year
-)
+) q
 JOIN
 (
     select
@@ -312,7 +312,7 @@ JOIN
         count(*) as c2
     from ontime
     GROUP BY Year
-) USING (Year)
+) qq USING (Year)
 ORDER BY Year;
 ```
 
@@ -347,7 +347,7 @@ Q10.
 
 ``` sql
 SELECT
-   min(Year), max(Year), Carrier, count(*) AS cnt,
+   min(Year), max(Year), IATA_CODE_Reporting_Airline AS Carrier, count(*) AS cnt,
    sum(ArrDelayMinutes>30) AS flights_delayed,
    round(sum(ArrDelayMinutes>30)/count(*),2) AS rate
 FROM ontime
