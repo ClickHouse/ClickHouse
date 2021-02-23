@@ -655,9 +655,10 @@ foreach(TARGET ${all_targets})
     if (FASTBUILD_CONTRIB_UNITY)
         get_target_property(TARGET_DIRECTORY ${TARGET} SOURCE_DIR)
 
-        # A list of LLVM targets that we DO NOT want to enable Unity builds for.
-        set(LLVM_OVERRIDE_LIST
-            LLVMCodeGen LLVMSelectionDAG LLVMVectorize LLVMBitReader LLVMObject LLVMScalarOpts)
+        # A list of targets that we DO NOT want to enable Unity builds for, but that match automatic unity build rules.
+        set(OVERRIDE_LIST
+            LLVMCodeGen LLVMSelectionDAG LLVMVectorize LLVMBitReader LLVMObject LLVMScalarOpts
+            _poco_foundation absl_synchronization grpc)
 
         # Groups of targets that support Unity builds at low batch sizes
         if (${TARGET_DIRECTORY} MATCHES "/contrib/" AND (
@@ -668,11 +669,11 @@ foreach(TARGET ${all_targets})
                 ${TARGET} MATCHES "grpc"
                 ))
 
-            # While it would appear to make sense to modify all elements of LLVM_OVERRIDE_LIST
-            # by using a single set_target_properties command, ENABLE_EMBEDDED_COMPILER being set
-            # can lead set_target_properties to error. This is because only a restricted set of
-            # LLVM targets will actually be added. LLVMCodeGen, for example, would not exist.
-            if (${TARGET} IN_LIST LLVM_OVERRIDE_LIST)
+            # While it would appear to make sense to modify all elements of OVERRIDE_LIST by using a single
+            # set_target_properties command, options like ENABLE_EMBEDDED_COMPILER being set can lead
+            # set_target_properties to error. This is because only a restricted set of targets will actually be added.
+            # LLVMCodeGen, for example, would not exist, and so set_target_properties would error accordingly.
+            if (${TARGET} IN_LIST OVERRIDE_LIST)
                 continue()
             endif()
 
@@ -686,9 +687,6 @@ endforeach()
 
 # This handles FASTBUILD_CONTRIB_UNITY.
 if (FASTBUILD_CONTRIB_UNITY)
-    # Miscellaneous packages that get caught by the automatic Unity building rule, despite not supporting Unity builds.
-    set_target_properties(_poco_foundation absl_synchronization grpc PROPERTIES UNITY_BUILD OFF)
-
     # Packages that support and benefit a lot from unity builds.
     set_target_properties(arrow_static PROPERTIES UNITY_BUILD ON)
     set_target_properties(aws_s3 PROPERTIES UNITY_BUILD ON)
