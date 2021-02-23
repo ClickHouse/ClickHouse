@@ -135,6 +135,9 @@ class ClickhouseIntegrationTestsRunner:
     def path(self):
         return self.result_path
 
+    def base_path(self):
+        return os.path.join(str(self.result_path), '../')
+
     def should_skip_tests(self):
         return []
 
@@ -198,8 +201,8 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("All packages installed")
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
-        result_path_bin = os.path.join(str(self.path()), "clickhouse")
-        result_path_bridge = os.path.join(str(self.path()), "clickhouse-odbc-bridge")
+        result_path_bin = os.path.join(str(self.base_path()), "clickhouse")
+        result_path_bridge = os.path.join(str(self.base_path()), "clickhouse-odbc-bridge")
         shutil.copy(CLICKHOUSE_BINARY_PATH, result_path_bin)
         shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, result_path_bridge)
         return None, None
