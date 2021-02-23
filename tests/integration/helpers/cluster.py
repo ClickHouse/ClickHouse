@@ -868,6 +868,8 @@ services:
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
+            - IPC_LOCK
+            - SYS_NICE
         depends_on: {depends_on}
         user: '{user}'
         env_file:
