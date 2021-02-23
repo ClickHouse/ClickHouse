@@ -1007,6 +1007,9 @@ void DDLWorker::runMainThread()
             if (Coordination::isHardwareError(e.code))
             {
                 initialized = false;
+                /// Wait for pending async tasks
+                if (1 < pool_size)
+                    worker_pool = std::make_unique<ThreadPool>(pool_size);
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else
