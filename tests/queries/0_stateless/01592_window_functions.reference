@@ -1,0 +1,81 @@
+---- Q1 ----
+Dell Vostro	800.00	Laptop	850
+HP Elite	1200.00	Laptop	850
+Lenovo Thinkpad	700.00	Laptop	850
+Sony VAIO	700.00	Laptop	850
+HTC One	400.00	Smartphone	500
+Microsoft Lumia	200.00	Smartphone	500
+Nexus	500.00	Smartphone	500
+iPhone	900.00	Smartphone	500
+Kindle Fire	150.00	Tablet	350
+Samsung Galaxy Tab	200.00	Tablet	350
+iPad	700.00	Tablet	350
+---- Q2 ----
+Lenovo Thinkpad	Laptop	700.00	1
+Sony VAIO	Laptop	700.00	1
+Dell Vostro	Laptop	800.00	3
+HP Elite	Laptop	1200.00	4
+Microsoft Lumia	Smartphone	200.00	1
+HTC One	Smartphone	400.00	2
+Nexus	Smartphone	500.00	3
+iPhone	Smartphone	900.00	4
+Kindle Fire	Tablet	150.00	1
+Samsung Galaxy Tab	Tablet	200.00	2
+iPad	Tablet	700.00	3
+---- Q3 ----
+HP Elite	Laptop	1200.00	1
+Dell Vostro	Laptop	800.00	2
+Lenovo Thinkpad	Laptop	700.00	3
+Sony VAIO	Laptop	700.00	4
+iPhone	Smartphone	900.00	1
+Nexus	Smartphone	500.00	2
+HTC One	Smartphone	400.00	3
+Microsoft Lumia	Smartphone	200.00	4
+iPad	Tablet	700.00	1
+Samsung Galaxy Tab	Tablet	200.00	2
+Kindle Fire	Tablet	150.00	3
+---- Q4 ----
+Lenovo Thinkpad	Laptop	700.00	700.00	1
+Sony VAIO	Laptop	700.00	700.00	1
+Dell Vostro	Laptop	800.00	700.00	2
+HP Elite	Laptop	1200.00	700.00	3
+Microsoft Lumia	Smartphone	200.00	200.00	1
+HTC One	Smartphone	400.00	200.00	2
+Nexus	Smartphone	500.00	200.00	3
+iPhone	Smartphone	900.00	200.00	4
+---- Q5 ----
+Sony VAIO	Laptop	700.00	700.00
+Lenovo Thinkpad	Laptop	700.00	700.00
+HP Elite	Laptop	1200.00	700.00
+Dell Vostro	Laptop	800.00	700.00
+iPhone	Smartphone	900.00	900.00
+Nexus	Smartphone	500.00	900.00
+Microsoft Lumia	Smartphone	200.00	900.00
+HTC One	Smartphone	400.00	900.00
+iPad	Tablet	700.00	700.00
+Samsung Galaxy Tab	Tablet	200.00	700.00
+Kindle Fire	Tablet	150.00	700.00
+---- Q6 ----
+Dell Vostro	Laptop	800.00	1200.00
+HP Elite	Laptop	1200.00	1200.00
+Lenovo Thinkpad	Laptop	700.00	1200.00
+Sony VAIO	Laptop	700.00	1200.00
+HTC One	Smartphone	400.00	900.00
+Microsoft Lumia	Smartphone	200.00	900.00
+Nexus	Smartphone	500.00	900.00
+iPhone	Smartphone	900.00	900.00
+Kindle Fire	Tablet	150.00	700.00
+Samsung Galaxy Tab	Tablet	200.00	700.00
+iPad	Tablet	700.00	700.00
+---- Q7 ----
+Dell Vostro	800.00	Laptop	733	850
+HP Elite	1200.00	Laptop	850	850
+Lenovo Thinkpad	700.00	Laptop	700	850
+Sony VAIO	700.00	Laptop	700	850
+HTC One	400.00	Smartphone	300	500
+Microsoft Lumia	200.00	Smartphone	200	500
+Nexus	500.00	Smartphone	367	500
+iPhone	900.00	Smartphone	500	500
+Kindle Fire	150.00	Tablet	150	350
+Samsung Galaxy Tab	200.00	Tablet	175	350
+iPad	700.00	Tablet	350	350
