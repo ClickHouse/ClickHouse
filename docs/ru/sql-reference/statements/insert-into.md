@@ -13,7 +13,7 @@ toc_title: INSERT INTO
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-Вы можете указать список столбцов для вставки, используя синтаксис `(c1, c2, c3)`. Также можно использовать выражение cо [звездочкой](../../sql-reference/statements/select/index.md#asterisk) и/или модификаторами, такими как `APPLY`, `EXCEPT`, `REPLACE`.
+Вы можете указать список столбцов для вставки, используя синтаксис `(c1, c2, c3)`. Также можно использовать выражение cо [звездочкой](../../sql-reference/statements/select/index.md#asterisk) и/или модификаторами, такими как [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
 
 В качестве примера рассмотрим таблицу:
 
@@ -62,8 +62,6 @@ SELECT * FROM insert_select_testtable
 
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 -   Нули и пустые строки, если `DEFAULT` не определены.
-
-Если [strict_insert_defaults=1](../../operations/settings/settings.md), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
 
 В INSERT можно передавать данные любого [формата](../../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 

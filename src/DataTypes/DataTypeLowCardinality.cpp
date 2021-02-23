@@ -885,15 +885,17 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
         type = nullable_type->getNestedType().get();
 
-    if (isString(type))
+    WhichDataType which(type);
+
+    if (which.isString())
         return creator(static_cast<ColumnString *>(nullptr));
-    if (isFixedString(type))
+    else if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
-    if (typeid_cast<const DataTypeDate *>(type))
+    else if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    if (typeid_cast<const DataTypeDateTime *>(type))
+    else if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    if (isColumnedAsNumber(type))
+    else if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
         TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));

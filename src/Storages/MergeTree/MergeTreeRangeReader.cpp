@@ -414,18 +414,19 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
         end -= 64;
         const auto * pos = end;
         UInt64 val =
-                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
                         zero16)))
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
                         zero16))) << 16u)
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
                         zero16))) << 32u)
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
                         zero16))) << 48u);
+        val = ~val;
         if (val == 0)
             count += 64;
         else
@@ -866,7 +867,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (result.totalRowsPerGranule() == 0)
         result.setFilterConstFalse();
     /// If we need to filter in PREWHERE
-    else if (prewhere->need_filter || result.need_filter)
+    else if (prewhere->need_filter || result.need_filter || prewhere->remove_prewhere_column)
     {
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)

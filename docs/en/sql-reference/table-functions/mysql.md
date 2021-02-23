@@ -13,7 +13,7 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `host:port` — MySQL server address.
 

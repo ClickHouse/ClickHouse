@@ -1,0 +1,30 @@
+Into String
+1
+Into FixedString
+1
+1\0
+1\0\0
+1\0\0\0
+1
+Into Numeric Representable
+Integer and Integer types
+1	1
+1	1
+257	257
+257	257
+257	257
+257	257
+257	257
+257	257
+257	257
+257	257
+257	257
+Integer and Float types
+1045220557	1045220557
+4596373779694328218	4596373779694328218
+0.2	1045220557
+0.2	4596373779694328218
+Integer and String types
+1	49
+1	49
+11	12593

@@ -50,8 +50,8 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class StoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
@@ -130,6 +130,10 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+
+    /// Requires squashing small blocks to large for optimal storage.
+    /// This is true for most storages that store data on disk.
+    virtual bool prefersLargeBlocks() const { return true; }
 
 
     /// Optional size information of each physical column.

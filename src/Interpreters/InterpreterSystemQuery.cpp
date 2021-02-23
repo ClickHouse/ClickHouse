@@ -606,7 +606,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, context).get()))
-        storage_distributed->flushClusterNodesAllData();
+        storage_distributed->flushClusterNodesAllData(context);
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }

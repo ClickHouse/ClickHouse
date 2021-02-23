@@ -22,6 +22,8 @@ ASTPtr ASTWindowDefinition::clone() const
         result->children.push_back(result->order_by);
     }
 
+    result->frame = frame;
+
     return result;
 }
 
@@ -31,12 +33,12 @@ String ASTWindowDefinition::getID(char) const
 }
 
 void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked frame) const
+    FormatState & state, FormatStateStacked format_frame) const
 {
     if (partition_by)
     {
         settings.ostr << "PARTITION BY ";
-        partition_by->formatImpl(settings, state, frame);
+        partition_by->formatImpl(settings, state, format_frame);
     }
 
     if (partition_by && order_by)
@@ -47,7 +49,46 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     if (order_by)
     {
         settings.ostr << "ORDER BY ";
-        order_by->formatImpl(settings, state, frame);
+        order_by->formatImpl(settings, state, format_frame);
+    }
+
+    if ((partition_by || order_by) && !frame.is_default)
+    {
+        settings.ostr << " ";
+    }
+
+    if (!frame.is_default)
+    {
+        settings.ostr << WindowFrame::toString(frame.type) << " BETWEEN ";
+        if (frame.begin_type == WindowFrame::BoundaryType::Current)
+        {
+            settings.ostr << "CURRENT ROW";
+        }
+        else if (frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            settings.ostr << "UNBOUNDED PRECEDING";
+        }
+        else
+        {
+            settings.ostr << abs(frame.begin_offset);
+            settings.ostr << " "
+                << (!frame.begin_preceding ? "FOLLOWING" : "PRECEDING");
+        }
+        settings.ostr << " AND ";
+        if (frame.end_type == WindowFrame::BoundaryType::Current)
+        {
+            settings.ostr << "CURRENT ROW";
+        }
+        else if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            settings.ostr << "UNBOUNDED PRECEDING";
+        }
+        else
+        {
+            settings.ostr << abs(frame.end_offset);
+            settings.ostr << " "
+                << (!frame.end_preceding ? "FOLLOWING" : "PRECEDING");
+        }
     }
 }
 
@@ -56,8 +97,8 @@ std::string ASTWindowDefinition::getDefaultWindowName() const
     WriteBufferFromOwnString ostr;
     FormatSettings settings{ostr, true /* one_line */};
     FormatState state;
-    FormatStateStacked frame;
-    formatImpl(settings, state, frame);
+    FormatStateStacked format_frame;
+    formatImpl(settings, state, format_frame);
     return ostr.str();
 }
 

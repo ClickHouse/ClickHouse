@@ -31,8 +31,8 @@ The supported formats are:
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
-| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
 | [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
@@ -612,7 +612,7 @@ Example:
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringEachRow {#jsonstringeachrow}
+## JSONStringsEachRow {#jsonstringseachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
 ## JSONCompactStringEachRow {#jsoncompactstringeachrow}
 
@@ -627,9 +627,9 @@ When using these formats, ClickHouse outputs rows as separated, newline-delimite
 When inserting the data, you should provide a separate JSON value for each row.
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
+## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-Differs from `JSONEachRow`/`JSONStringEachRow` in that ClickHouse will also yield progress information as JSON values.
+Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}

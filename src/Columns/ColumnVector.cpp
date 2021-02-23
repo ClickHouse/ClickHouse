@@ -356,7 +356,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
     while (filt_pos < filt_end_sse)
     {
-        int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        mask = ~mask;
 
         if (0 == mask)
         {
@@ -534,4 +535,5 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+
 }

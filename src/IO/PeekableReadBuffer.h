@@ -38,11 +38,6 @@ public:
             peeked_size = 0;
         }
         checkpoint.emplace(pos);
-
-        // FIXME: we are checking checkpoint existence in few places (rollbackToCheckpoint/dropCheckpoint)
-        // by simple if(checkpoint) but checkpoint can be nullptr after
-        // setCheckpoint called on empty (non initialized/eof) buffer
-        // and we can't just use simple if(checkpoint)
     }
 
     /// Forget checkpoint and all data between checkpoint and position

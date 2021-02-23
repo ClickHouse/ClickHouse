@@ -120,7 +120,7 @@ function clone_root
                 git checkout FETCH_HEAD
                 echo 'Clonned merge head'
             else
-                git fetch
+                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
                 git checkout "$COMMIT_SHA"
                 echo 'Checked out to commit'
             fi
@@ -163,6 +163,7 @@ function clone_submodules
             contrib/xz
             contrib/dragonbox
             contrib/fast_float
+            contrib/NuRaft
         )
 
         git submodule sync
@@ -182,6 +183,7 @@ function run_cmake
         "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
+        "-DENABLE_NURAFT=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -251,8 +253,12 @@ function run_tests
         00701_rollup
         00834_cancel_http_readonly_queries_on_client_close
         00911_tautological_compare
+
+        # Hyperscan
         00926_multimatch
         00929_multi_match_edit_distance
+        01681_hyperscan_debug_assertion
+
         01031_mutations_interpreter_and_context
         01053_ssd_dictionary # this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
         01083_expressions_in_engine_arguments
@@ -315,6 +321,7 @@ function run_tests
 
          # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
         01504_rocksdb
+        01686_rocksdb
 
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert

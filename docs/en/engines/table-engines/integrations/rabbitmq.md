@@ -59,14 +59,23 @@ Optional parameters:
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
-Required configuration:
 
 The RabbitMQ server configuration should be added using the ClickHouse config file.
+
+Required configuration:
 
 ``` xml
  <rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
+ </rabbitmq>
+```
+
+Additional configuration:
+
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
  </rabbitmq>
 ```
 

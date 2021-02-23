@@ -910,6 +910,7 @@ inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBin
 inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }

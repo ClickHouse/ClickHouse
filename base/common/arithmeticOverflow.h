@@ -1,6 +1,8 @@
 #pragma once
 
 #include <common/extended_types.h>
+#include <common/defines.h>
+
 
 namespace common
 {
@@ -155,5 +157,12 @@ namespace common
         if (!x || !y)
             return false;
         return (x * y) / y != x;
+    }
+
+    /// Multiply and ignore overflow.
+    template <typename T1, typename T2>
+    inline auto NO_SANITIZE_UNDEFINED mulIgnoreOverflow(T1 x, T2 y)
+    {
+        return x * y;
     }
 }

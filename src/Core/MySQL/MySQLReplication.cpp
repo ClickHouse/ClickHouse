@@ -136,6 +136,7 @@ namespace MySQLReplication
         out << "XID: " << this->xid << '\n';
     }
 
+    /// https://dev.mysql.com/doc/internals/en/table-map-event.html
     void TableMapEvent::parseImpl(ReadBuffer & payload)
     {
         payload.readStrict(reinterpret_cast<char *>(&table_id), 6);
@@ -257,15 +258,19 @@ namespace MySQLReplication
         out << "Null Bitmap: " << bitmap_str << '\n';
     }
 
-    void RowsEvent::parseImpl(ReadBuffer & payload)
+    void RowsEventHeader::parse(ReadBuffer & payload)
     {
         payload.readStrict(reinterpret_cast<char *>(&table_id), 6);
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
 
+        UInt16 extra_data_len;
         /// This extra_data_len contains the 2 bytes length.
         payload.readStrict(reinterpret_cast<char *>(&extra_data_len), 2);
         payload.ignore(extra_data_len - 2);
+    }
 
+    void RowsEvent::parseImpl(ReadBuffer & payload)
+    {
         number_columns = readLengthEncodedNumber(payload);
         size_t columns_bitmap_size = (number_columns + 7) / 8;
         switch (header.type)
@@ -795,37 +800,50 @@ namespace MySQLReplication
             {
                 event = std::make_shared<TableMapEvent>(std::move(event_header));
                 event->parseEvent(event_payload);
-                table_map = std::static_pointer_cast<TableMapEvent>(event);
+                auto table_map = std::static_pointer_cast<TableMapEvent>(event);
+                table_maps[table_map->table_id] = table_map;
                 break;
             }
             case WRITE_ROWS_EVENT_V1:
             case WRITE_ROWS_EVENT_V2: {
-                if (doReplicate())
-                    event = std::make_shared<WriteRowsEvent>(table_map, std::move(event_header));
+                RowsEventHeader rows_header(event_header.type);
+                rows_header.parse(event_payload);
+                if (doReplicate(rows_header.table_id))
+                    event = std::make_shared<WriteRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
 
                 event->parseEvent(event_payload);
+                if (rows_header.flags & ROWS_END_OF_STATEMENT)
+                    table_maps.clear();
                 break;
             }
             case DELETE_ROWS_EVENT_V1:
             case DELETE_ROWS_EVENT_V2: {
-                if (doReplicate())
-                    event = std::make_shared<DeleteRowsEvent>(table_map, std::move(event_header));
+                RowsEventHeader rows_header(event_header.type);
+                rows_header.parse(event_payload);
+                if (doReplicate(rows_header.table_id))
+                    event = std::make_shared<DeleteRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
 
                 event->parseEvent(event_payload);
+                if (rows_header.flags & ROWS_END_OF_STATEMENT)
+                    table_maps.clear();
                 break;
             }
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2: {
-                if (doReplicate())
-                    event = std::make_shared<UpdateRowsEvent>(table_map, std::move(event_header));
+                RowsEventHeader rows_header(event_header.type);
+                rows_header.parse(event_payload);
+                if (doReplicate(rows_header.table_id))
+                    event = std::make_shared<UpdateRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
 
                 event->parseEvent(event_payload);
+                if (rows_header.flags & ROWS_END_OF_STATEMENT)
+                    table_maps.clear();
                 break;
             }
             case GTID_EVENT:
@@ -842,6 +860,19 @@ namespace MySQLReplication
                 break;
             }
         }
+    }
+
+    bool MySQLFlavor::doReplicate(UInt64 table_id)
+    {
+        if (replicate_do_db.empty())
+            return false;
+        if (table_id == 0x00ffffff)
+        {
+            // Special "dummy event"
+            return false;
+        }
+        auto table_map = table_maps.at(table_id);
+        return table_map->schema == replicate_do_db;
     }
 }
 

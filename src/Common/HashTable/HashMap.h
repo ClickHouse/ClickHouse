@@ -109,6 +109,11 @@ struct HashMapCell
         DB::assertChar(',', rb);
         DB::readDoubleQuoted(value.second, rb);
     }
+
+    static bool constexpr need_to_notify_cell_during_move = false;
+
+    static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
+
 };
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>

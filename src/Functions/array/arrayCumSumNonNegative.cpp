@@ -48,6 +48,26 @@ struct ArrayCumSumNonNegativeImpl
     }
 
 
+    template <typename Src, typename Dst>
+    static void NO_SANITIZE_UNDEFINED implVector(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
+    {
+        size_t pos = 0;
+        for (const auto * end = offsets + size; offsets < end; ++offsets)
+        {
+            auto offset = *offsets;
+            Dst accumulated{};
+            for (; pos < offset; ++pos)
+            {
+                accumulated += src_values[pos];
+                if (accumulated < 0)
+                    accumulated = 0;
+                res_values[pos] = accumulated;
+            }
+        }
+    }
+
+
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
@@ -70,26 +90,7 @@ struct ArrayCumSumNonNegativeImpl
 
         typename ColVecResult::Container & res_values = res_nested->getData();
         res_values.resize(data.size());
-
-        size_t pos = 0;
-        Result accum_sum = 0;
-        for (auto offset : offsets)
-        {
-            // skip empty arrays
-            if (pos < offset)
-            {
-                accum_sum = data[pos] > 0 ? data[pos] : Element(0); // NOLINT
-                res_values[pos] = accum_sum;
-                for (++pos; pos < offset; ++pos)
-                {
-                    accum_sum = accum_sum + data[pos];
-                    if (accum_sum < 0)
-                        accum_sum = 0;
-
-                    res_values[pos] = accum_sum;
-                }
-            }
-        }
+        implVector(offsets.size(), offsets.data(), res_values.data(), data.data());
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
 

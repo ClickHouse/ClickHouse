@@ -20,6 +20,7 @@ The following actions are supported:
 
 -   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames the column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
@@ -76,6 +77,22 @@ Example:
 
 ``` sql
 ALTER TABLE visits DROP COLUMN browser
+```
+
+## RENAME COLUMN {#alter_rename-column}
+
+``` sql
+RENAME COLUMN [IF EXISTS] name to new_name
+```
+
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+
+**NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`. 
+
+Example:
+
+``` sql
+ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
 ## CLEAR COLUMN {#alter_clear-column}

@@ -19,7 +19,6 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
-#include <Disks/StoragePolicy.h>
 #include <IO/Operators.h>
 
 

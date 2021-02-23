@@ -57,6 +57,29 @@ public:
 
 using SpacePtr = std::shared_ptr<Space>;
 
+struct DiskType
+{
+    enum class Type
+    {
+        Local,
+        RAM,
+        S3
+    };
+    static String toString(Type disk_type)
+    {
+        switch (disk_type)
+        {
+            case Type::Local:
+                return "local";
+            case Type::RAM:
+                return "memory";
+            case Type::S3:
+                return "s3";
+        }
+        __builtin_unreachable();
+    }
+};
+
 /**
  * A guard, that should synchronize file's or directory's state
  * with storage device (e.g. fsync in POSIX) in its destructor.
@@ -140,9 +163,6 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
-    /// Copy the file from `from_path` to `to_path`.
-    virtual void copyFile(const String & from_path, const String & to_path) = 0;
-
     /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
     virtual void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
@@ -191,13 +211,16 @@ public:
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
-    virtual const String getType() const = 0;
+    virtual DiskType::Type getType() const = 0;
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Invoked on partitions freeze query.
+    virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
@@ -269,4 +292,11 @@ inline String fileName(const String & path)
 {
     return Poco::Path(path).getFileName();
 }
+
+/// Return directory path for the specified path.
+inline String directoryPath(const String & path)
+{
+    return Poco::Path(path).setFileName("").toString();
+}
+
 }

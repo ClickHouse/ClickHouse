@@ -184,6 +184,12 @@ public:
     /// result would be the same as for the single call.
     void tryRemoveRecursive(const std::string & path);
 
+    /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
+    /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
+    /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
+    void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
@@ -245,9 +251,6 @@ private:
 
     void init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
-
-    void removeChildrenRecursive(const std::string & path);
-    void tryRemoveChildrenRecursive(const std::string & path);
 
     /// The following methods don't throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -320,7 +323,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
         }
     }
 

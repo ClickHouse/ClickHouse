@@ -13,6 +13,8 @@
 
 #include <Functions/FunctionHelpers.h>
 
+#include <Common/HashTable/HashMap.h>
+
 namespace DB
 {
 
@@ -82,6 +84,17 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
+    /// MergedData records, used to avoid duplicated data copy.
+    ///key: src pointer, val:  pos in current column.
+    using Map = HashMap<
+        ConstAggregateDataPtr,
+        size_t,
+        DefaultHash<ConstAggregateDataPtr>,
+        HashTableGrower<3>,
+        HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
+
+    Map copiedDataInfo;
+
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
@@ -139,6 +152,8 @@ public:
     void insertFrom(const IColumn & from, size_t n) override;
 
     void insertFrom(ConstAggregateDataPtr place);
+
+    void insertCopyFrom(ConstAggregateDataPtr place);
 
     /// Merge state at last row with specified state in another column.
     void insertMergeFrom(ConstAggregateDataPtr place);

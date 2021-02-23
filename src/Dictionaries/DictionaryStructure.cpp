@@ -2,6 +2,8 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Functions/FunctionHelpers.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -11,7 +13,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <ext/range.h>
-
 
 namespace DB
 {
@@ -41,54 +42,46 @@ namespace
 }
 
 
-AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
+AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 {
-    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary
+    auto type_index = type->getTypeId();
+
+    switch (type_index)
     {
-        {"UInt8", AttributeUnderlyingType::utUInt8},
-        {"UInt16", AttributeUnderlyingType::utUInt16},
-        {"UInt32", AttributeUnderlyingType::utUInt32},
-        {"UInt64", AttributeUnderlyingType::utUInt64},
-        {"UUID", AttributeUnderlyingType::utUInt128},
-        {"Int8", AttributeUnderlyingType::utInt8},
-        {"Int16", AttributeUnderlyingType::utInt16},
-        {"Int32", AttributeUnderlyingType::utInt32},
-        {"Int64", AttributeUnderlyingType::utInt64},
-        {"Float32", AttributeUnderlyingType::utFloat32},
-        {"Float64", AttributeUnderlyingType::utFloat64},
-        {"String", AttributeUnderlyingType::utString},
-        {"Date", AttributeUnderlyingType::utUInt16},
-    };
+        case TypeIndex::UInt8:          return AttributeUnderlyingType::utUInt8;
+        case TypeIndex::UInt16:         return AttributeUnderlyingType::utUInt16;
+        case TypeIndex::UInt32:         return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::UInt64:         return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::UInt128:        return AttributeUnderlyingType::utUInt128;
 
-    const auto it = dictionary.find(type);
-    if (it != std::end(dictionary))
-        return it->second;
+        case TypeIndex::Int8:           return AttributeUnderlyingType::utInt8;
+        case TypeIndex::Int16:          return AttributeUnderlyingType::utInt16;
+        case TypeIndex::Int32:          return AttributeUnderlyingType::utInt32;
+        case TypeIndex::Int64:          return AttributeUnderlyingType::utInt64;
 
-    /// Can contain arbitrary scale and timezone parameters.
-    if (type.find("DateTime64") == 0)
-        return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::Float32:        return AttributeUnderlyingType::utFloat32;
+        case TypeIndex::Float64:        return AttributeUnderlyingType::utFloat64;
 
-    /// Can contain arbitrary timezone as parameter.
-    if (type.find("DateTime") == 0)
-        return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::Decimal32:      return AttributeUnderlyingType::utDecimal32;
+        case TypeIndex::Decimal64:      return AttributeUnderlyingType::utDecimal64;
+        case TypeIndex::Decimal128:     return AttributeUnderlyingType::utDecimal128;
 
-    if (type.find("Decimal") == 0)
-    {
-        size_t start = strlen("Decimal");
-        if (type.find("32", start) == start)
-            return AttributeUnderlyingType::utDecimal32;
-        if (type.find("64", start) == start)
-            return AttributeUnderlyingType::utDecimal64;
-        if (type.find("128", start) == start)
-            return AttributeUnderlyingType::utDecimal128;
+        case TypeIndex::Date:           return AttributeUnderlyingType::utUInt16;
+        case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
+
+        case TypeIndex::UUID:           return AttributeUnderlyingType::utUInt128;
+
+        case TypeIndex::String:         return AttributeUnderlyingType::utString;
+
+        // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
+        // TODO: This should be fixed by fully supporting arrays in dictionaries.
+        case TypeIndex::Array:          return AttributeUnderlyingType::utString;
+
+        default: break;
     }
 
-    // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
-    // TODO: This should be fixed by fully supporting arrays in dictionaries.
-    if (type.find("Array") == 0)
-        return AttributeUnderlyingType::utString;
-
-    throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
+    throw Exception{"Unknown type for dictionary" + type->getName(), ErrorCodes::UNKNOWN_TYPE};
 }
 
 
@@ -142,17 +135,19 @@ DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::Abstrac
 
 DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
-    const auto has_id = config.has(config_prefix + ".id");
-    const auto has_key = config.has(config_prefix + ".key");
+    std::string structure_prefix = config_prefix + ".structure";
+
+    const auto has_id = config.has(structure_prefix + ".id");
+    const auto has_key = config.has(structure_prefix + ".key");
 
     if (has_key && has_id)
         throw Exception{"Only one of 'id' and 'key' should be specified", ErrorCodes::BAD_ARGUMENTS};
 
     if (has_id)
-        id.emplace(config, config_prefix + ".id");
+        id.emplace(config, structure_prefix + ".id");
     else if (has_key)
     {
-        key.emplace(getAttributes(config, config_prefix + ".key", false, false));
+        key.emplace(getAttributes(config, structure_prefix + ".key", false, false));
         if (key->empty())
             throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
     }
@@ -165,11 +160,11 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
         const char * range_default_type = "Date";
-        if (config.has(config_prefix + ".range_min"))
-            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
+        if (config.has(structure_prefix + ".range_min"))
+            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
 
-        if (config.has(config_prefix + ".range_max"))
-            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_max", range_default_type));
+        if (config.has(structure_prefix + ".range_max"))
+            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
 
         if (range_min.has_value() != range_max.has_value())
         {
@@ -201,10 +196,13 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             has_expressions = true;
     }
 
-    attributes = getAttributes(config, config_prefix);
+    attributes = getAttributes(config, structure_prefix);
 
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
+
+    if (config.getBool(config_prefix + ".layout.ip_trie.access_to_key_from_attributes", false))
+        access_to_key_from_attributes = true;
 }
 
 
@@ -215,16 +213,43 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 
     for (const auto i : ext::range(0, key_types.size()))
     {
-        const auto & expected_type = (*key)[i].type->getName();
-        const auto & actual_type = key_types[i]->getName();
+        const auto & expected_type = (*key)[i].type;
+        const auto & actual_type = key_types[i];
 
-        if (expected_type != actual_type)
-            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type + ", found "
-                                + actual_type,
-                            ErrorCodes::TYPE_MISMATCH};
+        if (!areTypesEqual(expected_type, actual_type))
+            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type->getName() + ", found "
+                    + actual_type->getName(),
+                ErrorCodes::TYPE_MISMATCH};
     }
 }
 
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name) const
+{
+    auto find_iter
+        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+    if (find_iter != attributes.end())
+        return *find_iter;
+
+    if (key && access_to_key_from_attributes)
+    {
+        find_iter = std::find_if(key->begin(), key->end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+        if (find_iter != key->end())
+            return *find_iter;
+    }
+
+    throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+}
+
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name, const DataTypePtr & type) const
+{
+    const auto & attribute = getAttribute(attribute_name);
+
+    if (!areTypesEqual(attribute.type, type))
+        throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),
+            ErrorCodes::TYPE_MISMATCH};
+
+    return attribute;
+}
 
 std::string DictionaryStructure::getKeyDescription() const
 {
@@ -272,6 +297,21 @@ size_t DictionaryStructure::getKeySize() const
     });
 }
 
+Strings DictionaryStructure::getKeysNames() const
+{
+    if (id)
+        return { id->name };
+
+    const auto & key_attributes = *key;
+
+    Strings keys_names;
+    keys_names.reserve(key_attributes.size());
+
+    for (const auto & key_attribute : key_attributes)
+        keys_names.emplace_back(key_attribute.name);
+
+    return keys_names;
+}
 
 static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
@@ -318,9 +358,20 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
 
+
         const auto type_string = config.getString(prefix + "type");
-        const auto type = DataTypeFactory::instance().get(type_string);
-        const auto underlying_type = getAttributeUnderlyingType(type_string);
+        const auto initial_type = DataTypeFactory::instance().get(type_string);
+        auto type = initial_type;
+        bool is_array = false;
+        bool is_nullable = false;
+
+        if (type->isNullable())
+        {
+            is_nullable = true;
+            type = removeNullable(type);
+        }
+
+        const auto underlying_type = getAttributeUnderlyingType(type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -333,7 +384,9 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             try
             {
                 if (null_value_string.empty())
+                {
                     null_value = type->getDefault();
+                }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
@@ -365,8 +418,18 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        res_attributes.emplace_back(
-            DictionaryAttribute{name, underlying_type, type, expression, null_value, hierarchical, injective, is_object_id});
+        res_attributes.emplace_back(DictionaryAttribute{
+            name,
+            underlying_type,
+            initial_type,
+            type,
+            expression,
+            null_value,
+            hierarchical,
+            injective,
+            is_object_id,
+            is_nullable,
+            is_array});
     }
 
     return res_attributes;
