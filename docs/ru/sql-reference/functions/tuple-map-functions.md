@@ -178,7 +178,7 @@ select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type
 
 ## mapContains {#mapcontains}
 
-Определяет, включает ли в себя `map` параметр `key`.
+Определяет, содержит ли контейнер `map` ключ `key`.
 
 **Синтаксис**
 
