@@ -6,6 +6,7 @@ import os
 import time
 from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/enable_test_keeper1.xml', 'configs/log_conf.xml', 'configs/use_test_keeper.xml'], stay_alive=True)
@@ -94,9 +95,9 @@ def test_blocade_leader(started_cluster):
     node1.query("SYSTEM SYNC REPLICA ordinary.t1", timeout=10)
     node3.query("SYSTEM SYNC REPLICA ordinary.t1", timeout=10)
 
-    assert node1.query("SELECT COUNT() FROM ordinary.t1") == "10\n"
-    assert node2.query("SELECT COUNT() FROM ordinary.t1") == "10\n"
-    assert node3.query("SELECT COUNT() FROM ordinary.t1") == "10\n"
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM ordinary.t1", "10")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t1", "10")
+    assert_eq_with_retry(node3, "SELECT COUNT() FROM ordinary.t1", "10")
 
     with PartitionManager() as pm:
         pm.partition_instances(node2, node1)
@@ -187,9 +188,9 @@ def test_blocade_leader(started_cluster):
         for num, node in enumerate([node1, node2, node3]):
             dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
 
-    assert node1.query("SELECT COUNT() FROM ordinary.t1") == "310\n"
-    assert node2.query("SELECT COUNT() FROM ordinary.t1") == "310\n"
-    assert node3.query("SELECT COUNT() FROM ordinary.t1") == "310\n"
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM ordinary.t1", "310")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t1", "310")
+    assert_eq_with_retry(node3, "SELECT COUNT() FROM ordinary.t1", "310")
 
 
 def dump_zk(node, zk_path, replica_path):
@@ -243,9 +244,9 @@ def test_blocade_leader_twice(started_cluster):
     node1.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
     node3.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
 
-    assert node1.query("SELECT COUNT() FROM ordinary.t2") == "10\n"
-    assert node2.query("SELECT COUNT() FROM ordinary.t2") == "10\n"
-    assert node3.query("SELECT COUNT() FROM ordinary.t2") == "10\n"
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM ordinary.t2", "10")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t2", "10")
+    assert_eq_with_retry(node3, "SELECT COUNT() FROM ordinary.t2", "10")
 
     with PartitionManager() as pm:
         pm.partition_instances(node2, node1)
@@ -288,8 +289,8 @@ def test_blocade_leader_twice(started_cluster):
 
         node2.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
 
-        assert node2.query("SELECT COUNT() FROM ordinary.t2") == "210\n"
-        assert node3.query("SELECT COUNT() FROM ordinary.t2") == "210\n"
+        assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t2", "210")
+        assert_eq_with_retry(node3, "SELECT COUNT() FROM ordinary.t2", "210")
 
         # Total network partition
         pm.partition_instances(node3, node2)
@@ -363,10 +364,10 @@ def test_blocade_leader_twice(started_cluster):
                 dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect in i {} retries".format(i)
 
-    assert node1.query("SELECT COUNT() FROM ordinary.t2") == "510\n"
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM ordinary.t2", "510")
     if node2.query("SELECT COUNT() FROM ordinary.t2") != "510\n":
         for num, node in enumerate([node1, node2, node3]):
             dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
 
-    assert node2.query("SELECT COUNT() FROM ordinary.t2") == "510\n"
-    assert node3.query("SELECT COUNT() FROM ordinary.t2") == "510\n"
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t2", "510")
+    assert_eq_with_retry(node3, "SELECT COUNT() FROM ordinary.t2", "510")
