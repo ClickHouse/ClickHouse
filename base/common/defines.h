@@ -2,10 +2,17 @@
 
 /// __has_feature supported only by clang.
 ///
-/// But libcxx/libcxxabi overrides it to 0, thus the checks for __has_feature will be wrong,
-/// undefine it again to avoid such issues.
-#if defined(__has_feature) && !defined(__clang__)
-#  undef __has_feature
+/// But libcxx/libcxxabi overrides it to 0,
+/// thus the checks for __has_feature will be wrong.
+///
+/// NOTE:
+/// - __has_feature cannot be simply undefined,
+///   since this will be broken if some C++ header will be included after
+///   including <common/defines.h>
+/// - it should not have fallback to 0,
+///   since this may create false-positive detection (common problem)
+#if defined(__clang__) && defined(__has_feature)
+#    define ch_has_feature __has_feature
 #endif
 
 #if defined(_MSC_VER)
@@ -40,8 +47,8 @@
 
 /// Check for presence of address sanitizer
 #if !defined(ADDRESS_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(address_sanitizer)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(address_sanitizer)
 #            define ADDRESS_SANITIZER 1
 #        endif
 #    elif defined(__SANITIZE_ADDRESS__)
@@ -50,8 +57,8 @@
 #endif
 
 #if !defined(THREAD_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(thread_sanitizer)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(thread_sanitizer)
 #            define THREAD_SANITIZER 1
 #        endif
 #    elif defined(__SANITIZE_THREAD__)
@@ -60,8 +67,8 @@
 #endif
 
 #if !defined(MEMORY_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(memory_sanitizer)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(memory_sanitizer)
 #            define MEMORY_SANITIZER 1
 #        endif
 #    elif defined(__MEMORY_SANITIZER__)
