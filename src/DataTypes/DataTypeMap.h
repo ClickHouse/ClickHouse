@@ -32,6 +32,9 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -44,7 +47,6 @@ public:
 
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
 
     void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
 
@@ -74,9 +76,6 @@ public:
            DeserializeBinaryBulkStatePtr & state,
            SubstreamsCache * cache) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
-
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
@@ -89,6 +88,8 @@ public:
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
+
+    const DataTypePtr & getNestedType() const { return nested; }
 
 private:
     template <typename Writer>

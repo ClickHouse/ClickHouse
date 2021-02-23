@@ -26,9 +26,6 @@ class Field;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
-class ProtobufReader;
-class ProtobufWriter;
-
 struct NameAndTypePair;
 
 
@@ -234,10 +231,6 @@ public:
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
-
-    /** Serialize to a protobuf. */
-    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
-    virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */
@@ -497,7 +490,7 @@ public:
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
     /// generic compression codecs like LZ4.
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
-private:
+protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
     /// Customize this DataType
@@ -597,6 +590,7 @@ inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_ty
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
+inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)

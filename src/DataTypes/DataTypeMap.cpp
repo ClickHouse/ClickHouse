@@ -65,6 +65,16 @@ static IColumn & extractNestedColumn(IColumn & column)
     return assert_cast<ColumnMap &>(column).getNestedColumn();
 }
 
+DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    return nested->tryGetSubcolumnType(subcolumn_name);
+}
+
+ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
+}
+
 void DataTypeMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const auto & map = get<const Map &>(field);
@@ -324,16 +334,6 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
     nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
-}
-
-void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
-}
-
-void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const

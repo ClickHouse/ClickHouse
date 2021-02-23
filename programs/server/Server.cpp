@@ -59,7 +59,6 @@
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/TestKeeperTCPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -70,6 +69,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/HTTP/HTTPServer.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -94,12 +94,16 @@
 #   include <Server/GRPCServer.h>
 #endif
 
+#if USE_NURAFT
+#   include <Server/NuKeeperTCPHandlerFactory.h>
+#endif
 
 namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
 }
 
 
@@ -109,8 +113,20 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
-    if (argc > 0 && !isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
-        app.shouldSetupWatchdog(argv[0]);
+    /// Can be overridden by environment variable (cannot use server config at this moment).
+    if (argc > 0)
+    {
+        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE");
+        if (env_watchdog)
+        {
+            if (0 == strcmp(env_watchdog, "1"))
+                app.shouldSetupWatchdog(argv[0]);
+
+            /// Other values disable watchdog explicitly.
+        }
+        else if (!isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
+            app.shouldSetupWatchdog(argv[0]);
+    }
 
     try
     {
@@ -692,6 +708,37 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
+            /// Limit on total memory usage
+            size_t max_server_memory_usage = config->getUInt64("max_server_memory_usage", 0);
+
+            double max_server_memory_usage_to_ram_ratio = config->getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
+            size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+
+            if (max_server_memory_usage == 0)
+            {
+                max_server_memory_usage = default_max_server_memory_usage;
+                LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+                    " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    max_server_memory_usage_to_ram_ratio);
+            }
+            else if (max_server_memory_usage > default_max_server_memory_usage)
+            {
+                max_server_memory_usage = default_max_server_memory_usage;
+                LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+                    " because the system has low amount of memory. The amount was"
+                    " calculated as {} available"
+                    " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                    formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    max_server_memory_usage_to_ram_ratio);
+            }
+
+            total_memory_tracker.setHardLimit(max_server_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -780,37 +827,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
-    /// Limit on total memory usage
-    size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
-
-    double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
-    size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
-
-    if (max_server_memory_usage == 0)
-    {
-        max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
-            " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
-            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
-            formatReadableSizeWithBinarySuffix(memory_amount),
-            max_server_memory_usage_to_ram_ratio);
-    }
-    else if (max_server_memory_usage > default_max_server_memory_usage)
-    {
-        max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
-            " because the system has low amount of memory. The amount was"
-            " calculated as {} available"
-            " * {:.2f} max_server_memory_usage_to_ram_ratio",
-            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
-            formatReadableSizeWithBinarySuffix(memory_amount),
-            max_server_memory_usage_to_ram_ratio);
-    }
-
-    total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
-    total_memory_tracker.setDescription("(total)");
-    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
@@ -830,23 +846,33 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    for (const auto & listen_host : listen_hosts)
+    if (config().has("test_keeper_server"))
     {
-        /// TCP TestKeeper
-        const char * port_name = "test_keeper_server.tcp_port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+#if USE_NURAFT
+        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
+        global_context->initializeNuKeeperStorageDispatcher();
+        for (const auto & listen_host : listen_hosts)
         {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
-            servers_to_start_before_tables->emplace_back(
-                port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new TestKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+            /// TCP NuKeeper
+            const char * port_name = "test_keeper_server.tcp_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers_to_start_before_tables->emplace_back(
+                    port_name,
+                    std::make_unique<Poco::Net::TCPServer>(
+                        new NuKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
-            LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
-        });
+                LOG_INFO(log, "Listening for connections to NuKeeper (tcp): {}", address.toString());
+            });
+        }
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
+#endif
+
     }
 
     for (auto & server : *servers_to_start_before_tables)
@@ -886,6 +912,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
+
+            global_context->shutdownNuKeeperStorageDispatcher();
         }
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -985,7 +1013,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         int pool_size = config().getInt("distributed_ddl.pool_size", 1);
         if (pool_size < 1)
             throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+                                                                 "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
@@ -1044,8 +1073,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
 
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(), createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://{}", address.toString());
             });
@@ -1059,8 +1090,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(), createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://{}", address.toString());
 #else
@@ -1134,8 +1167,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(),
+                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
@@ -1148,8 +1187,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(),
+                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
 #else
@@ -1209,8 +1254,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(),
+                        createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
             });
