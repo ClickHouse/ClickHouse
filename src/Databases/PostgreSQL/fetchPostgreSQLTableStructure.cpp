@@ -77,7 +77,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         else
         {
             precision = DecimalUtils::max_precision<Decimal128>();
-            scale = precision >> 1;
+            scale = precision / 2;
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
     }
