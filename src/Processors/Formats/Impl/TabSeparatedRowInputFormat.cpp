@@ -465,10 +465,9 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     // We can use the same segmentation engine for TSKV.
-    for (const std::string & name : {"TabSeparated", "TSV", "TSKV"})
+    for (const std::string & name : {"TabSeparated", "TSV", "TSKV", "TabSeparatedWithNames", "TSVWithNames"})
     {
         factory.registerFileSegmentationEngine(name, &fileSegmentationEngineTabSeparatedImpl);
-        factory.registerFileSegmentationEngine(name + "WithNames", &fileSegmentationEngineTabSeparatedImpl);
     }
 }
 
