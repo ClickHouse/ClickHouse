@@ -36,6 +36,8 @@ public:
         queue.clear();
     }
 
+    void onCancel() override { finalize(); }
+
 protected:
     void consume(Chunk chunk) override
     {
