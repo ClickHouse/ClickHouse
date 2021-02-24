@@ -150,7 +150,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
         {
             std::unique_lock<std::mutex> lock(update_mutex);
 
-            unit_to_update->current_exception = std::current_exception();
+            unit_to_update->current_exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
             is_update_finished.notify_all();
         }
     }

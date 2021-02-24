@@ -493,7 +493,7 @@ public:
         #if defined(__FreeBSD__)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
-        write_request.aio.aio_buf = reinterpret_cast<const volatile void *>(buffer);
+        write_request.aio.aio_buf = reinterpret_cast<const volatile void *>(const_cast<char *>(buffer));
         write_request.aio.aio_nbytes = block_size * buffer_size_in_blocks;
         write_request.aio.aio_offset = current_block_index * block_size;
         #else
