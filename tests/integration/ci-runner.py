@@ -22,11 +22,12 @@ MAX_TIME_SECONDS = 3600
 
 def get_tests_to_run(pr_info):
     result = set([])
+    changed_files = pr_info['changed_files']
 
-    if pr_info.changed_files is None:
+    if changed_files is None:
         return []
 
-    for fpath in pr_info.changed_files:
+    for fpath in changed_files:
         if 'tests/integration/test_' in fpath:
             logging.info('File %s changed and seems like integration test', fpath)
             result.add(fpath.split('/')[2])
@@ -160,7 +161,7 @@ class ClickhouseIntegrationTestsRunner:
 
         self.image_versions = self.params['docker_images_with_versions']
         self.shuffle_groups = self.params['shuffle_test_groups']
-        self.flacky_check = 'flacky check' in self.params['context_name']
+        self.flaky_check = 'flaky check' in self.params['context_name']
 
     def path(self):
         return self.result_path
@@ -344,6 +345,7 @@ class ClickhouseIntegrationTestsRunner:
                 self._update_counters(counters, new_counters)
                 for test_name, test_time in new_tests_times.items():
                     tests_times[test_name] = test_time
+                os.remove(output_path)
             if len(counters["PASSED"]) == len(tests_in_group):
                 logging.info("All tests from group %s passed", test_group)
                 break
@@ -357,7 +359,7 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_name, log_path
 
-    def run_flacky_check(self, repo_path, build_path):
+    def run_flaky_check(self, repo_path, build_path):
         pr_info = self.params['pr_info']
 
         # pytest swears, if we require to run some tests which was renamed or deleted
@@ -416,8 +418,8 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, [test_logs] + log_paths
 
     def run_impl(self, repo_path, build_path):
-        if self.flacky_check:
-            return self.flacky_check(repo_path, build_path)
+        if self.flaky_check:
+            return self.flaky_check(repo_path, build_path)
 
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
