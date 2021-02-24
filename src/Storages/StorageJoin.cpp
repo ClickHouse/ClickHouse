@@ -96,8 +96,8 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
     analyzed_join->setRightKeys(key_names);
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
-    join_clone->reuseJoinedData(*join);
     join_clone->setLock(rwlock);
+    join_clone->reuseJoinedData(*join);
 
     return join_clone;
 }
