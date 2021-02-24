@@ -6,65 +6,65 @@ toc_priority: 10
 
 # Какую версию ClickHouse использовать? {#which-clickhouse-version-to-use-in-production}
 
-Во-первых, давайте обсудим, почему люди задают этот вопрос сразу. Две основные причины:
+Во-первых, давайте обсудим, почему возникает этот вопрос. Есть две основные причины:
 
-1.  ClickHouse разработали достаточно быстро и обычно есть более 10-ти стабильных релизов в год. Так что есть из чего выбирать, а это не всегда просто. 
-2.  Некоторые пользователи хотят избежать трат времени на выяснение, какая версия работает лучше для их сценария использования и просто хотят послушать толковый совет.
+1.  ClickHouse развивается достаточно быстро, и обычно мы выпускаем более 10 стабильных релизов в год. Так что есть из чего выбрать, а это не всегда просто. 
+2.  Некоторые пользователи не хотят тратить время на анализ того, какая версия лучше подходит для их задач, и просто хотят получить совет от эксперта.
 
-Вторая причина более весомая, так что начнем с нее и затем вернемся к навигации по существующим релизам ClickHouse.
+Вторая причина более весомая, так что начнем с нее, а затем рассмотрим, какие бывают релизы ClickHouse.
 
 ## Какую версию ClickHouse вы посоветуете? {#which-clickhouse-version-do-you-recommend}
 
-Очень удобный вариант — нанять консультанта или довериться известному эксперту, чтобы делегировать ответственность за вашу производственную среду. Вы устанавливаете одну из версий ClickHouse, которую порекомендовал кто-то, а теперь если с ней что-то идет не так — это уже не ваша вина, а тех, кто давал совет. Такая линия причинно-следственной связи очень большая ловушка. Никто другой, кроме вас не знает, что происходит в производственной среде вашей компании. 
+Казалось бы, самый удобный вариант — нанять консультанта или довериться эксперту, и делегировать ему ответственность за вашу систему. Вы устанавливаете ту версию ClickHouse, которую вам рекомендовали, и теперь если что-то пойдет не так — это уже не ваша вина. На самом деле это не так. Никто не может знать лучше вас, что происходит в вашей системе. 
 
-Так что как верно выбрать версию ClickHouse, до которой стоит обновиться? Или как выбрать версию, если вы только начинаете пользоваться ClickHouse? Во-первых, вам стоит вложить деньги в настройку **реалистичной предпроизводственной среды**. В идеальном мире, это может быть полностью идентичная теневая копия, чаще всего дорогостоящая.
+Как же правильно выбрать версию ClickHouse, на которую стоит обновиться? Или как выбрать версию, с которой следует начать, если вы только внедряете ClickHouse? Во-первых, мы рекомендуем позаботиться о создании **реалистичной тестовой среды** (pre-production). В идеальном мире это была бы полная копия рабочей среды, но чаще всего такое решение оказывается слишком дорогостоящим.
 
-Вот некоторые ключевые моменты для получения разумной точности в предпроизводственной среде с невысокой стоимостью:
+Чтобы тестовая среда была достаточно надежной, но не слишком дорогостоящей, учитывайте следующие моменты:
 
--   Предпроизводственная среда должна обрабатывать максимально близкий набор запросов к тому, который вы планируете обрабатывать в реальной работе:
-    -   Не делайте ее в режиме "только чтения" с некоторыми замороженными данными.
-    -   Не делайте ее в режиме "только запись" только с копированием данных без создания некоторых типичных отчетов.
-    -   Не стирайте все подчистую вместо того, чтобы применить схему миграции.
--   Пользуйтесь сэмплом реальных рабочих данных и запросов. Попробуйте выбрать репрезентативный сэмпл, который возвращает адекватные результаты по запросу `SELECT`. Также пользуйтесь обфускацией, когда ваши данные чувствительные, а по внутренним правилам не позволяется сменить среду разработки.
--   Убедитесь, что вы мониторите предпродакшн, а также у вас есть ПО, котороое оповестит вас о том, что происходит в таком же виде, как и ваше рабочее окружение.
--   Если ваш продакшн распределен по разным датацентрам или регионам, предпродакшн должен быть таким же.
--   If your production uses complex features like replication, distributed table, cascading materialize views, make sure they are configured similarly in pre-production.
--   There’s a trade-off on using the roughly same number of servers or VMs in pre-production as in production, but of smaller size, or much less of them, but of the same size. The first option might catch extra network-related issues, while the latter is easier to manage.
+-   В тестовой среде нужно выполнять набор запросов, максимально близкий к тому, который будет выполняться в реальной среде:
+    -   Не используйте тестовую среду в режиме "только для чтения", работая с каким-то статичным набором данных.
+    -   Не используйте её в режиме "только для записи", проверяя лишь копирование данных, без построения типовых отчетов.
+    -   Не очищайте её, удаляя все данные подчистую вместо тестирования рабочих схем миграции.
+-   Выполняйте реальные запросы на выборке из реальных рабочих данных. Постарайтесь подготовить репрезентативную выборку, на которой запрос `SELECT` будет возвращать адекватные результаты. Если регламенты безопасности не позволяют использовать реальные данные за пределами защищенной рабочей среды, используйте обфускацию. 
+-   Убедитесь, что тестовая среда находится под контролем тех же систем мониторинга и оповещения, что и рабочая. 
+-   Если ваша рабочая среда распределена между разными дата-центрами и регионами, тестовая среда должна быть такой же.
+-   Если в рабочей среде используются сложные инструменты типа репликации, распределённых таблиц или каскадных материализованных представлений, тестовая среда должна быть сконфигурирована так же.
+-   Обычно в тестовой среде стараются использовать то же количество серверов и виртуальных машин, что и в рабочей, но делают их меньшего объема. Либо наоборот, используют существенно меньшее число серверов и ВМ, но тех же объемов. Первый вариант скорее позволит обнаружить проблемы, связанные с работой сети, а второй вариант более прост в управлении.
 
-Второе направление инвестиций — **инфраструктура автоматизированного тестирования**. Не думайте, что если некоторый вид запроса был успешно выполнен однажды, то так будет продолжаться всегда. Это нормально иметь некоторые юнит-тесты, где It’s ok to have some unit tests where ClickHouse is mocked but make sure your product has a reasonable set of automated tests that are run against real ClickHouse and check that all important use cases are still working as expected.
+Второе направление — **автоматизированное тестирование**. Не думайте, что если какой-то запрос отработал успешно один раз, так будет всегда. Считается приемлемым выполнять некоторые юнит-тесты, используя "заглушки" вместо запросов к СУБД. Но вы должны проводить достаточное количество автотестов, где запросы выполняются в реальном ClickHouse, чтобы убедиться, что все важные задачи отрабатывают должным образом.
 
-Extra step forward could be contributing those automated tests to [ClickHouse’s open-source test infrastructure](https://github.com/ClickHouse/ClickHouse/tree/master/tests) that’s continuously used in its day-to-day development. It definitely will take some additional time and effort to learn [how to run it](../../development/tests.md) and then how to adapt your tests to this framework, but it’ll pay off by ensuring that ClickHouse releases are already tested against them when they are announced stable, instead of repeatedly losing time on reporting the issue after the fact and then waiting for a bugfix to be implemented, backported and released. Some companies even have such test contributions to infrastructure by its use as an internal policy, most notably it’s called [Beyonce’s Rule](https://www.oreilly.com/library/view/software-engineering-at/9781492082781/ch01.html#policies_that_scale_well) at Google.
+В продолжение этой темы, вы можете поделиться вашими автотестами и передать их [в открытую тестовую среду ClickHouse](https://github.com/ClickHouse/ClickHouse/tree/master/tests), которая используется для постоянного развития нашей СУБД. Вам придётся потратить немного времени и сил, чтобы научиться [составлять и выполнять тесты](../../development/tests.md), а также чтобы перенести ваши тесты на эту платформу. Наградой за это станет уверенность в том, что новые стабильные релизы ClickHouse будут корректно работать на ваших задачах. Это гораздо лучше, чем тратить время на то, чтобы вновь отлавливать прежние ошибки в новых версиях, а затем ждать, пока их исправят и включат эти исправления в очередной релиз. Некоторые компании уже включили в корпоративные регламенты необходимость передачи своих тестов в ClickHouse, прежде всего стоит упомянуть [правило Beyonce](https://www.oreilly.com/library/view/software-engineering-at/9781492082781/ch01.html#policies_that_scale_well), действующее в Google.
 
-When you have your pre-production environment and testing infrastructure in place, choosing the best version is straightforward:
+После того, как вы подготовили тестовую среду и инфраструктуру, выбор версии ClickHouse упрощается:
 
-1.  Routinely run your automated tests against new ClickHouse releases. You can do it even for ClickHouse releases that are marked as `testing`, but going forward to the next steps with them is not recommended.
-2.  Deploy the ClickHouse release that passed the tests to pre-production and check that all processes are running as expected.
-3.  Report any issues you discovered to [ClickHouse GitHub Issues](https://github.com/ClickHouse/ClickHouse/issues).
-4.  If there were no major issues, it should be safe to start deploying ClickHouse release to your production environment. Investing in gradual release automation that implements an approach similar to [canary releases](https://martinfowler.com/bliki/CanaryRelease.html) or [green-blue deployments](https://martinfowler.com/bliki/BlueGreenDeployment.html) might further reduce the risk of issues in production.
+1.  Проверяйте новые релизы ClickHouse с помощью подготовленных автотестов. Вы можете проверять не только стабильные релизы, но и тестовые, хотя работать с такими релизами не рекомендуется.
+2.  Если новый релиз ClickHouse успешно прошел ваши автотесты, внедряйте его в тестовой среде и проверяйте работоспособность всех ваших задач.
+3.  Сообщайте обо всех обнаруженных проблемах в [ClickHouse GitHub Issues](https://github.com/ClickHouse/ClickHouse/issues).
+4.  Если никаких серьезных проблем не было выявлено, можно установить новый релиз ClickHouse в рабочую среду. Чтобы еще больше снизить риски, вы можете внедрить специальные техники поэтапного перехода на новые релизы, такие как [canary releases](https://martinfowler.com/bliki/CanaryRelease.html) или [green-blue deployments](https://martinfowler.com/bliki/BlueGreenDeployment.html).
 
-As you might have noticed, there’s nothing specific to ClickHouse in the approach described above, people do that for any piece of infrastructure they rely on if they take their production environment seriously.
+Как вы уже поняли, ClickHouse не требует какого-то особенного подхода — описанные выше правила широко используются для любых элементов инфраструктуры, если нужно обеспечить ее надежность и если компании серьезно подходят к вопросам стабильности своих систем.
 
-## Как выбрать между релизами ClickHouse? {#how-to-choose-between-clickhouse-releases}
+## Какой вид релиза ClickHouse выбрать? {#how-to-choose-between-clickhouse-releases}
 
-If you look into contents of ClickHouse package repository, you’ll see four kinds of packages:
+Если вы заглянете в раздел, где публикуются установочные пакеты ClickHouse, вы увидите там следующие виды пакетов:
 
 1.  `testing`
 2.  `prestable`
 3.  `stable`
 4.  `lts` (long-term support)
 
-As was mentioned earlier, `testing` is good mostly to notice issues early, running them in production is not recommended because each of them is not tested as thoroughly as other kinds of packages.
+Как уже упоминалось выше, тестовые релизы (`testing`) стоит использовать для раннего обнаружения ошибок, в рабочей среде мы не рекомендуем использовать такие релизы, поскольку они еще не протестированы так же тщательно, как остальные.
 
-`prestable` is a release candidate which generally looks promising and is likely to become announced as `stable` soon. You can try them out in pre-production and report issues if you see any.
+Подготовительные (`prestable`) — это релизы-кандидаты, которые с большой вероятностью скоро будут доведены до стабильного состояния. Вы можете использовать их в тестовой среде и сообщать нам об обнаруженных ошибках.
 
-For production use, there are two key options: `stable` and `lts`. Here is some guidance on how to choose between them:
+В рабочей среде мы рекомендуем использвать либо стабильный релиз (`stable`), либо релиз с долговременной поддержкой (`lts`). Если вы выбираете между этими двуми видами релизов, примите во внимание следующее:
 
--   `stable` is the kind of package we recommend by default. They are released roughly monthly (and thus provide new features with reasonable delay) and three latest stable releases are supported in terms of diagnostics and backporting of bugfixes.
--   `lts` are released twice a year and are supported for a year after their initial release. You might prefer them over `stable` in the following cases:
-    -   Your company has some internal policies that don’t allow for frequent upgrades or using non-LTS software.
-    -   You are using ClickHouse in some secondary products that either doesn’t require any complex ClickHouse features and don’t have enough resources to keep it updated.
+-   По умолчанию мы рекомендуем релизы `stable`. Новый стабильный релиз выпускается примерно раз в месяц, что открывает доступ к новым функциям. Три последних стабильных релиза находятся на поддержке — это означает, что в них интегрируются исправленные ошибки и доработки.
+-   Релизы `lts` выпускаются дважды в год и находятся на поддержке в течение года с момента выхода. Они более предочтительны в следующих случаях:
+    -   ваши корпоративные регламенты запрещают частые обновления или использование любых релизов, кроме LTS;
+    -   вы используете ClickHouse в продуктах, которые не задействуют сложные инструменты ClickHouse, или у вас не хватает ресурсов для частого их обновления.
 
-Many teams who initially thought that `lts` is the way to go, often switch to `stable` anyway because of some recent feature that’s important for their product.
+Часто компании, которые изначально ориентировались на релизы `lts`, позднее переходят на `stable`, поскольку хотят быстрее получать доступ к новым возможностям.
 
-!!! warning "Important"
-    One more thing to keep in mind when upgrading ClickHouse: we’re always keeping eye on compatibility across releases, but sometimes it’s not reasonable to keep and some minor details might change. So make sure you check the [changelog](../../whats-new/changelog/index.md) before upgrading to see if there are any notes about backward-incompatible changes.
+!!! warning "Важно"
+    Мы всегда стремимся поддерживать совместимость релизов, но иногда это правило нарушается, и какие-то отдельные возможности в новых релизах становятся недоступны. Перед обновлением ClickHouse обязательно изучите [журнал изменений](../../whats-new/changelog/index.md), чтобы убедиться, что в нем нет объявлений о нарушении обратной совместимости.
