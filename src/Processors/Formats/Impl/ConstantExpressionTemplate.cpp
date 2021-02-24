@@ -209,6 +209,14 @@ private:
                 if (map.size() % 2)
                     return false;
             }
+            else if (literal->value.getType() == Field::Types::Tuple)
+            {
+                const Tuple & tuple = literal->value.get<Tuple>();
+
+                for (const auto & value : tuple)
+                    if (value.isNull())
+                        return true;
+            }
 
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
