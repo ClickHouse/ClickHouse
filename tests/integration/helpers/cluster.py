@@ -754,7 +754,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=30, secure=False):
-        os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_certs_dir, 'public.crt')
+        os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_dir, 'certs', 'public.crt')
         minio_client = Minio('localhost:{}'.format(self.minio_port),
                              access_key='minio',
                              secret_key='minio123',
