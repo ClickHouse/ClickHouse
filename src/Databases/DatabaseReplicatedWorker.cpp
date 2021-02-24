@@ -22,7 +22,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
     /// We also need similar graph to load tables on server startup in order of topsort.
 }
 
-void DatabaseReplicatedDDLWorker::initializeMainThread()
+bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
     while (!stop_flag)
     {
@@ -33,7 +33,7 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
                 database->tryConnectToZooKeeperAndInitDatabase(false);
             initializeReplication();
             initialized = true;
-            return;
+            return true;
         }
         catch (...)
         {
@@ -41,6 +41,8 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
             sleepForSeconds(5);
         }
     }
+
+    return false;
 }
 
 void DatabaseReplicatedDDLWorker::shutdown()

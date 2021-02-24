@@ -936,11 +936,11 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 }
 
 
-void DDLWorker::initializeMainThread()
+bool DDLWorker::initializeMainThread()
 {
     assert(!initialized);
     setThreadName("DDLWorker");
-    LOG_DEBUG(log, "Started DDLWorker thread");
+    LOG_DEBUG(log, "Initializing DDLWorker thread");
 
     while (!stop_flag)
     {
@@ -949,7 +949,7 @@ void DDLWorker::initializeMainThread()
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initialized = true;
-            return;
+            return true;
         }
         catch (const Coordination::Exception & e)
         {
@@ -970,6 +970,8 @@ void DDLWorker::initializeMainThread()
         /// Avoid busy loop when ZooKeeper is not available.
         sleepForSeconds(5);
     }
+
+    return false;
 }
 
 void DDLWorker::runMainThread()
@@ -1000,7 +1002,9 @@ void DDLWorker::runMainThread()
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required
             if (!initialized)
             {
-                initializeMainThread();
+                /// Stopped
+                if (!initializeMainThread())
+                    break;
                 LOG_DEBUG(log, "Initialized DDLWorker thread");
             }
 
