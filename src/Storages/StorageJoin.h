@@ -69,6 +69,10 @@ private:
 
     std::shared_ptr<TableJoin> table_join;
     HashJoinPtr join;
+
+    /// Protect state for concurrent use in insertFromBlock and joinBlock.
+    /// Lock hold via HashJoin instance (or HashJoinHolder for joinGet)
+    /// during all query and block insertions.
     mutable std::shared_mutex rwlock;
 
     void insertBlock(const Block & block) override;

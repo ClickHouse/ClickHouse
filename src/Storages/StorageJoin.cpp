@@ -109,9 +109,23 @@ void StorageJoin::insertBlock(const Block & block)
     join->addJoinedBlock(block, true);
 }
 
-size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalRows(const Settings &) const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalBytes(const Settings &) const { return join->getTotalByteCount(); }
+size_t StorageJoin::getSize() const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageJoin::totalRows(const Settings &) const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageJoin::totalBytes(const Settings &) const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->getTotalByteCount();
+}
 
 
 void registerStorageJoin(StorageFactory & factory)
