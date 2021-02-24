@@ -749,8 +749,12 @@ void StorageReplicatedMergeTree::drop()
     if (has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
-        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
-        auto zookeeper = getZooKeeper();
+        /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
+        zkutil::ZooKeeperPtr zookeeper;
+        if (zookeeper_name == default_zookeeper_name)
+            zookeeper = global_context.getZooKeeper();
+        else
+            zookeeper = global_context.getAuxiliaryZooKeeper(zookeeper_name);
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
