@@ -22,7 +22,7 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 -   `toInt128(expr)` — Results in the `Int128` data type.
 -   `toInt256(expr)` — Results in the `Int256` data type.
 
-**Parameters**
+**Arguments**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
@@ -88,7 +88,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 -   `toUInt64(expr)` — Results in the `UInt64` data type.
 -   `toUInt256(expr)` — Results in the `UInt256` data type.
 
-**Parameters**
+**Arguments**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
@@ -154,7 +154,7 @@ Converts an input string to a [Nullable(Decimal(P,S))](../../sql-reference/data-
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
 
-**Parameters**
+**Arguments**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
@@ -199,7 +199,7 @@ Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/dec
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
 
-**Parameters**
+**Arguments**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
@@ -303,7 +303,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpretAs(x, T) {#type_conversion_function-cast}
+## reinterpret(x, T) {#type_conversion_function-reinterpret}
 
 Performs byte reinterpretation of ‘x’ as ‘t’ data type.
 
@@ -313,9 +313,9 @@ Following reinterpretations are allowed:
 3. FixedString, String, types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
 
 ``` sql
-SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpretAs(toInt8(1), 'Float32') as int_to_float,
-    reinterpretAs('1', 'UInt32') as string_to_int;
+SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
+    reinterpret(toInt8(1), 'Float32') as int_to_float,
+    reinterpret('1', 'UInt32') as string_to_int;
 ```
 
 ``` text
@@ -324,23 +324,27 @@ SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
 └─────────────┴──────────────┴───────────────┘
 ```
 
-## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretasuint8163264256}
+## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretAsUInt8163264256}
 
-## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretasint8163264128256}
+## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretAsInt8163264128256}
 
-## reinterpretAsFloat(32\|64) {#reinterpretasfloat3264}
+## reinterpretAsDecimal(32\|64\|128\|256) {#reinterpretAsDecimal3264128256}
 
-## reinterpretAsDate {#reinterpretasdate}
+## reinterpretAsFloat(32\|64) {#type_conversion_function-reinterpretAsFloat}
 
-## reinterpretAsDateTime {#reinterpretasdatetime}
+## reinterpretAsDate {#type_conversion_function-reinterpretAsDate}
 
-## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
+## reinterpretAsDateTime {#type_conversion_function-reinterpretAsDateTime}
 
-## reinterpretAsFixedString {#reinterpretasfixedstring}
+## reinterpretAsDateTime64 {#type_conversion_function-reinterpretAsDateTime64}
 
-## reinterpretAsUUID {#reinterpretasuuid}
+## reinterpretAsString {#type_conversion_function-reinterpretAsString}
 
-These functions are aliases for `reinterpretAs`function.
+## reinterpretAsFixedString {#type_conversion_function-reinterpretAsFixedString}
+
+## reinterpretAsUUID {#type_conversion_function-reinterpretAsUUID}
+
+These functions are aliases for `reinterpret` function.
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
@@ -401,7 +405,7 @@ bounds of type T.
 
 Example
 ``` sql
-SELECT cast(-1, 'UInt8') as uint8; 
+SELECT cast(-1, 'UInt8') as uint8;
 ```
 
 
@@ -422,7 +426,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
+Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL
 if the casted value is not representable in the target type.
 
 Example:
@@ -467,7 +471,7 @@ toIntervalQuarter(number)
 toIntervalYear(number)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `number` — Duration of interval. Positive integer number.
 
@@ -505,7 +509,7 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
 parseDateTimeBestEffort(time_string [, time_zone]);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
@@ -617,7 +621,7 @@ This function is similar to [‘parseDateTimeBestEffort’](#parsedatetimebestef
 parseDateTimeBestEffortUS(time_string [, time_zone]);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
@@ -701,7 +705,7 @@ To convert data from the `LowCardinality` data type use the [CAST](#type_convers
 toLowCardinality(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md#data_types).
 
@@ -741,7 +745,7 @@ Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Inpu
 toUnixTimestamp64Milli(value)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `value` — DateTime64 value with any precision.
 
@@ -793,7 +797,7 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 fromUnixTimestamp64Milli(value [, ti])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `value` — `Int64` value with any precision.
 -   `timezone` — `String` (optional) timezone name of the result.
@@ -817,15 +821,15 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 
 ## formatRow {#formatrow}
 
-Converts arbitrary expressions into a string via given format. 
+Converts arbitrary expressions into a string via given format.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 formatRow(format, x, y, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
 -   `x`,`y`, ... — Expressions.
@@ -860,13 +864,13 @@ Result:
 
 Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 formatRowNoNewline(format, x, y, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
 -   `x`,`y`, ... — Expressions.

@@ -29,6 +29,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address_,
         const Context & global_context,
         const std::pair<String, String> & login_password_,
+        const String & vhost_,
         const Names & routing_keys_,
         const String & exchange_name_,
         const AMQP::ExchangeType exchange_type_,
@@ -42,6 +43,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         : WriteBuffer(nullptr, 0)
         , parsed_address(parsed_address_)
         , login_password(login_password_)
+        , vhost(vhost_)
         , routing_keys(routing_keys_)
         , exchange_name(exchange_name_)
         , exchange_type(exchange_type_)
@@ -149,7 +151,9 @@ bool WriteBufferToRabbitMQProducer::setupConnection(bool reconnecting)
     }
 
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
-            AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+            AMQP::Address(
+                parsed_address.first, parsed_address.second,
+                AMQP::Login(login_password.first, login_password.second), vhost));
 
     cnt_retries = 0;
     while (!connection->ready() && ++cnt_retries != RETRIES_MAX)

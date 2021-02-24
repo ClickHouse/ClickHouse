@@ -203,6 +203,20 @@ private:
                 if (not_null == array.end())
                     return true;
             }
+            else if (literal->value.getType() == Field::Types::Map)
+            {
+                const Map & map = literal->value.get<Map>();
+                if (map.size() % 2)
+                    return false;
+            }
+            else if (literal->value.getType() == Field::Types::Tuple)
+            {
+                const Tuple & tuple = literal->value.get<Tuple>();
+
+                for (const auto & value : tuple)
+                    if (value.isNull())
+                        return true;
+            }
 
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
@@ -618,7 +632,7 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
         expr = makeASTFunction("assumeNotNull", std::move(expr));
     }
 
-    expr = makeASTFunction("cast", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
 
     if (null_as_default)
     {

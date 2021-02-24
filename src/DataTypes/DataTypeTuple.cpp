@@ -138,7 +138,7 @@ void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, Writ
         idx_elem.second->serializeBinary(extractElementColumn(column, idx_elem.first), row_num, ostr);
 }
 
-
+/// Function must atomically insert values into tuple column
 template <typename F>
 static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 {
@@ -151,7 +151,8 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 
         // Check that all columns now have the same size.
         size_t new_size = column.size();
-        for (auto i : ext::range(1, ext::size(elems)))
+
+        for (auto i : ext::range(0, ext::size(elems)))
         {
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
@@ -168,6 +169,7 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
         for (const auto & i : ext::range(0, ext::size(elems)))
         {
             auto & element_column = extractElementColumn(column, i);
+
             if (element_column.size() > old_size)
                 element_column.popBack(1);
         }
@@ -215,17 +217,18 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
             }
             elems[i]->deserializeAsTextQuoted(extractElementColumn(column, i), istr, settings);
         }
-    });
 
-    // Special format for one element tuple (1,)
-    if (1 == elems.size())
-    {
+        // Special format for one element tuple (1,)
+        if (1 == elems.size())
+        {
+            skipWhitespaceIfAny(istr);
+            // Allow both (1) and (1,)
+            checkChar(',', istr);
+        }
+
         skipWhitespaceIfAny(istr);
-        // Allow both (1) and (1,)
-        checkChar(',', istr);
-    }
-    skipWhitespaceIfAny(istr);
-    assertChar(')', istr);
+        assertChar(')', istr);
+    });
 }
 
 void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -290,10 +293,10 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, con
                 auto & element_column = extractElementColumn(column, element_pos);
                 elems[element_pos]->deserializeAsTextJSON(element_column, istr, settings);
             }
-        });
 
-        skipWhitespaceIfAny(istr);
-        assertChar('}', istr);
+            skipWhitespaceIfAny(istr);
+            assertChar('}', istr);
+        });
     }
     else
     {
@@ -312,10 +315,10 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, con
                 }
                 elems[i]->deserializeAsTextJSON(extractElementColumn(column, i), istr, settings);
             }
-        });
 
-        skipWhitespaceIfAny(istr);
-        assertChar(']', istr);
+            skipWhitespaceIfAny(istr);
+            assertChar(']', istr);
+        });
     }
 }
 
@@ -502,33 +505,6 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreamsImpl(
         elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
     }
     settings.path.pop_back();
-}
-
-void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    for (; value_index < elems.size(); ++value_index)
-    {
-        size_t stored = 0;
-        elems[value_index]->serializeProtobuf(extractElementColumn(column, value_index), row_num, protobuf, stored);
-        if (!stored)
-            break;
-    }
-}
-
-void DataTypeTuple::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    bool all_elements_get_row = true;
-    addElementSafe(elems, column, [&]
-    {
-        for (const auto & i : ext::range(0, ext::size(elems)))
-        {
-            bool element_row_added;
-            elems[i]->deserializeProtobuf(extractElementColumn(column, i), protobuf, allow_add_row, element_row_added);
-            all_elements_get_row &= element_row_added;
-        }
-    });
-    row_added = all_elements_get_row;
 }
 
 MutableColumnPtr DataTypeTuple::createColumn() const

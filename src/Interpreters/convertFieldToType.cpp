@@ -281,31 +281,35 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.getType() == Field::Types::Map)
         {
-            const auto & src_map = src.get<Map>();
-
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
-            
+
+            const auto & map = src.get<Map>();
+            size_t map_size = map.size();
+
+            Map res(map_size);
+
             bool have_unconvertible_element = false;
-            Map res(src_map.size());
 
-            for (size_t i = 0; i < src_map.size(); ++i)
+            for (size_t i = 0; i < map_size; ++i)
             {
-                const auto & src_tuple = src_map[i].safeGet<const Tuple &>();
-                assert(src_tuple.size() == 2);
-                Tuple res_tuple(2);
+                const auto & map_entry = map[i].get<Tuple>();
 
-                res_tuple[0] = convertFieldToType(src_tuple[0], key_type);
-                res_tuple[1] = convertFieldToType(src_tuple[1], value_type);
+                const auto & key = map_entry[0];
+                const auto & value = map_entry[1];
 
-                if ((res_tuple[0].isNull() && !key_type.isNullable())
-                    || (res_tuple[1].isNull() && !value_type.isNullable()))
-                {
-                    // See the comment for Tuples above.
+                Tuple updated_entry(2);
+
+                updated_entry[0] = convertFieldToType(key, key_type);
+
+                if (updated_entry[0].isNull() && !key_type.isNullable())
                     have_unconvertible_element = true;
-                }
 
-                res[i] = std::move(res_tuple);
+                updated_entry[1] = convertFieldToType(value, value_type);
+                if (updated_entry[1].isNull() && !value_type.isNullable())
+                    have_unconvertible_element = true;
+
+                res[i] = updated_entry;
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);
