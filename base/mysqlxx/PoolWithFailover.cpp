@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <random>
 
 #include <mysqlxx/PoolWithFailover.h>
@@ -10,8 +11,6 @@ static bool startsWith(const std::string & s, const char * prefix)
     return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
 }
 
-/// This reads from "/dev/urandom" and thus is thread-safe
-std::random_device rd;
 
 using namespace mysqlxx;
 
@@ -42,9 +41,9 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & con
         /// PoolWithFailover objects are stored in a cache inside PoolFactory.
         /// This cache is reset by ExternalDictionariesLoader after every SYSTEM RELOAD DICTIONAR{Y|IES}
         /// which triggers massive re-constructing of connection pools.
-        /// The state of PRNDGs like std::mt19937 is considered to be quite heavy
+        /// The state of PRNGs like std::mt19937 is considered to be quite heavy
         /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(rd());
+        static thread_local std::mt19937 rnd_generator(std::rand());
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)
