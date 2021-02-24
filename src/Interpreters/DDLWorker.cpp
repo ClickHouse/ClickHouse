@@ -338,19 +338,23 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     else if (max_tasks_in_queue < queue_nodes.size())
         cleanup_event->set();
 
-    bool server_startup = current_tasks.empty();
+    /// Detect queue start, using:
+    /// - skipped tasks
+    /// - in memory tasks (that are currently active)
     auto begin_node = queue_nodes.begin();
-
-    if (!server_startup)
+    UInt64 last_task_id = 0;
+    if (!current_tasks.empty())
     {
-        /// We will recheck status of last executed tasks. It's useful if main thread was just restarted.
-        auto & min_task = current_tasks.front();
-        String min_entry_name = last_skipped_entry_name ? std::min(min_task->entry_name, *last_skipped_entry_name) : min_task->entry_name;
-        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_entry_name);
-        current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
+        auto & last_task = current_tasks.back();
+        last_task_id = DDLTaskBase::getLogEntryNumber(last_task->entry_name);
+        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_task->entry_name);
     }
-
-    assert(current_tasks.empty());
+    if (last_skipped_entry_name)
+    {
+        UInt64 last_skipped_entry_id = DDLTaskBase::getLogEntryNumber(*last_skipped_entry_name);
+        if (last_skipped_entry_id > last_task_id)
+            begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), *last_skipped_entry_name);
+    }
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
