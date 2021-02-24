@@ -4,4 +4,4 @@ services:
         image: cassandra
         restart: always
         ports:
-          - ${CASSANDRA_EXTERNAL_PORT}:${CASSANDRA_INTERNAL_PORT}
+            - ${CASSANDRA_EXTERNAL_PORT}:${CASSANDRA_INTERNAL_PORT}

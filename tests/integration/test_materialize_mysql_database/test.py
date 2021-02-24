@@ -77,10 +77,18 @@ class MySQLConnection:
             cursor.execute(executio_query)
             return cursor.fetchall()
 
+    def start_and_wait(self):
+        run_and_check(['docker-compose',
+            '-p', cluster.project_name,
+            '-f', self.docker_compose,
+            'up', '--no-recreate', '-d',
+        ])
+        self.wait_mysql_to_start(120)
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
-
+            
 @pytest.fixture(scope="module")
 def started_mysql_5_7():
     mysql_node = MySQLConnection(cluster.mysql_port, 'root', 'clickhouse', '127.0.0.1')

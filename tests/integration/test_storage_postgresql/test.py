@@ -63,13 +63,13 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(
         '''CREATE TABLE IF NOT EXISTS test_types (
         a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
-        h timestamp, i date, j numeric(5, 5), k decimal(5, 5))''')
+        h timestamp, i date, j decimal(5, 3), k numeric)''')
     node1.query('''
         INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword') VALUES
-        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12', '2000-05-12', 0.2, 0.2)''')
+        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12', '2000-05-12', 22.222, 22.222)''')
     result = node1.query('''
-        SELECT * FROM postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword')''')
-    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t0.20000\t0.20000\n')
+        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3) FROM postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword')''')
+    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t22.222\t22.222\n')
 
     cursor.execute(
         '''CREATE TABLE IF NOT EXISTS test_array_dimensions

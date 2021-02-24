@@ -3,18 +3,17 @@ services:
     postgres1:
         image: postgres
         restart: always
-        environment:
-            POSTGRES_PASSWORD: mysecretpassword
         ports:
-          - ${POSTGRES_EXTERNAL_PORT}:${POSTGRES_INTERNAL_PORT}
+            - ${POSTGRES_EXTERNAL_PORT}:${POSTGRES_INTERNAL_PORT}
         healthcheck:
-          test: ["CMD-SHELL", "pg_isready -U postgres"]
-          interval: 10s
-          timeout: 5s
-          retries: 5
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
         networks:
           default:
             aliases:
-              - postgre-sql.local
+                - postgre-sql.local
         environment:
-          POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: mysecretpassword
