@@ -1104,7 +1104,7 @@ The maximum number of replicas for each shard when executing a query. In limited
 - the sampling key is an expression that is expensive to calculate
 - the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
 
-In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
