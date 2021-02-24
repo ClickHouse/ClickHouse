@@ -171,13 +171,13 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
 void PullingAsyncPipelineExecutor::cancel()
 {
-    /// Finish lazy format. Otherwise thread.join() may hung.
-    if (lazy_format && !lazy_format->isFinished())
-        lazy_format->finish();
-
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
         data->executor->cancel();
+
+    /// Finish lazy format. Otherwise thread.join() may hung.
+    if (lazy_format && !lazy_format->isFinished())
+        lazy_format->finish();
 
     /// Join thread here to wait for possible exception.
     if (data && data->thread.joinable())
