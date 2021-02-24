@@ -1,67 +1,76 @@
 # Kerberos {#external-authenticators-kerberos}
 
-Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol. 
+Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol.
 
-## LDAP Server Definition {#ldap-server-definition}
+Currently, Kerberos can only be used as an external authenticator for existing users, which are defined in `users.xml` or in local access control paths. Those users may only use HTTP requests, and must be able to authenticate using GSS-SPNEGO mechanism.
 
-To define LDAP server you must add `ldap_servers` section to the `config.xml`. For example,
+For this approach, Kerberos must be configured in the system and must be enabled in ClickHouse config.
+
+
+## Enabling Kerberos in ClickHouse {#enabling-kerberos-in-clickhouse}
+
+To enable Kerberos, presence of a single `kerberos` section in `config.xml` is enough. However, depending on the directions that involve Kerberos, configurations in other places may be necessary.
+
+Example (goes into `config.xml`):
 
 ```xml
 <yandex>
     <!- ... -->
-    <ldap_servers>
-        <my_ldap_server>
-            <host>localhost</host>
-            <port>636</port>
-            <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
-            <verification_cooldown>300</verification_cooldown>
-            <enable_tls>yes</enable_tls>
-            <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
-            <tls_require_cert>demand</tls_require_cert>
-            <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
-            <tls_key_file>/path/to/tls_key_file</tls_key_file>
-            <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
-            <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
-            <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
-        </my_ldap_server>
-    </ldap_servers>
+    <kerberos />
 </yandex>
 ```
 
-Note, that you can define multiple LDAP servers inside the `ldap_servers` section using distinct names.
+...or:
 
-Parameters:
+```xml
+<yandex>
+    <!- ... -->
+    <kerberos>
+        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+    </kerberos>
+</yandex>
+```
 
-- `host` - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
-- `port` - LDAP server port, default is `636` if `enable_tls` is set to `true`, `389` otherwise.
-- `bind_dn` - template used to construct the DN to bind to.
-    - The resulting DN will be constructed by replacing all `{user_name}` substrings of the
-      template with the actual user name during each authentication attempt.
-- `verification_cooldown` - a period of time, in seconds, after a successful bind attempt,
-  during which the user will be assumed to be successfully authenticated for all consecutive
-  requests without contacting the LDAP server.
-    - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
-- `enable_tls` - flag to trigger use of secure connection to the LDAP server.
-    - Specify `no` for plain text `ldap://` protocol (not recommended).
-    - Specify `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended, the default).
-    - Specify `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS).
-- `tls_minimum_protocol_version` - the minimum protocol version of SSL/TLS.
-    - Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).
-- `tls_require_cert` - SSL/TLS peer certificate verification behavior.
-    - Accepted values are: `never`, `allow`, `try`, `demand` (the default).
-- `tls_cert_file` - path to certificate file.
-- `tls_key_file` - path to certificate key file.
-- `tls_ca_cert_file` - path to CA certificate file.
-- `tls_ca_cert_dir` - path to the directory containing CA certificates.
-- `tls_cipher_suite` - allowed cipher suite (in OpenSSL notation).
+...or:
 
-## LDAP External Authenticator {#ldap-external-authenticator}
+```xml
+<yandex>
+    <!- ... -->
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</yandex>
+```
 
-A remote LDAP server can be used as a method for verifying passwords for locally defined users (users defined in `users.xml` or in local access control paths). In order to achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
+Note that you can define only one `kerberos` section. Presence of multiple `kerberos` sections will force ClickHouse to disable Kerberos authentication.
 
-At each login attempt, ClickHouse will try to "bind" to the specified DN defined by the `bind_dn` parameter in the [LDAP server definition](#ldap-server-definition) using the provided credentials, and if successful, the user will be considered authenticated. This is often called a "simple bind" method.
+#### Parameters:
 
-For example,
+- `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
+  - This parameter is optional, if omitted, the default principal will be used.
+
+
+- `realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
+  - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+
+Note that `principal` and `realm` sections cannot be specified at the same time. Presence of both `principal` and `realm` sections will force ClickHouse to disable Kerberos authentication.
+
+
+## Kerberos as an external authenticator for existing users {#kerberos-as-an-external-authenticator-for-existing-users}
+
+Kerberos can be used as a method for verifying the identity of locally defined users (users defined in `users.xml` or in local access control paths). Currently, **only** requests over HTTP interface can be *kerberized* (via GSS-SPNEGO mechanism).
+
+Kerberos principal name format usualy follows this pattern:
+
+- *primary/instance@REALM*
+
+The */instance* part may occur zero or more times. **The *primary* part of the canonical principal name of the initiator is expected to match the kerberized user name for authentication to succeed**.
+
+### Enabling Kerberos in `users.xml` {#enabling-kerberos-in-users-xml}
+
+In order to enable Kerberos authenication for the user, specify `kerberos` section instead of `password` or similar sections in the user definition. Note that Kerberos authentication cannot be used alongside with any other authentication mechanism. Presence of any other sections like `password` alongside with `kerberos` will force ClickHouse to shutdown.
+
+Example (goes into `users.xml`):
 
 ```xml
 <yandex>
@@ -70,81 +79,31 @@ For example,
         <!- ... -->
         <my_user>
             <!- ... -->
-            <ldap>
-                <server>my_ldap_server</server>
-            </ldap>
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
         </my_user>
     </users>
 </yandex>
 ```
 
-Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
-
-When SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled in ClickHouse, users that are authenticated by LDAP servers can also be created using the [CRATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement.
-
-
-```sql
-CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server'
-```
-
-## LDAP Exernal User Directory {#ldap-external-user-directory}
-
-In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. In order to achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
-
-At each login attempt, ClickHouse will try to find the user definition locally and authenticate it as usual, but if the user is not defined, ClickHouse will assume it exists in the external LDAP directory, and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled and roles are created using the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
-
-Example (goes into `config.xml`):
-
-```xml
-<yandex>
-    <!- ... -->
-    <user_directories>
-        <!- ... -->
-        <ldap>
-            <server>my_ldap_server</server>
-            <roles>
-                <my_local_role1 />
-                <my_local_role2 />
-            </roles>
-            <role_mapping>
-                <base_dn>ou=groups,dc=example,dc=com</base_dn>
-                <scope>subtree</scope>
-                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
-                <attribute>cn</attribute>
-                <prefix>clickhouse_</prefix>
-            </role_mapping>
-        </ldap>
-    </user_directories>
-</yandex>
-```
-
-Note that `my_ldap_server` referred in the `ldap` section inside the `user_directories` section must be a previously
-defined LDAP server that is configured in the `config.xml` (see [LDAP Server Definition](#ldap-server-definition)).
+Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in the main `config.xml` file as described previously.
 
 Parameters:
 
-- `server` - one of LDAP server names defined in the `ldap_servers` config section above.
-  This parameter is mandatory and cannot be empty.
-- `roles` - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-    - If no roles are specified here or assigned during role mapping (below), user will not be able
-      to perform any actions after authentication.
-- `role_mapping` - section with LDAP search parameters and mapping rules.
-    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter`
-      and the name of the logged in user. For each entry found during that search, the value of the specified
-      attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed,
-      and the rest of the value becomes the name of a local role defined in ClickHouse,
-      which is expected to be created beforehand by the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
-    - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
-        - `base_dn` - template used to construct the base DN for the LDAP search.
-           - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}`
-             substrings of the template with the actual user name and bind DN during each LDAP search.
-        - `scope` - scope of the LDAP search.
-            - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` - template used to construct the search filter for the LDAP search.
-            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}`
-              substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
-            - Note, that the special characters must be escaped properly in XML.
-        - `attribute` - attribute name whose values will be returned by the LDAP search.
-        - `prefix` - prefix, that will be expected to be in front of each string in the original
-          list of strings returned by the LDAP search. Prefix will be removed from the original
-          strings and resulting strings will be treated as local role names. Empty, by default.
+- `realm` - a realm that will be used to restrict authentication to only those requests whose initiator's realm matches it.
+  - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+
+### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
+
+When SQL-driven Access Control and Account Management is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
+```
+
+...or, without filtering by realm:
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos
+```
