@@ -661,7 +661,7 @@ foreach(TARGET ${all_targets})
             _poco_foundation absl_synchronization grpc)
 
         # A list of targets that support Unity builds at perfect batch sizes
-        set(PERFECT_SUPPORT_LIST arrow arrow_static aws gpr rocksdb)
+        set(PERFECT_SUPPORT_LIST arrow arrow_static aws gpr)
 
         # If there's a target that matches the list of targets with perfect unity build support, activate unity builds.
         # See usage of OVERRIDE_LIST for an explanation as to why this isn't a single set_target_properties call.
@@ -676,7 +676,8 @@ foreach(TARGET ${all_targets})
             ${TARGET} MATCHES "absl" OR
             ${TARGET} MATCHES "poco" OR
             ${TARGET} MATCHES "cassandra" OR
-            ${TARGET} MATCHES "grpc"
+            ${TARGET} MATCHES "grpc" OR
+            ${TARGET} MATCHES "rocksdb"
             ))
 
             # While it would appear to make sense to modify all elements of OVERRIDE_LIST by using a single
