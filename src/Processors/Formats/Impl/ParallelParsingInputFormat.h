@@ -10,6 +10,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -97,6 +98,8 @@ public:
 
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
+
+        LOG_DEBUG(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override

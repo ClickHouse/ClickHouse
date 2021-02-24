@@ -136,7 +136,7 @@ void TabSeparatedRowInputFormat::readPrefix()
         skipBOMIfExists(in);
     }
 
-    if (with_names)
+    if (with_names && getCurrentUnitNumber() == 0)
     {
         if (format_settings.with_names_use_header)
         {
@@ -463,9 +463,10 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     // We can use the same segmentation engine for TSKV.
-    for (const auto * name : {"TabSeparated", "TSV", "TSKV"})
+    for (const std::string & name : {"TabSeparated", "TSV", "TSKV"})
     {
         factory.registerFileSegmentationEngine(name, &fileSegmentationEngineTabSeparatedImpl);
+        factory.registerFileSegmentationEngine(name + "WithNames", &fileSegmentationEngineTabSeparatedImpl);
     }
 }
 
