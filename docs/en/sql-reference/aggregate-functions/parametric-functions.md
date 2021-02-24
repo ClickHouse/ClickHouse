@@ -513,21 +513,21 @@ Returns a value of next event that matched an event chain.
 **Syntax**
 
 ``` sql
-sequenceNextNode([descending_order])(timestamp, event_column, event1, event2, event3, ...)
+sequenceNextNode(descending_order)(timestamp, event_column, event1, event2, event3, ...)
 ```
 
 **Parameters**
 -   `descending_order` - Used to sort the timestamp in ascending or descending order. 0 or 1.
--   `timestamp` — Name of the column containing the timestamp. Data types supported: Date, DateTime and other unsigned integer types.
--   `event_column` - Name of the column containing the value of the next event to be returned. Data types supported: String and Nullable(String)
--   `cond` — Conditions describing the chain of events. UInt8.
+    
+**Arguments**
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: `Date`, `DateTime` and other unsigned integer types.
+-   `event_column` - Name of the column containing the value of the next event to be returned. Data types supported: `String` and `Nullable(String)`
+-   `cond` — Conditions describing the chain of events. `UInt8`
 
 **Returned value**
 
-Nullable(String).
-
--  event_column[next_index] - if the pattern is matched and next value exists.
--  null - if the pattern isn’t matched or next value doesn't exist.
+-  `event_column[next_index]` - if the pattern is matched and next value exists.
+-  `NULL` - if the pattern isn’t matched or next value doesn't exist.
 
 Type: `Nullable(String)`.
 

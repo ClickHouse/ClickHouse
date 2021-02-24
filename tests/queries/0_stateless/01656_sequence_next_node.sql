@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS test_sequenceNextNode_Nullable;
 
-CREATE TABLE iF NOT EXISTS test_sequenceNextNode_Nullable (dt DateTime, id int, action Nullable(String)) ENGINE = MergeTree() PARTITION BY dt ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_sequenceNextNode_Nullable (dt DateTime, id int, action Nullable(String)) ENGINE = MergeTree() PARTITION BY dt ORDER BY id;
 
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',1,'A');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:02',1,'B');
