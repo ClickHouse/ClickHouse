@@ -177,7 +177,7 @@ public:
         [[maybe_unused]] auto a = new (place) Data;
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Node * node = Node::allocate(*columns[1], row_num, arena);
 
@@ -202,7 +202,7 @@ public:
         data(place).value.push_back(node, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (data(rhs).value.empty())
             return;
@@ -241,7 +241,7 @@ public:
         data(place).sorted = true;
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeBinary(data(place).sorted, buf);
 
@@ -251,7 +251,7 @@ public:
             node->write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         readBinary(data(place).sorted, buf);
 
@@ -305,7 +305,7 @@ public:
         return 0;
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & value = data(place).value;
 
@@ -359,7 +359,7 @@ public:
         a.value.push_back(v->clone(arena), arena);
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
     }
@@ -369,7 +369,7 @@ public:
         return Descending ? lhs_timestamp < rhs_timestamp : lhs_timestamp > rhs_timestamp;
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         bool is_first = true;
         auto & value = data(place).value;
@@ -394,7 +394,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place).value;
         auto & b = data(rhs).value;
@@ -415,7 +415,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeBinary(data(place).sorted, buf);
 
@@ -425,7 +425,7 @@ public:
             node->write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         readBinary(data(place).sorted, buf);
 
@@ -442,7 +442,7 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & value = data(place).value;
 
