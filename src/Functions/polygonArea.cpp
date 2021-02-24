@@ -61,6 +61,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnFloat64::create();
+        auto & res_data = res_column->getData();
+        res_data.reserve(input_rows_count);
 
         callOnGeometryDataType<Point>(arguments[0].type, [&] (const auto & type)
         {
@@ -74,8 +76,28 @@ public:
                 Converter converter(arguments[0].column->convertToFullColumnIfConst());
                 auto geometries = converter.convert();
 
-                auto & res_data = res_column->getData();
-                res_data.reserve(input_rows_count);
+                if constexpr (std::is_same_v<PolygonFromColumnConverter<Point>, Converter>) {
+                    for (auto & polygon : geometries) {
+                        std::cout << "OUTER" << std::endl;
+                        for (auto point : polygon.outer()) {
+                            if constexpr (std::is_same_v<Point, CartesianPoint>) {
+                                std::cout << point.x() << ' ' << point.y() << std::endl;
+                            } else {
+                                std::cout << point.template get<0>() << ' ' << point.template get<1>() << std::endl;
+                            }
+                        }
+                        std::cout << "INNER" << std::endl;
+                        for (auto & inner : polygon.inners()) {
+                            for (auto point : inner) {
+                                if constexpr (std::is_same_v<Point, CartesianPoint>) {
+                                    std::cout << point.x() << ' ' << point.y() << std::endl;
+                                } else {
+                                    std::cout << point.template get<0>() << ' ' << point.template get<1>() << std::endl;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 for (size_t i = 0; i < input_rows_count; i++)
                     res_data.emplace_back(boost::geometry::area(geometries[i]));
