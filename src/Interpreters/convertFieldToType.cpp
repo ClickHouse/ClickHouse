@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeMap.h>
 
 #include <Core/AccurateComparison.h>
 #include <Common/FieldVisitors.h>
