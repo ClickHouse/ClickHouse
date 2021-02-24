@@ -53,7 +53,6 @@ public:
     void resetParser() override;
 
 protected:
-    friend class ParallelParsingInputFormat;
     /** Read next row and append it to the columns.
       * If no more rows - return false.
       */

@@ -8,8 +8,6 @@
 #include <DataTypes/DataTypeNothing.h>
 
 
-#include <iostream>
-
 namespace DB
 {
 
@@ -157,6 +155,8 @@ void CSVRowInputFormat::readPrefix()
     size_t num_columns = data_types.size();
     const auto & header = getPort().getHeader();
 
+    /// This is a bit of abstraction leakage, but we have almost the same code in other places.
+    /// Thus, we check if this InputFormat is working with the "real" beggining of the data in case of parallel parsing.
     if (with_names && getCurrentUnitNumber() == 0)
     {
         /// This CSV file has a header row with column names. Depending on the
