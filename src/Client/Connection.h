@@ -200,7 +200,7 @@ public:
     {
         async_callback = std::move(async_callback_);
         if (in)
-            in->setAsyncCallback(std::move(async_callback_));
+            in->setAsyncCallback(std::move(async_callback));
     }
 
 private:
