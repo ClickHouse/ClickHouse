@@ -2920,6 +2920,14 @@ Pipe MergeTreeData::alterPartition(
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
+
+            case PartitionCommand::UNFREEZE_PARTITIONS:
+            {
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = unfreeze(command.with_name, query_context, lock);
+            }
+
+            break;
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();
@@ -3724,6 +3732,23 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     }
 
     LOG_DEBUG(log, "Freezed {} parts", parts_processed);
+    return result;
+}
+
+PartitionCommandsResultInfo MergeTreeData::unfreeze(
+    const String & backup_name,
+    const Context & context,
+    TableLockHolder & ) const
+{
+    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+    String backup_path = clickhouse_path + "shadow/" + backup_name + "/" + relative_data_path;
+
+    PartitionCommandsResultInfo result;
+
+    for (const auto & disk : getStoragePolicy()->getDisks())
+        if (disk->exists(backup_path))
+            disk->removeRecursive(backup_path);
+
     return result;
 }
 

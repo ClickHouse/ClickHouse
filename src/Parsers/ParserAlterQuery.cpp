@@ -63,6 +63,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_fetch_partition("FETCH PARTITION");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
     ParserKeyword s_freeze("FREEZE");
+    ParserKeyword s_unfreeze("UNFREEZE");
     ParserKeyword s_partition("PARTITION");
 
     ParserKeyword s_first("FIRST");
@@ -453,6 +454,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
             }
+        }
+        else if (s_unfreeze.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::UNFREEZE;
+
+            ASTPtr ast_with_name;
+            if (!parser_string_literal.parse(pos, ast_with_name, expected))
+                return false;
+
+            command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
         }
         else if (s_modify_column.ignore(pos, expected))
         {

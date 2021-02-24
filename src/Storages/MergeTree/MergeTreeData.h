@@ -553,6 +553,10 @@ public:
       */
     PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
+    PartitionCommandsResultInfo unfreeze(
+        const String & backup_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder) const;
 
 public:
     /// Moves partition to specified Disk
