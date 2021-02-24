@@ -28,7 +28,7 @@ toc_title: "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\u0020\u0442\u
 -   `table` — таблица для добавления данных.
 -   `partition_by` — [ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 -   `ttl` — [время жизни] (../../sql-reference/statements/alter/ttl.md) таблицы.
--   `flush_interval_milliseconds` — интервал сброса данных на диск.
+-   `flush_interval_milliseconds` — интервал сброса данных на диск, в миллисекундах.
 -   `engine` — полное имя движка (начиная с `ENGINE =` ) с параметрами. Эта опция противоречит `partition_by` и `ttl`. Если указать оба параметра вместе, сервер вернет ошибку и завершит работу.
 
 Пример:
