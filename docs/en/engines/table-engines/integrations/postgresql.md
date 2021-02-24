@@ -47,7 +47,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 INSERT Queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
 PostgreSQL Array types converts into ClickHouse arrays.
-Be careful in PostgreSQL an array data created like type_name[] may contain multi-dimensional arrays of different dimensions in different rows in same column, but in ClickHouse only allows multi-dimensional arrays of the same count of dimension in all rows in same column in table.
+Be careful in PostgreSQL an array data created like a type_name[] may contain multi-dimensional arrays of different dimensions in different table rows in same column, but in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 
 ## Usage Example {#usage-example}
 
