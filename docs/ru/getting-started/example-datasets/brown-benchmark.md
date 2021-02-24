@@ -5,19 +5,19 @@ toc_title: Brown University Benchmark
 
 # Brown University Benchmark
 
-`MgBench` is a new analytical benchmark for machine-generated log data, [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
+`MgBench` — это аналитический тест производительности для данных журнала событий, сгенерированных машиной. Бенчмарк разработан [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
 
-Download the data:
+Скачать данные:
 ```
 wget https://datasets.clickhouse.tech/mgbench{1..3}.csv.xz
 ```
 
-Unpack the data:
+Распаковать данные:
 ```
 xz -v -d mgbench{1..3}.csv.xz
 ```
 
-Create tables:
+Создание таблиц:
 ```
 CREATE DATABASE mgbench;
 
@@ -74,7 +74,7 @@ ENGINE = MergeTree()
 ORDER BY (event_type, log_time);
 ```
 
-Insert data:
+Вставка данных:
 
 ```
 clickhouse-client --query "INSERT INTO mgbench.logs1 FORMAT CSVWithNames" < mgbench1.csv
@@ -82,7 +82,7 @@ clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbe
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-Run benchmark queries:
+Запуск тестов производительности:
 ```
 -- Q1.1: What is the CPU/network utilization for each web server since midnight?
 
@@ -411,6 +411,6 @@ ORDER BY yr,
          mo;
 ```
 
-The data is also available for interactive queries in the [Playground](https://gh-api.clickhouse.tech/play?user=play), [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1hY2hpbmVfbmFtZSwKICAgICAgIE1JTihjcHUpIEFTIGNwdV9taW4sCiAgICAgICBNQVgoY3B1KSBBUyBjcHVfbWF4LAogICAgICAgQVZHKGNwdSkgQVMgY3B1X2F2ZywKICAgICAgIE1JTihuZXRfaW4pIEFTIG5ldF9pbl9taW4sCiAgICAgICBNQVgobmV0X2luKSBBUyBuZXRfaW5fbWF4LAogICAgICAgQVZHKG5ldF9pbikgQVMgbmV0X2luX2F2ZywKICAgICAgIE1JTihuZXRfb3V0KSBBUyBuZXRfb3V0X21pbiwKICAgICAgIE1BWChuZXRfb3V0KSBBUyBuZXRfb3V0X21heCwKICAgICAgIEFWRyhuZXRfb3V0KSBBUyBuZXRfb3V0X2F2ZwpGUk9NICgKICBTRUxFQ1QgbWFjaGluZV9uYW1lLAogICAgICAgICBDT0FMRVNDRShjcHVfdXNlciwgMC4wKSBBUyBjcHUsCiAgICAgICAgIENPQUxFU0NFKGJ5dGVzX2luLCAwLjApIEFTIG5ldF9pbiwKICAgICAgICAgQ09BTEVTQ0UoYnl0ZXNfb3V0LCAwLjApIEFTIG5ldF9vdXQKICBGUk9NIG1nYmVuY2gubG9nczEKICBXSEVSRSBtYWNoaW5lX25hbWUgSU4gKCdhbmFuc2knLCdhcmFnb2cnLCd1cmQnKQogICAgQU5EIGxvZ190aW1lID49IFRJTUVTVEFNUCAnMjAxNy0wMS0xMSAwMDowMDowMCcKKSBBUyByCkdST1VQIEJZIG1hY2hpbmVfbmFtZQ==).
+Данные также доступны для работы с интерактивными запросами через [Playground](https://gh-api.clickhouse.tech/play?user=play), [пример](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1hY2hpbmVfbmFtZSwKICAgICAgIE1JTihjcHUpIEFTIGNwdV9taW4sCiAgICAgICBNQVgoY3B1KSBBUyBjcHVfbWF4LAogICAgICAgQVZHKGNwdSkgQVMgY3B1X2F2ZywKICAgICAgIE1JTihuZXRfaW4pIEFTIG5ldF9pbl9taW4sCiAgICAgICBNQVgobmV0X2luKSBBUyBuZXRfaW5fbWF4LAogICAgICAgQVZHKG5ldF9pbikgQVMgbmV0X2luX2F2ZywKICAgICAgIE1JTihuZXRfb3V0KSBBUyBuZXRfb3V0X21pbiwKICAgICAgIE1BWChuZXRfb3V0KSBBUyBuZXRfb3V0X21heCwKICAgICAgIEFWRyhuZXRfb3V0KSBBUyBuZXRfb3V0X2F2ZwpGUk9NICgKICBTRUxFQ1QgbWFjaGluZV9uYW1lLAogICAgICAgICBDT0FMRVNDRShjcHVfdXNlciwgMC4wKSBBUyBjcHUsCiAgICAgICAgIENPQUxFU0NFKGJ5dGVzX2luLCAwLjApIEFTIG5ldF9pbiwKICAgICAgICAgQ09BTEVTQ0UoYnl0ZXNfb3V0LCAwLjApIEFTIG5ldF9vdXQKICBGUk9NIG1nYmVuY2gubG9nczEKICBXSEVSRSBtYWNoaW5lX25hbWUgSU4gKCdhbmFuc2knLCdhcmFnb2cnLCd1cmQnKQogICAgQU5EIGxvZ190aW1lID49IFRJTUVTVEFNUCAnMjAxNy0wMS0xMSAwMDowMDowMCcKKSBBUyByCkdST1VQIEJZIG1hY2hpbmVfbmFtZQ==).
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/brown-benchmark/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/brown-benchmark/) <!--hide-->
