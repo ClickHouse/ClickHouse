@@ -32,10 +32,10 @@ namespace DB
 template <typename Node>
 struct NodeBase
 {
-    UInt64 size; // size of payload
+    UInt64 size; /// size of payload
 
     DataTypeDateTime::FieldType event_time;
-    UInt32 events_bitset; // Bitsets of UInt32 are easy to compare. (< operator on bitsets)
+    UInt32 events_bitset; /// Bitsets of UInt32 are easy to compare. (< operator on bitsets)
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
@@ -95,7 +95,7 @@ struct NodeString : public NodeBase<NodeString>
 };
 
 /// TODO : Expends SequenceNextNodeGeneralData to support other types
-template <typename T, typename Node, bool Descending>
+template <typename Node, bool Descending>
 struct SequenceNextNodeGeneralData
 {
     using Allocator = MixedAlignedArenaAllocator<alignof(Node *), 4096>;
@@ -130,9 +130,9 @@ struct SequenceNextNodeGeneralData
 /// Implementation of sequenceNextNode
 template <typename T, typename Node, bool Descending>
 class SequenceNextNodeImpl final
-    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>
+    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>
 {
-    using Data = SequenceNextNodeGeneralData<T, Node, Descending>;
+    using Data = SequenceNextNodeGeneralData<Node, Descending>;
     static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
 
@@ -142,7 +142,7 @@ class SequenceNextNodeImpl final
 
 public:
     SequenceNextNodeImpl(const DataTypePtr & data_type_, const DataTypes & arguments, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>(
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>(
             {data_type_}, {})
         , data_type(this->argument_types[0])
         , events_size(arguments.size() - 2)
@@ -158,11 +158,11 @@ public:
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        // This aggregate function sets insertion_requires_nullable_column on.
-        // Even though some values are mapped to aggregating key, it could return nulls for the below case.
-        //   aggregated events: [A -> B -> C]
-        //   events to find: [C -> D]
-        //   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
+        /// This aggregate function sets insertion_requires_nullable_column on.
+        /// Even though some values are mapped to aggregating key, it could return nulls for the below case.
+        ///   aggregated events: [A -> B -> C]
+        ///   events to find: [C -> D]
+        ///   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
         return std::make_shared<AggregateFunctionNullVariadic<false, false, true, true>>(nested_function, arguments, params);
     }
 
@@ -174,7 +174,7 @@ public:
 
     void create(AggregateDataPtr place) const override
     {
-        [[maybe_unused]] auto a = new (place) Data;
+        new (place) Data;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -218,8 +218,8 @@ public:
         for (UInt64 i = 0; i < new_elems; ++i)
             a.push_back(b[i]->clone(arena), arena);
 
-        /// either sort whole container or do so partially merging ranges afterwards
-        using Comparator = typename SequenceNextNodeGeneralData<T, Node, Descending>::Comparator;
+        /// Either sort whole container or do so partially merging ranges afterwards
+        using Comparator = typename SequenceNextNodeGeneralData<Node, Descending>::Comparator;
 
         if (!data(place).sorted && !data(rhs).sorted)
             std::stable_sort(std::begin(a), std::end(a), Comparator{});
@@ -326,17 +326,17 @@ public:
 /// Implementation of sequenceFirstNode
 template <typename T, typename Node, bool Descending>
 class SequenceFirstNodeImpl final
-    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>
+    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>
 {
-    using Data = SequenceNextNodeGeneralData<T, Node, Descending>;
+    using Data = SequenceNextNodeGeneralData<Node, Descending>;
     static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
 
 public:
-    SequenceFirstNodeImpl(const DataTypePtr & data_type_)
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>(
+    explicit SequenceFirstNodeImpl(const DataTypePtr & data_type_)
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>(
             {data_type_}, {})
         , data_type(this->argument_types[0])
     {
@@ -361,7 +361,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        [[maybe_unused]] auto a = new (place) Data;
+        new (place) Data;
     }
 
     bool compare(const T lhs_timestamp, const T rhs_timestamp) const
