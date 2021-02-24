@@ -86,7 +86,7 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
 
         /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
         if (data.lazy_format)
-            data.lazy_format->cancel();
+            data.lazy_format->finalize();
     }
 
     data.is_finished = true;
@@ -120,7 +120,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     {
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;
-        /// Wait thread ant rethrow exception if any.
+        /// Wait thread and rethrow exception if any.
         cancel();
         return false;
     }
