@@ -2586,7 +2586,7 @@ private:
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
@@ -2597,7 +2597,7 @@ private:
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
                 ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
                 offsets[i] = column_array.getOffsetsPtr();
             }
 
