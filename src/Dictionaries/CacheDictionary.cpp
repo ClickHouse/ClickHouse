@@ -295,11 +295,15 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
     const DataTypes &,
     const Columns & key_columns,
-    const DataTypes &,
+    const DataTypes & key_types,
     const Columns & default_values_columns) const
 {
+    if (dictionary_key_type == DictionaryKeyType::complex)
+        dict_struct.validateKeyTypes(key_types);
+
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns);
     auto & keys = extractor.getKeys();
+
     return getColumnsImpl(attribute_names, key_columns, keys, default_values_columns);
 }
 
@@ -830,19 +834,19 @@ namespace
         static constexpr size_t DEFAULT_MAX_STORED_KEYS = 100000;
         static constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
 
-        const size_t max_partitions_count = config.getInt(dictionary_configuration_prefix + "ssd_cache.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
+        const size_t max_partitions_count = config.getInt64(dictionary_configuration_prefix + "ssd_cache.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
 
-        const size_t block_size = config.getInt(dictionary_configuration_prefix + "block_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
-        const size_t file_blocks_size = config.getInt64(dictionary_configuration_prefix + "file_size", DEFAULT_FILE_SIZE_BYTES);
-        if (file_blocks_size % block_size != 0)
+        const size_t block_size = config.getInt64(dictionary_configuration_prefix + "block_size", DEFAULT_SSD_BLOCK_SIZE_BYTES);
+        const size_t file_size = config.getInt64(dictionary_configuration_prefix + "file_size", DEFAULT_FILE_SIZE_BYTES);
+        if (file_size % block_size != 0)
             throw Exception{full_name + ": file_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const size_t read_buffer_blocks_size = config.getInt64(dictionary_configuration_prefix + "read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
-        if (read_buffer_blocks_size % block_size != 0)
+        const size_t read_buffer_size = config.getInt64(dictionary_configuration_prefix + "read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
+        if (read_buffer_size % block_size != 0)
             throw Exception{full_name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const size_t write_buffer_blocks_size = config.getInt64(dictionary_configuration_prefix + "write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
-        if (write_buffer_blocks_size % block_size != 0)
+        const size_t write_buffer_size = config.getInt64(dictionary_configuration_prefix + "write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
+        if (write_buffer_size % block_size != 0)
             throw Exception{full_name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
         auto directory_path = config.getString(dictionary_configuration_prefix + "path");
@@ -863,9 +867,9 @@ namespace
             max_partitions_count,
             max_stored_keys_in_partition,
             block_size,
-            file_blocks_size / block_size,
-            read_buffer_blocks_size / block_size,
-            write_buffer_blocks_size / block_size
+            file_size / block_size,
+            read_buffer_size / block_size,
+            write_buffer_size / block_size
         };
 
         return configuration;

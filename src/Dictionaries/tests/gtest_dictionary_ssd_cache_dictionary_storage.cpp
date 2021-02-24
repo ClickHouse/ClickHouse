@@ -1,3 +1,5 @@
+#if defined(__linux__) || defined(__FreeBSD__)
+
 #include <iostream>
 
 #include <gtest/gtest.h>
@@ -236,3 +238,5 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         ASSERT_TRUE(block.checkCheckSum());
     }
 }
+
+#endif
