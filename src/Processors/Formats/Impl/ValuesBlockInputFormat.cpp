@@ -340,9 +340,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             bool found_in_cache = false;
             const auto & result_type = header.getByPosition(column_idx).type;
             const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
-            auto structure = templates_cache.getFromCacheOrConstruct(result_type, format_settings.null_as_default,
-                                                                     TokenIterator(tokens), token_iterator,
-                                                                     ast, *context, &found_in_cache, delimiter);
+            auto structure = templates_cache.getFromCacheOrConstruct(
+                result_type,
+                !result_type->isNullable() && format_settings.null_as_default,
+                TokenIterator(tokens),
+                token_iterator,
+                ast,
+                *context,
+                &found_in_cache,
+                delimiter);
             templates[column_idx].emplace(structure);
             if (found_in_cache)
                 ++attempts_to_deduce_template_cached[column_idx];
