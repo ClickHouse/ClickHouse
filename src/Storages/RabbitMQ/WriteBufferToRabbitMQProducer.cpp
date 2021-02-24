@@ -97,7 +97,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
     connection->close();
 
     size_t cnt_retries = 0;
-    while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
     {
         event_handler->iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
@@ -220,30 +220,27 @@ void WriteBufferToRabbitMQProducer::setupChannel()
 void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
+    assert(record_iter != delivery_record.end());
 
-    if (record_iter != delivery_record.end())
+    if (multiple)
     {
-        if (multiple)
-        {
-            /// If multiple is true, then all delivery tags up to and including current are confirmed (with ack or nack).
-            ++record_iter;
+        /// If multiple is true, then all delivery tags up to and including current are confirmed (with ack or nack).
+        ++record_iter;
 
-            if (republish)
-                for (auto record = delivery_record.begin(); record != record_iter; ++record)
-                    returned.tryPush(record->second);
+        if (republish)
+            for (auto record = delivery_record.begin(); record != record_iter; ++record)
+                returned.tryPush(record->second);
 
-            /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
-            delivery_record.erase(delivery_record.begin(), record_iter);
-        }
-        else
-        {
-            if (republish)
-                returned.tryPush(record_iter->second);
-
-            delivery_record.erase(record_iter);
-        }
+        /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
+        delivery_record.erase(delivery_record.begin(), record_iter);
     }
-    /// else is theoretically not possible
+    else
+    {
+        if (republish)
+            returned.tryPush(record_iter->second);
+
+        delivery_record.erase(record_iter);
+    }
 }
 
 
