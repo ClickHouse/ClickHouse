@@ -189,11 +189,12 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         /// Delivery tags are scoped per channel.
         delivery_record.clear();
         delivery_tag = 0;
+        producer_ready = false;
     });
 
     producer_channel->onReady([&]()
     {
-        channel_id = channel_id_base + std::to_string(channel_id_counter++);
+        channel_id = channel_id_base + "_" + std::to_string(channel_id_counter++);
         LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
 
         /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
@@ -211,6 +212,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         {
             removeRecord(nacked_delivery_tag, multiple, true);
         });
+        producer_ready = true;
     });
 }
 
@@ -308,13 +310,18 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 {
     while ((!payloads.empty() || wait_all) && wait_confirm.load())
     {
-        /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
-         * as fast as possible and no new publishes are made before returned messages are handled
-         */
-        if (!returned.empty() && producer_channel->usable())
-            publish(returned, true);
-        else if (!payloads.empty() && producer_channel->usable())
-            publish(payloads, false);
+        /// If onReady callback is not received, producer->usable() will anyway return true,
+        /// but must publish only after onReady callback.
+        if (producer_ready)
+        {
+            /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
+             * as fast as possible and no new publishes are made before returned messages are handled
+             */
+            if (!returned.empty() && producer_channel->usable())
+                publish(returned, true);
+            else if (!payloads.empty() && producer_channel->usable())
+                publish(payloads, false);
+        }
 
         iterateEventLoop();
 
