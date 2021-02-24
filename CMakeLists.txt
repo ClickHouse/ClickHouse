@@ -666,7 +666,6 @@ foreach(TARGET ${all_targets})
         # If there's a target that matches the list of targets with perfect unity build support, activate unity builds.
         # See usage of OVERRIDE_LIST for an explanation as to why this isn't a single set_target_properties call.
         if (${TARGET_DIRECTORY} MATCHES "/contrib/" AND ${TARGET} IN_LIST PERFECT_SUPPORT_LIST)
-            message("${TARGET} has support")
             set_target_properties(${TARGET} PROPERTIES UNITY_BUILD ON)
         endif()
 
