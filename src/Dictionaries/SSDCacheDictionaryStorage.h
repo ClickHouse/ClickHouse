@@ -308,8 +308,8 @@ public:
     }
 
 private:
-    char * block_data;
     size_t block_size;
+    char * block_data = nullptr;
 
     size_t current_block_offset = block_header_size;
     /// TODO: Probably can be removed
