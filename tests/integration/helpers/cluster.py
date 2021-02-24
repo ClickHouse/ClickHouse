@@ -574,7 +574,7 @@ class ClickHouseCluster:
         raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
-        sr_client = CachedSchemaRegistryClient('http://localhost:8081')
+        sr_client = CachedSchemaRegistryClient({"url":'http://localhost:8081'})
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -1085,9 +1085,19 @@ class ClickHouseInstance:
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
         start_time = time.time()
         result = self.exec_in_container(
-            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Eqm {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
-        current_time = time.time()
-        print('Log line matching "{}" appeared in a {} seconds'.format(regexp, current_time - start_time))
+            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Em {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
+
+        # if repetitions>1 grep will return success even if not enough lines were collected,
+        if repetitions>1 and len(result.splitlines()) < repetitions:
+            print("wait_for_log_line: those lines were founded during {} sec.".format(timeout))
+            print(result)
+            raise Exception("wait_for_log_line: Not enough repetitions: {} found, while {} expected".format(len(result.splitlines()), repetitions))
+
+        wait_duration = time.time() - start_time
+
+        print('Log line matching "{}" appeared in a {} seconds'.format(regexp, wait_duration))
+        return wait_duration
+
 
     def file_exists(self, path):
         return self.exec_in_container(
