@@ -750,7 +750,7 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
-        auto zookeeper = global_context.getZooKeeper();
+        auto zookeeper = getZooKeeper();
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
