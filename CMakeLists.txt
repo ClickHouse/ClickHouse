@@ -660,14 +660,25 @@ foreach(TARGET ${all_targets})
             LLVMCodeGen LLVMSelectionDAG LLVMVectorize LLVMBitReader LLVMObject LLVMScalarOpts
             _poco_foundation absl_synchronization grpc)
 
+        # A list of targets that support Unity builds at perfect batch sizes
+        set(PERFECT_SUPPORT_LIST arrow arrow_static aws gpr rocksdb)
+
+        # If there's a target that matches the list of targets with perfect unity build support, activate unity builds.
+        # See usage of OVERRIDE_LIST for an explanation as to why this isn't a single set_target_properties call.
+        if (${TARGET_DIRECTORY} MATCHES "/contrib/" AND ${TARGET} IN_LIST PERFECT_SUPPORT_LIST)
+            message("${TARGET} has support")
+            set_target_properties(${TARGET} PROPERTIES UNITY_BUILD ON)
+        endif()
+
         # Groups of targets that support Unity builds at low batch sizes
         if (${TARGET_DIRECTORY} MATCHES "/contrib/" AND (
-                ${TARGET} MATCHES "LLVM" OR
-                ${TARGET} MATCHES "absl" OR
-                ${TARGET} MATCHES "poco" OR
-                ${TARGET} MATCHES "cassandra" OR
-                ${TARGET} MATCHES "grpc"
-                ))
+            ${TARGET} MATCHES "antlr4-runtime" OR
+            ${TARGET} MATCHES "LLVM" OR
+            ${TARGET} MATCHES "absl" OR
+            ${TARGET} MATCHES "poco" OR
+            ${TARGET} MATCHES "cassandra" OR
+            ${TARGET} MATCHES "grpc"
+            ))
 
             # While it would appear to make sense to modify all elements of OVERRIDE_LIST by using a single
             # set_target_properties command, options like ENABLE_EMBEDDED_COMPILER being set can lead
@@ -686,23 +697,9 @@ foreach(TARGET ${all_targets})
 endforeach()
 
 # This handles FASTBUILD_CONTRIB_UNITY.
-if (FASTBUILD_CONTRIB_UNITY)
-    # Packages that support and benefit a lot from unity builds.
-    set_target_properties(arrow_static PROPERTIES UNITY_BUILD ON)
-    set_target_properties(aws_s3 PROPERTIES UNITY_BUILD ON)
-    set_target_properties(gpr PROPERTIES UNITY_BUILD ON)
-    set_target_properties(rocksdb PROPERTIES UNITY_BUILD ON)
-
+if (FASTBUILD_CONTRIB_UNITY AND NOT SANITIZE)
     # libcxxabi only supports unity builds when sanitizers are off.
-    if (NOT SANITIZE)
-        set_target_properties(cxxabi PROPERTIES UNITY_BUILD ON)
-    endif()
-
-    # Package that supports unity builds, but only at a low batch size because of ODR violations.
-    set_target_properties(antlr4-runtime PROPERTIES
-                          UNITY_BUILD ON
-                          UNITY_BUILD_BATCH_SIZE 2
-                          )
+    set_target_properties(cxxabi PROPERTIES UNITY_BUILD ON)
 endif()
 
 # This handles FASTBUILD_FUNCTIONS_UNITY.
