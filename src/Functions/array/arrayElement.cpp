@@ -872,7 +872,12 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64 && index.getType() != Field::Types::Int128)
+    bool is_integer_field = Field::dispatch([](const auto & value)
+    {
+        return is_integer_v<std::decay_t<decltype(value)>>;
+    }, index);
+
+    if (!is_integer_field)
         return false;
 
     MatcherNumberConst<DataType> matcher{data_numeric->getData(), get<DataType>(index)};
@@ -911,6 +916,9 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<Int32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
 }
 
@@ -927,6 +935,9 @@ bool FunctionArrayElement::matchKeyToIndexConst(
         || matchKeyToIndexNumberConst<Int32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int64>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int256>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt256>(data, offsets, index, matched_idxs)
         || matchKeyToIndexStringConst(data, offsets, index, matched_idxs);
 }
 
@@ -946,9 +957,6 @@ ColumnPtr FunctionArrayElement::executeMap(
     auto indices_column = DataTypeNumber<UInt64>().createColumn();
     indices_column->reserve(input_rows_count);
     auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
-
-    std::cerr << "types: " << arguments[0].type->getName() << " " << arguments[1].type->getName() << "\n";
-    std::cerr << "columns: " << arguments[0].column->dumpStructure() << " " << arguments[1].column->dumpStructure() << "\n";
 
     if (!isColumnConst(*arguments[1].column))
     {

@@ -65,7 +65,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
-            throw Exception("Function " + getName() + " even number of arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires even number of arguments, but {} given", getName(), arguments.size());
 
         DataTypes keys, values;
         for (size_t i = 0; i < arguments.size(); i += 2)
@@ -84,9 +85,6 @@ public:
     {
         size_t num_elements = arguments.size();
 
-        std::cerr << "map... input_rows_count: " << input_rows_count << "\n";
-        std::cerr << "num_elements: " << num_elements  << "\n";
-
         if (num_elements == 0)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
@@ -102,12 +100,8 @@ public:
             const auto & arg = arguments[i];
             const auto to_type = i % 2 == 0 ? key_type : value_type;
 
-            std::cerr << "to_type: " << to_type->getName() << ", arg: " << arg.column->dumpStructure() << "\n";
-
             ColumnPtr preprocessed_column = castColumn(arg, to_type);
             preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
-
-            std::cerr << "preprocessed_column: " << preprocessed_column->dumpStructure() << "\n";
 
             columns_holder[i] = std::move(preprocessed_column);
             column_ptrs[i] = columns_holder[i].get();
@@ -140,8 +134,6 @@ public:
         auto nested_column = ColumnArray::create(
             ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
             std::move(offsets));
-        
-        std::cerr << "nested_column: " << nested_column->dumpStructure() << "\n";
 
         return ColumnMap::create(nested_column);
     }

@@ -53,7 +53,7 @@ DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & valu
     assertKeyType();
 }
 
-void DataTypeMap::assertKeyType() const 
+void DataTypeMap::assertKeyType() const
 {
     if (!key_type->isValueRepresentedByInteger() && !isStringOrFixedString(*key_type) && !WhichDataType(key_type).isNothing())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
