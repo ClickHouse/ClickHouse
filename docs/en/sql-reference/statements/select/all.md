@@ -4,7 +4,7 @@ toc_title: ALL
 
 # ALL Clause {#select-all}
 
-`SELECT ALL` is identical to `SELECT` without `DISTINCT`.
+If there are multiple matching rows in the table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`.
 
 -   If `ALL` specified, ignore it.
 -   If both `ALL` and `DISTINCT` specified, exception will be thrown.
