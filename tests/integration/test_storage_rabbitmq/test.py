@@ -1912,6 +1912,59 @@ def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
     assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
+@pytest.mark.timeout(120)
+def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.format_settings (
+            id String, date DateTime
+        ) ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'format_settings',
+                     rabbitmq_format = 'JSONEachRow',
+                     date_time_input_format = 'best_effort';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    message = json.dumps({"id":"format_settings_test","date":"2021-01-19T14:42:33.1829214Z"})
+    expected = instance.query('''SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))''')
+
+    channel.basic_publish(exchange='format_settings', routing_key='', body=message)
+    result = ''
+    while True:
+        result = instance.query('SELECT date FROM test.format_settings')
+        if result == expected:
+            break;
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (
+            id String, date DateTime
+        ) ENGINE = MergeTree ORDER BY id;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.format_settings;
+        ''')
+
+    channel.basic_publish(exchange='format_settings', routing_key='', body=message)
+    result = ''
+    while True:
+        result = instance.query('SELECT date FROM test.view')
+        if result == expected:
+            break;
+
+    connection.close()
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.format_settings;
+    ''')
+
+    assert(result == expected)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

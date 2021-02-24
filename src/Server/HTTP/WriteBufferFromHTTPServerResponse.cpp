@@ -168,11 +168,17 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 void WriteBufferFromHTTPServerResponse::finalize()
 {
-    next();
-    if (out)
+    try
     {
-        out->next();
+        next();
         out.reset();
+    }
+    catch (...)
+    {
+        /// Avoid calling WriteBufferFromOStream::next() from dtor
+        /// (via WriteBufferFromHTTPServerResponse::next())
+        out.reset();
+        throw;
     }
 
     if (!offset())
