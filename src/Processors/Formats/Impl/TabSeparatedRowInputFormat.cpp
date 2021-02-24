@@ -137,7 +137,7 @@ void TabSeparatedRowInputFormat::readPrefix()
     }
 
     /// This is a bit of abstraction leakage, but we have almost the same code in other places.
-    /// Thus, we check if this InputFormat is working with the "real" beggining of the data in case of parallel parsing.
+    /// Thus, we check if this InputFormat is working with the "real" beginning of the data in case of parallel parsing.
     if (with_names && getCurrentUnitNumber() == 0)
     {
         if (format_settings.with_names_use_header)
