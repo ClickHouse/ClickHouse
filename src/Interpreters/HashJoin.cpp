@@ -421,22 +421,12 @@ bool HashJoin::empty() const
     return data->type == Type::EMPTY;
 }
 
-size_t HashJoin::getTotalByteCount() const
-{
-    return getTotalByteCountLocked();
-}
-
-size_t HashJoin::getTotalRowCount() const
-{
-    return getTotalRowCountLocked();
-}
-
 bool HashJoin::alwaysReturnsEmptySet() const
 {
     return isInnerOrRight(getKind()) && data->empty && !overDictionary();
 }
 
-size_t HashJoin::getTotalRowCountLocked() const
+size_t HashJoin::getTotalRowCount() const
 {
     size_t res = 0;
 
@@ -453,7 +443,7 @@ size_t HashJoin::getTotalRowCountLocked() const
     return res;
 }
 
-size_t HashJoin::getTotalByteCountLocked() const
+size_t HashJoin::getTotalByteCount() const
 {
     size_t res = 0;
 
@@ -674,8 +664,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             return true;
 
         /// TODO: Do not calculate them every time
-        total_rows = getTotalRowCountLocked();
-        total_bytes = getTotalByteCountLocked();
+        total_rows = getTotalRowCount();
+        total_bytes = getTotalByteCount();
     }
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -1249,7 +1239,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 template <typename Maps>
 ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
 {
-    // Assemble the key block with correct names.
+    /// Assemble the key block with correct names.
     Block keys;
     for (size_t i = 0; i < block.columns(); ++i)
     {
@@ -1264,8 +1254,8 @@ ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & b
 }
 
 
-// TODO: return multiple columns as named tuple
-// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
+/// TODO: return multiple columns as named tuple
+/// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
 ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
     if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&

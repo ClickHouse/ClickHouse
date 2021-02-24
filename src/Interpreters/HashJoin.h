@@ -306,10 +306,6 @@ public:
 
     struct RightTableData
     {
-        /// Protect state for concurrent use in insertFromBlock and joinBlock.
-        /// @note that these methods could be called simultaneously only while use of StorageJoin.
-//        mutable std::shared_mutex rwlock;
-
         Type type = Type::EMPTY;
         bool empty = true;
 
@@ -399,10 +395,6 @@ private:
     ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
-
-    /// Call with already locked rwlock.
-    size_t getTotalRowCountLocked() const;
-    size_t getTotalByteCountLocked() const;
 
     bool empty() const;
     bool overDictionary() const;
