@@ -137,6 +137,7 @@ class AlterTableClause : public INode
             DROP_INDEX,
             DROP_PARTITION,
             FREEZE_PARTITION,
+            UNFREEZE,
             MODIFY,
             MOVE_PARTITION_TO_DISK,
             MOVE_PARTITION_TO_TABLE,

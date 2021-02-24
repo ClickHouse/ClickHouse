@@ -27,6 +27,7 @@ struct PartitionCommand
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
+        UNFREEZE_PARTITIONS,
         REPLACE_PARTITION,
     };
 
@@ -52,7 +53,7 @@ struct PartitionCommand
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
     String from_zookeeper_path;
 
-    /// For FREEZE PARTITION
+    /// For FREEZE PARTITION and UNFREEZE
     String with_name;
 
     enum MoveDestinationType

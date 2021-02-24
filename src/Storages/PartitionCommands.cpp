@@ -99,6 +99,13 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         command.with_name = command_ast->with_name;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::UNFREEZE)
+    {
+        PartitionCommand command;
+        command.type = PartitionCommand::UNFREEZE_PARTITIONS;
+        command.with_name = command_ast->with_name;
+        return command;
+    }
     else
         return {};
 }
@@ -130,6 +137,8 @@ std::string PartitionCommand::typeToString() const
         return "FREEZE ALL";
     case PartitionCommand::Type::FREEZE_PARTITION:
         return "FREEZE PARTITION";
+    case PartitionCommand::Type::UNFREEZE_PARTITIONS:
+        return "UNFREEZE";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
     }

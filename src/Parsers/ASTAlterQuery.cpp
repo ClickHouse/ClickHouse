@@ -271,6 +271,15 @@ void ASTAlterCommand::formatImpl(
                           << " " << DB::quote << with_name;
         }
     }
+    else if (type == ASTAlterCommand::UNFREEZE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE";
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << DB::quote << with_name;
+        }
+    }
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE" << (settings.hilite ? hilite_none : "");
@@ -368,7 +377,8 @@ bool ASTAlterQuery::isSettingsAlter() const
 
 bool ASTAlterQuery::isFreezeAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL);
+    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
+        || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE);
 }
 
 /** Get the text that identifies this element. */
