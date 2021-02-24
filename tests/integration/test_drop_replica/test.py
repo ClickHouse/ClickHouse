@@ -54,6 +54,7 @@ node_1_1 = cluster.add_instance('node_1_1', with_zookeeper=True, main_configs=['
 node_1_2 = cluster.add_instance('node_1_2', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
 node_1_3 = cluster.add_instance('node_1_3', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
 
+#FIXME it's just to run flacky check
 
 @pytest.fixture(scope="module")
 def start_cluster():

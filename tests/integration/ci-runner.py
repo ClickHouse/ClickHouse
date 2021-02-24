@@ -16,6 +16,32 @@ SLEEP_BETWEEN_RETRIES = 5
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
 
+TRIES_COUNT = 10
+MAX_TIME_SECONDS = 3600
+
+
+def get_tests_to_run(pr_info):
+    result = set([])
+
+    if pr_info.changed_files is None:
+        return []
+
+    for fpath in pr_info.changed_files:
+        if 'tests/integration/test_' in fpath:
+            logging.info('File %s changed and seems like integration test', fpath)
+            result.add(fpath.split('/')[2])
+    return list(result)
+
+
+def filter_existing_tests(tests_to_run, repo_path):
+    result = []
+    for relative_test_path in tests_to_run:
+        if os.path.exists(os.path.join(repo_path, 'tests/integration', relative_test_path)):
+            result.append(relative_test_path)
+        else:
+            logging.info("Skipping test %s, seems like it was removed", relative_test_path)
+    return result
+
 
 def _get_deselect_option(tests):
     return ' '.join(['--deselect {}'.format(t) for t in tests])
@@ -128,10 +154,13 @@ def clear_ip_tables_and_restart_daemons():
 
 class ClickhouseIntegrationTestsRunner:
 
-    def __init__(self, result_path, image_versions, shuffle_groups):
+    def __init__(self, result_path, params):
         self.result_path = result_path
-        self.image_versions = image_versions
-        self.shuffle_groups = shuffle_groups
+        self.params = params
+
+        self.image_versions = self.params['docker_images_with_versions']
+        self.shuffle_groups = self.params['shuffle_test_groups']
+        self.flacky_check = 'flacky check' in self.params['context_name']
 
     def path(self):
         return self.result_path
@@ -328,7 +357,68 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_name, log_path
 
-    def run_impl(self, commit, repo, pull_request, repo_path, build_path):
+    def run_flacky_check(self, repo_path, build_path):
+        pr_info = self.params['pr_info']
+
+        # pytest swears, if we require to run some tests which was renamed or deleted
+        tests_to_run = filter_existing_tests(get_tests_to_run(pr_info), repo_path)
+        if not tests_to_run:
+            logging.info("No tests to run found")
+            return 'success', 'Nothing to run', [('Nothing to run', 'OK')], ''
+
+        self._install_clickhouse(build_path)
+        logging.info("Found '%s' tests to run", ' '.join(tests_to_run))
+        result_state = "success"
+        description_prefix = "No flaky tests: "
+        start = time.time()
+        logging.info("Starting check with retries")
+        final_retry = 0
+        log_paths = []
+        for i in range(TRIES_COUNT):
+            final_retry += 1
+            logging.info("Running tests for the %s time", i)
+            counters, tests_times, log_name, log_path = self.run_test_group(repo_path, "flaky", tests_to_run, 1)
+            log_paths.append(log_path)
+            if counters["FAILED"]:
+                logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
+                description_prefix = "Flaky tests found: "
+                result_state = "failure"
+                break
+            if counters["ERROR"]:
+                description_prefix = "Flaky tests found: "
+                logging.info("Found error tests: %s", ' '.join(counters["ERROR"]))
+                result_state = "error"
+                break
+            logging.info("Try is OK, all tests passed, going to clear env")
+            clear_ip_tables_and_restart_daemons()
+            logging.info("And going to sleep for some time")
+            if time.time() - start > MAX_TIME_SECONDS:
+                logging.info("Timeout reached, going to finish flaky check")
+                break
+            time.sleep(5)
+
+        logging.info("Finally all tests done, going to compress test dir")
+        test_logs = os.path.join(str(self.path()), "./test_dir.tar")
+        self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
+        logging.info("Compression finished")
+
+        test_result = []
+        for state in ("ERROR", "FAILED", "PASSED"):
+            if state == "PASSED":
+                text_state = "OK"
+            elif state == "FAILED":
+                text_state = "FAIL"
+            else:
+                text_state = state
+            test_result += [(c + ' (✕' + str(final_retry) + ')', text_state, str(tests_times[c])) for c in counters[state]]
+        status_text = description_prefix + ', '.join([str(n).lower().replace('failed', 'fail') + ': ' + str(len(c)) for n, c in counters.items()])
+
+        return result_state, status_text, test_result, [test_logs] + log_paths
+
+    def run_impl(self, repo_path, build_path):
+        if self.flacky_check:
+            return self.flacky_check(repo_path, build_path)
+
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
@@ -351,7 +441,7 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
 
-        for group, tests in items_to_run:
+        for group, tests in items_to_run[:10]:  #FIXME
             logging.info("Running test group %s countaining %s tests", group, len(tests))
             group_counters, group_test_times, log_name, log_path = self.run_test_group(repo_path, group, tests, MAX_RETRY)
             total_tests = 0
@@ -413,14 +503,15 @@ if __name__ == "__main__":
     repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH")
     build_path = os.environ.get("CLICKHOUSE_TESTS_BUILD_PATH")
     result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH")
-    image_versions = os.environ.get("CLICKHOUSE_TESTS_IMAGE_VERSIONS", '{}')
-    shuffle_groups = int(os.environ.get("SHUFFLE_TEST_GROUPS", '0'))
+    params_path = os.environ.get("CLICKHOUSE_TESTS_JSON_PARAMS_PATH")
 
-    runner = ClickhouseIntegrationTestsRunner(result_path, json.loads(image_versions), shuffle_groups)
+    params = json.loads(open(params_path, 'r').read())
+    runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Running tests")
-    state, description, test_results, logs = runner.run_impl(None, None, None, repo_path, build_path)
+    state, description, test_results, logs = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
+
     status = (state, description)
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")
     out_status_file = os.path.join(str(runner.path()), "check_status.tsv")
