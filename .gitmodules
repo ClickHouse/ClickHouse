@@ -220,4 +220,4 @@
 	url = https://github.com/ClickHouse-Extras/boringssl.git
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
-	url = https://github.com/eBay/NuRaft.git
+	url = https://github.com/ClickHouse-Extras/NuRaft.git

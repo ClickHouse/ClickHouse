@@ -32,8 +32,10 @@ private:
         const char * operators[] = {"=", "equals", nullptr};
         ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
 
-        return nested_parser.parse(pos, node, expected)
-            || enum_parser.parse(pos, node, expected)
+        if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "Nested")
+            return nested_parser.parse(pos, node, expected);
+
+        return enum_parser.parse(pos, node, expected)
             || literal_parser.parse(pos, node, expected)
             || data_type_parser.parse(pos, node, expected);
     }

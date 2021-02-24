@@ -5,8 +5,6 @@
 #include <common/DateLUT.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -162,32 +160,6 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
         assertChar(maybe_quote, istr);
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-
-    // On some platforms `time_t` is `long` but not `unsigned int` (UInt32 that we store in column), hence static_cast.
-    value_index = static_cast<bool>(protobuf.writeDateTime(static_cast<time_t>(assert_cast<const ColumnType &>(column).getData()[row_num])));
-}
-
-void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    time_t t;
-    if (!protobuf.readDateTime(t))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(t);
-        row_added = true;
-    }
-    else
-        container.back() = t;
 }
 
 bool DataTypeDateTime::equals(const IDataType & rhs) const

@@ -93,15 +93,7 @@ public:
         const Context & context) override;
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override
-    {
-        if (!destination_id)
-            return false;
-        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
-        if (dest && dest.get() != this)
-            return dest->supportsPrewhere();
-        return false;
-    }
+    bool supportsPrewhere() const override;
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
@@ -120,7 +112,7 @@ public:
 
 
 private:
-    const Context & global_context;
+    const Context & buffer_context;
 
     struct Buffer
     {

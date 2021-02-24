@@ -30,6 +30,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
+{
+    return AggregateFunctionFactory::instance().getCanonicalNameIfAny(name);
+}
 
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
 {
@@ -41,10 +45,14 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
         throw Exception("AggregateFunctionFactory: the aggregate function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
-    if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_aggregate_functions.emplace(Poco::toLower(name), creator_with_properties).second)
-        throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+    if (case_sensitiveness == CaseInsensitive)
+    {
+        auto key = Poco::toLower(name);
+        if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
+            throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
+                ErrorCodes::LOGICAL_ERROR);
+        case_insensitive_name_mapping[key] = name;
+    }
 }
 
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)

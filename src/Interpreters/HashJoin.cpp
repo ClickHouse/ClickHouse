@@ -55,6 +55,58 @@ struct NotProcessedCrossJoin : public ExtraBlock
 
 }
 
+namespace JoinStuff
+{
+    /// Version of `getUsed` with dynamic dispatch
+    bool JoinUsedFlags::getUsedSafe(size_t i) const
+    {
+        if (flags.empty())
+            return !need_flags;
+        return flags[i].load();
+    }
+
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
+    void JoinUsedFlags::reinit(size_t size)
+    {
+        if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
+        {
+            assert(flags.size() <= size);
+            need_flags = true;
+            flags = std::vector<std::atomic_bool>(size);
+        }
+    }
+
+    template <>
+    void JoinUsedFlags::setUsed<false>(size_t i [[maybe_unused]]) {}
+
+    template <>
+    bool JoinUsedFlags::getUsed<false>(size_t i [[maybe_unused]]) { return true; }
+
+    template <>
+    bool JoinUsedFlags::setUsedOnce<false>(size_t i [[maybe_unused]]) { return true; }
+
+    template <>
+    void JoinUsedFlags::setUsed<true>(size_t i)
+    {
+        /// Could be set simultaneously from different threads.
+        flags[i].store(true, std::memory_order_relaxed);
+    }
+
+    template <>
+    bool JoinUsedFlags::getUsed<true>(size_t i) { return flags[i].load(); }
+
+    template <>
+    bool JoinUsedFlags::setUsedOnce<true>(size_t i)
+    {
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (flags[i].load(std::memory_order_relaxed))
+            return false;
+
+        bool expected = false;
+        return flags[i].compare_exchange_strong(expected, true);
+    }
+}
+
 static ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
@@ -264,8 +316,8 @@ static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes 
 class KeyGetterForDict
 {
 public:
-    using Mapped = JoinStuff::MappedOne;
-    using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped>;
+    using Mapped = RowRef;
+    using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
 
     KeyGetterForDict(const ColumnRawPtrs & key_columns_, const Sizes &, void *)
         : key_columns(key_columns_)
@@ -286,7 +338,7 @@ public:
         }
 
         result.row_num = positions[row];
-        return FindResult(&result, found[row]);
+        return FindResult(&result, found[row], 0);
     }
 
 private:
@@ -300,41 +352,43 @@ private:
 template <HashJoin::Type type, typename Value, typename Mapped>
 struct KeyGetterForTypeImpl;
 
+constexpr bool use_offset = true;
+
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false>;
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key16, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false>;
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key32, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false>;
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key64, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false>;
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_string, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false>;
+    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_fixed_string, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false>;
+    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys128, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false>;
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys256, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, DummyUInt256, Mapped, false, false, false>;
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, DummyUInt256, Mapped, false, false, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false>;
+    using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
 };
 
 template <HashJoin::Type type, typename Data>
@@ -463,12 +517,11 @@ namespace
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
-    void NO_INLINE insertFromBlockImplTypeCase(
+    size_t NO_INLINE insertFromBlockImplTypeCase(
         HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, JoinStuff::MappedOne> ||
-                                    std::is_same_v<typename Map::mapped_type, JoinStuff::MappedOneFlagged>;
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, RowRef>;
         constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
 
         const IColumn * asof_column [[maybe_unused]] = nullptr;
@@ -489,40 +542,42 @@ namespace
             else
                 Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
         }
+        return map.getBufferSizeInCells();
     }
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-    void insertFromBlockImplType(
+    size_t insertFromBlockImplType(
         HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         if (null_map)
-            insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(join, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
+            return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(join, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
         else
-            insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(join, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
+            return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(join, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
     }
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    void insertFromBlockImpl(
+    size_t insertFromBlockImpl(
         HashJoin & join, HashJoin::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         switch (type)
         {
-            case HashJoin::Type::EMPTY: break;
-            case HashJoin::Type::CROSS: break; /// Do nothing. We have already saved block, and it is enough.
-            case HashJoin::Type::DICT:  break; /// No one should call it with Type::DICT.
+            case HashJoin::Type::EMPTY: return 0;
+            case HashJoin::Type::CROSS: return 0; /// Do nothing. We have already saved block, and it is enough.
+            case HashJoin::Type::DICT:  return 0; /// No one should call it with Type::DICT.
 
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \
-                insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
+                return insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
                     join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, pool); \
                     break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
+        __builtin_unreachable();
     }
 }
 
@@ -607,9 +662,11 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
         if (kind != ASTTableJoin::Kind::Cross)
         {
-            joinDispatch(kind, strictness, data->maps, [&](auto, auto strictness_, auto & map)
+            joinDispatch(kind, strictness, data->maps, [&](auto kind_, auto strictness_, auto & map)
             {
-                insertFromBlockImpl<strictness_>(*this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, data->pool);
+                size_t size = insertFromBlockImpl<strictness_>(*this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, data->pool);
+                /// Number of buckets + 1 value from zero storage
+                used_flags.reinit<kind_, strictness_>(size + 1);
             });
         }
 
@@ -770,7 +827,11 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool has_null_map>
-NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added_columns, const ConstNullMapPtr & null_map [[maybe_unused]])
+NO_INLINE IColumn::Filter joinRightColumns(
+    const Map & map,
+    AddedColumns & added_columns,
+    const ConstNullMapPtr & null_map [[maybe_unused]],
+    JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
     constexpr bool is_any_join = STRICTNESS == ASTTableJoin::Strictness::Any;
     constexpr bool is_all_join = STRICTNESS == ASTTableJoin::Strictness::All;
@@ -780,6 +841,8 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
     constexpr bool left = KIND == ASTTableJoin::Kind::Left;
     constexpr bool right = KIND == ASTTableJoin::Kind::Right;
     constexpr bool full = KIND == ASTTableJoin::Kind::Full;
+
+    constexpr bool need_flags = MapGetter<KIND, STRICTNESS>::flagged;
 
     constexpr bool add_missing = (left || full) && !is_semi_join;
     constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
@@ -827,7 +890,7 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
                 if (const RowRef * found = mapped.findAsof(asof_type, asof_inequality, left_asof_key, i))
                 {
                     setUsed<need_filter>(filter, i);
-                    mapped.setUsed();
+                    used_flags.template setUsed<need_flags>(find_result.getOffset());
                     added_columns.appendFromBlock<add_missing>(*found->block, found->row_num);
                 }
                 else
@@ -836,13 +899,15 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
             else if constexpr (is_all_join)
             {
                 setUsed<need_filter>(filter, i);
-                mapped.setUsed();
+                used_flags.template setUsed<need_flags>(find_result.getOffset());
                 addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
             }
             else if constexpr ((is_any_join || is_semi_join) && right)
             {
                 /// Use first appeared left key + it needs left columns replication
-                if (mapped.setUsedOnce())
+                bool used_once = used_flags.template setUsedOnce<need_flags>(find_result.getOffset());
+
+                if (used_once)
                 {
                     setUsed<need_filter>(filter, i);
                     addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
@@ -850,8 +915,10 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
             }
             else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Inner)
             {
+                bool used_once = used_flags.template setUsedOnce<need_flags>(find_result.getOffset());
+
                 /// Use first appeared left key only
-                if (mapped.setUsedOnce())
+                if (used_once)
                 {
                     setUsed<need_filter>(filter, i);
                     added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
@@ -863,13 +930,13 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
             }
             else if constexpr (is_anti_join)
             {
-                if constexpr (right)
-                    mapped.setUsed();
+                if constexpr (right && need_flags)
+                    used_flags.template setUsed<need_flags>(find_result.getOffset());
             }
             else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
             {
                 setUsed<need_filter>(filter, i);
-                mapped.setUsed();
+                used_flags.template setUsed<need_flags>(find_result.getOffset());
                 added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
             }
         }
@@ -889,26 +956,28 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-IColumn::Filter joinRightColumnsSwitchNullability(const Map & map, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
+IColumn::Filter joinRightColumnsSwitchNullability(
+    const Map & map, AddedColumns & added_columns, const ConstNullMapPtr & null_map, JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
     {
         if (null_map)
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true>(map, added_columns, null_map);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true>(map, added_columns, null_map, used_flags);
         else
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, false>(map, added_columns, nullptr);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, false>(map, added_columns, nullptr, used_flags);
     }
     else
     {
         if (null_map)
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, true>(map, added_columns, null_map);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, true>(map, added_columns, null_map, used_flags);
         else
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, false>(map, added_columns, nullptr);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, false>(map, added_columns, nullptr, used_flags);
     }
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-IColumn::Filter switchJoinRightColumns(const Maps & maps_, AddedColumns & added_columns, HashJoin::Type type, const ConstNullMapPtr & null_map)
+IColumn::Filter switchJoinRightColumns(
+    const Maps & maps_, AddedColumns & added_columns, HashJoin::Type type, const ConstNullMapPtr & null_map, JoinStuff::JoinUsedFlags & used_flags)
 {
     switch (type)
     {
@@ -916,7 +985,7 @@ IColumn::Filter switchJoinRightColumns(const Maps & maps_, AddedColumns & added_
         case HashJoin::Type::TYPE: \
             return joinRightColumnsSwitchNullability<KIND, STRICTNESS,\
                 typename KeyGetterForType<HashJoin::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
-                *maps_.TYPE, added_columns, null_map);
+                *maps_.TYPE, added_columns, null_map, used_flags);
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
 
@@ -933,7 +1002,8 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
         STRICTNESS == ASTTableJoin::Strictness::Semi ||
         STRICTNESS == ASTTableJoin::Strictness::Anti))
     {
-        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(table_join, added_columns, null_map);
+        JoinStuff::JoinUsedFlags flags;
+        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(table_join, added_columns, null_map, flags);
     }
 
     throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);
@@ -997,7 +1067,7 @@ void HashJoin::joinBlockImpl(
 
     IColumn::Filter row_filter = overDictionary() ?
         dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join, added_columns, null_map) :
-        switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, null_map);
+        switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, null_map, used_flags);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
@@ -1276,8 +1346,8 @@ struct AdderNonJoined
 {
     static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
-        constexpr bool mapped_asof = std::is_same_v<Mapped, JoinStuff::MappedAsof>;
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, JoinStuff::MappedOne> || std::is_same_v<Mapped, JoinStuff::MappedOneFlagged>;
+        constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
 
         if constexpr (mapped_asof)
         {
@@ -1404,7 +1474,8 @@ private:
         {
             const Mapped & mapped = it->getMapped();
 
-            if (mapped.getUsed())
+            size_t off = map.offsetInternal(it.getPtr());
+            if (parent.isUsed(off))
                 continue;
 
             AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
@@ -1454,6 +1525,15 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
     if (isRightOrFull(table_join->kind()))
         return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
     return {};
+}
+
+void HashJoin::reuseJoinedData(const HashJoin & join)
+{
+    data = join.data;
+    joinDispatch(kind, strictness, data->maps, [this](auto kind_, auto strictness_, auto & map)
+    {
+        used_flags.reinit<kind_, strictness_>(map.getBufferSizeInCells(data->type) + 1);
+    });
 }
 
 }
