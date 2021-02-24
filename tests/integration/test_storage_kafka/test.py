@@ -24,13 +24,12 @@ from kafka.admin import NewTopic
 from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 
-"""
-protoc --version
-libprotoc 3.0.0
 
-# to create kafka_pb2.py
-protoc --python_out=. kafka.proto
-"""
+# protoc --version
+# libprotoc 3.0.0
+# # to create kafka_pb2.py
+# protoc --python_out=. kafka.proto
+
 from . import kafka_pb2
 from . import social_pb2
 
@@ -51,35 +50,7 @@ instance = cluster.add_instance('instance',
                                         "kafka_client_id":"instance",
                                         "kafka_format_json_each_row":"JSONEachRow"},
                                 clickhouse_path_dir='clickhouse_path')
-kafka_id = cluster.kafka_docker_id
 
-
-# Helpers
-
-def check_kafka_is_available():
-    p = subprocess.Popen(('docker',
-                          'exec',
-                          '-i',
-                          kafka_id,
-                          '/usr/bin/kafka-broker-api-versions',
-                          '--bootstrap-server',
-                          'INSIDE://{}:{}'.format("localhost", cluster.kafka_port)),
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    p.communicate()
-    return p.returncode == 0
-
-
-def wait_kafka_is_available(max_retries=50):
-    retries = 0
-    while True:
-        if check_kafka_is_available():
-            break
-        else:
-            retries += 1
-            if retries > max_retries:
-                raise Exception("Kafka is not available")
-            logging.debug("Waiting for Kafka to start up")
-            time.sleep(1)
 
 def get_kafka_producer(port, serializer):
     errors = []
@@ -645,7 +616,6 @@ def kafka_cluster():
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
     instance.query('DROP DATABASE IF EXISTS test; CREATE DATABASE test;')
-    wait_kafka_is_available()
     # logging.debug("kafka is available - running test")
     yield  # run test
 
