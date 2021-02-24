@@ -27,7 +27,7 @@ def check_args_and_update_paths(args):
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
     else:
-        logging.info("ClickHouse root is not set. Will use {}".format(DEFAULT_CLICKHOUSE_ROOT))
+        logging.info(f"ClickHouse root is not set. Will use {DEFAULT_CLICKHOUSE_ROOT}")
         CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
 
     if not os.path.isabs(args.binary):
@@ -43,23 +43,23 @@ def check_args_and_update_paths(args):
             args.base_configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.base_configs_dir))
     else:
         args.base_configs_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO))
-        logging.info("Base configs dir is not set. Will use {}".format(args.base_configs_dir))
+        logging.info(f"Base configs dir is not set. Will use {args.base_configs_dir}")
 
     if args.cases_dir:
         if not os.path.isabs(args.cases_dir):
             args.cases_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.cases_dir))
     else:
         args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO))
-        logging.info("Cases dir is not set. Will use {}".format(args.cases_dir))
+        logging.info(f"Cases dir is not set. Will use {args.cases_dir}")
 
     if args.src_dir:
         if not os.path.isabs(args.src_dir):
             args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.src_dir))
     else:
         args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
-        logging.info("src dir is not set. Will use {}".format(args.src_dir))
+        logging.info(f"src dir is not set. Will use {args.src_dir}")
 
-    logging.info("base_configs_dir: {},  binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
+    logging.info(f"base_configs_dir: {args.base_configs_dir},  binary: {args.binary}, cases_dir: {args.cases_dir} ")
 
     for path in [args.binary, args.bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
         if not os.path.exists(path):
@@ -183,7 +183,7 @@ if __name__ == "__main__":
             elif image == "yandex/clickhouse-kerberos-kdc":
                 env_tags += "-e {}={}".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
-                logging.info("Unknown image {}".format(image))
+                logging.info(f"Unknown image {image}")
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time

@@ -3,6 +3,7 @@ import random
 import threading
 import time
 import pytest
+import logging
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -24,37 +25,6 @@ instance = cluster.add_instance('instance',
                                 with_kerberized_kafka=True,
                                 clickhouse_path_dir="clickhouse_path"
                                 )
-kafka_id = cluster.kerberized_kafka_docker_id
-
-# Helpers
-
-def check_kafka_is_available():
-
-    # plaintext
-    p = subprocess.Popen(('docker',
-                          'exec',
-                          '-i',
-                          kafka_id,
-                          '/usr/bin/kafka-broker-api-versions',
-                          '--bootstrap-server',
-                          'INSIDE://{}:{}'.format("localhost", cluster.kafka_port)),
-                         stdout=subprocess.PIPE)
-    p.communicate()
-    return p.returncode == 0
-
-
-def wait_kafka_is_available(max_retries=50):
-    retries = 0
-    while True:
-        if check_kafka_is_available():
-            break
-        else:
-            retries += 1
-            if retries > max_retries:
-                raise Exception("Kafka is not available")
-            print("Waiting for Kafka to start up")
-            time.sleep(1)
-
 
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
@@ -73,8 +43,8 @@ def get_kafka_producer(port, serializer):
     raise Exception("Connection not establised, {}".format(errors))   
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
-    logging.debug("kafka_produce server:{}:{} topic:{}".format("localhost", kafka_cluster.kafka_port, topic))
-    producer = get_kafka_producer(kafka_cluster.kafka_port, producer_serializer)
+    logging.debug("kafka_produce server:{}:{} topic:{}".format("localhost", kafka_cluster.kerberized_kafka_port, topic))
+    producer = get_kafka_producer(kafka_cluster.kerberized_kafka_port, producer_serializer)
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
@@ -94,8 +64,6 @@ def kafka_cluster():
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
     instance.query('DROP DATABASE IF EXISTS test; CREATE DATABASE test;')
-    wait_kafka_is_available()
-    print("kafka is available - running test")
     yield  # run test
 
 # Tests

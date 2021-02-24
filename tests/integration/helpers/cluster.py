@@ -15,16 +15,18 @@ import traceback
 import urllib.parse
 
 import cassandra.cluster
-import docker
 import psycopg2
 import pymongo
 import pymysql
 import requests
+from confluent_kafka.avro.cached_schema_registry_client import \
+    CachedSchemaRegistryClient
 from dict2xml import dict2xml
-from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
+
+import docker
 
 from .client import Client
 from .hdfs_api import HDFSApi
@@ -38,7 +40,7 @@ SANITIZER_SIGN = "=================="
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
-    logging.debug("Env {} stored in {}".format(variables, path))
+    logging.debug(f"Env {variables} stored in {path}")
     with open(path, 'w') as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -48,20 +50,19 @@ def run_and_check(args, env=None, shell=False):
     res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
-        logging.debug('Stderr:\n{}\n'.format(res.stderr.decode('utf-8')))
-        logging.debug('Stdout:\n{}\n'.format(res.stdout.decode('utf-8')))
-        logging.debug('Env:\n{}\n'.format(env))
-        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
+        logging.debug(f"Stderr:\n{res.stderr.decode('utf-8')}\n")
+        logging.debug(f"Stdout:\n{res.stdout.decode('utf-8')}\n")
+        logging.debug(f"Env:\n{env}\n")
+        raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_open_port():
-        import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("",0))
-        s.listen(1)
-        port = s.getsockname()[1]
-        s.close()
-        return port
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("",0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 def subprocess_check_call(args):
     # Uncomment for debugging
@@ -93,8 +94,21 @@ def get_docker_compose_path():
         if os.path.exists(os.path.dirname('/compose/')):
             return os.path.dirname('/compose/')  # default in docker runner container
         else:
-            logging.debug(("Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {}".format(LOCAL_DOCKER_COMPOSE_DIR)))
+            logging.debug(f"Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {LOCAL_DOCKER_COMPOSE_DIR}")
             return LOCAL_DOCKER_COMPOSE_DIR
+
+
+def check_kafka_is_available(kafka_id, kafka_port):
+    p = subprocess.Popen(('docker',
+                        'exec',
+                        '-i',
+                        kafka_id,
+                        '/usr/bin/kafka-broker-api-versions',
+                        '--bootstrap-server',
+                        f'INSIDE://localhost:{kafka_port}'),
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
 
 
 class ClickHouseCluster:
@@ -202,7 +216,6 @@ class ClickHouseCluster:
         # available when with_kerberozed_kafka == True
         self.kerberized_kafka_host = "kerberized_kafka1"
         self.kerberized_kafka_port = get_open_port()
-        self.kerberized_kafka_docker_id = None
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(self.kerberized_kafka_host)
 
         # available when with_mongo == True
@@ -238,7 +251,7 @@ class ClickHouseCluster:
 
         self.docker_client = None
         self.is_up = False
-        logging.debug("CLUSTER INIT base_config_dir:{}".format(self.base_config_dir))
+        logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
 
     def get_client_cmd(self):
         cmd = self.client_bin_path
@@ -299,7 +312,7 @@ class ClickHouseCluster:
         return self.base_kerberized_hdfs_cmd
 
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_redis = True
+        self.with_kafka = True
         env_variables['KAFKA_HOST'] = self.kafka_host
         env_variables['KAFKA_EXTERNAL_PORT'] = str(self.kafka_port)
         env_variables['SCHEMA_REGISTRY_EXTERNAL_PORT'] = str(self.schema_registry_port)
@@ -310,7 +323,7 @@ class ClickHouseCluster:
         return self.base_kafka_cmd
 
     def setup_kerberized_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_redis = True
+        self.with_kerberized_kafka = True
         env_variables['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
         env_variables['KERBERIZED_KAFKA_HOST'] = self.kerberized_kafka_host
         env_variables['KERBERIZED_KAFKA_EXTERNAL_PORT'] = str(self.kerberized_kafka_port)
@@ -694,12 +707,24 @@ class ClickHouseCluster:
                               proxy_port=self.hdfs_kerberized_name_port,
                               data_port=self.hdfs_kerberized_data_port,
                               hdfs_ip=hdfs_ip,
-                              kdc_ip=kdc_ip)
-                                      
+                              kdc_ip=kdc_ip)                         
         else:
             logging.debug("Create HDFSApi host={}".format("localhost"))
             hdfs_api = HDFSApi(user="root", host="localhost", data_port=self.hdfs_data_port, proxy_port=self.hdfs_name_port)
         return hdfs_api
+
+    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
+        retries = 0
+        while True:
+            if check_kafka_is_available(kafka_docker_id, kafka_port):
+                break
+            else:
+                retries += 1
+                if retries > max_retries:
+                    raise Exception("Kafka is not available")
+                logging.debug("Waiting for Kafka to start up")
+                time.sleep(1)
+
 
     def wait_hdfs_to_start(self, hdfs_api, timeout=60):
         start = time.time()
@@ -722,13 +747,14 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 connection.list_database_names()
-                logging.debug("Connected to Mongo dbs:", connection.database_names())
+                logging.debug("Connected to Mongo dbs: {}", connection.database_names())
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=30, secure=False):
+        os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_certs_dir, 'public.crt')
         minio_client = Minio('localhost:{}'.format(self.minio_port),
                              access_key='minio',
                              secret_key='minio123',
@@ -757,7 +783,7 @@ class ClickHouseCluster:
         raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
-        sr_client = CachedSchemaRegistryClient('http://localhost:{}'.format(cluster.schema_registry_port))
+        sr_client = CachedSchemaRegistryClient('http://localhost:{}'.format(self.schema_registry_port))
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -845,11 +871,13 @@ class ClickHouseCluster:
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug('Setup Kafka')
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
                 self.wait_schema_registry_to_start(30)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug('Setup kerberized kafka')
                 run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.wait_kafka_is_available(self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -885,7 +913,7 @@ class ClickHouseCluster:
                 if self.minio_certs_dir is None:
                     os.mkdir(os.path.join(self.minio_dir, 'certs'))
                 else:
-                    shutil.copytree(self.minio_certs_dir, os.path.join(self.minio_dir, 'certs'))
+                    shutil.copytree(os.path.join(self.base_dir, self.minio_certs_dir), os.path.join(self.minio_dir, 'certs'))
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
@@ -1307,6 +1335,7 @@ class ClickHouseInstance:
                                user='root')
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         from helpers.test_tools import assert_eq_with_retry
+
         # wait start
         assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
 
@@ -1462,7 +1491,7 @@ class ClickHouseInstance:
             shutil.copytree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
         # Copy config.d configs
-        logging.debug("Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir))
+        logging.debug(f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}")
         for path in self.custom_main_config_paths:
             shutil.copy(path, self.config_d_dir)
 
@@ -1475,16 +1504,16 @@ class ClickHouseInstance:
             shutil.copy(path, dictionaries_dir)
 
         db_dir = p.abspath(p.join(self.path, 'database'))
-        logging.debug("Setup database dir {}".format(db_dir))
+        logging.debug(f"Setup database dir {db_dir}")
         if self.clickhouse_path_dir is not None:
-            logging.debug("Database files taken from {}".format(self.clickhouse_path_dir))
+            logging.debug(f"Database files taken from {self.clickhouse_path_dir}")
             shutil.copytree(self.clickhouse_path_dir, db_dir)
-            logging.debug("Database copied from {} to {}".format(self.clickhouse_path_dir, db_dir))
+            logging.debug(f"Database copied from {self.clickhouse_path_dir} to {db_dir}")
         else:
             os.mkdir(db_dir)
 
         logs_dir = p.abspath(p.join(self.path, 'logs'))
-        logging.debug("Setup logs dir {}".format(logs_dir))
+        logging.debug(f"Setup logs dir {logs_dir}")
         os.mkdir(logs_dir)
 
         depends_on = []
