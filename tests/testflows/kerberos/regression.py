@@ -12,7 +12,7 @@ xfails = {
 
 
 @TestModule
-@Name("Kerberos auth")
+@Name("kerberos")
 @ArgumentParser(argparser)
 @Requirements(
     RQ_SRS_016_Kerberos("1.0")
