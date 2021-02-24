@@ -80,7 +80,7 @@ public:
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool auto_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
 
     /// Creates connection. Can be used if Poco::Util::Application is using.
     /// All settings will be got from config_name section of configuration.
@@ -117,7 +117,7 @@ public:
         std::string ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
         std::string ssl_key = cfg.getString(config_name + ".ssl_key", "");
         bool enable_local_infile = cfg.getBool(config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
-        bool opt_reconnect = cfg.getBool(config_name + ".auto_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
 
         unsigned timeout =
             cfg.getInt(config_name + ".connect_timeout",

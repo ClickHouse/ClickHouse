@@ -79,8 +79,8 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
 
-        opt_reconnect = cfg.getBool(config_name + ".auto_reconnect",
-            cfg.getBool(parent_config_name + ".auto_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
+        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
+            cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
     }
     else
     {
@@ -100,7 +100,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
 
-        opt_reconnect = cfg.getBool(config_name + ".auto_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
