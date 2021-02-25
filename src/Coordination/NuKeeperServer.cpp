@@ -1,7 +1,7 @@
 #include <Coordination/NuKeeperServer.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/NuKeeperStateMachine.h>
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -26,13 +26,16 @@ NuKeeperServer::NuKeeperServer(
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
     , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
-    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, "test_keeper_server.raft_configuration", config))
+    , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
 }
 
 void NuKeeperServer::startup()
 {
+
+    state_manager->loadLogStore(state_machine->last_commit_index());
+
     nuraft::raft_params params;
     params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
     params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
@@ -64,6 +67,7 @@ void NuKeeperServer::startup()
 void NuKeeperServer::shutdown()
 {
     state_machine->shutdownStorage();
+    state_manager->flushLogStore();
     if (!launcher.shutdown(coordination_settings->shutdown_timeout.totalSeconds()))
         LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", 5);
 }
@@ -157,7 +161,7 @@ bool NuKeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
-    if (type == nuraft::cb_func::Type::BecomeFresh || type == nuraft::cb_func::Type::BecomeLeader)
+    if ((type == nuraft::cb_func::InitialBatchCommited && isLeader()) || type == nuraft::cb_func::BecomeFresh)
     {
         std::unique_lock lock(initialized_mutex);
         initialized_flag = true;
