@@ -330,8 +330,9 @@ public:
                 }
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
-                auto format = FormatFactory::instance().getInput(
-                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
+                auto format = FormatFactory::instance().getInput(storage->format_name, *read_buf,
+                                metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical()),
+                                        context, max_block_size, storage->format_settings);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
@@ -444,8 +445,7 @@ Pipe StorageFile::read(
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info,
-            metadata_snapshot->getColumns()));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumnsForNames(column_names, getVirtuals(), getStorageID())));
     }
 
     return Pipe::unitePipes(std::move(pipes));
