@@ -85,6 +85,12 @@ struct StorageInMemoryMetadata
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
+
+    /// Returns combined set of columns from give column Names
+    const ColumnsDescription getColumnsForNames(
+            const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
+
+
     /// Returns secondary indices
 
     const IndicesDescription & getSecondaryIndices() const;
@@ -147,7 +153,9 @@ struct StorageInMemoryMetadata
     /// message.
     Block getSampleBlockForColumns(
         const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
+    /// Virtual columns not included. can be used in the InputFormat for reading for example
+    Block getSampleBlockForColumns(
+            const Names & column_names) const;
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
