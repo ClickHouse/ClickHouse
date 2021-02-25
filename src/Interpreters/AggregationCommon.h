@@ -90,7 +90,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
         {
             const auto * column = key_columns[i];
             size_t num_rows = column->size();
-            out.resize(num_rows);
+            out.resize_fill(num_rows);
 
             const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
