@@ -66,6 +66,8 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
     if (max_tries == 0)
         throw Exception("Cannot perform zero retries", ErrorCodes::LOGICAL_ERROR);
 
+    auto sleep_time = std::chrono::milliseconds(1);
+
     for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
     {
         try
@@ -78,7 +80,9 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
             if (try_number < max_tries)
             {
                 tryLogCurrentException(log, "Will retry");
-                std::this_thread::sleep_for(default_sleep_time);
+                std::this_thread::sleep_for(sleep_time);
+                /// Exponential backoff
+                sleep_time = std::min(sleep_time * 2, max_sleep_time);
             }
         }
     }
@@ -338,11 +342,10 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
     const String & description,
     bool unprioritized)
 {
-    std::chrono::milliseconds current_sleep_time = default_sleep_time;
-    static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
+    auto sleep_time = std::chrono::milliseconds(1);
 
     if (unprioritized)
-        std::this_thread::sleep_for(current_sleep_time);
+        std::this_thread::sleep_for(sleep_time);
 
     String workers_version_path = getWorkersPathVersion();
     String workers_path         = getWorkersPath();
@@ -364,9 +367,9 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             LOG_DEBUG(log, "Too many workers ({}, maximum {}). Postpone processing {}", stat.numChildren, task_cluster->max_workers, description);
 
             if (unprioritized)
-                current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
+                sleep_time = std::min(max_sleep_time, sleep_time * 2);
 
-            std::this_thread::sleep_for(current_sleep_time);
+            std::this_thread::sleep_for(sleep_time);
             num_bad_version_errors = 0;
         }
         else
@@ -749,7 +752,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         if (e.code == Coordination::Error::ZNODEEXISTS)
         {
             LOG_DEBUG(log, "Partition {} piece {} is cleaning now by somebody, sleep", task_partition.name, toString(current_piece_number));
-            std::this_thread::sleep_for(default_sleep_time);
+
             return false;
         }
 
@@ -762,7 +765,6 @@ bool ClusterCopier::tryDropPartitionPiece(
         if (stat.numChildren != 0)
         {
             LOG_DEBUG(log, "Partition {} contains {} active workers while trying to drop it. Going to sleep.", task_partition.name, stat.numChildren);
-            std::this_thread::sleep_for(default_sleep_time);
             return false;
         }
         else
@@ -809,9 +811,6 @@ bool ClusterCopier::tryDropPartitionPiece(
 
         String query = "ALTER TABLE " + getQuotedTable(helping_table);
         query += ((task_partition.name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ")  + task_partition.name + "";
-
-        /// TODO: use this statement after servers will be updated up to 1.1.54310
-        // query += " DROP PARTITION ID '" + task_partition.name + "'";
 
         ClusterPtr & cluster_push = task_table.cluster_push;
         Settings settings_push = task_cluster->settings_push;
@@ -931,13 +930,12 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             expected_shards.emplace_back(shard);
 
             /// Do not sleep if there is a sequence of already processed shards to increase startup
-            bool is_unprioritized_task = !previous_shard_is_instantly_finished && shard->priority.is_remote;
             TaskStatus task_status = TaskStatus::Error;
             bool was_error = false;
             has_shard_to_process = true;
             for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
             {
-                task_status = tryProcessPartitionTask(timeouts, partition, is_unprioritized_task);
+                task_status = tryProcessPartitionTask(timeouts, partition);
 
                 /// Exit if success
                 if (task_status == TaskStatus::Finished)
@@ -948,9 +946,6 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                 /// Skip if the task is being processed by someone
                 if (task_status == TaskStatus::Active)
                     break;
-
-                /// Repeat on errors
-                std::this_thread::sleep_for(default_sleep_time);
             }
 
             if (task_status == TaskStatus::Error)
@@ -996,9 +991,6 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                     /// Exit if this task is active.
                     if (res == TaskStatus::Active)
                         break;
-
-                    /// Repeat on errors.
-                    std::this_thread::sleep_for(default_sleep_time);
                 }
                 catch (...)
                 {
@@ -1051,13 +1043,13 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 }
 
 /// Job for copying partition from particular shard.
-TaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
+TaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition)
 {
     TaskStatus res;
 
     try
     {
-        res = iterateThroughAllPiecesInPartition(timeouts, task_partition, is_unprioritized_task);
+        res = iterateThroughAllPiecesInPartition(timeouts, task_partition);
     }
     catch (...)
     {
@@ -1078,8 +1070,7 @@ TaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & tim
     return res;
 }
 
-TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
-                                                       bool is_unprioritized_task)
+TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts, ShardPartition & task_partition)
 {
     const size_t total_number_of_pieces = task_partition.task_shard.task_table.number_of_splits;
 
@@ -1090,14 +1081,14 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
 
     for (size_t piece_number = 0; piece_number < total_number_of_pieces; piece_number++)
     {
-        for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
+        for (size_t try_num = 0; try_num < max_shard_partition_tries; ++try_num)
         {
             LOG_INFO(log, "Attempt number {} to process partition {} piece number {} on shard number {} with index {}.",
                 try_num, task_partition.name, piece_number,
                 task_partition.task_shard.numberInCluster(),
                 task_partition.task_shard.indexInCluster());
 
-            res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
+            res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number);
 
             /// Exit if success
             if (res == TaskStatus::Finished)
@@ -1106,9 +1097,6 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
             /// Skip if the task is being processed by someone
             if (res == TaskStatus::Active)
                 break;
-
-            /// Repeat on errors
-            std::this_thread::sleep_for(default_sleep_time);
         }
 
         was_active_pieces = (res == TaskStatus::Active);
@@ -1126,8 +1114,9 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
 
 
 TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
-        const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
-        const size_t current_piece_number, bool is_unprioritized_task)
+        const ConnectionTimeouts & timeouts, 
+        ShardPartition & task_partition,
+        const size_t current_piece_number)
 {
     TaskShard & task_shard = task_partition.task_shard;
     TaskTable & task_table = task_shard.task_table;
@@ -1141,8 +1130,6 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     createShardInternalTables(timeouts, task_shard, true);
 
     auto split_table_for_current_piece = task_shard.list_of_split_tables_on_shard[current_piece_number];
-
-    (void) is_unprioritized_task;
 
     auto zookeeper = context.getZooKeeper();
 
@@ -1384,8 +1371,6 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         // Select all fields
         ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
 
-        LOG_DEBUG(log, "Executing SELECT query and pull from {} : {}", task_shard.getDescription(), queryToString(query_select_ast));
-
         ASTPtr query_insert_ast;
         {
             String query;
@@ -1477,7 +1462,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         }
     }
 
-    LOG_INFO(log, "Partition {} piece {} copied. But not moved to original destination table.", task_partition.name, toString(current_piece_number));
+    LOG_TRACE(log, "Partition {} piece {} copied. But not moved to original destination table.", task_partition.name, toString(current_piece_number));
 
 
     /// Try create original table (if not exists) on each shard

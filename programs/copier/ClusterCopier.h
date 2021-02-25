@@ -60,6 +60,11 @@ public:
         move_fault_probability = move_fault_probability_;
     }
 
+    void setMaxSleepTime(size_t max_sleep_time_)
+    {
+        max_sleep_time = std::chrono::milliseconds(max_sleep_time_);
+    }
+
     void setExperimentalUseSampleOffset(bool value)
     {
         experimental_use_sample_offset = value;
@@ -131,17 +136,14 @@ protected:
 
     /// Job for copying partition from particular shard.
     TaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
-                                       ShardPartition & task_partition,
-                                       bool is_unprioritized_task);
+                                       ShardPartition & task_partition);
 
     TaskStatus iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts,
-                                                  ShardPartition & task_partition,
-                                                  bool is_unprioritized_task);
+                                                  ShardPartition & task_partition);
 
     TaskStatus processPartitionPieceTaskImpl(const ConnectionTimeouts & timeouts,
                                              ShardPartition & task_partition,
-                                             const size_t current_piece_number,
-                                             bool is_unprioritized_task);
+                                             const size_t current_piece_number);
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast);
 
@@ -153,8 +155,6 @@ protected:
 
     template <typename QueryBuilder>
     void executeQueryForAllSplits(const TaskTable &, QueryBuilder &&) const;
-
-
 
     /// Is used for usage less disk space.
     /// After all pieces were successfully moved to original destination
@@ -226,6 +226,6 @@ private:
     Context & context;
     Poco::Logger * log;
 
-    std::chrono::milliseconds default_sleep_time{1000};
+    std::chrono::milliseconds max_sleep_time{1};
 };
 }

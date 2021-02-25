@@ -21,6 +21,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     task_path = config().getString("task-path");
     log_level = config().getString("log-level", "trace");
     is_safe_mode = config().has("safe-mode");
+    max_sleep_time = config().getUInt("max_sleep_time", 1);
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
     if (config().has("move-fault-probability"))
@@ -137,6 +138,7 @@ void ClusterCopierApp::mainImpl()
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
+    copier->setMaxSleepTime(max_sleep_time);
 
     copier->setExperimentalUseSampleOffset(experimental_use_sample_offset);
 

@@ -84,6 +84,9 @@ private:
 
     bool experimental_use_sample_offset{false};
 
+    /// If some errors occur the exponential backoff is used, so this value is upper bound of this.
+    size_t max_sleep_time;
+
     std::string base_dir;
     std::string process_path;
     std::string process_id;
