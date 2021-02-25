@@ -3738,7 +3738,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
 PartitionCommandsResultInfo MergeTreeData::unfreeze(const String & backup_name, const Context & context, TableLockHolder &) const
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-    String backup_path = clickhouse_path + "shadow/" + backup_name + "/" + relative_data_path;
+    String backup_path = "shadow/" + backup_name + "/" + relative_data_path;
 
     PartitionCommandsResultInfo result;
 
