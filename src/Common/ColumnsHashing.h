@@ -484,6 +484,8 @@ struct HashMethodKeysFixed
     std::unique_ptr<const char*[]> columns_data;
 #endif
 
+    PaddedPODArray<Key> prepared_keys;
+
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : Base(key_columns), key_sizes(std::move(key_sizes_)), keys_size(key_columns.size())
     {
@@ -504,6 +506,9 @@ struct HashMethodKeysFixed
                     low_cardinality_keys.nested_columns[i] = key_columns[i];
             }
         }
+
+        if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
+            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
         if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
@@ -570,6 +575,9 @@ struct HashMethodKeysFixed
             if constexpr (has_low_cardinality)
                 return packFixed<Key, true>(row, keys_size, low_cardinality_keys.nested_columns, key_sizes,
                                             &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
+
+            if (!prepared_keys.empty())
+                return prepared_keys[row];
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)

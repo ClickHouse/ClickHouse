@@ -70,6 +70,46 @@ constexpr auto getBitmapSize()
 
 }
 
+template<typename T, size_t step>
+void fillFixedBatch(size_t num_rows, const T * source, T * dest)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        *dest = *source;
+        ++source;
+        dest += step;
+    }
+}
+
+template<typename T, typename Key>
+void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset)
+{
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (key_sizes[i] == sizeof(T))
+        {
+            const auto * column = key_columns[i];
+            size_t num_rows = column->size();
+            out.resize(num_rows);
+
+            const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            offset += sizeof(T);
+        }
+    }
+}
+
+template <typename T>
+void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
+{
+    size_t offset = 0;
+    fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
+}
+
 template <typename T>
 using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
 
