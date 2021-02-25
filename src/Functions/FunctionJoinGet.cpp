@@ -31,7 +31,8 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(const ColumnsWithTypeAndNa
 template <bool or_null>
 ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(storage_join, DB::Block{{return_type->createColumn(), return_type, attr_name}});
+    Block result_columns {{return_type->createColumn(), return_type, attr_name}};
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(table_lock, storage_join, result_columns);
 }
 
 static std::pair<std::shared_ptr<StorageJoin>, String>
