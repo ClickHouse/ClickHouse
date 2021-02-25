@@ -9,15 +9,15 @@ namespace DB
 
 class Context;
 class HashJoin;
-class HashJoinHolder;
-using HashJoinPtr = std::shared_ptr<HashJoin>;
+class StorageJoin;
+using StorageJoinPtr = std::shared_ptr<StorageJoin>;
 
 template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {
 public:
-    ExecutableFunctionJoinGet(std::shared_ptr<HashJoinHolder> join_, const DB::Block & result_columns_)
-        : join(std::move(join_)), result_columns(result_columns_) {}
+    ExecutableFunctionJoinGet(StorageJoinPtr storage_join_, const DB::Block & result_columns_)
+        : storage_join(std::move(storage_join_)), result_columns(result_columns_) {}
 
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
@@ -30,7 +30,7 @@ public:
     String getName() const override { return name; }
 
 private:
-    std::shared_ptr<HashJoinHolder> join;
+    StorageJoinPtr storage_join;
     DB::Block result_columns;
 };
 
@@ -41,10 +41,10 @@ public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
     FunctionJoinGet(TableLockHolder table_lock_,
-                    std::shared_ptr<HashJoinHolder> join_, String attr_name_,
+                    StorageJoinPtr storage_join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
         : table_lock(std::move(table_lock_))
-        , join(join_)
+        , storage_join(storage_join_)
         , attr_name(std::move(attr_name_))
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
@@ -60,7 +60,7 @@ public:
 
 private:
     TableLockHolder table_lock;
-    std::shared_ptr<HashJoinHolder> join;
+    StorageJoinPtr storage_join;
     const String attr_name;
     DataTypes argument_types;
     DataTypePtr return_type;
