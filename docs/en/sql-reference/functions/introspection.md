@@ -32,7 +32,7 @@ If you use official ClickHouse packages, you need to install the `clickhouse-com
 addressToLine(address_of_binary_instruction)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
@@ -123,7 +123,7 @@ Converts virtual memory address inside ClickHouse server process to the symbol f
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
@@ -220,7 +220,7 @@ Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol)
 demangle(symbol)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol from an object file.
 
@@ -345,7 +345,7 @@ Emits trace log message to server log for each [Block](https://clickhouse.tech/d
 logTrace('message')
 ```
 
-**Parameters**
+**Arguments**
 
 -   `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
 

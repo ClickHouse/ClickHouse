@@ -113,6 +113,8 @@ private:
         const MarkRanges & ranges,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
+        size_t & total_granules,
+        size_t & granules_dropped,
         Poco::Logger * log);
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
