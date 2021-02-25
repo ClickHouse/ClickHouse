@@ -15,8 +15,8 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-/// RAII wrapper arount uv event loop
-class UVLoop: public boost::noncopyable
+/// RAII wrapper around uv event loop
+class UVLoop : public boost::noncopyable
 {
 public:
     UVLoop(): loop_ptr(new uv_loop_t())
