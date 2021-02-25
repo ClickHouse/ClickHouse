@@ -1339,6 +1339,12 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     return {};
 }
 
+void StorageReplicatedMergeTree::attachPart(MutableDataPartPtr& part)
+{
+    Transaction transaction(*this);
+    renameTempPartAndAdd(part, nullptr, &transaction);
+    checkPartChecksumsAndCommit(transaction, part);
+}
 
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 {
@@ -1354,12 +1360,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    /// Try to look in the detached/ folder first, if found, attach the part
     if (entry.type == LogEntry::ATTACH_PART)
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
-            // no need to call checkAlterPartitionIsPossible as we already parsed the part name
-            ReplicatedMergeTreeBlockOutputStream (*this, getInMemoryMetadataPtr() , 0, 0, 0, false, false, false)
-                .writeExistingPart(part);
+            attachPart(part);
 
     const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
@@ -1458,7 +1461,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         if (replica_to_execute_merge)
         {
-            LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+            LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold",
+                entry.new_part_name, replica_to_execute_merge.value());
             return false;
         }
     }
@@ -1739,21 +1743,21 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     static std::atomic_uint total_fetches {0};
-    if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-    {
-        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
+
+    if (storage_settings_ptr->replicated_max_parallel_fetches &&
+        total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
+        throw Exception("Too many total fetches from replicas, maximum: " +
+            storage_settings_ptr->replicated_max_parallel_fetches.toString(),
             ErrorCodes::TOO_MANY_FETCHES);
-    }
 
     ++total_fetches;
     SCOPE_EXIT({--total_fetches;});
 
     if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
         && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-    {
-        throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
+        throw Exception("Too many fetches from replicas for table, maximum: " +
+            storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
             ErrorCodes::TOO_MANY_FETCHES);
-    }
 
     ++current_table_fetches;
     SCOPE_EXIT({--current_table_fetches;});
