@@ -1232,8 +1232,8 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     {
         const auto & left_type_origin = data_types[i];
         const auto & [c2, right_type_origin, right_name] = right_table_keys.safeGetByPosition(i);
-        auto left_type = removeNullable(left_type_origin);
-        auto right_type = removeNullable(right_type_origin);
+        auto left_type = removeNullable(recursiveRemoveLowCardinality(left_type_origin));
+        auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
         if (!left_type->equals(*right_type))
             throw Exception(
                 "Type mismatch in joinGet key " + toString(i) + ": found type " + left_type->getName() + ", while the needed type is "
