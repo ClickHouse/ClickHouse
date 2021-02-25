@@ -601,9 +601,16 @@ NuKeeperWrapperFactory::NuKeeperWrapperFactory()
 }
 
 
-NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id)
+NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid)
 {
     NuKeeperStorage::ResponsesForSessions results;
+    if (new_last_zxid)
+    {
+        if (zxid >= *new_last_zxid)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller than current {}. It's a bug", *new_last_zxid, zxid);
+        zxid = *new_last_zxid;
+    }
+
     if (zk_request->getOpNum() == Coordination::OpNum::Close)
     {
         auto it = ephemerals.find(session_id);
@@ -639,7 +646,6 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     }
     else
     {
-
         NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
 
