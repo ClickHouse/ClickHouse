@@ -1089,13 +1089,13 @@ class ClickHouseInstance:
 
         # if repetitions>1 grep will return success even if not enough lines were collected,
         if repetitions>1 and len(result.splitlines()) < repetitions:
-            print("wait_for_log_line: those lines were founded during {} sec.".format(timeout))
+            print("wait_for_log_line: those lines were found during {} seconds:".format(timeout))
             print(result)
             raise Exception("wait_for_log_line: Not enough repetitions: {} found, while {} expected".format(len(result.splitlines()), repetitions))
 
         wait_duration = time.time() - start_time
 
-        print('Log line matching "{}" appeared in a {} seconds'.format(regexp, wait_duration))
+        print('{} log line matching "{}" appeared in a {} seconds'.format(repetitions, regexp, wait_duration))
         return wait_duration
 
 
