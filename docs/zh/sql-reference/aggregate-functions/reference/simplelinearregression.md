@@ -4,22 +4,24 @@ toc_priority: 220
 
 # simpleLinearRegression {#simplelinearregression}
 
-Performs simple (unidimensional) linear regression.
+执行简单（一维）线性回归。
+
+**语法**
 
 ``` sql
 simpleLinearRegression(x, y)
 ```
 
-Parameters:
+**参数**
 
--   `x` — Column with dependent variable values.
--   `y` — Column with explanatory variable values.
+-   `x` — x轴。
+-   `y` — y轴。
 
-Returned values:
+**返回值**
 
-Constants `(a, b)` of the resulting line `y = a*x + b`.
+符合`y = a*x + b`的常量 `(a, b)` 。
 
-**Examples**
+**示例**
 
 ``` sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])

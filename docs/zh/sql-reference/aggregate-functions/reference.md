@@ -653,45 +653,6 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 └───────────────────────────────────────────┘
 ```
 
-## simpleLinearRegression {#simplelinearregression}
-
-执行简单（一维）线性回归。
-
-``` sql
-simpleLinearRegression(x, y)
-```
-
-参数:
-
--   `x` — x轴。
--   `y` — y轴。
-
-返回值:
-
-符合`y = a*x + b`的常量 `(a, b)` 。
-
-**例**
-
-``` sql
-SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
-```
-
-``` text
-┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
-│ (1,0)                                                             │
-└───────────────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
-```
-
-``` text
-┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
-│ (1,3)                                                             │
-└───────────────────────────────────────────────────────────────────┘
-```
-
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 该函数实现随机线性回归。 它支持自定义参数的学习率、L2正则化系数、微批，并且具有少量更新权重的方法（[Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认）， [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent)， [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum)， [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)）。
