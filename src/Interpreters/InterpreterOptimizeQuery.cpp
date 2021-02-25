@@ -1,7 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
