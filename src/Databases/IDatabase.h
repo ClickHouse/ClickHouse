@@ -249,7 +249,7 @@ public:
 
     /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
     /// with next restart. The database may not support this method.
-    virtual void detachTablePermanently(const String & /*name*/)
+    virtual void detachTablePermanently(const Context & /*context*/, const String & /*name*/)
     {
         throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
