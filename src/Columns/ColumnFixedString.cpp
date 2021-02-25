@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
-
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
+
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -446,18 +447,31 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-void ColumnFixedString::alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size)
+ColumnPtr ColumnFixedString::compress() const
 {
-    size_t length = data.size() - old_size;
-    if (length < n)
-    {
-        data.resize_fill(old_size + n);
-    }
-    else if (length > n)
-    {
-        data.resize_assume_reserved(old_size);
-        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
-    }
+    size_t source_size = chars.size();
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
+
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    size_t column_size = size();
+
+    return ColumnCompressed::create(column_size, compressed->size(),
+        [compressed = std::move(compressed), column_size, n = n]
+        {
+            size_t chars_size = n * column_size;
+            auto res = ColumnFixedString::create(n);
+            res->getChars().resize(chars_size);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+            return res;
+        });
 }
 
 }

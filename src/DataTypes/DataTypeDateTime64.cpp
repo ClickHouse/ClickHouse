@@ -28,7 +28,7 @@ namespace ErrorCodes
 static constexpr UInt32 max_scale = 9;
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
       TimezoneMixin(time_zone_name)
 {
     if (scale > max_scale)
@@ -37,7 +37,7 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
       TimezoneMixin(time_zone_info)
 {
     if (scale > max_scale)
