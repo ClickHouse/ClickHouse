@@ -9,7 +9,7 @@ toc_title: Кеши
 
 Основные типы кеша:
 
-- `mark_cache` — кеш меток, используемых движками таблиц семейства [MergeTree](../engines/table-engines/mergetree-family/mergetree.md).
+- `mark_cache` — кеш засечек, используемых движками таблиц семейства [MergeTree](../engines/table-engines/mergetree-family/mergetree.md).
 - `uncompressed_cache` — кеш несжатых данных, используемых движками таблиц семейства [MergeTree](../engines/table-engines/mergetree-family/mergetree.md).
 
 Дополнительные типы кеша:
