@@ -2811,12 +2811,7 @@ namespace
                     const auto & array_data_type = assert_cast<const DataTypeArray &>(*data_type);
 
                     if (!allow_repeat)
-                    {
-                        throw Exception(
-                            "The field " + quoteString(field_descriptor.full_name())
-                                + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
-                            ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
-                    }
+                        throwFieldNotRepeated(field_descriptor, column_name);
 
                     auto nested_serializer = buildFieldSerializer(column_name, array_data_type.getNestedType(), field_descriptor,
                                                                   /* allow_repeat = */ false); // We do our repeating now, so for nested type we forget about the repeating.
@@ -2861,12 +2856,7 @@ namespace
 
                     /// Serialize as a repeated field.
                     if (!allow_repeat && (size_of_tuple > 1))
-                    {
-                        throw Exception(
-                            "The field " + quoteString(field_descriptor.full_name())
-                                + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
-                            ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
-                    }
+                        throwFieldNotRepeated(field_descriptor, column_name);
 
                     std::vector<std::unique_ptr<ProtobufSerializer>> nested_serializers;
                     for (const auto & nested_data_type : tuple_data_type.getElements())
@@ -2890,6 +2880,21 @@ namespace
                 default:
                     throw Exception("Unknown data type: " + data_type->getName(), ErrorCodes::LOGICAL_ERROR);
             }
+        }
+
+        [[noreturn]] static void throwFieldNotRepeated(const FieldDescriptor & field_descriptor, const std::string_view & column_name)
+        {
+            if (!field_descriptor.is_repeated())
+                throw Exception(
+                    "The field " + quoteString(field_descriptor.full_name())
+                        + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
+                    ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
+
+            throw Exception(
+                "The field " + quoteString(field_descriptor.full_name())
+                    + " is repeated but the level of repeatedness is not enough to serialize a multidimensional array from the column "
+                    + backQuote(StringRef{column_name}) + ". It's recommended to make the parent field repeated as well.",
+                ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
         }
 
         const ProtobufReaderOrWriter reader_or_writer;

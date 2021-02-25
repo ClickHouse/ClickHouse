@@ -46,7 +46,7 @@ NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, co
     , storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , last_committed_idx(0)
-    , log(&Poco::Logger::get("NuRaftStateMachine"))
+    , log(&Poco::Logger::get("NuKeeperStateMachine"))
 {
     LOG_DEBUG(log, "Created nukeeper state machine");
 }
