@@ -410,9 +410,6 @@ private:
     /// returns nullptr if the part is corrupt or missing.
     MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry) const;
 
-    /// Attach the part found in the detached/ folder
-    void attachPart(MutableDataPartPtr& part);
-
     void executeDropRange(const LogEntry & entry);
 
     /// Do the merge or recommend to make the fetch instead of the merge

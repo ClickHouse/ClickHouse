@@ -1339,13 +1339,6 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     return {};
 }
 
-void StorageReplicatedMergeTree::attachPart(MutableDataPartPtr& part)
-{
-    Transaction transaction(*this);
-    renameTempPartAndAdd(part, nullptr, &transaction);
-    checkPartChecksumsAndCommit(transaction, part);
-}
-
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 {
     if (entry.type == LogEntry::DROP_RANGE)
@@ -1361,8 +1354,17 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
 
     if (entry.type == LogEntry::ATTACH_PART)
+    {
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
-            attachPart(part);
+        {
+            Transaction transaction(*this);
+
+            if (renameTempPartAndAdd(part, nullptr, &transaction))
+                checkPartChecksumsAndCommit(transaction, part);
+
+            return true;
+        }
+    }
 
     const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
