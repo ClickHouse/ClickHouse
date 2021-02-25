@@ -243,20 +243,6 @@ public:
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
 
-    static Block getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
-    {
-        auto header = metadata_snapshot->getSampleBlock();
-
-        /// Note: AddingDefaultsBlockInputStream doesn't change header.
-
-        if (need_path_column)
-            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
-        if (need_file_column)
-            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
-
-        return header;
-    }
-
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -264,7 +250,7 @@ public:
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_)
-        : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
+        : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_description_.getNamesOfPhysical(), storage_->getVirtuals(), storage_->getStorageID()))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))

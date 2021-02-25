@@ -106,6 +106,39 @@ const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
     return columns;
 }
 
+const ColumnsDescription StorageInMemoryMetadata::getColumnsForNames(
+        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
+{
+    ColumnsDescription res;
+    std::unordered_map<String, DataTypePtr> columns_map;
+
+    NamesAndTypesList all_columns = getColumns().getAll();
+    for (const auto & elem : all_columns)
+        columns_map.emplace(elem.name, elem.type);
+
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : virtuals)
+        columns_map.emplace(column.name, column.type);
+
+    for (const auto & name : column_names)
+    {
+        auto it = columns_map.find(name);
+        if (it != columns_map.end())
+        {
+            res.add(ColumnDescription(it->first, it->second));
+        }
+        else
+        {
+            throw Exception(
+                    "Column " + backQuote(name) + " not found in table " + storage_id.getNameForLogs(),
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        }
+    }
+
+    return res;
+}
+
 const IndicesDescription & StorageInMemoryMetadata::getSecondaryIndices() const
 {
     return secondary_indices;
@@ -319,6 +352,29 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 
     return res;
 }
+
+Block StorageInMemoryMetadata::getSampleBlockForColumns(
+        const Names & column_names) const
+{
+    Block res;
+
+    std::unordered_map<String, DataTypePtr> columns_map;
+
+    NamesAndTypesList all_columns = getColumns().getAll();
+    for (const auto & elem : all_columns)
+        columns_map.emplace(elem.name, elem.type);
+
+    for (const auto & name : column_names)
+    {
+        auto it = columns_map.find(name);
+        if (it != columns_map.end())
+        {
+            res.insert({it->second->createColumn(), it->second, it->first});
+        }
+    }
+    return res;
+}
+
 
 const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
 {
