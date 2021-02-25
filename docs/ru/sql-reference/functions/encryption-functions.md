@@ -41,7 +41,7 @@ encrypt('mode', 'plaintext', 'key' [, iv, aad])
 
 **Возвращаемое значение**
 
--   Двоичная зашифрованная строка. [String](../../sql-reference/data-types/string.md#string).
+-   Бинарная зашифрованная строка. [String](../../sql-reference/data-types/string.md#string).
 
 **Примеры**
 
