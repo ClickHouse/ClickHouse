@@ -284,6 +284,10 @@
          In bytes. Cache is single for server. Memory is allocated only on demand.
          Cache is used when 'use_uncompressed_cache' user setting turned on (off by default).
          Uncompressed cache is advantageous only for very short queries and in rare cases.
+
+         Note: uncompressed cache can be pointless for lz4, because memory bandwidth
+         is slower than multi-core decompression on some server configurations.
+         Enabling it can sometimes paradoxically make queries slower.
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
