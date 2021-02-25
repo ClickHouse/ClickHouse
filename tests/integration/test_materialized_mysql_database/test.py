@@ -117,6 +117,7 @@ def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_
     # materialize_with_ddl.alter_rename_column_with_materialized_mysql_database(clickhouse_node, started_mysql_5_7, "mysql57")
     materialize_with_ddl.alter_rename_table_with_materialized_mysql_database(clickhouse_node, started_mysql_5_7, "mysql57")
     materialize_with_ddl.alter_modify_column_with_materialized_mysql_database(clickhouse_node, started_mysql_5_7, "mysql57")
+    materialize_with_ddl.create_table_like_with_materialized_mysql_database(clickhouse_node, started_mysql_5_7, "mysql57")
 
 @pytest.mark.parametrize(('clickhouse_node'), [pytest.param(node_db_ordinary, id="ordinary"), pytest.param(node_db_atomic, id="atomic")])
 def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
@@ -128,6 +129,7 @@ def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_
     materialize_with_ddl.alter_rename_table_with_materialized_mysql_database(clickhouse_node, started_mysql_8_0, "mysql80")
     materialize_with_ddl.alter_rename_column_with_materialized_mysql_database(clickhouse_node, started_mysql_8_0, "mysql80")
     materialize_with_ddl.alter_modify_column_with_materialized_mysql_database(clickhouse_node, started_mysql_8_0, "mysql80")
+    materialize_with_ddl.create_table_like_with_materialized_mysql_database(clickhouse_node, started_mysql_8_0, "mysql80")
 
 @pytest.mark.parametrize(('clickhouse_node'), [pytest.param(node_db_ordinary, id="ordinary"), pytest.param(node_db_atomic, id="atomic")])
 def test_materialize_database_ddl_with_empty_transaction_5_7(started_cluster, started_mysql_5_7, clickhouse_node):

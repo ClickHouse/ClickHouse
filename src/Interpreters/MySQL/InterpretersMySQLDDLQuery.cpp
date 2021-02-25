@@ -421,22 +421,41 @@ static ASTPtr getOrderByPolicy(
 
 void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & create_query, ContextPtr)
 {
-    /// This is dangerous, because the like table may not exists in ClickHouse
-    if (create_query.like_table)
-        throw Exception("Cannot convert create like statement to ClickHouse SQL", ErrorCodes::NOT_IMPLEMENTED);
-
-    const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
-
-    if (!create_defines || !create_defines->columns || create_defines->columns->children.empty())
-        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (!create_query.like_table)
+    {
+        bool missing_columns_definition = true;
+        if (create_query.columns_list)
+        {
+            const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
+            if (create_defines && create_defines->columns && !create_defines->columns->children.empty())
+                missing_columns_definition = false;
+        }
+        if (missing_columns_definition)
+        {
+            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+        }
+    }
 }
 
 ASTs InterpreterCreateImpl::getRewrittenQueries(
     const TQuery & create_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
-    auto rewritten_query = std::make_shared<ASTCreateQuery>();
     if (resolveDatabase(create_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
         return {};
+
+    if (create_query.like_table)
+    {
+        auto table_id = create_query.like_table->as<const ASTIdentifier &>().createTable();
+        String db_name = table_id->getDatabaseName().empty() ? mapped_to_database : table_id->getDatabaseName();
+        ASTPtr ast_create_query = DatabaseCatalog::instance().getDatabase(db_name)->getCreateTableQuery(table_id->shortName(), context);
+        auto ast_create_query2 = ast_create_query->as<ASTCreateQuery>();
+        ast_create_query2->database = mapped_to_database;
+        ast_create_query2->table = create_query.table;
+        ast_create_query2->if_not_exists = create_query.if_not_exists;
+        return ASTs{ast_create_query};
+    }
+
+    auto rewritten_query = std::make_shared<ASTCreateQuery>();
 
     const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
 

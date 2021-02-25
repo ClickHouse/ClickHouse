@@ -253,6 +253,26 @@ def create_table_with_materialized_mysql_database(clickhouse_node, mysql_node, s
     mysql_node.query("DROP DATABASE test_database_create")
 
 
+def create_table_like_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+
+    # create mapping
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializedMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+            service_name))
+
+    mysql_node.query("CREATE TABLE test_database.test_table_2 like test_database.test_table_1;")
+
+    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
+
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
+
+
 def rename_table_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS test_database_rename")
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database_rename")
