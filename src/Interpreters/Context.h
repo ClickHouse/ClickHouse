@@ -117,6 +117,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
+class ZooKeeperMetadataTransaction;
+using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -278,6 +280,12 @@ private:
                                    /// logger, some query identification information, profiling guards, etc. This field is
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
+
+    ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
+                                                    /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
+                                                    /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
+                                                    /// thousands of signatures.
+                                                    /// And I hope it will be replaced with more common Transaction sometime.
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -534,6 +542,7 @@ public:
     const Context & getQueryContext() const;
     Context & getQueryContext();
     bool hasQueryContext() const { return query_context != nullptr; }
+    bool isInternalSubquery() const { return hasQueryContext() && query_context != this; }
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
@@ -736,6 +745,11 @@ public:
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
+
+    /// Initialize context of distributed DDL query with Replicated database.
+    void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
+    /// Returns context of current distributed DDL query or nullptr.
+    ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
     struct MySQLWireContext
     {

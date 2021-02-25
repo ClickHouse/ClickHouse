@@ -69,16 +69,11 @@ namespace ZeroTraits
 {
 
 template <typename T>
-inline bool check(const T x) { return x == 0; }
+bool check(const T x) { return x == 0; }
 
 template <typename T>
-inline void set(T & x) { x = 0; }
+void set(T & x) { x = 0; }
 
-template <>
-inline bool check(const char * x) { return x == nullptr; }
-
-template <>
-inline void set(const char *& x){ x = nullptr; }
 }
 
 

@@ -271,9 +271,13 @@ static T inline packFixedShuffle(
     size_t idx,
     const uint8_t * __restrict masks)
 {
-    __m128i res{};
+    assert(num_srcs > 0);
 
-    for (size_t i = 0; i < num_srcs; ++i)
+    __m128i res = _mm_shuffle_epi8(
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(srcs[0] + elem_sizes[0] * idx)),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(masks)));
+
+    for (size_t i = 1; i < num_srcs; ++i)
     {
         res = _mm_xor_si128(res,
             _mm_shuffle_epi8(
