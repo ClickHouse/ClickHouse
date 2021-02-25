@@ -377,6 +377,7 @@ private:
     Block totals;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
+    /// If set HashJoin instance is not available for modification (addJoinedBlock)
     std::shared_lock<std::shared_mutex> storage_join_lock;
 
     void init(Type type_);

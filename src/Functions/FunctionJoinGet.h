@@ -16,8 +16,13 @@ template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {
 public:
-    ExecutableFunctionJoinGet(StorageJoinPtr storage_join_, const DB::Block & result_columns_)
-        : storage_join(std::move(storage_join_)), result_columns(result_columns_) {}
+    ExecutableFunctionJoinGet(TableLockHolder table_lock_,
+                              StorageJoinPtr storage_join_,
+                              const DB::Block & result_columns_)
+        : table_lock(std::move(table_lock_))
+        , storage_join(std::move(storage_join_))
+        , result_columns(result_columns_)
+    {}
 
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
@@ -30,6 +35,7 @@ public:
     String getName() const override { return name; }
 
 private:
+    TableLockHolder table_lock;
     StorageJoinPtr storage_join;
     DB::Block result_columns;
 };

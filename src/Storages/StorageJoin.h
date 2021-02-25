@@ -33,7 +33,12 @@ public:
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
     HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const;
 
+    /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
+
+    /// Execute function "joinGet(OrNull)" on data block.
+    /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block
+    /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
     Pipe read(
