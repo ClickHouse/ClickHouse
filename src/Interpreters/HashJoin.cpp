@@ -1252,6 +1252,8 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         keys.insert(std::move(key));
     }
 
+    static_assert(!MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>::flagged,
+                  "joinGet are not protected from hash table changes between block processing");
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
         keys, key_names_right, block_with_columns_to_add, std::get<MapsOne>(data->maps));
     return keys.getByPosition(keys.columns() - 1);
