@@ -667,14 +667,14 @@ public:
 
     HashTable()
     {
-        if (Cell::need_zero_value_storage)
+        if constexpr (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();
         alloc(grower);
     }
 
     HashTable(size_t reserve_for_num_elements)
     {
-        if (Cell::need_zero_value_storage)
+        if constexpr (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();
         grower.set(reserve_for_num_elements);
         alloc(grower);
