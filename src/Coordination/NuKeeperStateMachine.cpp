@@ -75,7 +75,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
         NuKeeperStorage::ResponsesForSessions responses_for_sessions;
         {
             std::lock_guard lock(storage_lock);
-            responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
+            responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id, log_idx);
             for (auto & response_for_session : responses_for_sessions)
                 responses_queue.push(response_for_session);
         }
@@ -241,7 +241,7 @@ void NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForS
     NuKeeperStorage::ResponsesForSessions responses;
     {
         std::lock_guard lock(storage_lock);
-        responses = storage.processRequest(request_for_session.request, request_for_session.session_id);
+        responses = storage.processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
     }
     for (const auto & response : responses)
         responses_queue.push(response);

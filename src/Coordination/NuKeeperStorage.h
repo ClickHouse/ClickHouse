@@ -72,9 +72,9 @@ public:
 
     void clearDeadWatches(int64_t session_id);
 
-    int64_t getZXID()
+    int64_t getZXID() const
     {
-        return zxid++;
+        return zxid;
     }
 
 public:
@@ -88,7 +88,7 @@ public:
         return result;
     }
 
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid);
 
     void finalize();
 
