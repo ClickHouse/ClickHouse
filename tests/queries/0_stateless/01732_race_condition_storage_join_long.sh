@@ -32,14 +32,25 @@ function read_thread_small()
     done
 }
 
+function read_thread_select()
+{
+    while true; do
+        echo "
+            SELECT * FROM storage_join_race FORMAT Null;
+        " | $CLICKHOUSE_CLIENT -n
+    done
+}
+
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
 export -f read_thread_big;
 export -f read_thread_small;
+export -f read_thread_select;
 
 TIMEOUT=20
 
 timeout $TIMEOUT bash -c read_thread_big 2> /dev/null &
 timeout $TIMEOUT bash -c read_thread_small 2> /dev/null &
+timeout $TIMEOUT bash -c read_thread_select 2> /dev/null &
 
 echo "
     INSERT INTO storage_join_race SELECT number AS x, number AS y FROM numbers (10000000);

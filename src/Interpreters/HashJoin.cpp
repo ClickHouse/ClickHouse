@@ -1203,7 +1203,6 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     block = block.cloneWithColumns(std::move(dst_columns));
 }
 
-
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
 {
     size_t num_keys = data_types.size();
@@ -1235,10 +1234,15 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     return elem.type;
 }
 
-
-template <typename Maps>
-ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
+/// TODO: return multiple columns as named tuple
+/// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
+ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
+    bool is_valid = (strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny)
+        && kind == ASTTableJoin::Kind::Left;
+    if (!is_valid)
+        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+
     /// Assemble the key block with correct names.
     Block keys;
     for (size_t i = 0; i < block.columns(); ++i)
@@ -1249,24 +1253,9 @@ ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & b
     }
 
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
-        keys, key_names_right, block_with_columns_to_add, maps_);
+        keys, key_names_right, block_with_columns_to_add, std::get<MapsOne>(data->maps));
     return keys.getByPosition(keys.columns() - 1);
 }
-
-
-/// TODO: return multiple columns as named tuple
-/// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
-ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
-{
-    if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
-        kind == ASTTableJoin::Kind::Left)
-    {
-        return joinGetImpl(block, block_with_columns_to_add, std::get<MapsOne>(data->maps));
-    }
-    else
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
-}
-
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
