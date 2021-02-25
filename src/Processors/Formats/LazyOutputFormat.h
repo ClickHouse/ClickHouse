@@ -38,7 +38,6 @@ public:
 
     void finalize() override
     {
-        std::cerr << StackTrace().toString() << std::endl;
         finished_processing = true;
 
         /// In case we are waiting for result.
