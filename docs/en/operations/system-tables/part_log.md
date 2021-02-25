@@ -16,6 +16,8 @@ The `system.part_log` table contains the following columns:
     -   `MOVE_PART` — Moving the data part from the one disk to another one.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds precision.
+
 -   `duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration.
 -   `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database the data part is in.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table the data part is in.
@@ -47,6 +49,7 @@ query_id:                      983ad9c7-28d5-4ae1-844e-603116b7de31
 event_type:                    NewPart
 event_date:                    2021-02-02
 event_time:                    2021-02-02 11:14:28
+event_time_microseconds:                    2021-02-02 11:14:28.861919
 duration_ms:                   35
 database:                      default
 table:                         log_mt_2

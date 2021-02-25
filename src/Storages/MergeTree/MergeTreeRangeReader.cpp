@@ -867,7 +867,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (result.totalRowsPerGranule() == 0)
         result.setFilterConstFalse();
     /// If we need to filter in PREWHERE
-    else if (prewhere->need_filter || result.need_filter)
+    else if (prewhere->need_filter || result.need_filter || prewhere->remove_prewhere_column)
     {
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)

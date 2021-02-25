@@ -47,7 +47,8 @@ private:
         const std::string & default_name,
         const std::unordered_set<std::string> & column_names_set,
         const PaddedPODArray<T> & values,
-        ColumnsWithTypeAndName & columns) const;
+        ColumnsWithTypeAndName & columns,
+        bool force = false) const;
 
     Block fillBlock(
         const PaddedPODArray<Key> & ids_to_fill,
@@ -121,13 +122,14 @@ void RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::addSpecial
     const std::string & default_name,
     const std::unordered_set<std::string> & column_names_set,
     const PaddedPODArray<T> & values,
-    ColumnsWithTypeAndName & columns) const
+    ColumnsWithTypeAndName & columns,
+    bool force) const
 {
     std::string name = default_name;
     if (attribute)
         name = attribute->name;
 
-    if (column_names_set.find(name) != column_names_set.end())
+    if (force || column_names_set.find(name) != column_names_set.end())
         columns.emplace_back(getColumnFromPODArray(values), type, name);
 }
 
@@ -159,7 +161,7 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::fillBlock
 
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
-    addSpecialColumn(structure.id, std::make_shared<DataTypeUInt64>(), "ID", names, ids_to_fill, columns);
+    addSpecialColumn(structure.id, std::make_shared<DataTypeUInt64>(), "ID", names, ids_to_fill, columns, true);
     auto ids_column = columns.back().column;
     addSpecialColumn(structure.range_min, structure.range_max->type, "Range Start", names, block_start_dates, columns);
     addSpecialColumn(structure.range_max, structure.range_max->type, "Range End", names, block_end_dates, columns);

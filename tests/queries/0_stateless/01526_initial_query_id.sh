@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -ue
 
-CLICKHOUSE_LOG_COMMENT=''
+unset CLICKHOUSE_LOG_COMMENT
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

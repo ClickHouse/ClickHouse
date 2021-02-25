@@ -69,16 +69,11 @@ namespace ZeroTraits
 {
 
 template <typename T>
-inline bool check(const T x) { return x == 0; }
+bool check(const T x) { return x == 0; }
 
 template <typename T>
-inline void set(T & x) { x = 0; }
+void set(T & x) { x = 0; }
 
-template <>
-inline bool check(const char * x) { return x == nullptr; }
-
-template <>
-inline void set(const char *& x){ x = nullptr; }
 }
 
 
@@ -539,7 +534,8 @@ protected:
           *    after transferring all the elements from the old halves you need to     [         o   x    ]
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
-        for (; !buf[i].isZero(*this); ++i)
+        size_t new_size = grower.bufSize();
+        for (; i < new_size && !buf[i].isZero(*this); ++i)
         {
             size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
 
@@ -1292,6 +1288,17 @@ public:
     size_t getBufferSizeInCells() const
     {
         return grower.bufSize();
+    }
+
+    /// Return offset for result in internal buffer.
+    /// Result can have value up to `getBufferSizeInCells() + 1`
+    /// because offset for zero value considered to be 0
+    /// and for other values it will be `offset in buffer + 1`
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
     }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
