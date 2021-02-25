@@ -429,7 +429,7 @@ bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) cons
 static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
 {
     NamesAndTypesList ret;
-    for (const auto & col : source_list)
+    for (const auto & col : Nested::collect(source_list))
     {
         ret.emplace_back(col.name, col.type);
         for (const auto & subcolumn : col.type->getSubcolumnNames())

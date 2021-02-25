@@ -489,7 +489,7 @@ Pipe StorageTinyLog::read(
     /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe(std::make_shared<TinyLogSource>(
         max_block_size,
-        Nested::convertToSubcolumns(all_columns),
+        all_columns,
         *this,
         settings.max_read_buffer_size,
         file_checker.getFileSizes()));

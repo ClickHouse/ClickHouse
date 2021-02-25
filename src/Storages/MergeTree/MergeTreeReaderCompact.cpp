@@ -213,7 +213,9 @@ void MergeTreeReaderCompact::readData(
     deserialize_settings.getter = buffer_getter;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
 
-    if (name_and_type.isSubcolumn())
+    /// Parts of nested may be written as separate arrays (with enabled settings 'flatten_nested').
+    const auto & storage_columns = storage.getInMemoryMetadataPtr()->getColumns();
+    if (name_and_type.isSubcolumn() && !storage_columns.hasPhysical(name_and_type.name))
     {
         auto type_in_storage = name_and_type.getTypeInStorage();
         ColumnPtr temp_column = type_in_storage->createColumn();
