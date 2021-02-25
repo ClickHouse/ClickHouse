@@ -53,9 +53,9 @@ struct CustomizeASTSelectWithUnionQueryNormalize
         auto & select_list = ast.list_of_selects->children;
 
         int i;
+        /// Rewrite UNION Mode
         for (i = union_modes.size() - 1; i >= 0; --i)
         {
-            /// Rewrite UNION Mode
             if (union_modes[i] == ASTSelectWithUnionQuery::Mode::Unspecified)
             {
                 if (union_default_mode == UnionMode::ALL)
@@ -67,7 +67,10 @@ struct CustomizeASTSelectWithUnionQueryNormalize
                         "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
                         DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
             }
+        }
 
+        for (i = union_modes.size() - 1; i >= 0; --i)
+        {
             if (union_modes[i] == ASTSelectWithUnionQuery::Mode::ALL)
             {
                 if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>())
