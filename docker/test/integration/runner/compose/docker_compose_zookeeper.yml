@@ -7,7 +7,6 @@ services:
             ZOO_TICK_TIME: 500
             ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
             ZOO_MY_ID: 1
-            JVMFLAGS: -Dzookeeper.forceSync=no
         volumes:
             - type: ${ZK_FS:-tmpfs}
               source: ${ZK_DATA1:-}
@@ -22,7 +21,6 @@ services:
             ZOO_TICK_TIME: 500
             ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
             ZOO_MY_ID: 2
-            JVMFLAGS: -Dzookeeper.forceSync=no
         volumes:
             - type: ${ZK_FS:-tmpfs}
               source: ${ZK_DATA2:-}
@@ -37,7 +35,6 @@ services:
             ZOO_TICK_TIME: 500
             ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
             ZOO_MY_ID: 3
-            JVMFLAGS: -Dzookeeper.forceSync=no
         volumes:
             - type: ${ZK_FS:-tmpfs}
               source: ${ZK_DATA3:-}
