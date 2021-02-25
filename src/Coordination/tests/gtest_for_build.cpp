@@ -952,13 +952,14 @@ TEST(CoordinationTest, ChangelogTestLostFiles)
 
 TEST(CoordinationTest, SnapshotableHashMapSimple)
 {
-    DB::SnapshotableHashMap<int> hello;
-    hello.emplace("hello", 5);
+    DB::SnapshotableHashTable<int> hello;
+    EXPECT_TRUE(hello.insert("hello", 5));
+    EXPECT_TRUE(hello.contains("hello"));
     EXPECT_EQ(hello.get("hello"), 5);
-    hello.get("hello") = 145;
+    EXPECT_FALSE(hello.insert("hello", 145));
     EXPECT_EQ(hello.get("hello"), 145);
-    hello["world"] = 17256;
-    EXPECT_EQ(hello.get("world"), 17256);
+    hello.update("hello", [](int & value) { value = 7; });
+    EXPECT_EQ(hello.get("hello"), 7);
 }
 
 
