@@ -419,7 +419,7 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_impl(self, repo_path, build_path):
         if self.flaky_check:
-            return self.flaky_check(repo_path, build_path)
+            return self.run_flaky_check(repo_path, build_path)
 
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
@@ -443,7 +443,7 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
 
-        for group, tests in items_to_run[:10]:  #FIXME
+        for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
             group_counters, group_test_times, log_name, log_path = self.run_test_group(repo_path, group, tests, MAX_RETRY)
             total_tests = 0
