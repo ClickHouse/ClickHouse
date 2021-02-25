@@ -111,6 +111,7 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "01720_type_map_and_casts",
         "01413_alter_update_supertype",
         "01149_zookeeper_mutation_stuck_after_replace_partition",
         "00836_indices_alter_replicated_zookeeper",
