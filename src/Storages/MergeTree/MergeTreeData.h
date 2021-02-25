@@ -520,7 +520,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
     /// Checks if the Mutation can be performed.
-    /// (currenly no additional checks: always ok)
+    /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
