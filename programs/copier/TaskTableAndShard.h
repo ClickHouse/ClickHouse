@@ -83,7 +83,7 @@ struct TaskTable
     String engine_push_zk_path;
     bool is_replicated_table;
 
-    ASTPtr rewriteReplicatedCreateQueryToPlain();
+    ASTPtr rewriteReplicatedCreateQueryToPlain() const;
 
     /*
      * A Distributed table definition used to split data
@@ -343,7 +343,7 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
     std::uniform_int_distribution<UInt8> get_urand(0, std::numeric_limits<UInt8>::max());
 
     // Compute the priority
-    for (auto & shard_info : cluster_pull->getShardsInfo())
+    for (const auto & shard_info : cluster_pull->getShardsInfo())
     {
         TaskShardPtr task_shard = std::make_shared<TaskShard>(*this, shard_info);
         const auto & replicas = cluster_pull->getShardsAddresses().at(task_shard->indexInCluster());
@@ -369,7 +369,7 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
     local_shards.assign(all_shards.begin(), it_first_remote);
 }
 
-inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
+inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain() const
 {
     ASTPtr prev_engine_push_ast = engine_push_ast->clone();
 
@@ -400,7 +400,7 @@ inline String DB::TaskShard::getDescription() const
 
 inline String DB::TaskShard::getHostNameExample() const
 {
-    auto & replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
+    const auto & replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
     return replicas.at(0).readableString();
 }
 

@@ -78,6 +78,7 @@ def get_odbc_bridge_path():
 def get_docker_compose_path():
     compose_path = os.environ.get('DOCKER_COMPOSE_DIR')
     if compose_path is not None:
+        print('Using DOCKER_COMPOSE_DIR={}'.format(os.path.dirname(compose_path)))
         return os.path.dirname(compose_path)
     else:
         if os.path.exists(os.path.dirname('/compose/')):

@@ -145,9 +145,16 @@ protected:
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast);
 
+    void dropPartitionInDestinationTable(const TaskTable &, const String &) const;
+
     void dropLocalTableIfExists(const DatabaseAndTableName & table_name) const;
 
     void dropHelpingTables(const TaskTable & task_table);
+
+    template <typename QueryBuilder>
+    void executeQueryForAllSplits(const TaskTable &, QueryBuilder &&) const;
+
+
 
     /// Is used for usage less disk space.
     /// After all pieces were successfully moved to original destination

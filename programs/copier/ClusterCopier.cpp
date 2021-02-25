@@ -411,7 +411,7 @@ bool ClusterCopier::checkPartitionPieceIsClean(
     if (zookeeper->exists(task_status_path, &stat))
         task_start_clock = LogicalClock(stat.mzxid);
 
-    return clean_state_clock.is_clean() && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock);
+    return clean_state_clock.isClean() && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock);
 }
 
 
@@ -830,7 +830,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         LOG_INFO(log, "DROP PARTITION was successfully executed on {} nodes of a cluster.", num_shards);
 
         /// Update the locking node
-        if (!my_clock.is_stale())
+        if (!my_clock.isStale())
         {
             zookeeper->set(is_dirty_flag_path, host_id, my_clock.discovery_version.value());
             if (my_clock.clean_state_version)
@@ -1142,6 +1142,8 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
     auto split_table_for_current_piece = task_shard.list_of_split_tables_on_shard[current_piece_number];
 
+    (void) is_unprioritized_task;
+
     auto zookeeper = context.getZooKeeper();
 
     const String piece_is_dirty_flag_path          = partition_piece.getPartitionPieceIsDirtyPath();
@@ -1154,18 +1156,14 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     /// Creates is_dirty node to initialize DROP PARTITION
     auto create_is_dirty_node = [&] (const CleanStateClock & clock)
     {
-        if (clock.is_stale())
-            LOG_DEBUG(log, "Clean state clock is stale while setting dirty flag, cowardly bailing");
-        else if (!clock.is_clean())
-            LOG_DEBUG(log, "Thank you, Captain Obvious");
-        else if (clock.discovery_version)
+        if (!clock.isStale() && clock.isClean() && clock.discovery_version)
         {
-            LOG_DEBUG(log, "Updating clean state clock");
+            LOG_TRACE(log, "Updating clean state clock");
             zookeeper->set(piece_is_dirty_flag_path, host_id, clock.discovery_version.value());
         }
         else
         {
-            LOG_DEBUG(log, "Creating clean state clock");
+            LOG_TRACE(log, "Creating clean state clock");
             zookeeper->create(piece_is_dirty_flag_path, host_id, zkutil::CreateMode::Persistent);
         }
     };
@@ -1198,7 +1196,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     };
 
     /// Load balancing
-    auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_piece_status_path, is_unprioritized_task);
+    /// auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_piece_status_path, is_unprioritized_task);
 
     LOG_DEBUG(log, "Processing {}", current_task_piece_status_path);
 
@@ -1221,6 +1219,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         try
         {
             tryDropPartitionPiece(task_partition, current_piece_number, zookeeper, clean_state_clock);
+            dropPartitionInDestinationTable(task_partition.task_shard.task_table, task_partition.name);
         }
         catch (...)
         {
@@ -1278,7 +1277,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
         auto res = zookeeper->tryCreate(current_task_piece_status_path, state_finished, zkutil::CreateMode::Persistent);
         if (res == Coordination::Error::ZNODEEXISTS)
-            LOG_DEBUG(log, "Partition {} piece {} is absent on current replica of a shard. But other replicas have already marked it as done.", task_partition.name, current_piece_number);
+            LOG_TRACE(log, "Partition {} piece {} is absent on current replica of a shard. But other replicas have already marked it as done.", task_partition.name, current_piece_number);
         if (res == Coordination::Error::ZOK)
             LOG_DEBUG(log, "Partition {} piece {} is absent on current replica of a shard. Will mark it as done. Other replicas will do the same.", task_partition.name, current_piece_number);
         return TaskStatus::Finished;
@@ -1335,7 +1334,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             LOG_INFO(log, "Partition {} piece {} clean state changed, cowardly bailing", task_partition.name, toString(current_piece_number));
             return TaskStatus::Error;
         }
-        else if (!new_clean_state_clock.is_clean())
+        else if (!new_clean_state_clock.isClean())
         {
             LOG_INFO(log, "Partition {} piece {} is dirty and will be dropped and refilled", task_partition.name, toString(current_piece_number));
             create_is_dirty_node(new_clean_state_clock);
@@ -1368,6 +1367,9 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
         LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}",
             getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+
+        /// In case if the table was already created we can clean the current partition in it.
+        dropPartitionInDestinationTable(task_partition.task_shard.task_table, task_partition.name);
     }
 
     /// Do the copying
@@ -1506,7 +1508,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             LOG_INFO(log, "Partition {} piece {} clean state changed, cowardly bailing", task_partition.name, toString(current_piece_number));
             return TaskStatus::Error;
         }
-        else if (!new_clean_state_clock.is_clean())
+        else if (!new_clean_state_clock.isClean())
         {
             LOG_INFO(log, "Partition {} piece {} became dirty and will be dropped and refilled", task_partition.name, toString(current_piece_number));
             create_is_dirty_node(new_clean_state_clock);
@@ -1539,56 +1541,58 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 }
 
 
+void ClusterCopier::dropPartitionInDestinationTable(const TaskTable & task_table, const String & partition_name) const
+{
+    auto original_table = task_table.table_push;
+    const auto query = "ALTER TABLE " + getQuotedTable(original_table) + ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") + partition_name;
+
+    UInt64 num_nodes = executeQueryOnCluster(
+        task_table.cluster_push, query,
+        task_cluster->settings_push,
+        PoolMode::GET_MANY,
+        ClusterExecutionMode::ON_EACH_NODE);
+
+    LOG_TRACE(log, "Query {} was successfully executed on {} nodes", query, num_nodes);
+}
+
+
 void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
 {
-    LOG_DEBUG(log, "Removing helping tables");
-    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
-    {
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
-
-        String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
-
-        const ClusterPtr & cluster_push = task_table.cluster_push;
-        Settings settings_push = task_cluster->settings_push;
-
-        LOG_DEBUG(log, "Execute distributed DROP TABLE: {}", query);
-        /// We have to drop partition_piece on each replica
-        UInt64 num_nodes = executeQueryOnCluster(
-                cluster_push, query,
-                settings_push,
-                PoolMode::GET_MANY,
-                ClusterExecutionMode::ON_EACH_NODE);
-
-        LOG_DEBUG(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
-    }
+    executeQueryForAllSplits(task_table, [&task_table] (size_t piece) {
+        auto original_table = task_table.table_push;
+        auto helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(piece));
+        return "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
+    });
 }
 
 
 void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskTable & task_table, const String & partition_name)
 {
-    LOG_DEBUG(log, "Try drop partition partition from all helping tables.");
-    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
+    executeQueryForAllSplits(task_table, [&partition_name, &task_table] (size_t piece) {
+        auto original_table = task_table.table_push;
+        auto helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(piece));
+        return "ALTER TABLE " + getQuotedTable(helping_table) + ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") + partition_name;
+    });
+}
+
+template <typename QueryBuilder>
+void ClusterCopier::executeQueryForAllSplits(const TaskTable & task_table, QueryBuilder && query_builder) const 
+{
+    for (size_t piece = 0; piece < task_table.number_of_splits; ++piece)
     {
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
-
-        String query = "ALTER TABLE " + getQuotedTable(helping_table) + ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") + partition_name;
-
         const ClusterPtr & cluster_push = task_table.cluster_push;
         Settings settings_push = task_cluster->settings_push;
 
-        LOG_DEBUG(log, "Execute distributed DROP PARTITION: {}", query);
-        /// We have to drop partition_piece on each replica
+        const auto query = query_builder(piece);
+
         UInt64 num_nodes = executeQueryOnCluster(
                 cluster_push, query,
                 settings_push,
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
 
-        LOG_DEBUG(log, "DROP PARTITION query was successfully executed on {} nodes.", toString(num_nodes));
+        LOG_TRACE(log, "Query {} was successfully executed on {} nodes", query, num_nodes);
     }
-    LOG_DEBUG(log, "All helping tables dropped partition {}", partition_name);
 }
 
 String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings)

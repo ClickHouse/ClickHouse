@@ -14,9 +14,10 @@ from helpers.test_tools import TSV
 COPYING_FAIL_PROBABILITY = 0.33
 MOVING_FAIL_PROBABILITY = 0.1
 cluster = None
+instances = []
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="module")
 def started_cluster():
     global cluster
     try:
@@ -31,12 +32,16 @@ def started_cluster():
             for shard_name, replicas in shards.items():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
-                    cluster.add_instance(name,
-                                         main_configs=[], user_configs=[],
-                                         macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
-                                         with_zookeeper=True)
+                    instances.append(cluster.add_instance(name,
+                        main_configs=[], user_configs=[],
+                        macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
+                        with_zookeeper=True))
 
         cluster.start()
+
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task_trivial.xml', '/etc/clickhouse-server/config-copier.xml')
+
         yield cluster
 
     finally:
@@ -57,9 +62,9 @@ class TaskTrivial:
         source = cluster.instances['s0_0_0']
         destination = cluster.instances['s1_0_0']
 
+
         for node in [source, destination]:
-            node.query("DROP DATABASE IF EXISTS default")
-            node.query("CREATE DATABASE IF NOT EXISTS default")
+            node.query("DROP TABLE IF EXISTS trivial")
 
         source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1) "
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
@@ -76,7 +81,7 @@ class TaskTrivial:
         assert TSV(destination.query("SELECT count() FROM trivial")) == TSV("1002\n")
 
         for node in [source, destination]:
-            node.query("DROP TABLE trivial")
+            node.query("DROP TABLE trivial SYNC")
 
 
 def execute_task(task, cmd_options):
@@ -87,7 +92,7 @@ def execute_task(task, cmd_options):
 
     zk_task_path = task.zk_task_path
     zk.ensure_path(zk_task_path)
-    zk.create(zk_task_path + "/description", task.copier_task_config)
+    zk.create(zk_task_path + "/description", str.encode(task.copier_task_config))
 
     # Run cluster-copier processes on each node
     docker_api = docker.from_env().api
@@ -140,7 +145,7 @@ def test_trivial_copy(started_cluster, use_sample_offset):
         execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
     else:
         print("AAAAA")
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
+    execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
 
 
 @pytest.mark.parametrize(
@@ -152,10 +157,10 @@ def test_trivial_copy(started_cluster, use_sample_offset):
 )
 def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
+        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
                                                     '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.parametrize(
@@ -167,14 +172,8 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
 )
 def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
+        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
                                                     '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
-
-if __name__ == '__main__':
-    with contextmanager(started_cluster)() as cluster:
-        for name, instance in list(cluster.instances.items()):
-            print(name, instance.ip_address)
-        input("Cluster created, press any key to destroy...")

@@ -17,6 +17,7 @@ COPYING_FAIL_PROBABILITY = 0.2
 MOVING_FAIL_PROBABILITY = 0.2
 
 cluster = ClickHouseCluster(__file__)
+instances = []
 
 
 def check_all_hosts_sucesfully_executed(tsv_content, num_hosts):
@@ -54,12 +55,12 @@ def started_cluster():
             for shard_name, replicas in shards.items():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
-                    cluster.add_instance(name,
-                                         main_configs=["configs/conf.d/query_log.xml", "configs/conf.d/ddl.xml",
-                                                       "configs/conf.d/clusters.xml"],
-                                         user_configs=["configs/users.xml"],
-                                         macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
-                                         with_zookeeper=True)
+                    instances.append(cluster.add_instance(name,
+                        main_configs=["configs/conf.d/query_log.xml", "configs/conf.d/ddl.xml",
+                        "configs/conf.d/clusters.xml"],
+                        user_configs=["configs/users.xml"],
+                        macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
+                        with_zookeeper=True))
 
         cluster.start()
         yield cluster
@@ -74,6 +75,8 @@ class Task1:
         self.cluster = cluster
         self.zk_task_path = "/clickhouse-copier/task_simple"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task0_description.xml'), 'r').read()
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task0_description.xml', '/etc/clickhouse-server/config-copier.xml')
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -115,6 +118,8 @@ class Task2:
         self.zk_task_path = "/clickhouse-copier/task_month_to_week_partition"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_month_to_week_description.xml'), 'r').read()
         self.unique_zk_path = unique_zk_path
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task_month_to_week_description.xml', '/etc/clickhouse-server/config-copier.xml')
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -166,6 +171,8 @@ class Task_test_block_size:
         self.zk_task_path = "/clickhouse-copier/task_test_block_size"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_test_block_size.xml'), 'r').read()
         self.rows = 1000000
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task_test_block_size.xml', '/etc/clickhouse-server/config-copier.xml')
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -195,6 +202,8 @@ class Task_no_index:
         self.zk_task_path = "/clickhouse-copier/task_no_index"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_no_index.xml'), 'r').read()
         self.rows = 1000000
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task_no_index.xml', '/etc/clickhouse-server/config-copier.xml')
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -216,6 +225,8 @@ class Task_no_arg:
         self.zk_task_path = "/clickhouse-copier/task_no_arg"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_no_arg.xml'), 'r').read()
         self.rows = 1000000
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task_no_arg.xml', '/etc/clickhouse-server/config-copier.xml')
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -237,6 +248,8 @@ class Task_non_partitioned_table:
         self.zk_task_path = "/clickhouse-copier/task_non_partitoned_table"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_non_partitioned_table.xml'), 'r').read()
         self.rows = 1000000
+        for instance in instances:
+            instance.copy_file_to_container(CURRENT_TEST_DIR + '/task_non_partitioned_table.xml', '/etc/clickhouse-server/config-copier.xml')
 
     def start(self):
         instance = cluster.instances['s0_0_0']

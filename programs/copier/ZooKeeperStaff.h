@@ -1,12 +1,17 @@
 #pragma once
 
+#include <Core/Types.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+
+#include <optional>
+
 /** Allows to compare two incremental counters of type UInt32 in presence of possible overflow.
   * We assume that we compare values that are not too far away.
   * For example, when we increment 0xFFFFFFFF, we get 0. So, 0xFFFFFFFF is less than 0.
   */
-class WrappingUInt32
+struct WrappingUInt32
 {
-public:
     UInt32 value;
 
     explicit WrappingUInt32(UInt32 _value)
@@ -20,9 +25,9 @@ public:
 
     bool operator<=(const WrappingUInt32 & other) const
     {
-        const UInt32 HALF = 1 << 31;
-        return (value <= other.value && other.value - value < HALF)
-               || (value > other.value && value - other.value > HALF);
+        const UInt32 half = 1 << 31;
+        return (value <= other.value && other.value - value < half)
+               || (value > other.value && value - other.value > half);
     }
 
     bool operator==(const WrappingUInt32 & other) const
@@ -53,8 +58,7 @@ public:
 
     bool operator<=(const Zxid & other) const
     {
-        return (epoch < other.epoch)
-               || (epoch == other.epoch && counter <= other.counter);
+        return (epoch < other.epoch) || (epoch == other.epoch && counter <= other.counter);
     }
 
     bool operator==(const Zxid & other) const
@@ -127,8 +131,7 @@ public:
     /// happens-before relation with a reasonable time bound
     bool happensBefore(const LogicalClock & other) const
     {
-        return !zxid
-               || (other.zxid && *zxid <= *other.zxid);
+        return !zxid || (other.zxid && *zxid <= *other.zxid);
     }
 
     bool operator<=(const LogicalClock & other) const
@@ -144,9 +147,8 @@ public:
 };
 
 
-class CleanStateClock
+struct CleanStateClock
 {
-public:
     LogicalClock discovery_zxid;
     std::optional<UInt32> discovery_version;
 
@@ -155,13 +157,13 @@ public:
 
     std::shared_ptr<std::atomic_bool> stale;
 
-    bool is_clean() const
+    bool isClean() const
     {
-        return !is_stale()
+        return !isStale()
             && (!discovery_zxid.hasHappened() || (clean_state_zxid.hasHappened() && discovery_zxid <= clean_state_zxid));
     }
 
-    bool is_stale() const
+    bool isStale() const
     {
         return stale->load();
     }
@@ -173,11 +175,11 @@ public:
             : stale(std::make_shared<std::atomic_bool>(false))
     {
         Coordination::Stat stat{};
-        String _some_data;
+        String some_data;
         auto watch_callback =
                 [stale = stale] (const Coordination::WatchResponse & rsp)
                 {
-                    auto logger = &Poco::Logger::get("ClusterCopier");
+                    auto * logger = &Poco::Logger::get("ClusterCopier");
                     if (rsp.error == Coordination::Error::ZOK)
                     {
                         switch (rsp.type)
@@ -192,12 +194,12 @@ public:
                         }
                     }
                 };
-        if (zookeeper->tryGetWatch(discovery_path, _some_data, &stat, watch_callback))
+        if (zookeeper->tryGetWatch(discovery_path, some_data, &stat, watch_callback))
         {
             discovery_zxid = LogicalClock(stat.mzxid);
             discovery_version = stat.version;
         }
-        if (zookeeper->tryGetWatch(clean_state_path, _some_data, &stat, watch_callback))
+        if (zookeeper->tryGetWatch(clean_state_path, some_data, &stat, watch_callback))
         {
             clean_state_zxid = LogicalClock(stat.mzxid);
             clean_state_version = stat.version;
@@ -206,8 +208,8 @@ public:
 
     bool operator==(const CleanStateClock & other) const
     {
-        return !is_stale()
-               && !other.is_stale()
+        return !isStale()
+               && !other.isStale()
                && discovery_zxid == other.discovery_zxid
                && discovery_version == other.discovery_version
                && clean_state_zxid == other.clean_state_zxid
