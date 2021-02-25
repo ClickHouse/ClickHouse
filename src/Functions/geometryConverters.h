@@ -51,7 +51,8 @@ using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 using CartesianGeometry = Geometry<CartesianPoint>;
 
-using GeographicPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::geographic<boost::geometry::degree>>;
+// using GeographicPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::geographic<boost::geometry::degree>>;
+using GeographicPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 using GeographicRing = Ring<GeographicPoint>;
 using GeographicPolygon = Polygon<GeographicPoint>;
 using GeographicMultiPolygon = MultiPolygon<GeographicPoint>;
