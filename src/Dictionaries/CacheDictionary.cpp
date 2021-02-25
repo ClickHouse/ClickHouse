@@ -812,6 +812,8 @@ namespace
         return storage_configuration;
     }
 
+#if defined(OS_LINUX) || defined(__FreeBSD__)
+
     SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
         const std::string & full_name,
         const Poco::Util::AbstractConfiguration & config,
@@ -874,6 +876,8 @@ namespace
 
         return configuration;
     }
+
+#endif
 
     CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
         const std::string & full_name,

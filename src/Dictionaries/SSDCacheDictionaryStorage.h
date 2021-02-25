@@ -312,7 +312,6 @@ private:
     char * block_data = nullptr;
 
     size_t current_block_offset = block_header_size;
-    /// TODO: Probably can be removed
     size_t keys_size = 0;
 };
 
@@ -343,7 +342,7 @@ public:
     explicit SSDCacheMemoryBufferPartition(size_t block_size_, size_t partition_blocks_size_)
         : block_size(block_size_)
         , partition_blocks_size(partition_blocks_size_)
-        , buffer(block_size, 4096)
+        , buffer(block_size * partition_blocks_size, 4096)
         , current_write_block(block_size)
     {
         current_write_block.reset(buffer.m_data);
@@ -493,7 +492,7 @@ public:
         #if defined(__FreeBSD__)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
-        write_request.aio.aio_buf = reinterpret_cast<const volatile void *>(const_cast<char *>(buffer));
+        write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
         write_request.aio.aio_nbytes = block_size * buffer_size_in_blocks;
         write_request.aio.aio_offset = current_block_index * block_size;
         #else
@@ -585,7 +584,8 @@ public:
         auto read_bytes = eventResult(event);
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
-            throw Exception("GC: AIO failed to read file " + file_path, ErrorCodes::AIO_READ_ERROR);
+            throw Exception(ErrorCodes::AIO_READ_ERROR,
+                "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, buffer_size_in_bytes, read_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -669,7 +669,8 @@ public:
                 const ssize_t read_bytes = eventResult(events[i]);
 
                 if (read_bytes != static_cast<ssize_t>(block_size))
-                    throw Exception("AIO failed to read file " + file_path + ".", ErrorCodes::AIO_READ_ERROR);
+                    throw Exception(ErrorCodes::AIO_READ_ERROR,
+                        "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, block_size, read_bytes);
 
                 char * request_buffer = getRequestBuffer(request);
 
@@ -751,10 +752,11 @@ private:
     static char * getRequestBuffer(const iocb & request)
     {
         char * result = nullptr;
+
         #if defined(__FreeBSD__)
-        result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
+            result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
-        result = reinterpret_cast<char *>(request.aio_buf);
+            result = reinterpret_cast<char *>(request.aio_buf);
         #endif
 
         return result;
@@ -773,7 +775,7 @@ private:
         return bytes_written;
     }
 
-    std::string file_path;
+    String file_path;
     size_t block_size;
     size_t file_blocks_size;
     size_t read_from_file_buffer_blocks_size;
@@ -905,32 +907,28 @@ private:
         size_t in_memory_partition_index;
     };
 
+    struct KeyToBlockOffset
+    {
+        KeyToBlockOffset(size_t key_index_, size_t offset_in_block_, bool is_expired_)
+            : key_index(key_index_), offset_in_block(offset_in_block_), is_expired(is_expired_)
+        {}
+
+        const size_t key_index;
+        const size_t offset_in_block;
+        const bool is_expired;
+    };
+
+    using BlockIndexToKeysMap = std::unordered_map<size_t, PaddedPODArray<KeyToBlockOffset>>;
+
     template <typename Result>
     void fetchColumnsForKeysImpl(
-        const PaddedPODArray<KeyType> & keys,
-        const DictionaryStorageFetchRequest & fetch_request,
-        Result & result) const
+        const PaddedPODArray<KeyType> & keys, const DictionaryStorageFetchRequest & fetch_request, Result & result) const
     {
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
 
         const auto now = std::chrono::system_clock::now();
 
         size_t fetched_columns_index = 0;
-
-        struct KeyToBlockOffset
-        {
-            KeyToBlockOffset(size_t key_index_, size_t offset_in_block_, bool is_expired_)
-                : key_index(key_index_)
-                , offset_in_block(offset_in_block_)
-                , is_expired(is_expired_)
-            {}
-
-            size_t key_index;
-            size_t offset_in_block;
-            bool is_expired;
-        };
-
-        using BlockIndexToKeysMap = std::unordered_map<size_t, PaddedPODArray<KeyToBlockOffset>>;
 
         BlockIndexToKeysMap block_to_keys_map;
         std::unordered_set<size_t> unique_blocks_to_request;
@@ -1015,10 +1013,11 @@ private:
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
-                auto & found_key_hash_map
-                    = key_in_block.is_expired ? result.expired_keys_to_fetched_columns_index : result.found_keys_to_fetched_columns_index;
+                if (key_in_block.is_expired)
+                    result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
+                else
+                    result.found_keys_to_fetched_columns_index[key] = fetched_columns_index;
 
-                found_key_hash_map[key] = fetched_columns_index;
                 ++fetched_columns_index;
 
                 if (key_in_block.is_expired)
@@ -1126,14 +1125,29 @@ private:
                     PaddedPODArray<KeyType> old_keys;
                     file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys);
 
+                    size_t file_read_end_block_index = block_index_in_file_before_write + configuration.write_buffer_blocks_size;
+
                     for (auto old_key : old_keys)
-                        index.erase(old_key);
+                    {
+                        auto * it = index.find(old_key);
+
+                        if (it)
+                        {
+                            const Cell & old_key_cell = it->getMapped();
+
+                            size_t old_key_block = old_key_cell.index.block_index;
+
+                            /// Check if key in index is key from old partition blocks
+                            if (old_key_cell.in_memory == false &&
+                                old_key_block >= block_index_in_file_before_write && old_key_block <= file_read_end_block_index)
+                                index.erase(old_key);
+                        }
+                    }
                 }
 
                 const char * partition_data = current_memory_buffer_partition.getData();
 
                 bool flush_to_file_result = file_buffer.writeBuffer(partition_data, configuration.write_buffer_blocks_size);
-                std::cerr << "Flushed to file " << flush_to_file_result << std::endl;
 
                 if (flush_to_file_result)
                 {
@@ -1141,19 +1155,18 @@ private:
                     PaddedPODArray<KeyType> keys_to_update;
                     current_memory_buffer_partition.readKeys(keys_to_update);
 
-
                     for (auto key_to_update : keys_to_update)
                     {
                         auto * it = index.find(key_to_update);
 
-                        /// If multiple keys with different sizes are inserted we can have duplicates
+                        /// If lru cache does not contain old keys
                         if (!it)
                             continue;
 
                         Cell & cell_to_update = it->getMapped();
 
                         cell_to_update.in_memory = false;
-                        cell_to_update.index.block_index = block_index_in_file_before_write;
+                        cell_to_update.index.block_index += block_index_in_file_before_write;
                     }
 
                     /// Memory buffer partition flushed to disk start reusing it
