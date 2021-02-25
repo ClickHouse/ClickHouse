@@ -114,7 +114,7 @@ public:
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
-    void flushClusterNodesAllData();
+    void flushClusterNodesAllData(const Context & context);
 
     ClusterPtr getCluster() const;
 
@@ -200,11 +200,8 @@ protected:
 
     struct ClusterNodeData
     {
-        std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        std::shared_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
         ConnectionPoolPtr connection_pool;
-
-        void flushAllData() const;
-        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;

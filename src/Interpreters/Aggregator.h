@@ -365,7 +365,13 @@ struct AggregationMethodKeysFixed
     template <typename Other>
     AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache>;
+    using State = ColumnsHashing::HashMethodKeysFixed<
+        typename Data::value_type,
+        Key,
+        Mapped,
+        has_nullable_keys,
+        has_low_cardinality,
+        use_cache>;
 
     static const bool low_cardinality_optimization = false;
 
