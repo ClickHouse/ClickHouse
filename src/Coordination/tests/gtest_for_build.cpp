@@ -28,6 +28,8 @@
 #include <Coordination/Changelog.h>
 #include <filesystem>
 
+#include <Coordination/SnapshotableHashTable.h>
+
 namespace fs = std::filesystem;
 struct ChangelogDirTest
 {
@@ -947,6 +949,18 @@ TEST(CoordinationTest, ChangelogTestLostFiles)
     fs::remove("./logs/changelog_21_40.bin");
     EXPECT_THROW(changelog_reader.init(3), DB::Exception);
 }
+
+TEST(CoordinationTest, SnapshotableHashMapSimple)
+{
+    DB::SnapshotableHashMap<int> hello;
+    hello.emplace("hello", 5);
+    EXPECT_EQ(hello.get("hello"), 5);
+    hello.get("hello") = 145;
+    EXPECT_EQ(hello.get("hello"), 145);
+    hello["world"] = 17256;
+    EXPECT_EQ(hello.get("world"), 17256);
+}
+
 
 int main(int argc, char ** argv)
 {
