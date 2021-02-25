@@ -52,14 +52,33 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
             ColumnWithTypeAndName res_column = block_to_calculate.getByName(constraint_ptr->expr->getColumnName());
 
             auto result_type = removeNullable(removeLowCardinality(res_column.type));
-            auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
-
-            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*result_column))
-                result_column = column_nullable->getNestedColumnPtr();
 
             if (!isUInt8(result_type))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Constraint {} does not return a value of type UInt8",
                     backQuote(constraint_ptr->name));
+
+            auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*result_column))
+            {
+                const auto & nested_column = column_nullable->getNestedColumnPtr();
+
+                /// Check if constraint value is nullable
+                const auto & null_map = column_nullable->getNullMapColumn();
+                const auto & data = null_map.getData();
+                bool null_map_contain_null = std::find(data.begin(), data.end(), true);
+
+                if (null_map_contain_null)
+                    throw Exception(
+                        ErrorCodes::VIOLATED_CONSTRAINT,
+                        "Constraint {} for table {} is violated. Expression: ({})."\
+                        "Constraint expression returns nullable column that contains null value",
+                        backQuote(constraint_ptr->name),
+                        table_id.getNameForLogs(),
+                        serializeAST(*(constraint_ptr->expr), true));
+
+                result_column = nested_column;
+            }
 
             const ColumnUInt8 & res_column_uint8 = assert_cast<const ColumnUInt8 &>(*result_column);
 
