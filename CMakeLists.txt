@@ -676,8 +676,7 @@ foreach(TARGET ${all_targets})
             ${TARGET} MATCHES "absl" OR
             ${TARGET} MATCHES "poco" OR
             ${TARGET} MATCHES "cassandra" OR
-            ${TARGET} MATCHES "grpc" OR
-            ${TARGET} MATCHES "rocksdb"
+            ${TARGET} MATCHES "grpc"
             ))
 
             # While it would appear to make sense to modify all elements of OVERRIDE_LIST by using a single
