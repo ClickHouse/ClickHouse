@@ -39,16 +39,17 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/EnabledQuota.h>
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/ProcessList.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -475,6 +476,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             query = serializeAST(*ast);
         }
 
+        /// Normalize SelectWithUnionQuery
+        NormalizeSelectWithUnionQueryVisitor::Data data{context.getSettingsRef().union_default_mode};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+
+        /// After normalization, if it only has one ASTSelectWithUnionQuery child,
+        /// we can lift it up, this can reduce one unnecessary recursion later in interpreter phase
+        auto select_union = ast->as<ASTSelectWithUnionQuery>();
+        if (select_union && select_union->list_of_selects->children.size() == 1
+            && select_union->list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
+            ast = std::move(select_union->list_of_selects->children.at(0));
+
+        query = serializeAST(*ast);
+
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
 
@@ -874,7 +888,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
             }
         }
-    }
+        }
     catch (...)
     {
         if (!internal)
