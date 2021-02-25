@@ -27,6 +27,19 @@
 namespace DB
 {
 
+/**
+  * When sorting the list of events the EMPTY_EVENTS_BITSET will be moved to the last.
+  * In the case of events,
+  *   dt                  action
+  *   2020-01-01 00:00:01 'D'
+  *   2020-01-01 00:00:01 'A'
+  *   2020-01-01 00:00:01 'B'
+  *   2020-01-01 00:00:01 'C'
+  * The next node of a chain of events 'A' -> 'B' -> 'C' is expected to be the 'D'.
+  * Because EMPTY_EVENTS_BITSET is 0x80000000 the order of the sorted events is ['A", 'B', 'C', 'D']. The result value of this aggregation is 'D'.
+  * If EMPTY_EVENTS_BITSET is 0 hen the order of the sorted events is ['D', 'A', 'B', 'C']. This time, the result value is NULL.
+  */
+static const UInt32 EMPTY_EVENTS_BITSET = 0x80000000;
 
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node>
@@ -36,6 +49,8 @@ struct NodeBase
 
     DataTypeDateTime::FieldType event_time;
     UInt32 events_bitset; /// Bitsets of UInt32 are easy to compare. (< operator on bitsets)
+                          /// Nodes in the list must be sorted in order to find a chain of events at the method getNextNodeIndex().
+                          /// While sorting, events_bitset is one of sorting criteria.
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
@@ -92,6 +107,11 @@ struct NodeString : public NodeBase<NodeString>
     {
         assert_cast<ColumnString &>(column).insertData(data(), size);
     }
+
+    bool compare(const Node * rhs) const
+    {
+        return strcmp(data(), rhs->data()) < 0;
+    }
 };
 
 /// TODO : Expends SequenceNextNodeGeneralData to support other types
@@ -110,10 +130,12 @@ struct SequenceNextNodeGeneralData
         {
             if constexpr (Descending)
                 return lhs->event_time == rhs->event_time ?
-                        lhs->events_bitset < rhs->events_bitset : lhs->event_time > rhs->event_time;
+                        (lhs->events_bitset == rhs->events_bitset ? lhs->compare(rhs) : lhs->events_bitset < rhs->events_bitset)
+                        : lhs->event_time > rhs->event_time;
             else
                 return lhs->event_time == rhs->event_time ?
-                        lhs->events_bitset < rhs->events_bitset : lhs->event_time < rhs->event_time;
+                        (lhs->events_bitset == rhs->events_bitset ? lhs->compare(rhs) : lhs->events_bitset < rhs->events_bitset)
+                        : lhs->event_time < rhs->event_time;
         }
     };
 
@@ -163,7 +185,7 @@ public:
         ///   aggregated events: [A -> B -> C]
         ///   events to find: [C -> D]
         ///   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, true, true>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<true, false, true, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
@@ -194,7 +216,7 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[2 + i])->getData()[row_num])
                 events_bitset += (1 << i);
-        if (events_bitset == 0) events_bitset = 0x80000000; // Any events are not matched.
+        if (events_bitset == 0) events_bitset = EMPTY_EVENTS_BITSET; // Any events are not matched.
 
         node->event_time = timestamp;
         node->events_bitset = events_bitset;
@@ -278,7 +300,12 @@ public:
     }
 
     /// This method returns an index of next node that matched the events.
-    /// It is one as referring Boyer-Moore-Algorithm.
+    /// It is one as referring Boyer-Moore-Algorithm(https://en.wikipedia.org/wiki/Boyer%E2%80%93Moore_string-search_algorithm).
+    /// But, there are some differences.
+    /// In original Boyer-Moore-Algorithm compares strings, but this algorithm compares events_bits.
+    /// events_bitset consists of events_bits.
+    /// matched events in the chain of events are represented as a bitmask of UInt32.
+    /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
         if (data.value.size() <= events_size)
@@ -292,6 +319,8 @@ public:
             UInt32 j = 0;
             /// It checks whether the chain of events are matched or not.
             for (; j < events_size; ++j)
+                /// It compares each matched events.
+                /// The lower bitmask is the former matched event.
                 if (!(data.value[i - j]->events_bitset & (1 << (events_size - 1 - j))))
                     break;
 
@@ -350,7 +379,7 @@ public:
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
         const AggregateFunctionProperties &) const override
     {
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, true, true>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<true, false, true, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
@@ -388,7 +417,7 @@ public:
         {
             Node * node = Node::allocate(*columns[1], row_num, arena);
             node->event_time = timestamp;
-            node->events_bitset = 0x80000000;
+            node->events_bitset = EMPTY_EVENTS_BITSET;
 
             data(place).value.push_back(node, arena);
         }
