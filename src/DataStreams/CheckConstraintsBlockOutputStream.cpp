@@ -66,9 +66,11 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                 /// Check if constraint value is nullable
                 const auto & null_map = column_nullable->getNullMapColumn();
                 const auto & data = null_map.getData();
-                bool null_map_contain_null = std::find(data.begin(), data.end(), true);
+                const auto * it = std::find(data.begin(), data.end(), true);
 
-                if (null_map_contain_null)
+                bool null_map_contains_null = it != data.end();
+
+                if (null_map_contains_null)
                     throw Exception(
                         ErrorCodes::VIOLATED_CONSTRAINT,
                         "Constraint {} for table {} is violated. Expression: ({})."\
