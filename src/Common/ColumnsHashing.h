@@ -508,7 +508,15 @@ struct HashMethodKeysFixed
         }
 
         if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
-            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+        {
+            bool has_unsupported_sizes = false;
+            for (auto size : key_sizes)
+                if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+                    has_unsupported_sizes = true;
+
+            if (!has_unsupported_sizes)
+                packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+        }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
         if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)

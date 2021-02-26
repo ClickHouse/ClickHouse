@@ -104,6 +104,7 @@ template <typename T>
 void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
 {
     size_t offset = 0;
+    fillFixedBatch<UInt128>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
