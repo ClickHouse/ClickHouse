@@ -1337,7 +1337,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
 }
 
 
