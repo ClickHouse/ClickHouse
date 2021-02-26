@@ -10,4 +10,5 @@ RUN mkdir /sqlancer && \
 RUN cd /sqlancer/sqlancer-master && mvn package -DskipTests
 
 COPY run.sh /
+COPY process_sqlancer_result.py /
 CMD ["/bin/bash", "/run.sh"]
