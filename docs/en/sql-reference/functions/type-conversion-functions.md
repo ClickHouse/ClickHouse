@@ -140,6 +140,8 @@ Result:
 
 ## toDate {#todate}
 
+Alias: `DATE`.
+
 ## toDateOrZero {#todateorzero}
 
 ## toDateOrNull {#todateornull}
