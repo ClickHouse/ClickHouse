@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <receive_timeout>1</receive_timeout>
+        </default>
+    </profiles>
+</yandex>

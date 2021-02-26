@@ -1402,6 +1402,14 @@ void TCPHandler::sendData(const Block & block)
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
 
+    const Settings & settings = query_context->getSettingsRef();
+    if (settings.sleep_in_send_data)
+    {
+        out->next();
+        std::chrono::seconds sec(settings.sleep_in_send_data);
+        std::this_thread::sleep_for(sec);
+    }
+
     state.block_out->write(block);
     state.maybe_compressed_out->next();
     out->next();
