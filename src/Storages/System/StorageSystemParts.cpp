@@ -193,8 +193,9 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
 
         /// _state column should be the latest.
+        /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
-            columns_[i++]->insert(part->stateString());
+            columns_[i++]->insert(IMergeTreeDataPart::stateToString(part_state));
     }
 }
 

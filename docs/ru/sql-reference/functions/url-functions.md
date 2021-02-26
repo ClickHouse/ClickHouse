@@ -115,6 +115,168 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 Например, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
+### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
+
+Возвращает часть домена, включающую поддомены верхнего уровня до первого существенного поддомена. Принимает имя пользовательского [списка доменов верхнего уровня](https://ru.wikipedia.org/wiki/Список_доменов_верхнего_уровня).
+
+Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
+
+Пример конфигурации:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+**Синтаксис**
+
+``` sql
+cutToFirstSignificantSubdomain(URL, TLD)
+```
+
+**Parameters**
+
+-   `URL` — URL. [String](../../sql-reference/data-types/string.md).
+-   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Часть домена, включающая поддомены верхнего уровня до первого существенного поддомена.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
+```
+
+Результат:
+
+```text
+┌─cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
+│ foo.there-is-no-such-domain                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+
+Возвращает часть домена, включающую поддомены верхнего уровня до первого существенного поддомена, не опуская "www". Принимает имя пользовательского списка доменов верхнего уровня.
+
+Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
+
+Пример конфигурации:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+**Синтаксис**
+
+```sql
+cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
+```
+
+**Параметры**
+
+-   `URL` — URL. [String](../../sql-reference/data-types/string.md).
+-   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Часть домена, включающая поддомены верхнего уровня до первого существенного поддомена, без удаления `www`.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');
+```
+
+Результат:
+
+```text
+┌─cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')─┐
+│ www.foo                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
+
+Возвращает первый существенный поддомен. Принимает имя пользовательского списка доменов верхнего уровня.
+
+Полезно, если требуется актуальный список доменов верхнего уровня или если есть пользовательский.
+
+Пример конфигурации:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+**Синтаксис**
+
+```sql
+firstSignificantSubdomainCustom(URL, TLD)
+```
+
+**Параметры**
+
+-   `URL` — URL. [String](../../sql-reference/data-types/string.md).
+-   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Первый существенный поддомен.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
+```
+
+Результат:
+
+```text 
+┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
+│ foo                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
+
 ### port(URL[, default_port = 0]) {#port}
 
 Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 

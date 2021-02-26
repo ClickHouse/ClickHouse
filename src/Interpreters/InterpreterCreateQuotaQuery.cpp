@@ -2,7 +2,7 @@
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <ext/range.h>

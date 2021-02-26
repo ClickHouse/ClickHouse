@@ -343,13 +343,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     const auto current_time = std::chrono::system_clock::now();
 
-    /// If we already executing query and it requires to execute internal query, than
-    /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
-    if (!internal)
-    {
-        context.makeQueryContext();
-        CurrentThread::attachQueryContext(context);
-    }
+#if !defined(ARCADIA_BUILD)
+    assert(internal || CurrentThread::get().getQueryContext());
+    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+#endif
 
     const Settings & settings = context.getSettingsRef();
 
@@ -524,6 +521,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             quota = context.getQuota();
             if (quota)
             {
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
+                    quota->used(Quota::QUERY_SELECTS, 1);
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    quota->used(Quota::QUERY_INSERTS, 1);
+                }
                 quota->used(Quota::QUERIES, 1);
                 quota->checkExceeded(Quota::ERRORS);
             }
