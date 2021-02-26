@@ -12,7 +12,7 @@ struct ListNode
 {
     std::string key;
     V value;
-    std::atomic<bool> active_in_map;
+    bool active_in_map;
 };
 
 template <class V>
