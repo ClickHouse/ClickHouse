@@ -40,17 +40,25 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
 
     size_t max_entries;
-    if (pool_mode == PoolMode::GET_ALL)
+    switch (pool_mode)
     {
-        min_entries = shuffled_pools.size();
-        max_entries = shuffled_pools.size();
+        case PoolMode::GET_ALL:
+        {
+            min_entries = shuffled_pools.size();
+            max_entries = shuffled_pools.size();
+            break;
+        }
+        case PoolMode::GET_ONE:
+        {
+            max_entries = 1;
+            break;
+        }
+        case PoolMode::GET_MANY:
+        {
+            max_entries = settings ? size_t(settings->max_parallel_replicas) : 1;
+            break;
+        }
     }
-    else if (pool_mode == PoolMode::GET_ONE)
-        max_entries = 1;
-    else if (pool_mode == PoolMode::GET_MANY)
-        max_entries = settings ? size_t(settings->max_parallel_replicas) : 1;
-    else
-        throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
 
     std::vector<Connection *> connections;
     connections.reserve(max_entries);
@@ -74,7 +82,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
     while (connections.size() < max_entries)
     {
         /// Set blocking = true to avoid busy-waiting here.
-        auto state = waitForReadyConnections(/*blocking = */true, connection);
+        auto state = waitForReadyConnectionsImpl(/*blocking = */true, connection);
         if (state == State::READY)
             connections.push_back(connection);
         else if (state == State::CANNOT_CHOOSE)
@@ -111,7 +119,12 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnection(Con
     return state;
 }
 
-HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnections(bool blocking, Connection *& connection_out)
+HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnections(Connection *& connection_out)
+{
+    return waitForReadyConnectionsImpl(false, connection_out);
+}
+
+HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnectionsImpl(bool blocking, Connection *& connection_out)
 {
     State state = processEpollEvents(blocking, connection_out);
     if (state != State::CANNOT_CHOOSE)
@@ -254,7 +267,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
             if (result.is_up_to_date)
             {
                 ++up_to_date_count;
-                if (!skip_predicate || !skip_predicate(&*result.entry))
+                if (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry))
                 {
                     replicas[index].is_ready = true;
                     ++ready_replicas_count;
@@ -343,7 +356,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         if (!result.entry.isNull()
             && result.is_usable
             && !replicas[i].is_ready
-            && (!skip_predicate || !skip_predicate(&*result.entry)))
+            && (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry)))
             indexes.push_back(i);
     }
 
@@ -363,6 +376,11 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
     TryResult result = replicas[indexes[0]].connection_establisher.getResult();
     connection_out = &*result.entry;
     return State::READY;
+}
+
+bool HedgedConnectionsFactory::isTwoLevelAggregationIncompatible(Connection * connection)
+{
+    return connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 }
 
 }

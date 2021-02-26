@@ -146,11 +146,7 @@ void HedgedConnections::sendQuery(
     if (!disable_two_level_aggregation)
     {
         /// Tell hedged_connections_factory to skip replicas that doesn't support two-level aggregation.
-        hedged_connections_factory.setSkipPredicate(
-            [timeouts](Connection * connection)
-            {
-                return connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
-            });
+        hedged_connections_factory.skipReplicasWithTwoLevelAggregationIncompatibility();
     }
 
     auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaState & replica)
@@ -295,6 +291,15 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 
 HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(AsyncCallback async_callback)
 {
+    /// Firstly, resume replica with the last received packet if needed.
+    if (replica_with_last_received_packet)
+    {
+        ReplicaLocation location = replica_with_last_received_packet.value();
+        replica_with_last_received_packet.reset();
+        if (resumePacketReceiver(location))
+            return location;
+    }
+
     int event_fd;
     while (true)
     {
@@ -306,22 +311,8 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
         else if (fd_to_replica_location.contains(event_fd))
         {
             ReplicaLocation location = fd_to_replica_location[event_fd];
-            ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
-            auto res = replica_state.packet_receiver->resume();
-
-            if (std::holds_alternative<Packet>(res))
-            {
-                last_received_packet = std::move(std::get<Packet>(res));
+            if (resumePacketReceiver(location))
                 return location;
-            }
-            else if (std::holds_alternative<Poco::Timespan>(res))
-            {
-                finishProcessReplica(replica_state, true);
-
-                /// Check if there is no more active connections with the same offset and there is no new replica in process.
-                if (offset_states[location.offset].active_connection_count == 0 && !offset_states[location.offset].next_replica_in_process)
-                    throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
-            }
         }
         else if (timeout_fd_to_replica_location.contains(event_fd))
         {
@@ -335,6 +326,28 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
 };
+
+bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLocation & location)
+{
+    ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
+    auto res = replica_state.packet_receiver->resume();
+
+    if (std::holds_alternative<Packet>(res))
+    {
+        last_received_packet = std::move(std::get<Packet>(res));
+        return true;
+    }
+    else if (std::holds_alternative<Poco::Timespan>(res))
+    {
+        finishProcessReplica(replica_state, true);
+
+        /// Check if there is no more active connections with the same offset and there is no new replica in process.
+        if (offset_states[location.offset].active_connection_count == 0 && !offset_states[location.offset].next_replica_in_process)
+            throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
+    }
+
+    return false;
+}
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
@@ -359,6 +372,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Data:
             if (!offset_states[replica_location.offset].first_packet_of_data_received)
                 processReceivedFirstDataPacket(replica_location);
+            replica_with_last_received_packet = replica_location;
             break;
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Progress:
@@ -366,6 +380,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
+            replica_with_last_received_packet = replica_location;
             break;
 
         case Protocol::Server::EndOfStream:
@@ -423,7 +438,7 @@ void HedgedConnections::startNewReplica()
 void HedgedConnections::checkNewReplica()
 {
     Connection * connection = nullptr;
-    HedgedConnectionsFactory::State state = hedged_connections_factory.waitForReadyConnections(/*blocking = */false, connection);
+    HedgedConnectionsFactory::State state = hedged_connections_factory.waitForReadyConnections(connection);
 
     processNewReplicaState(state, connection);
 

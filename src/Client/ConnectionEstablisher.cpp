@@ -118,11 +118,9 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
 
 void ConnectionEstablisherAsync::Routine::ReadCallback::operator()(int fd, const Poco::Timespan & timeout, const std::string &)
 {
-    if (connection_establisher_async.socket_fd != fd)
+    /// Check if it's the first time and we need to add socket fd to epoll.
+    if (connection_establisher_async.socket_fd == -1)
     {
-        if (connection_establisher_async.socket_fd != -1)
-            connection_establisher_async.epoll.remove(connection_establisher_async.socket_fd);
-
         connection_establisher_async.epoll.add(fd);
         connection_establisher_async.socket_fd = fd;
     }
