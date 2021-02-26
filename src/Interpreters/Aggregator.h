@@ -389,25 +389,34 @@ struct AggregationMethodKeysFixed
 
         if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
         {
-            Sizes new_sizes;
-            auto fill_size = [&](size_t size)
+            bool has_unsupported_sizes = false;
+                for (auto size : key_sizes)
+                    if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+                        has_unsupported_sizes = true;
+
+            if (!has_unsupported_sizes)
             {
-                for (size_t i = 0; i < key_sizes.size(); ++i)
+                Sizes new_sizes;
+                auto fill_size = [&](size_t size)
                 {
-                    if (key_sizes[i] == size)
+                    for (size_t i = 0; i < key_sizes.size(); ++i)
                     {
-                        new_columns.push_back(key_columns[i].get());
-                        new_sizes.push_back(size);
+                        if (key_sizes[i] == size)
+                        {
+                            new_columns.push_back(key_columns[i].get());
+                            new_sizes.push_back(size);
+                        }
                     }
-                }
-            };
+                };
 
-            fill_size(8);
-            fill_size(4);
-            fill_size(2);
-            fill_size(1);
+                fill_size(16);
+                fill_size(8);
+                fill_size(4);
+                fill_size(2);
+                fill_size(1);
 
-            return {new_columns, new_sizes};
+                return {new_columns, new_sizes};
+            }
         }
 
         for (auto & column : key_columns)
