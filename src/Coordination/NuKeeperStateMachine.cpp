@@ -29,18 +29,6 @@ NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     return request_for_session;
 }
 
-nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions & responses)
-{
-    WriteBufferFromNuraftBuffer buffer;
-    for (const auto & response_and_session : responses)
-    {
-        writeIntBinary(response_and_session.session_id, buffer);
-        response_and_session.response->write(buffer);
-    }
-    return buffer.getBuffer();
-}
-
-
 NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, const CoordinationSettingsPtr & coordination_settings_)
     : coordination_settings(coordination_settings_)
     , storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds())

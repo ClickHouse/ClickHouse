@@ -5,6 +5,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/SessionExpiryQueue.h>
+#include <Coordination/SnapshotableHashTable.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -21,13 +22,13 @@ using ChildrenSet = std::unordered_set<std::string>;
 class NuKeeperStorage
 {
 public:
-    int64_t session_id_counter{0};
+    int64_t session_id_counter{1};
 
     struct Node
     {
         String data;
         Coordination::ACLs acls{};
-        bool is_ephemeral = false;
+        int64_t ephemeral_owner = 0;
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
@@ -50,7 +51,7 @@ public:
 
     using RequestsForSessions = std::vector<RequestForSession>;
 
-    using Container = std::unordered_map<std::string, Node>;
+    using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndTimeout = std::unordered_map<int64_t, long>;
