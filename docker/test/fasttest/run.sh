@@ -70,6 +70,7 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
+        --test_keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
@@ -107,6 +108,18 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -327,7 +340,7 @@ function run_tests
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert
 
-        01541_max_memory_usage_for_user
+        01541_max_memory_usage_for_user_long
 
         # Require python libraries like scipy, pandas and numpy
         01322_ttest_scipy
@@ -363,7 +376,7 @@ function run_tests
         stop_server ||:
 
         # Clean the data so that there is no interference from the previous test run.
-        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files} ||:
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
 
         start_server
 

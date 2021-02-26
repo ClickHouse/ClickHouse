@@ -134,7 +134,7 @@ public:
       */
     void drop() override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context & query_context, TableExclusiveLockHolder &) override;
 
     void checkTableCanBeRenamed() const override;
 
@@ -577,7 +577,7 @@ private:
 
     bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
     bool dropAllPartsInPartition(
-        zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach);
+        zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, const Context & query_context, bool detach);
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context, bool throw_if_noop) override;

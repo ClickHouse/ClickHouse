@@ -864,7 +864,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         expr_list_args->children.push_back(std::move(type_literal));
 
         auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = "cast";
+        func_node->name = "CAST";
         func_node->arguments = std::move(expr_list_args);
         func_node->children.push_back(func_node->arguments);
 
