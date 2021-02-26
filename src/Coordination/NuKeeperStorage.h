@@ -54,7 +54,7 @@ public:
     using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionAndTimeout = std::unordered_map<int64_t, long>;
+    using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
     using SessionIDs = std::vector<int64_t>;
 
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
@@ -92,6 +92,36 @@ public:
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid);
 
     void finalize();
+
+    void enableSnapshotMode()
+    {
+        container.enableSnapshotMode();
+    }
+
+    void disableSnapshotMode()
+    {
+        container.disableSnapshotMode();
+    }
+
+    Container::const_iterator getSnapshotIteratorBegin() const
+    {
+        return container.begin();
+    }
+
+    Container::const_iterator getSnapshotIteratorEnd() const
+    {
+        return container.end();
+    }
+
+    void clearGarbageAfterSnapshot()
+    {
+        container.clearOutdatedNodes();
+    }
+
+    const SessionAndTimeout & getActiveSessions() const
+    {
+        return session_and_timeout;
+    }
 
     std::unordered_set<int64_t> getDeadSessions()
     {
