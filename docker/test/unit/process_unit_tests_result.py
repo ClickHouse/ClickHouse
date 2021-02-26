@@ -82,7 +82,7 @@ def write_results(results_file, status_file, results, status):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="ClickHouse script for parsing results of functional tests")
+    parser = argparse.ArgumentParser(description="ClickHouse script for parsing results of unit tests")
     parser.add_argument("--in-results-dir", default='/test_output/')
     parser.add_argument("--out-results-file", default='/test_output/test_results.tsv')
     parser.add_argument("--out-status-file", default='/test_output/check_status.tsv')

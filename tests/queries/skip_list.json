@@ -519,6 +519,7 @@
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
         "00604_show_create_database",
+        "00600_replace_running_query",
         "00612_http_max_query_size",
         "00619_union_highlite",
         "00620_optimize_on_nonleader_replica_zookeeper",
