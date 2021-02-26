@@ -1125,11 +1125,23 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
     }
 
-    data.forEachValue([&](const auto & key, auto & mapped)
+    if constexpr (Method::fixed_keys)
     {
-        method.insertKeyIntoColumns(key, key_columns, key_sizes);
-        insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
-    });
+        auto new_key_columns = method.shuffleKeyColumns(key_columns, key_sizes);
+        data.forEachValue([&](const auto & key, auto & mapped)
+        {
+            method.insertKeyIntoColumns(key, new_key_columns.first, new_key_columns.second);
+            insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+        });
+    }
+    else
+    {
+        data.forEachValue([&](const auto & key, auto & mapped)
+        {
+            method.insertKeyIntoColumns(key, key_columns, key_sizes);
+            insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+        });
+    }
 }
 
 template <typename Method, typename Table>
@@ -1152,16 +1164,33 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         }
     }
 
-    data.forEachValue([&](const auto & key, auto & mapped)
+    if constexpr (Method::fixed_keys)
     {
-        method.insertKeyIntoColumns(key, key_columns, key_sizes);
+        auto new_key_columns = method.shuffleKeyColumns(key_columns, key_sizes);
+        data.forEachValue([&](const auto & key, auto & mapped)
+        {
+            method.insertKeyIntoColumns(key, new_key_columns.first, new_key_columns.second);
 
-        /// reserved, so push_back does not throw exceptions
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+            /// reserved, so push_back does not throw exceptions
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
 
-        mapped = nullptr;
-    });
+            mapped = nullptr;
+        });
+    }
+    else
+    {
+        data.forEachValue([&](const auto & key, auto & mapped)
+        {
+            method.insertKeyIntoColumns(key, key_columns, key_sizes);
+
+            /// reserved, so push_back does not throw exceptions
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+
+            mapped = nullptr;
+        });
+    }
 }
 
 

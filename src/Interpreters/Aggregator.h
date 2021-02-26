@@ -195,6 +195,7 @@ struct AggregationMethodOneNumber
 
     /// Use optimization for low cardinality.
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = false;
 
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
@@ -224,6 +225,7 @@ struct AggregationMethodString
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = false;
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
@@ -250,6 +252,7 @@ struct AggregationMethodStringNoCache
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
 
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = false;
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
@@ -276,6 +279,7 @@ struct AggregationMethodFixedString
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = false;
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
@@ -301,6 +305,7 @@ struct AggregationMethodFixedStringNoCache
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
 
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = false;
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
@@ -330,6 +335,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using State = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseState, Mapped, true>;
 
     static const bool low_cardinality_optimization = true;
+    static constexpr bool fixed_keys = false;
 
     static void insertKeyIntoColumns(const Key & key,
         MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
@@ -374,8 +380,43 @@ struct AggregationMethodKeysFixed
         use_cache>;
 
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = true;
 
-    static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & key_sizes)
+    std::pair<std::vector<IColumn *>, Sizes> shuffleKeyColumns(MutableColumns & key_columns, const Sizes & key_sizes)
+    {
+        std::vector<IColumn *> new_columns;
+        new_columns.reserve(key_columns.size());
+
+        if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
+        {
+            Sizes new_sizes;
+            auto fill_size = [&](size_t size)
+            {
+                for (size_t i = 0; i < key_sizes.size(); ++i)
+                {
+                    if (key_sizes[i] == size)
+                    {
+                        new_columns.push_back(key_columns[i].get());
+                        new_sizes.push_back(size);
+                    }
+                }
+            };
+
+            fill_size(8);
+            fill_size(4);
+            fill_size(2);
+            fill_size(1);
+
+            return {new_columns, new_sizes};
+        }
+
+        for (auto & column : key_columns)
+            new_columns.push_back(column.get());
+
+        return {new_columns, key_sizes};
+    }
+
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
     {
         size_t keys_size = key_columns.size();
 
@@ -401,7 +442,7 @@ struct AggregationMethodKeysFixed
             }
             else
             {
-                observed_column = key_columns[i].get();
+                observed_column = key_columns[i];
                 null_map = nullptr;
             }
 
@@ -452,6 +493,7 @@ struct AggregationMethodSerialized
     using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
+    static constexpr bool fixed_keys = false;
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
