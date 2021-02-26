@@ -246,12 +246,12 @@ namespace
 
             ASTPtr ast;
             ParserRolesOrUsersSet default_roles_p;
-            default_roles_p.allowAll().allowRoleNames().useIDMode(id_mode);
+            default_roles_p.allowAll().allowRoles().useIDMode(id_mode);
             if (!default_roles_p.parse(pos, ast, expected))
                 return false;
 
             default_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            default_roles->allow_user_names = false;
+            default_roles->allow_users = false;
             return true;
         });
     }
