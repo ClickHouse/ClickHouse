@@ -57,9 +57,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
 {
-    loop = std::make_unique<uv_loop_t>();
-    uv_loop_init(loop.get());
-    event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
+    event_handler = std::make_unique<RabbitMQHandler>(loop.getLoop(), log);
 
     if (setupConnection(false))
     {
