@@ -75,6 +75,8 @@ Result:
 
 Returns a string containing the argument’s hexadecimal representation.
 
+Alias: `HEX`.
+
 **Syntax**
 
 ``` sql
