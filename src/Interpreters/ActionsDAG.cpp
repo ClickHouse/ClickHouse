@@ -1215,7 +1215,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
 namespace
 {
 
-struct ConjinctionNodes
+struct ConjunctionNodes
 {
     std::vector<ActionsDAG::Node *> allowed;
     std::vector<ActionsDAG::Node *> rejected;
@@ -1225,9 +1225,9 @@ struct ConjinctionNodes
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
-ConjinctionNodes getConjinctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
+ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
-    ConjinctionNodes conjunction;
+    ConjunctionNodes conjunction;
     std::unordered_set<ActionsDAG::Node *> allowed;
     std::unordered_set<ActionsDAG::Node *> rejected;
 
@@ -1299,6 +1299,7 @@ ConjinctionNodes getConjinctionNodes(ActionsDAG::Node * predicate, std::unordere
 
     if (conjunction.allowed.empty())
     {
+        /// If nothing was added to conjunction, check if it is trivial.
         if (allowed_nodes.count(predicate))
             conjunction.allowed.push_back(predicate);
     }
@@ -1450,7 +1451,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
         }
     }
 
-    auto conjunction = getConjinctionNodes(predicate, allowed_nodes);
+    auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
     auto actions = cloneActionsForConjunction(conjunction.allowed);
     if (!actions)
         return nullptr;
