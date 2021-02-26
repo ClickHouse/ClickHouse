@@ -254,7 +254,8 @@ SELECT
 
 ## toIPv6 {#toipv6string}
 
-An alias to [IPv6StringToNum](#ipv6stringtonums) that takes a string form of IPv6 address and returns value of [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, which is binary equal to value returned by `IPv6StringToNum()`.
+Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. 
+Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
 
 If the IP address is a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
