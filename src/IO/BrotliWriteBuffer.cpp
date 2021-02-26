@@ -6,6 +6,8 @@
 #    include <IO/BrotliWriteBuffer.h>
 #    include <brotli/encode.h>
 
+#include <Common/MemoryTracker.h>
+
 namespace DB
 {
 
@@ -47,14 +49,9 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
 
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
-    try
-    {
-        finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock;
+    finish();
 }
 
 void BrotliWriteBuffer::nextImpl()

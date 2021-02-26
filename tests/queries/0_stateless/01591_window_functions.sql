@@ -212,3 +212,136 @@ select
     count(*) over (rows between  current row and current row),
     count(*) over (range between  current row and current row)
 from numbers(3);
+
+-- RANGE OFFSET
+-- a basic RANGE OFFSET frame
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11))
+window w as (order by x asc range between 1 preceding and 2 following)
+order by x;
+
+-- overflow conditions
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toInt8(multiIf(
+        mod(number, 3) == 0, toInt64(intDiv(number, 3)),
+        mod(number, 3) == 1, toInt64(127 - intDiv(number, 3)),
+        toInt64(-128 + intDiv(number, 3)))) x
+    from numbers(15)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+
+-- RANGE OFFSET ORDER BY DESC
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between 1 preceding and 2 following)
+order by x
+settings max_block_size = 1;
+
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between 1 preceding and unbounded following)
+order by x
+settings max_block_size = 2;
+
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 following)
+order by x
+settings max_block_size = 3;
+
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 preceding)
+order by x
+settings max_block_size = 4;
+
+
+-- Check that we put windows in such an order that we can reuse the sort.
+-- First, check that at least the result is correct when we have many windows
+-- with different sort order.
+select
+    number,
+    count(*) over (partition by p order by number),
+    count(*) over (partition by p order by number, o),
+    count(*) over (),
+    count(*) over (order by number),
+    count(*) over (order by o),
+    count(*) over (order by o, number),
+    count(*) over (order by number, o),
+    count(*) over (partition by p order by o, number),
+    count(*) over (partition by p),
+    count(*) over (partition by p order by o),
+    count(*) over (partition by p, o order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+order by number
+;
+
+-- The EXPLAIN for the above query would be difficult to understand, so check some
+-- simple cases instead.
+explain select
+    count(*) over (partition by p),
+    count(*) over (),
+    count(*) over (partition by p order by o)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+
+explain select
+    count(*) over (order by o, number),
+    count(*) over (order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+
+-- A test case for the sort comparator found by fuzzer.
+SELECT
+    max(number) OVER (ORDER BY number DESC NULLS FIRST),
+    max(number) OVER (ORDER BY number ASC NULLS FIRST)
+FROM numbers(2)
+;
+
+-- some true window functions -- rank and friends
+select number, p, o,
+    count(*) over w,
+    rank() over w,
+    dense_rank() over w,
+    row_number() over w
+from (select number, intDiv(number, 5) p, mod(number, 3) o
+    from numbers(31) order by o, number) t
+window w as (partition by p order by o)
+order by p, o, number
+settings max_block_size = 2;
+
+-- our replacement for lag/lead
+select
+    anyOrNull(number)
+        over (order by number rows between 1 preceding and 1 preceding),
+    anyOrNull(number)
+        over (order by number rows between 1 following and 1 following)
+from numbers(5);
+
+-- case-insensitive SQL-standard synonyms for any and anyLast
+select
+    number,
+    fIrSt_VaLue(number) over w,
+    lAsT_vAlUe(number) over w
+from numbers(10)
+window w as (order by number range between 1 preceding and 1 following)
+order by number
+;

@@ -89,8 +89,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
         {
-            auto name = node.function_base->getName();
-            if (name == "ignore")
+            if (!node.function_base->isSuitableForConstantFolding())
                 return false;
         }
     }
@@ -540,7 +539,10 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         !context.getSettingsRef().allow_experimental_window_functions)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window functions are not implemented (while processing '{}')",
+            "The support for window functions is experimental and will change"
+            " in backwards-incompatible ways in the future releases. Set"
+            " allow_experimental_window_functions = 1 to enable it."
+            " While processing '{}'",
             syntax->window_function_asts[0]->formatForErrorMessage());
     }
 

@@ -652,7 +652,6 @@ namespace
 
         /// Create context.
         query_context.emplace(iserver.context());
-        query_scope.emplace(*query_context);
 
         /// Authentication.
         query_context->setUser(user, password, user_address);
@@ -669,6 +668,8 @@ namespace
             query_context = session->context;
             query_context->setSessionContext(session->context);
         }
+
+        query_scope.emplace(*query_context);
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
