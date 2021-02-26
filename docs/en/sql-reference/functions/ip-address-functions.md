@@ -257,7 +257,7 @@ SELECT
 Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. 
 Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
 
-If the IP address is a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
+If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
 **Syntax**
 
