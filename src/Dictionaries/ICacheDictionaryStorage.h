@@ -8,6 +8,32 @@
 namespace DB
 {
 
+struct KeyState
+{
+    enum State
+    {
+        found,
+        expired,
+        not_found
+    };
+
+    KeyState(State state_, size_t fetched_column_index_)
+        : state(state_)
+        , fetched_column_index(fetched_column_index_)
+    {}
+
+    KeyState(State state_)
+        : state(state_)
+    {}
+
+    inline bool isFound() const { return state == State::found; }
+    inline bool isExpired() const { return state == State::expired; }
+    inline bool isNotFound() const { return state == State::not_found; }
+
+    State state = not_found;
+    size_t fetched_column_index = 0;
+};
+
 /// Result of fetch from CacheDictionaryStorage
 template <typename KeyType>
 struct KeysStorageFetchResult
@@ -15,17 +41,13 @@ struct KeysStorageFetchResult
     /// Fetched column values
     MutableColumns fetched_columns;
 
-    /// Found key to index in fetched_columns
-    HashMap<KeyType, size_t> found_keys_to_fetched_columns_index;
+    PaddedPODArray<KeyState> key_index_to_state;
 
-    /// Expired key to index in fetched_columns
-    HashMap<KeyType, size_t> expired_keys_to_fetched_columns_index;
+    size_t expired_keys_size = 0;
 
-    /// Keys that are not found in storage
-    PaddedPODArray<KeyType> not_found_or_expired_keys;
+    size_t found_keys_size = 0;
 
-    /// Indexes of requested keys that are not found in storage
-    PaddedPODArray<size_t> not_found_or_expired_keys_indexes;
+    size_t not_found_keys_size = 0;
 
 };
 
@@ -40,6 +62,9 @@ public:
 
     /// Necessary if all keys are found we can return result to client without additional aggregation
     virtual bool returnsFetchedColumnsInOrderOfRequestedKeys() const = 0;
+
+    /// Name of storage
+    virtual String getName() const = 0;
 
     /// Does storage support simple keys
     virtual bool supportsSimpleKeys() const = 0;

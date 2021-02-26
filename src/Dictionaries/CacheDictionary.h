@@ -66,7 +66,7 @@ public:
 
     ~CacheDictionary() override;
 
-    std::string getTypeName() const override { return "Cache"; }
+    std::string getTypeName() const override { return cache_storage_ptr->getName(); }
 
     size_t getElementCount() const override;
 
@@ -123,7 +123,7 @@ public:
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const;
+        const Columns & default_values_columns) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -158,18 +158,23 @@ private:
         const PaddedPODArray<KeyType> & keys,
         const Columns & default_values_columns) const;
 
+    CacheDictionaryUpdateUnitPtr<dictionary_key_type> makeUpdateUnit(
+        const Columns & key_columns,
+        const PaddedPODArray<KeyType> & keys,
+        const KeysStorageFetchResult<KeyType> & fetch_result,
+        const DictionaryStorageFetchRequest & fetch_request) const;
+
     static MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_index,
-        const HashMap<KeyType, size_t> & expired_keys_to_fetched_columns_index);
+        const PaddedPODArray<KeyState> & key_index_to_state);
 
     static MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns_from_storage,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_from_storage_index,
+        const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
         const std::vector<DefaultValueProvider> & default_value_providers);

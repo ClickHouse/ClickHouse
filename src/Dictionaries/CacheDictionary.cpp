@@ -287,7 +287,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
     const DataTypes & key_types,
     const ColumnPtr & default_values_column) const
 {
-    return getColumns({attribute_name}, { result_type }, key_columns, key_types, { default_values_column }).front();
+    return getColumns({attribute_name}, {result_type}, key_columns, key_types, {default_values_column}).front();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -326,36 +326,19 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
         result_of_fetch_from_storage = std::move(fetch_result);
     }
 
-    size_t expired_keys_size = result_of_fetch_from_storage.expired_keys_to_fetched_columns_index.size();
-    size_t found_keys_size = result_of_fetch_from_storage.found_keys_to_fetched_columns_index.size();
-    size_t not_found_keys_size = keys.size() - (expired_keys_size + found_keys_size);
+    size_t found_keys_size = result_of_fetch_from_storage.found_keys_size;
+    size_t expired_keys_size = result_of_fetch_from_storage.expired_keys_size;
+    size_t not_found_keys_size = result_of_fetch_from_storage.not_found_keys_size;
 
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, found_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, found_keys_size);
 
     query_count.fetch_add(keys.size());
     hit_count.fetch_add(found_keys_size);
 
     MutableColumns & fetched_columns_from_storage = result_of_fetch_from_storage.fetched_columns;
-
-    std::shared_ptr<CacheDictionaryUpdateUnit<dictionary_key_type>> update_unit;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(std::move(result_of_fetch_from_storage.not_found_or_expired_keys), request);
-    else
-    {
-        auto & indexes_of_rows_to_update = result_of_fetch_from_storage.not_found_or_expired_keys_indexes;
-
-        std::vector<size_t> requested_complex_key_rows;
-        requested_complex_key_rows.reserve(indexes_of_rows_to_update.size());
-        requested_complex_key_rows.assign(indexes_of_rows_to_update.begin(), indexes_of_rows_to_update.end());
-
-        update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, std::move(requested_complex_key_rows), request);
-    }
-
-    HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
-    MutableColumns fetched_columns_during_update = request.makeAttributesResultColumns();
+    const PaddedPODArray<KeyState> & key_index_to_state_from_storage = result_of_fetch_from_storage.key_index_to_state;
 
     bool source_returns_fetched_columns_in_order_of_keys = cache_storage_ptr->returnsFetchedColumnsInOrderOfRequestedKeys();
 
@@ -372,13 +355,18 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
                 keys,
                 request,
                 fetched_columns_from_storage,
-                result_of_fetch_from_storage.found_keys_to_fetched_columns_index,
-                result_of_fetch_from_storage.expired_keys_to_fetched_columns_index);
+                key_index_to_state_from_storage);
 
             return request.filterRequestedColumns(aggregated_columns);
         }
     }
-    else if (not_found_keys_size == 0 && expired_keys_size > 0 && allow_read_expired_keys)
+
+    std::shared_ptr<CacheDictionaryUpdateUnit<dictionary_key_type>> update_unit = makeUpdateUnit(key_columns, keys, result_of_fetch_from_storage, request);
+
+    HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
+    MutableColumns fetched_columns_during_update = request.makeAttributesResultColumns();
+
+    if (not_found_keys_size == 0 && expired_keys_size > 0 && allow_read_expired_keys)
     {
         /// Start async update only if allow read expired keys and all keys are found
         update_queue.tryPushToUpdateQueueOrThrow(update_unit);
@@ -392,8 +380,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
                 keys,
                 request,
                 fetched_columns_from_storage,
-                result_of_fetch_from_storage.found_keys_to_fetched_columns_index,
-                result_of_fetch_from_storage.expired_keys_to_fetched_columns_index);
+                key_index_to_state_from_storage);
 
             return request.filterRequestedColumns(aggregated_columns);
         }
@@ -427,7 +414,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
         keys,
         request,
         fetched_columns_from_storage,
-        result_of_fetch_from_storage.found_keys_to_fetched_columns_index,
+        key_index_to_state_from_storage,
         fetched_columns_during_update,
         requested_keys_to_fetched_columns_during_update_index,
         default_value_providers);
@@ -454,31 +441,18 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
         result_of_fetch_from_storage = std::move(fetch_result);
     }
 
-    size_t expired_keys_size = result_of_fetch_from_storage.expired_keys_to_fetched_columns_index.size();
-    size_t found_keys_size = result_of_fetch_from_storage.found_keys_to_fetched_columns_index.size();
-    size_t not_found_keys_size = keys.size() - (found_keys_size + expired_keys_size);
+    size_t found_keys_size = result_of_fetch_from_storage.found_keys_size;
+    size_t expired_keys_size = result_of_fetch_from_storage.expired_keys_size;
+    size_t not_found_keys_size = result_of_fetch_from_storage.not_found_keys_size;
 
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, found_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, found_keys_size);
 
     query_count.fetch_add(keys.size());
     hit_count.fetch_add(found_keys_size);
 
-    std::shared_ptr<CacheDictionaryUpdateUnit<dictionary_key_type>> update_unit;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(std::move(result_of_fetch_from_storage.not_found_or_expired_keys), request);
-    else
-    {
-        auto & indexes_of_rows_to_update = result_of_fetch_from_storage.not_found_or_expired_keys_indexes;
-
-        std::vector<size_t> requested_complex_key_rows;
-        requested_complex_key_rows.reserve(indexes_of_rows_to_update.size());
-        requested_complex_key_rows.assign(indexes_of_rows_to_update.begin(), indexes_of_rows_to_update.end());
-
-        update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, std::move(requested_complex_key_rows), request);
-    }
+    CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit = makeUpdateUnit(key_columns, keys, result_of_fetch_from_storage, request);
 
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
 
@@ -510,7 +484,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     {
         auto key = keys[key_index];
 
-        if (result_of_fetch_from_storage.found_keys_to_fetched_columns_index.has(key))
+        if (result_of_fetch_from_storage.key_index_to_state[key_index].isFound())
         {
             /// Check if key was fetched from cache
             data[key_index] = true;
@@ -526,12 +500,57 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
 }
 
 template <DictionaryKeyType dictionary_key_type>
+CacheDictionaryUpdateUnitPtr<dictionary_key_type> CacheDictionary<dictionary_key_type>::makeUpdateUnit(
+    const Columns & key_columns [[maybe_unused]],
+    const PaddedPODArray<KeyType> & keys,
+    const KeysStorageFetchResult<KeyType> & storage_fetch_result,
+    const DictionaryStorageFetchRequest & fetch_request) const
+{
+    CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit;
+
+    auto & key_index_to_state = storage_fetch_result.key_index_to_state;
+    size_t update_keys_size = storage_fetch_result.expired_keys_size + storage_fetch_result.not_found_keys_size;
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        PaddedPODArray<UInt64> not_found_or_expired_keys;
+        not_found_or_expired_keys.reserve(update_keys_size);
+
+        for (size_t i = 0; i < keys.size(); ++i)
+        {
+            auto key_state = key_index_to_state[i];
+
+            if (key_state.isExpired() || key_state.isNotFound())
+                not_found_or_expired_keys.emplace_back(keys[i]);
+        }
+
+        update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(std::move(not_found_or_expired_keys), fetch_request);
+    }
+    else
+    {
+        std::vector<size_t> not_found_or_expired_indexes;
+        not_found_or_expired_indexes.reserve(update_keys_size);
+
+        for (size_t i = 0; i < keys.size(); ++i)
+        {
+            auto key_state = key_index_to_state[i];
+
+            if (key_state.isExpired() || key_state.isNotFound())
+                not_found_or_expired_indexes.emplace_back(i);
+        }
+
+        update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, std::move(not_found_or_expired_indexes), fetch_request);
+    }
+
+    return update_unit;
+}
+
+template <DictionaryKeyType dictionary_key_type>
 MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKeys(
     const PaddedPODArray<KeyType> & keys,
     const DictionaryStorageFetchRequest & request,
     const MutableColumns & fetched_columns,
-    const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_index,
-    const HashMap<KeyType, size_t> & expired_keys_to_fetched_columns_index)
+    const PaddedPODArray<KeyState> & key_index_to_state)
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
@@ -543,28 +562,14 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
         const auto & aggregated_column = aggregated_columns[fetch_request_index];
         const auto & fetched_column = fetched_columns[fetch_request_index];
 
-        size_t column_index = 0;
-
-        for (auto key : keys)
+        for (size_t key_index = 0; key_index < keys.size(); ++key_index)
         {
-            auto * expired_key_iterator = expired_keys_to_fetched_columns_index.find(key);
+            auto state = key_index_to_state[key_index];
 
-            if (expired_key_iterator)
-            {
-                /// Check and insert value if key was fetched from cache
-                aggregated_column->insertFrom(*fetched_column, expired_key_iterator->getMapped());
-                ++column_index;
+            if (state.isNotFound())
                 continue;
-            }
 
-            /// Check and insert value if key was not in cache and was fetched during update
-            auto * found_key_iterator = found_keys_to_fetched_columns_index.find(key);
-            if (found_key_iterator)
-            {
-                aggregated_column->insertFrom(*fetched_column, found_key_iterator->getMapped());
-                ++column_index;
-                continue;
-            }
+            aggregated_column->insertFrom(*fetched_column, state.fetched_column_index);
         }
     }
 
@@ -576,7 +581,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns_from_storage,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_from_storage_index,
+        const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
         const std::vector<DefaultValueProvider> & default_value_providers)
@@ -597,11 +602,11 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         {
             auto key = keys[key_index];
 
-            const auto * find_iterator_in_cache = found_keys_to_fetched_columns_from_storage_index.find(key);
-            if (find_iterator_in_cache)
+            auto key_state_from_storage = key_index_to_fetched_columns_from_storage_result[key_index];
+            if (key_state_from_storage.isFound())
             {
                 /// Check and insert value if key was fetched from cache
-                aggregated_column->insertFrom(*fetched_column_from_storage, find_iterator_in_cache->getMapped());
+                aggregated_column->insertFrom(*fetched_column_from_storage, key_state_from_storage.fetched_column_index);
                 continue;
             }
 

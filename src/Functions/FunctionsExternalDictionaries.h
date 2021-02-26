@@ -269,19 +269,21 @@ public:
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        String attribute_name;
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
-            attribute_name = name_col->getValue<String>();
+        Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
+
+        DataTypes types;
+
+        for (auto & attribute_name : attribute_names)
+        {
+            /// We're extracting the return type from the dictionary's config, without loading the dictionary.
+            auto attribute = helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name);
+            types.emplace_back(attribute.type);
+        }
+
+        if (types.size() > 1)
+            return std::make_shared<DataTypeTuple>(types);
         else
-            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
-                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        std::cerr << "Attribute name to get " << attribute_name << std::endl;
-        /// We're extracting the return type from the dictionary's config, without loading the dictionary.
-        auto attribute = helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name);
-        std::cerr << "FunctionDictGetNoType " << attribute.name << " " << attribute.type->getName() << std::endl;
-
-        return attribute.type;
+            return types.front();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -297,13 +299,7 @@ public:
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        String attribute_name;
-
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
-            attribute_name = name_col->getValue<String>();
-        else
-            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
-                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
 
         auto dictionary = helper.getDictionary(dictionary_name);
 
@@ -335,14 +331,43 @@ public:
             ++current_arguments_index;
         }
 
-        ColumnPtr default_col = nullptr;
+        Columns default_cols;
 
         if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
         {
             if (current_arguments_index >= arguments.size())
                 throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-            default_col = arguments[current_arguments_index].column;
+            auto default_column_type = arguments[current_arguments_index].type;
+
+            if (!default_column_type->equals(*result_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Wrong argument for function ({}) default values column must be the same type as dictionary attribute type",
+                    getName());
+
+            if (attribute_names.size() > 1)
+            {
+                const auto * tuple_column = checkAndGetColumn<ColumnTuple>(arguments[current_arguments_index].column.get());
+
+                if (!tuple_column)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Wrong argument for function ({}) default values column must be tuple", getName());
+
+                if (tuple_column->tupleSize() != attribute_names.size())
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Wrong argument for function ({}) default values tuple column must contain same column size as requested attributes",
+                        getName());
+
+                default_cols = tuple_column->getColumnsCopy();
+            }
+            else
+                default_cols.emplace_back(arguments[current_arguments_index].column);
+        }
+        else
+        {
+            for (size_t i = 0; i < attribute_names.size(); ++i)
+                default_cols.emplace_back(nullptr);
         }
 
         ColumnPtr result;
@@ -352,7 +377,26 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
-            result = dictionary->getColumn(attribute_name, result_type, {key_column}, {std::make_shared<DataTypeUInt64>()}, default_col);
+            if (attribute_names.size() > 1)
+            {
+                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
+
+                Columns result_columns = dictionary->getColumns(
+                    attribute_names,
+                    result_tuple_type.getElements(),
+                    {key_column},
+                    {std::make_shared<DataTypeUInt64>()},
+                    default_cols);
+
+                result = ColumnTuple::create(std::move(result_columns));
+            }
+            else
+                result = dictionary->getColumn(
+                    attribute_names[0],
+                    result_type,
+                    {key_column},
+                    {std::make_shared<DataTypeUInt64>()},
+                    default_cols.front());
         }
         else if (dictionary_key_type == DictionaryKeyType::complex)
         {
@@ -369,12 +413,49 @@ public:
             const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-            result = dictionary->getColumn(attribute_name, result_type, key_columns, key_types, default_col);
+            if (attribute_names.size() > 1)
+            {
+                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
+
+                Columns result_columns = dictionary->getColumns(
+                    attribute_names,
+                    result_tuple_type.getElements(),
+                    key_columns,
+                    key_types,
+                    default_cols);
+
+                result = ColumnTuple::create(std::move(result_columns));
+            }
+            else
+                result = dictionary->getColumn(
+                    attribute_names[0],
+                    result_type,
+                    key_columns,
+                    key_types,
+                    default_cols.front());
         }
         else if (dictionary_key_type == DictionaryKeyType::range)
         {
-            result = dictionary->getColumn(
-                attribute_name, result_type, {key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type}, default_col);
+            if (attribute_names.size() > 1)
+            {
+                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
+
+                Columns result_columns = dictionary->getColumns(
+                    attribute_names,
+                    result_tuple_type.getElements(),
+                    {key_column, range_col},
+                    {std::make_shared<DataTypeUInt64>(), range_col_type},
+                    default_cols);
+
+                result = ColumnTuple::create(std::move(result_columns));
+            }
+            else
+                result = dictionary->getColumn(
+                    attribute_names[0],
+                    result_type,
+                    {key_column, range_col},
+                    {std::make_shared<DataTypeUInt64>(), range_col_type},
+                    default_cols.front());
         }
         else
             throw Exception{"Unknown dictionary identifier type", ErrorCodes::BAD_ARGUMENTS};
@@ -383,6 +464,45 @@ public:
     }
 
 private:
+
+    Strings getAttributeNamesFromColumn(const ColumnPtr & column, const DataTypePtr & type) const
+    {
+        Strings attribute_names;
+
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(column.get()))
+            attribute_names.emplace_back(name_col->getValue<String>());
+        else if (const auto * tuple_col_const = checkAndGetColumnConst<ColumnTuple>(column.get()))
+        {
+            const ColumnTuple & tuple_col = assert_cast<const ColumnTuple &>(tuple_col_const->getDataColumn());
+            size_t tuple_size = tuple_col.tupleSize();
+
+            if (tuple_size < 1)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Tuple second argument of function ({}) must contain multiple constant string columns");
+
+            for (size_t i = 0; i < tuple_col.tupleSize(); ++i)
+            {
+                const auto * tuple_column = tuple_col.getColumnPtr(i).get();
+
+                const auto * attribute_name_column = checkAndGetColumn<ColumnString>(tuple_column);
+
+                if (!attribute_name_column)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Tuple second argument of function ({}) must contain multiple constant string columns",
+                        getName());
+
+                attribute_names.emplace_back(attribute_name_column->getDataAt(0));
+            }
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type ({}) of second argument of function ({}), expected a const string or const tuple of const strings.",
+                type->getName(),
+                getName());
+
+        return attribute_names;
+    }
+
     mutable FunctionDictHelper helper;
 };
 
