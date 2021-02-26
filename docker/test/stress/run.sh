@@ -82,7 +82,7 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 stop
 # TODO remove me when persistent snapshots will be ready
-rm -fr /var/lib/clickhouse/coordination :||
+rm -fr /var/lib/clickhouse/coordination ||:
 start
 
 clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt
