@@ -739,16 +739,16 @@ public:
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for use common S3 data in several nodes
-    /// Overrided in StorageReplicatedMergeTree
+    /// Overridden in StorageReplicatedMergeTree
     virtual void lockSharedData(const IMergeTreeDataPart &) const {}
 
     /// Unlock common S3 data part in zookeeper
-    /// Overrided in StorageReplicatedMergeTree
+    /// Overridden in StorageReplicatedMergeTree
     virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
     virtual bool unlockSharedData(const IMergeTreeDataPart &, const String &) const { return true; }
 
     /// Fetch part only if some replica has it on shared storage like S3
-    /// Overrided in StorageReplicatedMergeTree
+    /// Overridden in StorageReplicatedMergeTree
     virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) const { return false; }
 
 protected:

@@ -142,6 +142,10 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
+
+std::atomic_uint StorageReplicatedMergeTree::total_fetches {0};
+
+
 void StorageReplicatedMergeTree::setZooKeeper()
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -1730,7 +1734,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    static std::atomic_uint total_fetches {0};
     if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
     {
         throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
@@ -1934,7 +1937,6 @@ bool StorageReplicatedMergeTree::executeFetchShared(ReplicatedMergeTreeLogEntry 
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    static std::atomic_uint total_fetches {0};
     if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
     {
         throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
