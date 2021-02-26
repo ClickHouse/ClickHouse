@@ -111,6 +111,11 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "01413_alter_update_supertype",
+        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        "00836_indices_alter_replicated_zookeeper",
+        "00652_mutations_alter_update",
+        "01715_tuple_insert_null_as_default",
         "00825_protobuf_format_map",
         "00152_insert_different_granularity",
         "01715_background_checker_blather_zookeeper",
@@ -276,13 +281,16 @@
         "00746_sql_fuzzy",
         "00763_create_query_as_table_engine_bug",
         "00765_sql_compatibility_aliases",
-        "00825_protobuf_format_input",
-        "00825_protobuf_format_nested_optional",
         "00825_protobuf_format_array_3dim",
-        "00825_protobuf_format_map",
         "00825_protobuf_format_array_of_arrays",
-        "00825_protobuf_format_table_default",
         "00825_protobuf_format_enum_mapping",
+        "00825_protobuf_format_map",
+        "00825_protobuf_format_nested_in_nested",
+        "00825_protobuf_format_nested_optional",
+        "00825_protobuf_format_no_length_delimiter",
+        "00825_protobuf_format_persons",
+        "00825_protobuf_format_squares",
+        "00825_protobuf_format_table_default",
         "00826_cross_to_inner_join",
         "00834_not_between",
         "00909_kill_not_initialized_query",
@@ -747,6 +755,7 @@
         "memory_leak",
         "memory_limit",
         "polygon_dicts", // they use an explicitly specified database
-        "01658_read_file_to_stringcolumn"
+        "01658_read_file_to_stringcolumn",
+        "01721_engine_file_truncate_on_insert" // It's ok to execute in parallel but not several instances of the same test.
     ]
 }
