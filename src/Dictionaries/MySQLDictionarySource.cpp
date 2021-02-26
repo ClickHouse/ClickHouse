@@ -75,10 +75,12 @@ MySQLDictionarySource::MySQLDictionarySource(
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , close_connection{
-            config.getBool(config_prefix + ".close_connection", false) || config.getBool(config_prefix + ".share_connection", false)}
+            config.getBool(config_prefix + ".close_connection", false) || config.getBool(config_prefix + ".share_connection", false)
+    }
     , max_tries_for_mysql_block_input_stream{
             config.getBool(config_prefix + ".fail_on_connection_loss", false)
-                    ? 1 : default_num_tries_on_connection_loss}
+                    ? 1 : default_num_tries_on_connection_loss
+    }
 {
 }
 
@@ -139,11 +141,11 @@ BlockInputStreamPtr MySQLDictionarySource::retriedCreateMySqlBIStream(const std:
             if (++count_connection_lost < max_tries)
             {
                 LOG_WARNING(log, ecl.displayText());
-                LOG_WARNING(log, "No connection. Trying to reconnect...");
+                LOG_WARNING(log, "No connection. Trying to reconnect... {}/{}", count_connection_lost, max_tries);
                 continue;
             }
 
-            LOG_ERROR(log, "Failed (made {} attempts) to create BlockInputStream for MySQL dictionary source.", max_tries);
+            LOG_ERROR(log, "Failed ({}/{}) to create BlockInputStream for MySQL dictionary source.", count_connection_lost, max_tries);
             throw;
         }
     }

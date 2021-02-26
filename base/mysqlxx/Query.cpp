@@ -11,6 +11,14 @@
 #include <mysqlxx/Types.h>
 
 
+namespace
+{
+// USE MySQL ERROR CODE:
+// https://dev.mysql.com/doc/mysql-errors/5.7/en/client-error-reference.html
+const unsigned int CR_SERVER_GONE_ERROR = 2006;
+const unsigned int CR_SERVER_LOST = 2013;
+};
+
 namespace mysqlxx
 {
 
@@ -64,18 +72,18 @@ void Query::executeImpl()
     MYSQL* mysql_driver = conn->getDriver();
 
     auto & logger = Poco::Util::Application::instance().logger();
-    logger.trace("Query MySQL server using connection id %lu", mysql_thread_id(mysql_driver));
+    logger.trace("mysqlxx::Query: running MySQL query using connection %lu", mysql_thread_id(mysql_driver));
     if (mysql_real_query(mysql_driver, query_string.data(), query_string.size()))
     {
-        const auto errno = mysql_errno(mysql_driver);
-        switch (errno)
+        const auto err_no = mysql_errno(mysql_driver);
+        switch (err_no)
         {
-        case 2006 /* CR_SERVER_GONE_ERROR */:
+        case CR_SERVER_GONE_ERROR:
             [[fallthrough]];
-        case 2013 /* CR_SERVER_LOST */:
-            throw ConnectionLost(errorMessage(mysql_driver), errno);
+        case CR_SERVER_LOST:
+            throw ConnectionLost(errorMessage(mysql_driver), err_no);
         default:
-            throw BadQuery(errorMessage(mysql_driver), errno);
+            throw BadQuery(errorMessage(mysql_driver), err_no);
         }
     }
 }
