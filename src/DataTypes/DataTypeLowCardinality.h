@@ -100,6 +100,7 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
 private:
+    SerializationPtr doGetDefaultSerialization() const override;
 
     template <typename ... Params>
     using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, Params ...) const;

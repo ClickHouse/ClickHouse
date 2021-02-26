@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
@@ -195,6 +196,11 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
     /// DateTime with different timezones are equal, because:
     /// "all types with different time zones are equivalent and may be used interchangingly."
     return typeid(rhs) == typeid(*this);
+}
+
+SerializationPtr DataTypeDateTime::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationDateTime>(time_zone, utc_time_zone);
 }
 
 }

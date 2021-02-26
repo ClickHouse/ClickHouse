@@ -3,6 +3,7 @@
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -345,6 +346,12 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
     if (const auto * rhs_enum16 = typeid_cast<const DataTypeEnum16 *>(&rhs))
         return this->containsAll(rhs_enum16->getValues());
     return false;
+}
+
+template <typename Type>
+SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationEnum<Type>>(this->getValues());
 }
 
 

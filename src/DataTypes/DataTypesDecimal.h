@@ -56,6 +56,9 @@ public:
 
     static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
     static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
+
+protected:
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 template <typename T>

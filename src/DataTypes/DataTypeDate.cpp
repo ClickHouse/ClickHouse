@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/Serializations/SerializationDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -108,6 +109,11 @@ void DataTypeDate::deserializeProtobuf(IColumn & column, ProtobufReader & protob
 bool DataTypeDate::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this);
+}
+
+SerializationPtr DataTypeDate::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationDate>();
 }
 
 

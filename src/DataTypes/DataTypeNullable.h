@@ -117,6 +117,8 @@ public:
     static ReturnType deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
 
 private:
+    SerializationPtr doGetDefaultSerialization() const override;
+
     DataTypePtr nested_data_type;
 };
 

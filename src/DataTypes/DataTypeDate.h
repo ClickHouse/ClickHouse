@@ -31,6 +31,9 @@ public:
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
+
+protected:
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }

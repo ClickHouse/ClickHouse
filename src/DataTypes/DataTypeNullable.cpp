@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeOneElementTuple.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <IO/ReadBuffer.h>
@@ -549,6 +550,11 @@ ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IC
         return column_nullable.getNullMapColumnPtr();
 
     return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
+}
+
+SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
 }
 
 

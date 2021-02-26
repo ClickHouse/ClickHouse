@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class SerializationDate final : SerializationNumber<UInt16>
+class SerializationDate final : public SerializationNumber<UInt16>
 {
 public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -136,6 +137,12 @@ void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & 
     }
     else
         container.back() = decimal;
+}
+
+template <typename T>
+SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationDecimal<T>>(this->scale, this->precision);
 }
 
 

@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -950,6 +951,11 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 
     const auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
+}
+
+SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationLowCardinality>(dictionary_type);
 }
 
 

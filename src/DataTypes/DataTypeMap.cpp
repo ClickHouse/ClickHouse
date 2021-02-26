@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/typeid_cast.h>
@@ -354,6 +355,14 @@ MutableColumnPtr DataTypeMap::createColumn() const
 Field DataTypeMap::getDefault() const
 {
     return Map();
+}
+
+SerializationPtr DataTypeMap::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationMap>(
+        key_type->getDefaultSerialization(),
+        value_type->getDefaultSerialization(),
+        nested->getDefaultSerialization());
 }
 
 bool DataTypeMap::equals(const IDataType & rhs) const

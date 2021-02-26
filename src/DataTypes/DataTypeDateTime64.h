@@ -48,6 +48,9 @@ public:
     bool equals(const IDataType & rhs) const override;
 
     bool canBePromoted() const override { return false; }
+
+protected:
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 /** Tansform-type wrapper for DateTime64, applies given Transform to DateTime64 value or only to a whole part of it.

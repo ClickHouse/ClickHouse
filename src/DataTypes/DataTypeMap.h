@@ -92,6 +92,8 @@ public:
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
 
+    SerializationPtr doGetDefaultSerialization() const override;
+
 private:
     template <typename Writer>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const;

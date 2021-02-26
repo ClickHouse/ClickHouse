@@ -299,7 +299,7 @@ public:
 
 protected:
     virtual String doGetName() const;
-    virtual SerializationPtr doGetDefaultSerialization() const;
+    virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
     virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
     {

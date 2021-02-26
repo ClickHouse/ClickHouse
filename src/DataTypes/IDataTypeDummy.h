@@ -54,6 +54,8 @@ public:
 
     bool haveSubtypes() const override { return false; }
     bool cannotBeStoredInTables() const override { return true; }
+
+    SerializationPtr doGetDefaultSerialization() const override { throwNoSerialization(); }
 };
 
 }

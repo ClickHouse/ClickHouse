@@ -13,6 +13,7 @@
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -338,6 +339,12 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
 }
+
+SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationAggregateFunction>(function);
+}
+
 
 
 static DataTypePtr create(const ASTPtr & arguments)

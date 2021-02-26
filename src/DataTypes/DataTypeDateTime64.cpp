@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/Serializations/SerializationDateTime64.h>
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
@@ -211,6 +212,11 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
     if (const auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
         return this->scale == ptype->getScale();
     return false;
+}
+
+SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationDateTime64>(time_zone, utc_time_zone, scale);
 }
 
 }
