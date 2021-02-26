@@ -446,9 +446,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
 
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = table_id;
-        ASTPtr query_ptr(insert.release());
+        ASTPtr query_ptr = std::make_shared<ASTInsertQuery>();
+        query_ptr->as<ASTInsertQuery>()->table_id = table_id;
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         Context insert_context(context);
