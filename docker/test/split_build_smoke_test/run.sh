@@ -11,10 +11,11 @@ install_and_run_server() {
 run_client() {
     for i in {1..100}; do
         sleep 1
-        LD_LIBRARY_PATH=/unpacked /unpacked/clickhouse-client --query "select 'OK'" 2>/var/log/clickhouse-server/clientstderr.log && break
+        LD_LIBRARY_PATH=/unpacked /unpacked/clickhouse-client --query "select 'OK'" > /test_output/run.log 2>/var/log/clickhouse-server/clientstderr.log && break
         [[ $i == 100 ]] && echo 'FAIL'
     done
 }
 
 install_and_run_server
 run_client
+/process_split_build_smoke_test_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
