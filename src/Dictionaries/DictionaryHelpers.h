@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Support class for dictionary storages.
