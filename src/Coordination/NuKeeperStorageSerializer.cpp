@@ -8,25 +8,25 @@ namespace DB
 
 namespace
 {
-    //void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
-    //{
-    //    Coordination::write(node.data, out);
-    //    Coordination::write(node.acls, out);
-    //    //Coordination::write(node.is_ephemeral, out);
-    //    Coordination::write(node.is_sequental, out);
-    //    Coordination::write(node.stat, out);
-    //    Coordination::write(node.seq_num, out);
-    //}
+    void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
+    {
+        Coordination::write(node.data, out);
+        Coordination::write(node.acls, out);
+        Coordination::write(node.ephemeral_owner, out);
+        Coordination::write(node.is_sequental, out);
+        Coordination::write(node.stat, out);
+        Coordination::write(node.seq_num, out);
+    }
 
-    //void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
-    //{
-    //    Coordination::read(node.data, in);
-    //    Coordination::read(node.acls, in);
-    //    //Coordination::read(node.is_ephemeral, in);
-    //    Coordination::read(node.is_sequental, in);
-    //    Coordination::read(node.stat, in);
-    //    Coordination::read(node.seq_num, in);
-    //}
+    void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
+    {
+        Coordination::read(node.data, in);
+        Coordination::read(node.acls, in);
+        Coordination::read(node.ephemeral_owner, in);
+        Coordination::read(node.is_sequental, in);
+        Coordination::read(node.stat, in);
+        Coordination::read(node.seq_num, in);
+    }
 }
 
 void NuKeeperStorageSerializer::serialize(const NuKeeperStorage & storage, WriteBuffer & out)
