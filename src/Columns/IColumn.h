@@ -357,6 +357,21 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Compress column in memory to some representation that allows to decompress it back.
+    /// Return itself if compression is not applicable for this column type.
+    virtual Ptr compress() const
+    {
+        /// No compression by default.
+        return getPtr();
+    }
+
+    /// If it's CompressedColumn, decompress it and return.
+    /// Otherwise return itself.
+    virtual Ptr decompress() const
+    {
+        return getPtr();
+    }
+
 
     static MutablePtr mutate(Ptr ptr)
     {
@@ -460,7 +475,7 @@ using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
-//using MutableColumnRawPtrs = std::vector<IColumn *>;
+
 
 template <typename ... Args>
 struct IsMutableColumns;

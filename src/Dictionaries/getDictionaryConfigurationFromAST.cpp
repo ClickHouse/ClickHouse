@@ -401,10 +401,16 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         {
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
-            auto result = function->execute({}, {}, 0);
+            function->prepare({});
+
+            /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
+            /// Such functions will return column with size equal to input_rows_count.
+            size_t input_rows_count = 1;
+            auto result = function->execute({}, function->getResultType(), input_rows_count);
 
             Field value;
             result->get(0, value);
+
             AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
             current_xml_element->appendChild(text_value);
         }
