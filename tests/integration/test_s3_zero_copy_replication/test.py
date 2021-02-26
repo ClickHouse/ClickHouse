@@ -76,9 +76,13 @@ def test_s3_zero_copy_replication(cluster, policy):
     # Based on version 20.x - after merge, two old parts and one merged
     assert get_large_objects_count(cluster) == 3
 
-    time.sleep(60)
-
     # Based on version 20.x - after cleanup - only one merged part
+    countdown = 60
+    while countdown > 0:
+        if get_large_objects_count(cluster) == 1:
+            break
+        time.sleep(1)
+        countdown -= 1
     assert get_large_objects_count(cluster) == 1
 
     node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")

@@ -369,15 +369,6 @@ public:
 
     String getUniqueId() const;
 
-    /// Lock part in zookeeper for use common S3 data in several nodes
-    void lockSharedData() const;
-
-    /// Unlock common S3 data part in zookeeper
-    /// Return true if data unlocked
-    /// Return false if data is still used by another node
-    bool unlockSharedData() const;
-    bool unlockSharedData(const String & path) const;
-
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -441,12 +432,6 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
-
-    /// Fetch part only if some replica has it on shared storage like S3
-    bool tryToFetchIfShared(const DiskPtr & disk, const String & path) const;
-
-    /// Get best replica having this partition on S3
-    String getSharedDataReplica(const String & zookeeper_path, zkutil::ZooKeeperPtr zookeeper, const String & replica_name) const;
 
     mutable State state{State::Temporary};
 };

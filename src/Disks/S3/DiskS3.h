@@ -118,8 +118,12 @@ public:
 
     void shutdown() override;
 
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
     String getUniqueId(const String & path) const override;
 
+    /// Check file exists and ClickHouse has an access to it
+    /// Required for S3 to ensure that replica has access to data wroten by other node
     bool checkUniqueId(const String & id) const override;
 
     /// Actions performed after disk creation.

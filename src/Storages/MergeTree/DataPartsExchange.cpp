@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
+    extern const int INCORRECT_PART_TYPE;
 }
 
 namespace DataPartsExchange
@@ -265,7 +266,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
     if (disk->getType() != DB::DiskType::Type::S3)
         throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
 
-    part->lockSharedData();
+    part->storage.lockSharedData(*part);
 
     String part_id = part->getUniqueId();
     writeStringBinary(part_id, out);
@@ -280,9 +281,9 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
         Poco::File metadata(metadata_file);
 
         if (!metadata.exists())
-            throw Exception("S3 metadata '" + file_name + "' is not exists", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("S3 metadata '" + file_name + "' is not exists", ErrorCodes::CORRUPTED_DATA);
         if (!metadata.isFile())
-            throw Exception("S3 metadata '" + file_name + "' is not a file", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("S3 metadata '" + file_name + "' is not a file", ErrorCodes::CORRUPTED_DATA);
         UInt64 file_size = metadata.getSize();
 
         writeStringBinary(it.first, out);
@@ -361,7 +362,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             disks_s3.push_back(disk_s3);
         else
         {
-            disks_s3 = data.getDisksByType("s3");
+            disks_s3 = data.getDisksByType(DiskType::Type::S3);
 
             if (disks_s3.empty())
                 try_use_s3_copy = false;
@@ -411,7 +412,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         String part_type = "Wide";
         readStringBinary(part_type, in);
         if (part_type == "InMemory")
-            throw Exception("Got 'send_s3_metadata' cookie for in-memory partition", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Got 'send_s3_metadata' cookie for in-memory part", ErrorCodes::INCORRECT_PART_TYPE);
 
         UUID part_uuid = UUIDHelpers::Nil;
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
@@ -692,7 +693,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    new_data_part->lockSharedData();
+    new_data_part->storage.lockSharedData(*new_data_part);
 
     return new_data_part;
 }
