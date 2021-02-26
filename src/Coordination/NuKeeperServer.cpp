@@ -40,7 +40,7 @@ void NuKeeperServer::startup()
     nuraft::raft_params params;
     if (single_server)
     {
-        /// Don't make sence in single server mode
+        /// Don't make sense in single server mode
         params.heart_beat_interval_ = 0;
         params.election_timeout_lower_bound_ = 0;
         params.election_timeout_upper_bound_ = 0;
@@ -198,7 +198,7 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
         }
         case nuraft::cb_func::InitialBatchCommited:
         {
-            if (isLeader()) /// We have commited our log store and we are leader, ready to serve requests.
+            if (isLeader()) /// We have committed our log store and we are leader, ready to serve requests.
                 set_initialized();
             return nuraft::cb_func::ReturnCode::Ok;
         }
