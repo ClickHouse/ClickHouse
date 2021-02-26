@@ -13,12 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_READ_FROM_SOCKET;
-}
-
 /// Class for nonblocking packet receiving. It runs connection->receivePacket
 /// in fiber and sets special read callback which is called when
 /// reading from socket blocks. When read callback is called,
