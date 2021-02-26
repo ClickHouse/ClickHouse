@@ -367,6 +367,8 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
 protected:
