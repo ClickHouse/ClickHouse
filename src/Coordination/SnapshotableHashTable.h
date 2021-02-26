@@ -2,6 +2,7 @@
 #include <common/StringRef.h>
 #include <unordered_map>
 #include <list>
+#include <atomic>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ struct ListNode
 {
     std::string key;
     V value;
-    bool active_in_map;
+    std::atomic<bool> active_in_map;
 };
 
 template <class V>
@@ -35,7 +36,7 @@ public:
     using const_reverse_iterator = typename List::const_reverse_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
-    bool insert(const std::string & key, V && value)
+    bool insert(const std::string & key, const V & value)
     {
         auto it = map.find(key);
         if (it == map.end())
@@ -45,24 +46,29 @@ public:
             map.emplace(itr->key, itr);
             return true;
         }
+
+        return false;
+    }
+
+    bool erase(const std::string & key)
+    {
+        auto it = map.find(key);
+        if (it == map.end())
+            return false;
+
+        auto list_itr = it->second;
+        if (snapshot_mode)
+        {
+            list_itr->active_in_map = false;
+            map.erase(it);
+        }
         else
         {
-            ListElem elem{key, value, true};
-            if (snapshot_mode)
-            {
-                auto list_itr = it->second;
-                list_itr->active_in_map = false;
-                auto new_list_itr = list.insert(list.end(), elem);
-                map[new_list_itr->key] = new_list_itr;
-            }
-            else
-            {
-                list.erase(it->second);
-                auto itr = list.insert(list.end(), elem);
-                map[itr->key] = itr;
-            }
-            return false;
+            map.erase(it);
+            list.erase(list_itr);
         }
+
+        return true;
     }
 
     bool contains(const std::string & key) const
@@ -70,25 +76,35 @@ public:
         return map.find(key) != map.end();
     }
 
-    void updateValue(const std::string & key, ValueUpdater updater)
+    const_iterator updateValue(const std::string & key, ValueUpdater updater)
     {
         auto it = map.find(key);
         assert(it != map.end());
         if (snapshot_mode)
         {
             auto list_itr = it->second;
-            list_itr->active_in_map = false;
             auto elem_copy = *(list_itr);
+            list_itr->active_in_map = false;
+
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
-
             map[itr->key] = itr;
+            return itr;
         }
         else
         {
             auto list_itr = it->second;
             updater(list_itr->value);
+            return list_itr;
         }
+    }
+
+    const_iterator find(const std::string & key) const
+    {
+        auto map_it = map.find(key);
+        if (map_it != map.end())
+            return map_it->second;
+        return list.end();
     }
 
     const V & getValue(const std::string & key) const
@@ -98,25 +114,45 @@ public:
         return it->second->value;
     }
 
+    void clearOutdatedNodes()
+    {
+        auto start = list.begin();
+        auto end = list.end();
+        for (auto itr = start; itr != end;)
+        {
+            if (!itr->active_in_map)
+                itr = list.erase(itr);
+            else
+                itr++;
+        }
+    }
+
     void clear()
     {
         list.clear();
         map.clear();
     }
 
-    bool enableSnapshotMode()
+    void enableSnapshotMode()
     {
-        bool old = snapshot_mode;
         snapshot_mode = true;
-        return old;
     }
 
-    bool disableSnapshotMode()
+    void disableSnapshotMode()
     {
-        bool old = snapshot_mode;
         snapshot_mode = false;
-        return old;
     }
+
+    size_t size() const
+    {
+        return map.size();
+    }
+
+    size_t snapshotSize() const
+    {
+        return list.size();
+    }
+
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }

@@ -8,25 +8,25 @@ namespace DB
 
 namespace
 {
-    void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
-    {
-        Coordination::write(node.data, out);
-        Coordination::write(node.acls, out);
-        Coordination::write(node.is_ephemeral, out);
-        Coordination::write(node.is_sequental, out);
-        Coordination::write(node.stat, out);
-        Coordination::write(node.seq_num, out);
-    }
+    //void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
+    //{
+    //    Coordination::write(node.data, out);
+    //    Coordination::write(node.acls, out);
+    //    //Coordination::write(node.is_ephemeral, out);
+    //    Coordination::write(node.is_sequental, out);
+    //    Coordination::write(node.stat, out);
+    //    Coordination::write(node.seq_num, out);
+    //}
 
-    void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
-    {
-        Coordination::read(node.data, in);
-        Coordination::read(node.acls, in);
-        Coordination::read(node.is_ephemeral, in);
-        Coordination::read(node.is_sequental, in);
-        Coordination::read(node.stat, in);
-        Coordination::read(node.seq_num, in);
-    }
+    //void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
+    //{
+    //    Coordination::read(node.data, in);
+    //    Coordination::read(node.acls, in);
+    //    //Coordination::read(node.is_ephemeral, in);
+    //    Coordination::read(node.is_sequental, in);
+    //    Coordination::read(node.stat, in);
+    //    Coordination::read(node.seq_num, in);
+    //}
 }
 
 void NuKeeperStorageSerializer::serialize(const NuKeeperStorage & storage, WriteBuffer & out)
@@ -34,11 +34,11 @@ void NuKeeperStorageSerializer::serialize(const NuKeeperStorage & storage, Write
     Coordination::write(storage.zxid, out);
     Coordination::write(storage.session_id_counter, out);
     Coordination::write(storage.container.size(), out);
-    for (const auto & [path, node] : storage.container)
-    {
-        Coordination::write(path, out);
-        writeNode(node, out);
-    }
+    //for (const auto & [path, node] : storage.container)
+    //{
+    //    Coordination::write(path, out);
+    //    writeNode(node, out);
+    //}
     Coordination::write(storage.ephemerals.size(), out);
     for (const auto & [session_id, paths] : storage.ephemerals)
     {
@@ -60,16 +60,16 @@ void NuKeeperStorageSerializer::deserialize(NuKeeperStorage & storage, ReadBuffe
     size_t container_size;
     Coordination::read(container_size, in);
 
-    size_t current_size = 0;
-    while (current_size < container_size)
-    {
-        std::string path;
-        Coordination::read(path, in);
-        NuKeeperStorage::Node node;
-        readNode(node, in);
-        storage.container[path] = node;
-        current_size++;
-    }
+    //size_t current_size = 0;
+    //while (current_size < container_size)
+    //{
+    //    std::string path;
+    //    Coordination::read(path, in);
+    //    NuKeeperStorage::Node node;
+    //    readNode(node, in);
+    //    storage.container[path] = node;
+    //    current_size++;
+    //}
     size_t ephemerals_size;
     Coordination::read(ephemerals_size, in);
     while (storage.ephemerals.size() < ephemerals_size)
