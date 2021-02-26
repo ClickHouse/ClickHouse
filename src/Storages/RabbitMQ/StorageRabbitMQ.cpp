@@ -482,7 +482,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
          * an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
          */
-        while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+        while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
             event_handler->iterateLoop();
 
         /// This will force immediate closure if not yet closed
