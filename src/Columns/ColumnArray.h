@@ -123,6 +123,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    ColumnPtr compress() const override;
+
     void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(offsets);
@@ -183,9 +185,6 @@ private:
 
     template <typename Comparator>
     void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
-
-    template <bool positive>
-    struct Cmp;
 };
 
 
