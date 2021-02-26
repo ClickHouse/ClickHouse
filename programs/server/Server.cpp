@@ -103,6 +103,7 @@ namespace CurrentMetrics
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
 }
 
 
@@ -1012,7 +1013,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         int pool_size = config().getInt("distributed_ddl.pool_size", 1);
         if (pool_size < 1)
             throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+                                                                 "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
