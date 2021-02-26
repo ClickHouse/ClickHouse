@@ -6,7 +6,7 @@
 #    include "config_core.h"
 #endif
 
-#if !USE_MYSQL
+#if USE_MYSQL
 #    include <common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"

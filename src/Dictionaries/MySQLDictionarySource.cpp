@@ -21,7 +21,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const Context & /* context */,
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
-#if ! USE_MYSQL
+#if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
 #else
         (void)dict_struct;
@@ -38,7 +38,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 }
 
 
-#if ! USE_MYSQL
+#if USE_MYSQL
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <IO/WriteBufferFromString.h>
