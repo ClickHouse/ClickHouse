@@ -271,7 +271,7 @@ toIPv6(string)
 
 **Returned value**
 
--   Converted IP address. If IPv4 passed, returns its representation as IPv6.
+-   IP address. 
 
 Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
