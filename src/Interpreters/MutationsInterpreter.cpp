@@ -442,10 +442,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName());
 
                 const auto & update_expr = kv.second;
-                auto updated_column = makeASTFunction("cast",
+                auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
                         getPartitionAndPredicateExpressionForMutationCommand(command),
-                        makeASTFunction("cast",
+                        makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
