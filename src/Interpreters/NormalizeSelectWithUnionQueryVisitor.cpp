@@ -20,7 +20,7 @@ void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr & 
         return;
         }
 
-        selects.push_back(std::move(ast_select));
+        selects.push_back(ast_select);
 }
 
 void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
@@ -53,15 +53,16 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
 
         if (union_modes[i] == ASTSelectWithUnionQuery::Mode::ALL)
         {
-            if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>())
+            if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>();
+                inner_union && inner_union->union_mode == ASTSelectWithUnionQuery::Mode::ALL)
             {
                 /// Inner_union is an UNION ALL list, just lift up
                 for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
                      ++child)
-                    selects.push_back(std::move(*child));
+                    selects.push_back(*child);
             }
             else
-                selects.push_back(std::move(select_list[i + 1]));
+                selects.push_back(select_list[i + 1]);
         }
         /// flatten all left nodes and current node to a UNION DISTINCT list
         else if (union_modes[i] == ASTSelectWithUnionQuery::Mode::DISTINCT)
@@ -85,15 +86,23 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     /// No UNION DISTINCT or only one child in select_list
     if (i == -1)
     {
-        if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>())
+        if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>();
+            inner_union && inner_union->union_mode == ASTSelectWithUnionQuery::Mode::ALL)
         {
             /// Inner_union is an UNION ALL list, just lift it up
             for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
                  ++child)
-                selects.push_back(std::move(*child));
+                selects.push_back(*child);
         }
         else
-            selects.push_back(std::move(select_list[0]));
+            selects.push_back(select_list[0]);
+    }
+
+    /// Just one union type child, lift it up
+    if (selects.size() == 1 && selects[0]->as<ASTSelectWithUnionQuery>())
+    {
+        ast = *(selects[0]->as<ASTSelectWithUnionQuery>());
+        return;
     }
 
     // reverse children list
