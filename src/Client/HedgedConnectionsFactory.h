@@ -53,12 +53,11 @@ public:
     /// Create and return active connections according to pool_mode.
     std::vector<Connection *> getManyConnections(PoolMode pool_mode);
 
-    /// Try to get connection to the new replica. If start_new_connection is true, we start establishing connection
-    /// with the new replica. Process all current events in epoll (connections, timeouts),
-    /// if there is no events in epoll and blocking is false, return NOT_READY.
-    /// Returned state might be READY, NOT_READY and CANNOT_CHOOSE.
+    /// Try to get connection to the new replica without blocking. Process all current events in epoll (connections, timeouts),
+    /// Returned state might be READY (connection established successfully),
+    /// NOT_READY (there are no ready events now) and CANNOT_CHOOSE (cannot produce new connection anymore).
     /// If state is READY, replica connection will be written in connection_out.
-    State waitForReadyConnections(bool blocking, Connection *& connection_out);
+    State waitForReadyConnections(Connection *& connection_out);
 
     State startNewConnection(Connection *& connection_out);
 
@@ -73,11 +72,14 @@ public:
 
     int numberOfProcessingReplicas() const;
 
-    void setSkipPredicate(std::function<bool(Connection *)> pred) { skip_predicate = std::move(pred); }
+    /// Tell Factory to not return connections with two level aggregation incompatibility.
+    void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
     ~HedgedConnectionsFactory();
 
 private:
+    State waitForReadyConnectionsImpl(bool blocking, Connection *& connection_out);
+
     /// Try to start establishing connection to the new replica. Return
     /// the index of the new replica or -1 if cannot start new connection.
     State startNewConnectionImpl(Connection *& connection_out);
@@ -104,6 +106,8 @@ private:
 
     State setBestUsableReplica(Connection *& connection_out);
 
+    bool isTwoLevelAggregationIncompatible(Connection * connection);
+
     const ConnectionPoolWithFailoverPtr pool;
     const Settings * settings;
     const ConnectionTimeouts timeouts;
@@ -117,7 +121,9 @@ private:
     /// Map timeout for changing replica to replica index.
     std::unordered_map<int, int> timeout_fd_to_replica_index;
 
-    std::function<bool(Connection *)> skip_predicate;
+    /// If this flag is true, don't return connections with
+    /// two level aggregation incompatibility
+    bool skip_replicas_with_two_level_aggregation_incompatibility = false;
 
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
@@ -125,14 +131,27 @@ private:
     Epoll epoll;
     Poco::Logger * log;
     std::string fail_messages;
+
+    /// The maximum number of attempts to connect to replicas.
     size_t max_tries;
+    /// Total number of established connections.
     size_t entries_count = 0;
+    /// The number of established connections that are usable.
     size_t usable_count = 0;
+    /// The number of established connections that are up to date.
     size_t up_to_date_count = 0;
+    /// The number of failed connections (replica is considered failed after max_tries attempts to connect).
     size_t failed_pools_count= 0;
+
+    /// The number of replicas that are in process of connection.
     size_t replicas_in_process_count = 0;
-    size_t requested_connections_count = 0;
+    /// The number of ready replicas (replica is considered ready when it's
+    /// connection returns outside).
     size_t ready_replicas_count = 0;
+
+    /// The number of requested in startNewConnection replicas (it's needed for
+    /// checking the number of requested replicas that are still in process).
+    size_t requested_connections_count = 0;
 };
 
 }

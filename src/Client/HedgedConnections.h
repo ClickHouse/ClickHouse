@@ -3,6 +3,8 @@
 
 #include <functional>
 #include <queue>
+#include <optional>
+
 #include <Client/HedgedConnectionsFactory.h>
 #include <Client/IConnections.h>
 #include <Client/PacketReceiver.h>
@@ -118,6 +120,8 @@ private:
 
     ReplicaLocation getReadyReplicaLocation(AsyncCallback async_callback = {});
 
+    bool resumePacketReceiver(const ReplicaLocation & replica_location);
+
     void processReceivedFirstDataPacket(const ReplicaLocation & replica_location);
 
     void startNewReplica();
@@ -161,6 +165,11 @@ private:
     /// New replica may not support two-level aggregation due to version incompatibility.
     /// If we didn't disabled it, we need to skip this replica.
     bool disable_two_level_aggregation = false;
+
+    /// We will save replica with last received packet
+    /// (except cases when packet type is EndOfStream or Exception)
+    /// to resume it's packet receiver when new packet is needed.
+    std::optional<ReplicaLocation> replica_with_last_received_packet;
 
     Packet last_received_packet;
 
