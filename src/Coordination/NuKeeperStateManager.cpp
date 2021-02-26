@@ -1,4 +1,4 @@
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -9,30 +9,34 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-InMemoryStateManager::InMemoryStateManager(int server_id_, const std::string & host, int port)
+NuKeeperStateManager::NuKeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
     : my_server_id(server_id_)
     , my_port(port)
-    , log_store(nuraft::cs_new<InMemoryLogStore>())
+    , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000, false))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     cluster_config->get_servers().push_back(peer_config);
 }
 
-InMemoryStateManager::InMemoryStateManager(
+NuKeeperStateManager::NuKeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix,
-    const Poco::Util::AbstractConfiguration & config)
+    const Poco::Util::AbstractConfiguration & config,
+    const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
-    , log_store(nuraft::cs_new<InMemoryLogStore>())
+    , log_store(nuraft::cs_new<NuKeeperLogStore>(
+                    config.getString(config_prefix + ".log_storage_path"),
+                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
+
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
+    config.keys(config_prefix + ".raft_configuration", keys);
 
     for (const auto & server_key : keys)
     {
-        std::string full_prefix = config_prefix + "." + server_key;
+        std::string full_prefix = config_prefix + ".raft_configuration." + server_key;
         int server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
@@ -53,13 +57,23 @@ InMemoryStateManager::InMemoryStateManager(
         cluster_config->get_servers().push_back(peer_config);
     }
     if (!my_server_config)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section");
+        throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);
 
     if (start_as_follower_servers.size() == cluster_config->get_servers().size())
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
-void InMemoryStateManager::save_config(const nuraft::cluster_config & config)
+void NuKeeperStateManager::loadLogStore(size_t start_log_index)
+{
+    log_store->init(start_log_index);
+}
+
+void NuKeeperStateManager::flushLogStore()
+{
+    log_store->flush();
+}
+
+void NuKeeperStateManager::save_config(const nuraft::cluster_config & config)
 {
     // Just keep in memory in this example.
     // Need to write to disk here, if want to make it durable.
@@ -67,7 +81,7 @@ void InMemoryStateManager::save_config(const nuraft::cluster_config & config)
     cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
-void InMemoryStateManager::save_state(const nuraft::srv_state & state)
+void NuKeeperStateManager::save_state(const nuraft::srv_state & state)
 {
      // Just keep in memory in this example.
      // Need to write to disk here, if want to make it durable.
