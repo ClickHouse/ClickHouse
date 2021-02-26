@@ -56,6 +56,14 @@ public:
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
 
+    String getName() const override
+    {
+        if (dictionary_key_type == DictionaryKeyType::simple)
+            return "Cache";
+        else
+            return "ComplexKeyCache";
+    }
+
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
@@ -135,7 +143,7 @@ private:
         KeysStorageFetchResult & result)
     {
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
-        result.found_keys_to_fetched_columns_index.reserve(keys.size());
+        result.key_index_to_state.resize_fill(keys.size(), {KeyState::not_found});
 
         const auto now = std::chrono::system_clock::now();
 
@@ -155,18 +163,20 @@ private:
 
                 if (has_deadline && now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
                 {
-                    result.not_found_or_expired_keys.emplace_back(key);
-                    result.not_found_or_expired_keys_indexes.emplace_back(key_index);
+                    result.key_index_to_state[key_index] = {KeyState::not_found};
+                    ++result.not_found_keys_size;
                     continue;
                 }
                 else if (has_deadline && now > cell.deadline)
                 {
-                    result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
-                    result.not_found_or_expired_keys.emplace_back(key);
-                    result.not_found_or_expired_keys_indexes.emplace_back(key_index);
+                    result.key_index_to_state[key_index] = {KeyState::expired, fetched_columns_index};
+                    ++result.expired_keys_size;
                 }
                 else
-                    result.found_keys_to_fetched_columns_index[key] = fetched_columns_index;
+                {
+                    result.key_index_to_state[key_index] = {KeyState::found, fetched_columns_index};
+                    ++result.found_keys_size;
+                }
 
                 ++fetched_columns_index;
 
@@ -175,8 +185,8 @@ private:
             }
             else
             {
-                result.not_found_or_expired_keys.emplace_back(key);
-                result.not_found_or_expired_keys_indexes.emplace_back(key_index);
+                result.key_index_to_state[key_index] = {KeyState::not_found};
+                ++result.not_found_keys_size;
             }
         }
     }

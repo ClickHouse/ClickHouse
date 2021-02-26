@@ -818,6 +818,14 @@ public:
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
 
+    String getName() const override
+    {
+        if (dictionary_key_type == DictionaryKeyType::simple)
+            return "SSDCache";
+        else
+            return "SSDComplexKeyCache";
+    };
+
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
@@ -922,9 +930,12 @@ private:
 
     template <typename Result>
     void fetchColumnsForKeysImpl(
-        const PaddedPODArray<KeyType> & keys, const DictionaryStorageFetchRequest & fetch_request, Result & result) const
+        const PaddedPODArray<KeyType> & keys,
+        const DictionaryStorageFetchRequest & fetch_request,
+        Result & result) const
     {
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
+        result.key_index_to_state.resize_fill(keys.size(), {KeyState::not_found});
 
         const auto now = std::chrono::system_clock::now();
 
@@ -947,21 +958,22 @@ private:
 
                 if (has_deadline && now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
                 {
-                    result.not_found_or_expired_keys.emplace_back(key);
-                    result.not_found_or_expired_keys_indexes.emplace_back(key_index);
+                    result.key_index_to_state[key_index] = KeyState::not_found;
+                    ++result.not_found_keys_size;
                     continue;
                 }
                 else if (has_deadline && now > cell.deadline)
                 {
                     if (cell.in_memory)
                     {
+                        result.key_index_to_state[key_index] = { KeyState::expired, fetched_columns_index };
+                        ++fetched_columns_index;
+
                         const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
                         char * serialized_columns_place = partition.getPlace(cell.index);
                         deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, serialized_columns_place);
-                        result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
-                        result.not_found_or_expired_keys.emplace_back(key);
-                        result.not_found_or_expired_keys_indexes.emplace_back(key_index);
-                        ++fetched_columns_index;
+
+                        ++result.expired_keys_size;
                     }
                     else
                     {
@@ -973,11 +985,14 @@ private:
                 {
                     if (cell.in_memory)
                     {
+                        result.key_index_to_state[key_index] = { KeyState::found, fetched_columns_index };
+                        ++fetched_columns_index;
+
                         const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
                         char * serialized_columns_place = partition.getPlace(cell.index);
                         deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, serialized_columns_place);
-                        result.found_keys_to_fetched_columns_index[key] = fetched_columns_index;
-                        ++fetched_columns_index;
+
+                        ++result.found_keys_size;
                     }
                     else
                     {
@@ -988,8 +1003,8 @@ private:
             }
             else
             {
-                result.not_found_or_expired_keys.emplace_back(key);
-                result.not_found_or_expired_keys_indexes.emplace_back(key_index);
+                result.key_index_to_state[key_index] = KeyState::not_found;
+                ++result.not_found_keys_size;
             }
         }
 
@@ -1008,23 +1023,15 @@ private:
 
             for (auto & key_in_block : keys_in_block)
             {
-                auto key = keys[key_in_block.key_index];
-
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
                 if (key_in_block.is_expired)
-                    result.expired_keys_to_fetched_columns_index[key] = fetched_columns_index;
+                    result.key_index_to_state[key_in_block.key_index] = {KeyState::expired, fetched_columns_index};
                 else
-                    result.found_keys_to_fetched_columns_index[key] = fetched_columns_index;
+                    result.key_index_to_state[key_in_block.key_index] = {KeyState::found, fetched_columns_index};
 
                 ++fetched_columns_index;
-
-                if (key_in_block.is_expired)
-                {
-                    result.not_found_or_expired_keys.emplace_back(key);
-                    result.not_found_or_expired_keys_indexes.emplace_back(key_in_block.key_index);
-                }
             }
         });
     }

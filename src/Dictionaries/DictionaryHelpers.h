@@ -34,6 +34,9 @@ public:
         : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
         , attributes_to_fetch_filter(structure.attributes.size(), false)
     {
+        if (attributes_to_fetch_names_set.size() != attributes_names_to_fetch.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Attribute names to fetch should be unique");
+
         size_t attributes_size = structure.attributes.size();
         dictionary_attributes_types.reserve(attributes_size);
 
@@ -53,21 +56,26 @@ public:
     DictionaryStorageFetchRequest() = default;
 
     /// Check requested attributes size
-    size_t attributesSize() const
+    ALWAYS_INLINE size_t attributesSize() const
     {
         return dictionary_attributes_types.size();
     }
 
     /// Check if attribute with attribute_name was requested to fetch
-    bool containsAttribute(const String & attribute_name) const
+    ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
     {
         return attributes_to_fetch_names_set.find(attribute_name) != attributes_to_fetch_names_set.end();
     }
 
     /// Check if attribute with attribute_index should be filled during fetch
-    bool shouldFillResultColumnWithIndex(size_t attribute_index) const
+    ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
     {
         return attributes_to_fetch_filter[attribute_index];
+    }
+
+    const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
+    {
+        return dictionary_attributes_types[attribute_index];
     }
 
     /// Create columns for each of dictionary attributes
@@ -97,7 +105,6 @@ public:
 private:
     std::unordered_set<String> attributes_to_fetch_names_set;
     std::vector<bool> attributes_to_fetch_filter;
-    /// TODO: Fix name
     DataTypes dictionary_attributes_types;
 };
 
