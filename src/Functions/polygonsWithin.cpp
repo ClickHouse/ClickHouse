@@ -107,13 +107,13 @@ template <>
 const char * FunctionPolygonsWithin<CartesianPoint>::name = "polygonsWithinCartesian";
 
 template <>
-const char * FunctionPolygonsWithin<GeographicPoint>::name = "polygonsWithinGeographic";
+const char * FunctionPolygonsWithin<SphericalPoint>::name = "polygonsWithinSpherical";
 
 
 void registerFunctionPolygonsWithin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsWithin<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsWithin<GeographicPoint>>();
+    factory.registerFunction<FunctionPolygonsWithin<SphericalPoint>>();
 }
 
 }

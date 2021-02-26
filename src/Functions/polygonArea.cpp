@@ -118,13 +118,13 @@ template <>
 const char * FunctionPolygonArea<CartesianPoint>::name = "polygonAreaCartesian";
 
 template <>
-const char * FunctionPolygonArea<GeographicPoint>::name = "polygonAreaGeographic";
+const char * FunctionPolygonArea<SphericalPoint>::name = "polygonAreaSpherical";
 
 
 void registerFunctionPolygonArea(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonArea<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonArea<GeographicPoint>>();
+    factory.registerFunction<FunctionPolygonArea<SphericalPoint>>();
 }
 
 

@@ -102,13 +102,13 @@ std::vector<MultiPolygon<Point>> MultiPolygonFromColumnConverter<Point>::convert
 
 
 template class PointFromColumnConverter<CartesianPoint>;
-template class PointFromColumnConverter<GeographicPoint>;
+template class PointFromColumnConverter<SphericalPoint>;
 template class RingFromColumnConverter<CartesianPoint>;
-template class RingFromColumnConverter<GeographicPoint>;
+template class RingFromColumnConverter<SphericalPoint>;
 template class PolygonFromColumnConverter<CartesianPoint>;
-template class PolygonFromColumnConverter<GeographicPoint>;
+template class PolygonFromColumnConverter<SphericalPoint>;
 template class MultiPolygonFromColumnConverter<CartesianPoint>;
-template class MultiPolygonFromColumnConverter<GeographicPoint>;
+template class MultiPolygonFromColumnConverter<SphericalPoint>;
 
 template <typename Point, template<typename> typename Desired>
 void checkColumnTypeOrThrow(const ColumnWithTypeAndName & column)
@@ -130,8 +130,8 @@ void checkColumnTypeOrThrow(const ColumnWithTypeAndName & column)
 template void checkColumnTypeOrThrow<CartesianPoint, Ring>(const ColumnWithTypeAndName &);
 template void checkColumnTypeOrThrow<CartesianPoint, Polygon>(const ColumnWithTypeAndName &);
 template void checkColumnTypeOrThrow<CartesianPoint, MultiPolygon>(const ColumnWithTypeAndName &);
-template void checkColumnTypeOrThrow<GeographicPoint, Ring>(const ColumnWithTypeAndName &);
-template void checkColumnTypeOrThrow<GeographicPoint, Polygon>(const ColumnWithTypeAndName &);
-template void checkColumnTypeOrThrow<GeographicPoint, MultiPolygon>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<SphericalPoint, Ring>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<SphericalPoint, Polygon>(const ColumnWithTypeAndName &);
+template void checkColumnTypeOrThrow<SphericalPoint, MultiPolygon>(const ColumnWithTypeAndName &);
 
 }

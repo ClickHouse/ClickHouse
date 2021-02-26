@@ -105,12 +105,12 @@ template <>
 const char * FunctionPolygonsSymDifference<CartesianPoint>::name = "polygonsSymDifferenceCartesian";
 
 template <>
-const char * FunctionPolygonsSymDifference<GeographicPoint>::name = "polygonsSymDifferenceGeographic";
+const char * FunctionPolygonsSymDifference<SphericalPoint>::name = "polygonsSymDifferenceSpherical";
 
 void registerFunctionPolygonsSymDifference(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsSymDifference<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsSymDifference<GeographicPoint>>();
+    factory.registerFunction<FunctionPolygonsSymDifference<SphericalPoint>>();
 }
 
 }

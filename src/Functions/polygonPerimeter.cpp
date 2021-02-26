@@ -95,13 +95,13 @@ template <>
 const char * FunctionPolygonPerimeter<CartesianPoint>::name = "polygonPerimeterCartesian";
 
 template <>
-const char * FunctionPolygonPerimeter<GeographicPoint>::name = "polygonPerimeterGeographic";
+const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterSpherical";
 
 
 void registerFunctionPolygonPerimeter(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonPerimeter<GeographicPoint>>();
+    factory.registerFunction<FunctionPolygonPerimeter<SphericalPoint>>();
 }
 
 
