@@ -9,7 +9,7 @@ namespace QueryPlanOptimizations
 {
 
 /// This is the main function which optimizes the whole QueryPlan tree.
-void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Optimization is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.

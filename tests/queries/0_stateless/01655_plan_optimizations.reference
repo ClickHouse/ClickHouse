@@ -1,3 +1,5 @@
+Too many optimizations applied to query plan
+Too many optimizations applied to query plan
 > sipHash should be calculated after filtration
 FUNCTION sipHash64
 Filter column: equals

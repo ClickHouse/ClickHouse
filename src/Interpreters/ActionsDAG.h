@@ -152,6 +152,9 @@ public:
         }
     };
 
+    /// NOTE: std::list is an implementation detail.
+    /// It allows to add and remove new nodes inplace without reallocation.
+    /// Raw pointers to nodes remain valid.
     using Nodes = std::list<Node>;
     using Inputs = std::vector<Node *>;
 
