@@ -5,7 +5,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -86,6 +85,9 @@ namespace Coordination
 
 using namespace DB;
 
+struct ZooKeeperRequest;
+
+
 /** Usage scenario: look at the documentation for IKeeper class.
   */
 class ZooKeeper : public IKeeper
@@ -98,6 +100,9 @@ public:
     };
 
     using Nodes = std::vector<Node>;
+
+    using XID = int32_t;
+    using OpNum = int32_t;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -182,16 +187,13 @@ private:
 
     std::atomic<XID> next_xid {1};
     std::atomic<bool> expired {false};
-    /// Mark session finalization start. Used to avoid simultaneous
-    /// finalization from different threads. One-shot flag.
-    std::atomic<bool> finalization_started {false};
     std::mutex push_request_mutex;
 
     using clock = std::chrono::steady_clock;
 
     struct RequestInfo
     {
-        ZooKeeperRequestPtr request;
+        std::shared_ptr<ZooKeeperRequest> request;
         ResponseCallback callback;
         WatchCallback watch;
         clock::time_point time;
@@ -243,5 +245,32 @@ private:
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
 };
+
+struct ZooKeeperResponse;
+using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
+
+/// Exposed in header file for Yandex.Metrica code.
+struct ZooKeeperRequest : virtual Request
+{
+    ZooKeeper::XID xid = 0;
+    bool has_watch = false;
+    /// If the request was not send and the error happens, we definitely sure, that is has not been processed by the server.
+    /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
+    bool probably_sent = false;
+
+    ZooKeeperRequest() = default;
+    ZooKeeperRequest(const ZooKeeperRequest &) = default;
+    virtual ~ZooKeeperRequest() override = default;
+
+    virtual ZooKeeper::OpNum getOpNum() const = 0;
+
+    /// Writes length, xid, op_num, then the rest.
+    void write(WriteBuffer & out) const;
+
+    virtual void writeImpl(WriteBuffer &) const = 0;
+
+    virtual ZooKeeperResponsePtr makeResponse() const = 0;
+};
+
 
 }

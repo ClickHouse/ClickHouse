@@ -21,21 +21,41 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
     bool blocks_are_granules_size)
+    : MergedBlockOutputStream(
+        data_part,
+        metadata_snapshot_,
+        columns_list_,
+        skip_indices,
+        default_codec_,
+        data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
+        blocks_are_granules_size)
+{
+}
+
+MergedBlockOutputStream::MergedBlockOutputStream(
+    const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const NamesAndTypesList & columns_list_,
+    const MergeTreeIndices & skip_indices,
+    CompressionCodecPtr default_codec_,
+    size_t aio_threshold,
+    bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
-        storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
-        /* rewrite_primary_key = */ true,
+        aio_threshold,
         blocks_are_granules_size);
 
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
+    writer->initPrimaryIndex();
+    writer->initSkipIndices();
 }
 
 /// If data is pre-sorted.
@@ -70,7 +90,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->finish(checksums, sync);
+    writer->finishDataSerialization(checksums, sync);
+    writer->finishPrimaryIndexSerialization(checksums, sync);
+    writer->finishSkipIndicesSerialization(checksums, sync);
 
     NamesAndTypesList part_columns;
     if (!total_columns_list)
@@ -184,7 +206,19 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    writer->write(block, permutation);
+    std::unordered_set<String> skip_indexes_column_names_set;
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        std::copy(index.column_names.cbegin(), index.column_names.cend(),
+                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+
+    Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
+
+    writer->write(block, permutation, primary_key_block, skip_indexes_block);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
+    writer->calculateAndSerializePrimaryIndex(primary_key_block);
+    writer->next();
 
     rows_count += rows;
 }

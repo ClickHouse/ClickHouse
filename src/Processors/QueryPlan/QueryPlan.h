@@ -2,9 +2,6 @@
 #include <memory>
 #include <list>
 #include <vector>
-#include <set>
-
-#include <Core/Names.h>
 
 namespace DB
 {
@@ -96,7 +93,5 @@ private:
     size_t max_threads = 0;
     std::vector<std::shared_ptr<Context>> interpreter_context;
 };
-
-std::string debugExplainStep(const IQueryPlanStep & step);
 
 }

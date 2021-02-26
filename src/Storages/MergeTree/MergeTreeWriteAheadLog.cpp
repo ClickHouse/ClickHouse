@@ -179,7 +179,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
                 if (max_block_number == -1)
-                    disk->removeFile(path);
+                    disk->remove(path);
                 else if (name == DEFAULT_WAL_FILE_NAME)
                     rotate(lock);
 

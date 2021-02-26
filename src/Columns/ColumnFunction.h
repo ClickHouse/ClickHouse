@@ -47,7 +47,6 @@ public:
     void getExtremes(Field &, Field &) const override {}
 
     size_t byteSize() const override;
-    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);

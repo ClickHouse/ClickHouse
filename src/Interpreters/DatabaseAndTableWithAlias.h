@@ -49,9 +49,7 @@ struct TableWithColumnNamesAndTypes
 {
     DatabaseAndTableWithAlias table;
     NamesAndTypesList columns;
-    NamesAndTypesList hidden_columns; /// Not general columns like MATERIALIZED, ALIAS, VIRTUAL. They are omitted in * and t.* results by default.
-    NamesAndTypesList alias_columns;
-    NamesAndTypesList materialized_columns;
+    NamesAndTypesList hidden_columns; /// Not general columns like MATERIALIZED and ALIAS. They are omitted in * and t.* results.
 
     TableWithColumnNamesAndTypes(const DatabaseAndTableWithAlias & table_, const NamesAndTypesList & columns_)
         : table(table_)
@@ -65,27 +63,10 @@ struct TableWithColumnNamesAndTypes
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
-        addAdditionalColumns(hidden_columns, addition);
-    }
-
-    void addAliasColumns(const NamesAndTypesList & addition)
-    {
-        addAdditionalColumns(alias_columns, addition);
-    }
-
-    void addMaterializedColumns(const NamesAndTypesList & addition)
-    {
-        addAdditionalColumns(alias_columns, addition);
-    }
-
-private:
-    void addAdditionalColumns(NamesAndTypesList & target, const NamesAndTypesList & addition)
-    {
-        target.insert(target.end(), addition.begin(), addition.end());
+        hidden_columns.insert(hidden_columns.end(), addition.begin(), addition.end());
         for (auto & col : addition)
             names.insert(col.name);
     }
-
 
 private:
     NameSet names;

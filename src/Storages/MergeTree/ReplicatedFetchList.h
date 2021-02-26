@@ -3,8 +3,8 @@
 #include <boost/noncopyable.hpp>
 #include <Storages/MergeTree/BackgroundProcessList.h>
 #include <Common/Stopwatch.h>
+#include <Common/MemoryTracker.h>
 #include <Poco/URI.h>
-
 
 namespace CurrentMetrics
 {

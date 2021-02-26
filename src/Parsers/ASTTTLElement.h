@@ -18,7 +18,7 @@ public:
     String destination_name;
 
     ASTs group_by_key;
-    ASTs group_by_assignments;
+    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     ASTPtr recompression_codec;
 

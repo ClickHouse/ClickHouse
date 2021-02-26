@@ -96,7 +96,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
 
-    if (nested_prefix_length == 0 && !buf.eof() && buf.position() + 1 < buf.buffer().end())
+    if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
@@ -173,7 +173,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(in);
 
     if (in.eof())
-        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
     else if (*in.position() == '}')
     {
         ++in.position();

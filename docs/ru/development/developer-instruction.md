@@ -210,7 +210,7 @@ Mac OS X:
 
 Для запуска сервера из под текущего пользователя, с выводом логов в терминал и с использованием примеров конфигурационных файлов, расположенных в исходниках, перейдите в директорию `ClickHouse/programs/server/` (эта директория находится не в директории build) и выполните:
 
-    ../../build/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 В этом случае, ClickHouse будет использовать конфигурационные файлы, расположенные в текущей директории. Вы можете запустить `clickhouse server` из любой директории, передав ему путь к конфигурационному файлу в аргументе командной строки `--config-file`.
 
@@ -259,8 +259,8 @@ Mac OS X:
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

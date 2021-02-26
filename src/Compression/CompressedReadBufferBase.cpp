@@ -67,25 +67,20 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
         buf[pos / 8] ^= 1 << pos % 8;
     };
 
-    /// If size is too huge, then this may be caused by corruption.
-    /// And anyway this is pretty heavy, so avoid burning too much CPU here.
-    if (size < (1ULL << 20))
+    /// Check if the difference caused by single bit flip in data.
+    for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
     {
-        /// Check if the difference caused by single bit flip in data.
-        for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
+        flip_bit(data, bit_pos);
+
+        auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
+        if (expected_checksum == checksum_of_data_with_flipped_bit)
         {
-            flip_bit(data, bit_pos);
-
-            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
-            if (expected_checksum == checksum_of_data_with_flipped_bit)
-            {
-                message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
-                    << message_hardware_failure;
-                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
-            }
-
-            flip_bit(data, bit_pos);    /// Restore
+            message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
+                << message_hardware_failure;
+            throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
         }
+
+        flip_bit(data, bit_pos);    /// Restore
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
@@ -105,18 +100,19 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
 /// Returns number of compressed bytes read.
-size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy)
+size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
 {
     if (compressed_in->eof())
         return 0;
 
+    Checksum checksum;
+    compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(Checksum));
+
     UInt8 header_size = ICompressionCodec::getHeaderSize();
-    own_compressed_buffer.resize(header_size + sizeof(Checksum));
+    own_compressed_buffer.resize(header_size);
+    compressed_in->readStrict(own_compressed_buffer.data(), header_size);
 
-    compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
-    char * compressed_header = own_compressed_buffer.data() + sizeof(Checksum);
-
-    uint8_t method = ICompressionCodec::readMethod(compressed_header);
+    uint8_t method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
     if (!codec)
     {
@@ -138,8 +134,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         }
     }
 
-    size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(compressed_header);
-    size_decompressed = ICompressionCodec::readDecompressedBlockSize(compressed_header);
+    size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
+    size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
 
     /// This is for clang static analyzer.
     assert(size_decompressed > 0);
@@ -159,9 +155,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     /// Is whole compressed block located in 'compressed_in->' buffer?
-    if (!always_copy &&
-        compressed_in->offset() >= header_size + sizeof(Checksum) &&
-        compressed_in->available() >= (size_compressed_without_checksum - header_size) + additional_size_at_the_end_of_buffer + sizeof(Checksum))
+    if (compressed_in->offset() >= header_size &&
+        compressed_in->position() + size_compressed_without_checksum + additional_size_at_the_end_of_buffer  - header_size <= compressed_in->buffer().end())
     {
         compressed_in->position() -= header_size;
         compressed_buffer = compressed_in->position();
@@ -169,16 +164,13 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
     else
     {
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
-        compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
+        own_compressed_buffer.resize(size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        compressed_buffer = own_compressed_buffer.data();
         compressed_in->readStrict(compressed_buffer + header_size, size_compressed_without_checksum - header_size);
     }
 
     if (!disable_checksum)
-    {
-        Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
-    }
 
     return size_compressed_without_checksum + sizeof(Checksum);
 }

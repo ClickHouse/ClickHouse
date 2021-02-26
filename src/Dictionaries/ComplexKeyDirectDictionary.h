@@ -12,13 +12,14 @@
 #include <ext/range.h>
 #include <ext/size.h>
 #include <ext/map.h>
+#include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-#include "DictionaryStructure.h"
-#include "DictionaryHelpers.h"
+
 
 namespace DB
 {
+using BlockPtr = std::shared_ptr<Block>;
 
 class ComplexKeyDirectDictionary final : public IDictionaryBase
 {
@@ -59,16 +60,78 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
 
-    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
+    void getString(
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+    void getString(
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, const ColumnString * const def, ColumnString * const out) const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, const TYPE def, ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+    void getString(
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, const String & def, ColumnString * const out) const;
+
+    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -79,8 +142,6 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        bool is_nullable;
-
         std::variant<
             UInt8,
             UInt16,
@@ -107,21 +168,27 @@ private:
     template <typename T>
     void addAttributeSize(const Attribute & attribute);
 
-    template <typename T>
-    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    void calculateBytesAllocated();
 
-    static Attribute createAttribute(const DictionaryAttribute & attribute, const Field & null_value, const std::string & name);
+    template <typename T>
+    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+
+    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & name);
 
     template <typename Pool>
     StringRef placeKeysInPool(
         const size_t row, const Columns & key_columns, StringRefs & keys, const std::vector<DictionaryAttribute> & key_attributes, Pool & pool) const;
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    void getItemsStringImpl(
+        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
-        const Attribute & attribute,
-        const Columns & key_columns,
-        ValueSetter && set_value,
-        DefaultValueExtractor & default_value_extractor) const;
+        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+
+    template <typename T>
+    void resize(Attribute & attribute, const Key id);
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const T & value);
@@ -129,6 +196,9 @@ private:
     void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
+
+    template <typename T>
+    void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
