@@ -238,7 +238,8 @@ void Pool::Entry::forceConnected() const
             pool->ssl_key.c_str(),
             pool->connect_timeout,
             pool->rw_timeout,
-            pool->enable_local_infile);
+            pool->enable_local_infile,
+            pool->opt_reconnect);
     }
 }
 
@@ -299,7 +300,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             ssl_key.c_str(),
             connect_timeout,
             rw_timeout,
-            enable_local_infile);
+            enable_local_infile,
+            opt_reconnect);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
