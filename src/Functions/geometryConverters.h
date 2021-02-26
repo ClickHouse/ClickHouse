@@ -3,7 +3,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
 
-#include <boost/variant.hpp>
 #include <boost/geometry/geometries/geometries.hpp>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -27,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <typename Point>
@@ -38,126 +38,121 @@ using Polygon = boost::geometry::model::polygon<Point>;
 template <typename Point>
 using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>>;
 
-template <typename Point>
-using Geometry = boost::variant<Point, Ring<Point>, Polygon<Point>, MultiPolygon<Point>>;
-
-template <typename Point>
-using Figure = boost::variant<Ring<Point>, Polygon<Point>, MultiPolygon<Point>>;
-
-
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
 using CartesianRing = Ring<CartesianPoint>;
 using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
-using CartesianGeometry = Geometry<CartesianPoint>;
 
-// using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::Spherical<boost::geometry::degree>>;
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 using SphericalRing = Ring<SphericalPoint>;
 using SphericalPolygon = Polygon<SphericalPoint>;
 using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
-using SphericalGeometry = Geometry<SphericalPoint>;
-
-
-template<class Point>
-class RingFromColumnConverter;
-
-template<class Point>
-class PolygonFromColumnConverter;
-
-template<class Point>
-class MultiPolygonFromColumnConverter;
 
 /**
- * Class which takes some boost type and returns a pair of numbers.
+ * Class which takes converts Column with type Tuple(Float64, Float64) to a vector of boost point type.
  * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of Spherical.
 */
 template <typename Point>
-class PointFromColumnConverter
+struct ColumnToPointsConverter
 {
-public:
-    explicit PointFromColumnConverter(ColumnPtr col_) : col(col_)
+    static std::vector<Point> convert(ColumnPtr col)
     {
+        const auto * tuple = typeid_cast<const ColumnTuple *>(col.get());
+        const auto & tuple_columns = tuple->getColumns();
+
+        const auto * x_data = typeid_cast<const ColumnFloat64 *>(tuple_columns[0].get());
+        const auto * y_data = typeid_cast<const ColumnFloat64 *>(tuple_columns[1].get());
+
+        const auto * first_container = x_data->getData().data();
+        const auto * second_container = y_data->getData().data();
+
+        std::vector<Point> answer(col->size());
+
+        for (size_t i = 0; i < col->size(); ++i)
+        {
+            const Float64 first = first_container[i];
+            const Float64 second = second_container[i];
+
+            if (isNaN(first) || isNaN(second))
+                throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            if (isinf(first) || isinf(second))
+                throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            answer[i] = Point(first, second);
+        }
+
+        return answer;
     }
-
-    std::vector<Point> convert() const
-    {
-        return convertImpl(0, col->size());
-    }
-
-private:
-    std::vector<Point> convertImpl(size_t shift, size_t count) const;
-
-    friend class RingFromColumnConverter<Point>;
-    ColumnPtr col{nullptr};
 };
 
 
-template<class Point>
-class RingFromColumnConverter
+template <typename Point>
+struct ColumnToRingsConverter
 {
-public:
-    explicit RingFromColumnConverter(ColumnPtr col_)
-        : col(col_)
-        , point_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
+    static std::vector<Ring<Point>> convert(ColumnPtr col)
     {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        std::vector<Ring<Point>> answer;
+        answer.reserve(offsets.size());
+        auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t offset : offsets)
+        {
+            answer.emplace_back(tmp.begin() + prev_offset, tmp.begin() + offset);
+            prev_offset = offset;
+        }
+        return answer;
     }
-
-    std::vector<Ring<Point>> convert() const;
-
-private:
-    friend class PointFromColumnConverter<Point>;
-    /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col{nullptr};
-    const PointFromColumnConverter<Point> point_converter{};
 };
 
-template<class Point>
-class PolygonFromColumnConverter
+
+template <typename Point>
+struct ColumnToPolygonsConverter
 {
-public:
-    explicit PolygonFromColumnConverter(ColumnPtr col_)
-        : col(col_)
-        , ring_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
+    static std::vector<Polygon<Point>> convert(ColumnPtr col)
     {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        std::vector<Polygon<Point>> answer(offsets.size());
+        auto all_rings = ColumnToRingsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+
+        size_t prev_offset = 0;
+        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        {
+            const auto current_array_size = offsets[iter] - prev_offset;
+            answer[iter].outer() = std::move(all_rings[prev_offset]);
+            answer[iter].inners().reserve(current_array_size);
+            for (size_t inner_holes = prev_offset + 1; inner_holes < offsets[iter]; ++inner_holes)
+                answer[iter].inners().emplace_back(std::move(all_rings[inner_holes]));
+            prev_offset = offsets[iter];
+        }
+
+        return answer;
     }
-
-    std::vector<Polygon<Point>> convert() const;
-
-private:
-    friend class MultiPolygonFromColumnConverter<Point>;
-
-    /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col{nullptr};
-    const RingFromColumnConverter<Point> ring_converter{};
 };
 
-template<class Point>
-class MultiPolygonFromColumnConverter
+
+template <typename Point>
+struct ColumnToMultiPolygonsConverter
 {
-public:
-    explicit MultiPolygonFromColumnConverter(ColumnPtr col_)
-        : col(col_)
-        , polygon_converter(typeid_cast<const ColumnArray &>(*col_).getDataPtr())
-    {}
+    static std::vector<MultiPolygon<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        std::vector<MultiPolygon<Point>> answer(offsets.size());
 
-    std::vector<MultiPolygon<Point>> convert() const;
+        auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-private:
-    /// To prevent use-after-free and increase column lifetime.
-    ColumnPtr col{nullptr};
-    const PolygonFromColumnConverter<Point> polygon_converter{};
+        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        {
+            for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
+                answer[iter].emplace_back(std::move(all_polygons[polygon_iter]));
+            prev_offset = offsets[iter];
+        }
+
+        return answer;
+    }
 };
-
-
-extern template class PointFromColumnConverter<CartesianPoint>;
-extern template class PointFromColumnConverter<SphericalPoint>;
-extern template class RingFromColumnConverter<CartesianPoint>;
-extern template class RingFromColumnConverter<SphericalPoint>;
-extern template class PolygonFromColumnConverter<CartesianPoint>;
-extern template class PolygonFromColumnConverter<SphericalPoint>;
-extern template class MultiPolygonFromColumnConverter<CartesianPoint>;
-extern template class MultiPolygonFromColumnConverter<SphericalPoint>;
 
 
 /// To serialize Spherical or Cartesian point (a pair of numbers in both cases).
@@ -256,6 +251,7 @@ public:
 
     void add(const Polygon<Point> & polygon)
     {
+        /// Outer ring + all inner rings (holes).
         size += 1 + polygon.inners().size();
         offsets->insertValue(size);
         ring_serializer.add(polygon.outer());
@@ -334,13 +330,13 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
     /// There is no Point type, because for most of geometry functions it is useless.
     if (DataTypeCustomPointSerialization::nestedDataType()->equals(*type))
-        return f(ConverterType<PointFromColumnConverter<Point>>());
+        return f(ConverterType<ColumnToPointsConverter<Point>>());
     else if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
-        return f(ConverterType<RingFromColumnConverter<Point>>());
+        return f(ConverterType<ColumnToRingsConverter<Point>>());
     else if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
-        return f(ConverterType<PolygonFromColumnConverter<Point>>());
+        return f(ConverterType<ColumnToPolygonsConverter<Point>>());
     else if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
-        return f(ConverterType<MultiPolygonFromColumnConverter<Point>>());
+        return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
     throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
 }
 

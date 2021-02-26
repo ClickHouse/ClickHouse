@@ -45,8 +45,7 @@ public:
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
-            Converter converter(arguments[0].column->convertToFullColumnIfConst());
-            auto figures = converter.convert();
+            auto figures = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < input_rows_count; i++)
             {

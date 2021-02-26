@@ -16,11 +16,19 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <class DataType, class Geometry, class Serializer>
+
+template <class DataType, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWkt : public IFunction
 {
 public:
     explicit FunctionReadWkt() = default;
+
+    static constexpr const char * name = NameHolder::name;
+
+    String getName() const override
+    {
+        return name;
+    }
 
     size_t getNumberOfArguments() const override
     {
@@ -59,71 +67,39 @@ public:
     {
         return true;
     }
-};
 
-class FunctionReadWktPoint : public FunctionReadWkt<DataTypeCustomPointSerialization, CartesianPoint, PointSerializer<CartesianPoint>>
-{
-public:
-    static inline const char * name = "readWktPoint";
-    String getName() const override
-    {
-        return name;
-    }
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionReadWktPoint>();
+        return std::make_shared<FunctionReadWkt<DataType, Geometry, Serializer, NameHolder>>();
     }
 };
 
-
-class FunctionReadWktRing : public FunctionReadWkt<DataTypeCustomRingSerialization, CartesianRing, RingSerializer<CartesianPoint>>
+struct ReadWktPointNameHolder
 {
-public:
-    static inline const char * name = "readWktRing";
-    String getName() const override
-    {
-        return name;
-    }
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionReadWktRing>();
-    }
+    static constexpr const char * name = "readWktPoint";
 };
 
-class FunctionReadWktPolygon : public FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, PolygonSerializer<CartesianPoint>>
+struct ReadWktRingNameHolder
 {
-public:
-    static inline const char * name = "readWktPolygon";
-    String getName() const override
-    {
-        return name;
-    }
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionReadWktPolygon>();
-    }
+    static constexpr const char * name = "readWktRing";
 };
 
-class FunctionReadWktMultiPolygon : public FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>>
+struct ReadWktPolygonNameHolder
 {
-public:
-    static inline const char * name = "readWktMultiPolygon";
-    String getName() const override
-    {
-        return name;
-    }
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionReadWktMultiPolygon>();
-    }
+    static constexpr const char * name = "readWktPolygon";
+};
+
+struct ReadWktMultiPolygonNameHolder
+{
+    static constexpr const char * name = "readWktMultiPolygon";
 };
 
 void registerFunctionReadWkt(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionReadWktPoint>();
-    factory.registerFunction<FunctionReadWktRing>();
-    factory.registerFunction<FunctionReadWktPolygon>();
-    factory.registerFunction<FunctionReadWktMultiPolygon>();
+    factory.registerFunction<FunctionReadWkt<DataTypeCustomPointSerialization, CartesianPoint, PointSerializer<CartesianPoint>, ReadWktPointNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypeCustomRingSerialization, CartesianRing, RingSerializer<CartesianPoint>, ReadWktRingNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWktPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWktMultiPolygonNameHolder>>();
 }
 
 }

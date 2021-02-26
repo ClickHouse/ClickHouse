@@ -75,12 +75,12 @@ public:
             using LeftConverter = typename LeftConverterType::Type;
             using RightConverter = typename RightConverterType::Type;
 
-            if constexpr (std::is_same_v<PointFromColumnConverter<Point>, LeftConverter> || std::is_same_v<PointFromColumnConverter<Point>, RightConverter>)
+            if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToPointsConverter<Point>, RightConverter>)
                 throw Exception(fmt::format("Any argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
             {
-                auto first = LeftConverter(arguments[0].column->convertToFullColumnIfConst()).convert();
-                auto second = RightConverter(arguments[1].column->convertToFullColumnIfConst()).convert();
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; i++)

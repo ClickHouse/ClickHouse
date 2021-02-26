@@ -427,8 +427,8 @@ private:
         out_container.reserve(end - begin);
         for (size_t i = begin; i < end; ++i)
         {
-            int64_t result = 0;
-            if (common::mulOverflow(static_cast<int64_t>(x_data[i]), static_cast<int64_t>(y_data[i]), result))
+            Int64 result = 0;
+            if (common::mulOverflow(static_cast<Int64>(x_data[i]), static_cast<Int64>(y_data[i]), result))
                 throw Exception("The coordinates of the point are such that subsequent calculations cannot be performed correctly. " \
                                 "Most likely they are very large in modulus.", ErrorCodes::BAD_ARGUMENTS);
 

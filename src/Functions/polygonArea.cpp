@@ -69,35 +69,11 @@ public:
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
-            if constexpr (std::is_same_v<PointFromColumnConverter<Point>, Converter>)
+            if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, Converter>)
                 throw Exception(fmt::format("The argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
             {
-                Converter converter(arguments[0].column->convertToFullColumnIfConst());
-                auto geometries = converter.convert();
-
-                if constexpr (std::is_same_v<PolygonFromColumnConverter<Point>, Converter>) {
-                    for (auto & polygon : geometries) {
-                        std::cout << "OUTER" << std::endl;
-                        for (auto point : polygon.outer()) {
-                            if constexpr (std::is_same_v<Point, CartesianPoint>) {
-                                std::cout << point.x() << ' ' << point.y() << std::endl;
-                            } else {
-                                std::cout << point.template get<0>() << ' ' << point.template get<1>() << std::endl;
-                            }
-                        }
-                        std::cout << "INNER" << std::endl;
-                        for (auto & inner : polygon.inners()) {
-                            for (auto point : inner) {
-                                if constexpr (std::is_same_v<Point, CartesianPoint>) {
-                                    std::cout << point.x() << ' ' << point.y() << std::endl;
-                                } else {
-                                    std::cout << point.template get<0>() << ' ' << point.template get<1>() << std::endl;
-                                }
-                            }
-                        }
-                    }
-                }
+                auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; i++)
                     res_data.emplace_back(boost::geometry::area(geometries[i]));
