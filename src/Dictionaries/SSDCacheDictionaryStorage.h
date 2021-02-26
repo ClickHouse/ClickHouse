@@ -824,7 +824,7 @@ public:
             return "SSDCache";
         else
             return "SSDComplexKeyCache";
-    };
+    }
 
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
 
