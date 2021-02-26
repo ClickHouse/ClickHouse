@@ -64,21 +64,18 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-
         auto res_column = ColumnString::create();
+        bool has_style = arguments.size() > 1;
+        ColumnPtr style;
+        if (has_style)
+            style = arguments[1].column;
 
         callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
-            Converter converter(arguments[0].column->convertToFullColumnIfConst());
-            auto figures = converter.convert();
-
-            bool has_style = arguments.size() > 1;
-            ColumnPtr style;
-            if (has_style)
-                style = arguments[1].column;
+            auto figures = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < input_rows_count; i++)
             {

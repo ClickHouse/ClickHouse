@@ -67,12 +67,11 @@ public:
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
-            if constexpr (std::is_same_v<Converter, PointFromColumnConverter<Point>>)
+            if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<Point>>)
                 throw Exception(fmt::format("The argument of function {} must not be a Point", getName()), ErrorCodes::BAD_ARGUMENTS);
             else
             {
-                Converter converter(arguments[0].column->convertToFullColumnIfConst());
-                auto geometries = converter.convert();
+                auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; i++)
                 {
