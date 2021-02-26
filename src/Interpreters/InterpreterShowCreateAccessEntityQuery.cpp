@@ -263,7 +263,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = context.getAccessControlManager();
     context.checkAccess(getRequiredAccess());
-    show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    show_query.replaceEmptyDatabase(context.getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)

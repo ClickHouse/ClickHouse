@@ -753,7 +753,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)

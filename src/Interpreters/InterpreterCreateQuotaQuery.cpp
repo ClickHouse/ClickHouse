@@ -78,7 +78,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTagWithName(context.getUserName());
+        query.replaceCurrentUserTag(context.getUserName());
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 
