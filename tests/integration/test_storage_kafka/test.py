@@ -2441,6 +2441,7 @@ def test_kafka_unavailable(kafka_cluster):
 
     instance.wait_for_log_line("Committed offset 2000")
     assert int(instance.query("SELECT count() FROM test.destination")) == 2000
+    time.sleep(5) # needed to give time for kafka client in python test to recovery
 
 @pytest.mark.timeout(180)
 def test_kafka_issue14202(kafka_cluster):
