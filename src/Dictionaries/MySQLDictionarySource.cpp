@@ -121,7 +121,7 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-BlockInputStreamPtr MySQLDictionarySource::retriedCreateMySqlBIStream(const std::string & data_fetch_query_str)
+BlockInputStreamPtr MySQLDictionarySource::retriedCreateMySqlBIStream(const std::string & data_fetch_query_str, const size_t max_tries)
 {
     size_t count_connection_lost = 0;
 
@@ -136,7 +136,7 @@ BlockInputStreamPtr MySQLDictionarySource::retriedCreateMySqlBIStream(const std:
         }
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
         {
-            if (++count_connection_lost < max_tries_for_mysql_block_input_stream)
+            if (++count_connection_lost < max_tries)
             {
                 LOG_WARNING(log, ecl.displayText());
                 LOG_WARNING(log, "No connection. Trying to reconnect...");
@@ -155,7 +155,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     last_modification = getLastModification(connection, false);
 
     LOG_TRACE(log, load_all_query);
-    return retriedCreateMySqlBIStream(load_all_query);
+    return retriedCreateMySqlBIStream(load_all_query, max_tries_for_mysql_block_input_stream);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
@@ -165,7 +165,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
 
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
-    return retriedCreateMySqlBIStream(load_update_query);
+    return retriedCreateMySqlBIStream(load_update_query, max_tries_for_mysql_block_input_stream);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -173,7 +173,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & i
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return retriedCreateMySqlBIStream(query);
+    return retriedCreateMySqlBIStream(query, max_tries_for_mysql_block_input_stream);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -181,7 +181,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadKeys(const Columns & key_columns,
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return retriedCreateMySqlBIStream(query);
+    return retriedCreateMySqlBIStream(query, max_tries_for_mysql_block_input_stream);
 }
 
 bool MySQLDictionarySource::isModified() const
