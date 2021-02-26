@@ -98,6 +98,8 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.
 
+Alias: `REPEAT`.
+
 **Syntax**
 
 ``` sql
@@ -276,9 +278,13 @@ Returns the string ‘s’ that was converted from the encoding in ‘from’ to
 
 Encodes ‘s’ string into base64
 
+Alias: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
+
+Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -599,5 +605,47 @@ Hello, &quot;world&quot;!
 &amp;clickhouse
 &apos;foo&apos;
 ```
+
+## decodeXMLComponent {#decode-xml-component}
+
+Replaces XML predefined entities with characters. Predefined entities are `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+
+**Syntax**
+
+``` sql
+decodeXMLComponent(x)
+```
+
+**Parameters**
+
+-   `x` — A sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The sequence of characters after replacement.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT decodeXMLComponent('&apos;foo&apos;');
+SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
+```
+
+Result:
+
+``` text
+'foo' 
+< Σ >
+```
+
+**See Also**
+
+-   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
