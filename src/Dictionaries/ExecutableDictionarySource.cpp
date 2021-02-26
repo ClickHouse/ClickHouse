@@ -186,6 +186,9 @@ namespace
             if (!err.empty())
                 LOG_ERROR(log, "Having stderr: {}", err);
 
+            if (thread.joinable())
+                thread.join();
+
             command->wait();
         }
 

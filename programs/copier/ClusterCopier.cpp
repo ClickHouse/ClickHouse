@@ -316,9 +316,6 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
             }
         }
 
-        /// Delete helping tables in both cases (whole table is done or not)
-        dropHelpingTables(task_table);
-
         if (!table_is_done)
         {
             throw Exception("Too many tries to process table " + task_table.table_id + ". Abort remaining execution",
@@ -1043,6 +1040,11 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     if (!table_is_done)
     {
         LOG_INFO(log, "Table {} is not processed yet.Copied {} of {}, will retry", task_table.table_id, finished_partitions, required_partitions);
+    }
+    else
+    {
+        /// Delete helping tables in case that whole table is done
+        dropHelpingTables(task_table);
     }
 
     return table_is_done;

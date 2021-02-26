@@ -21,6 +21,7 @@ public:
             std::pair<String, UInt16> & parsed_address_,
             const Context & global_context,
             const std::pair<String, String> & login_password_,
+            const String & vhost_,
             const Names & routing_keys_,
             const String & exchange_name_,
             const AMQP::ExchangeType exchange_type_,
@@ -41,6 +42,9 @@ public:
 
 private:
     void nextImpl() override;
+    void addChunk();
+    void reinitializeChunks();
+
     void iterateEventLoop();
     void writingFunc();
     bool setupConnection(bool reconnecting);
@@ -50,6 +54,7 @@ private:
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
+    const String vhost;
     const Names routing_keys;
     const String exchange_name;
     AMQP::ExchangeType exchange_type;
@@ -68,6 +73,7 @@ private:
     std::unique_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
+    bool producer_ready = false;
 
     /// Channel errors lead to channel closure, need to count number of recreated channels to update channel id
     UInt64 channel_id_counter = 0;

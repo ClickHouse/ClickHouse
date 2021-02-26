@@ -127,18 +127,22 @@ void testCreateListWatchEvent(zkutil::ZooKeeper & zk)
 
 void testMultiRequest(zkutil::ZooKeeper & zk)
 {
+    std::cerr << "Testing multi request\n";
     Coordination::Requests requests;
     requests.push_back(zkutil::makeCreateRequest("/data/multirequest", "aaa", zkutil::CreateMode::Persistent));
     requests.push_back(zkutil::makeSetRequest("/data/multirequest", "bbb", -1));
     zk.multi(requests);
+    std::cerr << "Multi executed\n";
 
     try
     {
         requests.clear();
+        std::cerr << "Testing bad multi\n";
         requests.push_back(zkutil::makeCreateRequest("/data/multirequest", "qweqwe", zkutil::CreateMode::Persistent));
         requests.push_back(zkutil::makeSetRequest("/data/multirequest", "bbb", -1));
         requests.push_back(zkutil::makeSetRequest("/data/multirequest", "ccc", -1));
         zk.multi(requests);
+        std::cerr << "Bad multi executed\n";
         std::terminate();
     }
     catch (...)
@@ -147,6 +151,7 @@ void testMultiRequest(zkutil::ZooKeeper & zk)
     }
 
     checkEq(zk, "/data/multirequest", "bbb");
+    std::cerr << "Multi request finished\n";
 }
 
 std::mutex elements_mutex;

@@ -149,7 +149,6 @@ private:
     UInt8 strict_order; // When the 'strict_order' is set, it doesn't allow interventions of other events.
                         // In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
 
-
     // Loop through the entire events_list, update the event timestamp value
     // The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     // If found, returns the max event level, else return 0.
@@ -250,7 +249,7 @@ public:
         return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         bool has_event = false;
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
@@ -269,22 +268,22 @@ public:
             this->data(place).add(timestamp, 0);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }

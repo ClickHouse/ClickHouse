@@ -208,8 +208,8 @@ This function returns the value for the specified `id`s and the date range that 
 Details of the algorithm:
 
 -   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   If there are overlapping ranges, it returns value for any (random) range.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
 
 Configuration example:
 

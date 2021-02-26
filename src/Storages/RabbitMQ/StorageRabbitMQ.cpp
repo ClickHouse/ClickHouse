@@ -94,6 +94,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , login_password(std::make_pair(
                     global_context.getConfigRef().getString("rabbitmq.username"),
                     global_context.getConfigRef().getString("rabbitmq.password")))
+        , vhost(global_context.getConfigRef().getString("rabbitmq.vhost", "/"))
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -198,6 +199,15 @@ std::shared_ptr<Context> StorageRabbitMQ::addSettings(const Context & context) c
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);
+
+    for (const auto & setting : *rabbitmq_settings)
+    {
+        const auto & setting_name = setting.getName();
+
+        /// check for non-rabbitmq-related settings
+        if (!setting_name.starts_with("rabbitmq_"))
+            modified_context->setSetting(setting_name, setting.getValue());
+    }
 
     return modified_context;
 }
@@ -472,7 +482,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
          * an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
          */
-        while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+        while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
             event_handler->iterateLoop();
 
         /// This will force immediate closure if not yet closed
@@ -483,7 +493,9 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
     }
 
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
-            AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+            AMQP::Address(
+                parsed_address.first, parsed_address.second,
+                AMQP::Login(login_password.first, login_password.second), vhost));
 
     cnt_retries = 0;
     while (!connection->ready() && !stream_cancelled && ++cnt_retries != RETRIES_MAX)
@@ -702,7 +714,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
-        parsed_address, global_context, login_password, routing_keys, exchange_name, exchange_type,
+        parsed_address, global_context, login_password, vhost, routing_keys, exchange_name, exchange_type,
         producer_id.fetch_add(1), persistent, wait_confirm, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }

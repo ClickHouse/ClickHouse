@@ -198,14 +198,15 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
-    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false);
+    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            const Context & context);
+            const Context & context,
+            bool can_replace = false);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -214,9 +215,10 @@ public:
 
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
-    /// Find column in input. Remove it from input and index.
-    /// Checks that column in inputs and has not dependent nodes.
-    void removeUnusedInput(const std::string & column_name);
+    /// Find column in result. Remove it from index.
+    /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
+    /// Return true if column was removed from inputs.
+    bool removeUnusedResult(const std::string & column_name);
 
     void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
@@ -231,6 +233,9 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    /// For apply materialize() function for every output.
+    /// Also add aliases so the result names remain unchanged.
+    void addMaterializingOutputActions();
 
     enum class MatchColumnsMode
     {
@@ -249,27 +254,32 @@ public:
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
 
+    /// Create expression which add const column and then materialize it.
+    static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);
+
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
+
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
     /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
     /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> split(std::unordered_set<const Node *> split_nodes) const;
+    SplitResult split(std::unordered_set<const Node *> split_nodes) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Index of initial actions must contain column_name.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsForFilter(const std::string & column_name) const;
+    SplitResult splitActionsForFilter(const std::string & column_name) const;
 
 private:
-    Node & addNode(Node node, bool can_replace = false);
+    Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
     Node & getNode(const std::string & name);
 
     Node & addAlias(Node & child, std::string alias, bool can_replace);
@@ -277,7 +287,8 @@ private:
             const FunctionOverloadResolverPtr & function,
             Inputs children,
             std::string result_name,
-            bool can_replace);
+            bool can_replace,
+            bool add_to_index = true);
 
     ActionsDAGPtr cloneEmpty() const
     {

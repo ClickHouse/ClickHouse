@@ -13,18 +13,6 @@ void RewriteSumIfFunctionMatcher::visit(ASTPtr & ast, Data & data)
         visit(*func, ast, data);
 }
 
-static ASTPtr createNewFunctionWithOneArgument(const String & func_name, const ASTPtr & argument)
-{
-    auto new_func = std::make_shared<ASTFunction>();
-    new_func->name = func_name;
-
-    auto new_arguments = std::make_shared<ASTExpressionList>();
-    new_arguments->children.push_back(argument);
-    new_func->arguments = new_arguments;
-    new_func->children.push_back(new_arguments);
-    return new_func;
-}
-
 void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
 {
     if (!func.arguments || func.arguments->children.empty())
@@ -46,7 +34,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
         if (func_arguments.size() == 2 && literal->value.get<UInt64>() == 1)
         {
-            auto new_func = createNewFunctionWithOneArgument("countIf", func_arguments[1]);
+            auto new_func = makeASTFunction("countIf", func_arguments[1]);
             new_func->setAlias(func.alias);
             ast = std::move(new_func);
             return;
@@ -74,7 +62,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
             /// sum(if(cond, 1, 0)) -> countIf(cond)
             if (first_value == 1 && second_value == 0)
             {
-                auto new_func = createNewFunctionWithOneArgument("countIf", if_arguments[0]);
+                auto new_func = makeASTFunction("countIf", if_arguments[0]);
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;
@@ -82,8 +70,8 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
             /// sum(if(cond, 0, 1)) -> countIf(not(cond))
             if (first_value == 0 && second_value == 1)
             {
-                auto not_func = createNewFunctionWithOneArgument("not", if_arguments[0]);
-                auto new_func = createNewFunctionWithOneArgument("countIf", not_func);
+                auto not_func = makeASTFunction("not", if_arguments[0]);
+                auto new_func = makeASTFunction("countIf", not_func);
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;

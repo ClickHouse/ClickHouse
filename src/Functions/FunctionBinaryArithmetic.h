@@ -894,9 +894,8 @@ class FunctionBinaryArithmetic : public IFunction
             const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             const ResultType res = check_decimal_overflow
-                // the arguments are already scaled after conversion
-                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1)
-                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1);
+                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
+                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
 
             if constexpr (result_is_decimal)
                 return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(

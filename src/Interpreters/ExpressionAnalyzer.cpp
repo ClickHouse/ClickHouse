@@ -89,8 +89,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
         {
-            auto name = node.function_base->getName();
-            if (name == "ignore")
+            if (!node.function_base->isSuitableForConstantFolding())
                 return false;
         }
     }
@@ -516,6 +515,21 @@ void makeWindowDescriptionFromAST(WindowDescription & desc, const IAST * ast)
     desc.full_sort_description = desc.partition_by;
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
+
+    if (definition.frame.type != WindowFrame::FrameType::Rows
+        && definition.frame.type != WindowFrame::FrameType::Range)
+    {
+        std::string name = definition.frame.type == WindowFrame::FrameType::Rows
+            ? "ROWS"
+            : definition.frame.type == WindowFrame::FrameType::Groups
+                ? "GROUPS" : "RANGE";
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window frame '{}' is not implemented (while processing '{}')",
+            name, ast->formatForErrorMessage());
+    }
+
+    desc.frame = definition.frame;
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
@@ -525,7 +539,10 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         !context.getSettingsRef().allow_experimental_window_functions)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window functions are not implemented (while processing '{}')",
+            "The support for window functions is experimental and will change"
+            " in backwards-incompatible ways in the future releases. Set"
+            " allow_experimental_window_functions = 1 to enable it."
+            " While processing '{}'",
             syntax->window_function_asts[0]->formatForErrorMessage());
     }
 
