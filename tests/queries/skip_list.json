@@ -275,6 +275,7 @@
         "00534_functions_bad_arguments4",
         "00534_functions_bad_arguments9",
         "00564_temporary_table_management",
+        "00600_replace_running_query",
         "00626_replace_partition_from_table_zookeeper",
         "00652_replicated_mutations_zookeeper",
         "00687_top_and_offset",
