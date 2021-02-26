@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/** Calculates the distance between two Sphericalal locations.
+/** Calculates the distance between two geographical locations.
   * There are three variants:
   * greatCircleAngle: calculates the distance on a sphere in degrees: https://en.wikipedia.org/wiki/Great-circle_distance
   * greatCircleDistance: calculates the distance on a sphere in meters.
