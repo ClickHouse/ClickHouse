@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-# https://github.com/ClickHouse/ClickHouse/issues/6497
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCHEMADIR=$CURDIR/format_schemas
 # shellcheck source=../shell_config.sh

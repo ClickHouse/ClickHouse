@@ -25,10 +25,10 @@ static String parentPath(const String & path)
     return "/";
 }
 
-static String baseName(const String & path)
+static std::string getBaseName(const String & path)
 {
-    auto rslash_pos = path.rfind('/');
-    return path.substr(rslash_pos + 1);
+    size_t basename_start = path.rfind('/');
+    return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
 }
 
 static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, NuKeeperStorage::Watches & watches, NuKeeperStorage::Watches & list_watches, Coordination::Event event_type)
@@ -167,14 +167,17 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
 
                 /// Increment sequential number even if node is not sequential
                 ++it->second.seq_num;
-
                 response.path_created = path_created;
+
                 container.emplace(path_created, std::move(created_node));
+
+                auto child_path = getBaseName(path_created);
+                it->second.children.insert(child_path);
 
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&container, &ephemerals, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path = it->first]
+                undo = [&container, &ephemerals, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path = it->first, child_path]
                 {
                     container.erase(path_created);
                     if (is_ephemeral)
@@ -183,6 +186,7 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
                     --undo_parent.stat.cversion;
                     --undo_parent.stat.numChildren;
                     --undo_parent.seq_num;
+                    undo_parent.children.erase(child_path);
                 };
 
                 ++it->second.stat.cversion;
@@ -250,13 +254,16 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
             if (prev_node.is_ephemeral)
                 ephemerals[session_id].erase(request.path);
 
-            container.erase(it);
+            auto child_basename = getBaseName(it->first);
             auto & parent = container.at(parentPath(request.path));
             --parent.stat.numChildren;
             ++parent.stat.cversion;
+            parent.children.erase(child_basename);
             response.error = Coordination::Error::ZOK;
 
-            undo = [prev_node, &container, &ephemerals, session_id, path = request.path]
+            container.erase(it);
+
+            undo = [prev_node, &container, &ephemerals, session_id, path = request.path, child_basename]
             {
                 if (prev_node.is_ephemeral)
                     ephemerals[session_id].emplace(path);
@@ -265,6 +272,7 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
                 auto & undo_parent = container.at(parentPath(path));
                 ++undo_parent.stat.numChildren;
                 --undo_parent.stat.cversion;
+                undo_parent.children.insert(child_basename);
             };
         }
 
@@ -370,17 +378,9 @@ struct NuKeeperStorageListRequest final : public NuKeeperStorageRequest
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            if (path_prefix.back() != '/')
-                path_prefix += '/';
+            response.names.insert(response.names.end(), it->second.children.begin(), it->second.children.end());
 
-            /// Fairly inefficient.
-            for (auto child_it = container.upper_bound(path_prefix);
-                 child_it != container.end() && startsWith(child_it->first, path_prefix);
-                ++child_it)
-            {
-                if (parentPath(child_it->first) == request.path)
-                    response.names.emplace_back(baseName(child_it->first));
-            }
+            std::sort(response.names.begin(), response.names.end());
 
             response.stat = it->second.stat;
             response.error = Coordination::Error::ZOK;
