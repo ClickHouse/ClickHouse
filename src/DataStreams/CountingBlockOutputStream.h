@@ -9,11 +9,10 @@ namespace DB
 
 
 /// Proxy class which counts number of written block, rows, bytes
-class CountingBlockOutputStream : public IBlockOutputStream
+class CountingBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    CountingBlockOutputStream(const BlockOutputStreamPtr & stream_)
-        : stream(stream_) {}
+    explicit CountingBlockOutputStream(const BlockOutputStreamPtr & stream_) : stream(stream_) {}
 
     void setProgressCallback(const ProgressCallback & callback)
     {

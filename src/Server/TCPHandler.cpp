@@ -284,9 +284,8 @@ void TCPHandler::runImpl()
 
             customizeContext(*query_context);
 
-            bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
+            state.io = executeQuery(state.query, *query_context, false, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
