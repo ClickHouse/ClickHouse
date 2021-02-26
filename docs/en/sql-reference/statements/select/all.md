@@ -4,10 +4,8 @@ toc_title: ALL
 
 # ALL Clause {#select-all}
 
-If there are multiple matching rows in the table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`.
+If there are multiple matching rows in the table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`. If both `ALL` and `DISTINCT` specified, exception will be thrown.
 
--   If `ALL` specified, ignore it.
--   If both `ALL` and `DISTINCT` specified, exception will be thrown.
 
 `ALL` can also be specified inside aggregate function with the same effect(noop), for instance:
 
