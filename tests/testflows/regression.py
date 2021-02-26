@@ -6,6 +6,7 @@ append_path(sys.path, ".")
 
 from helpers.argparser import argparser
 
+
 @TestModule
 @Name("clickhouse")
 @ArgumentParser(argparser)
