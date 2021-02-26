@@ -407,7 +407,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     if (!out_streams.empty())
     {
-        assert(res.in);
+        /// FIXME: assert(res.in); // this assert doesn't work just because of SystemLog<>::flushImpl()
         res.out = std::move(out_streams.at(0));
     }
     else

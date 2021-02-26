@@ -477,6 +477,7 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationF
     }
     if (null_presence.has_nullable)
     {
+        /// FIXME: is it really necessary to convert to and from Block?
         Block nested_columns = createBlockWithNestedColumns(arguments);
         auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
         return makeNullable(return_type);
