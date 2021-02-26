@@ -30,7 +30,7 @@ public:
     String toString() const;
 
     /// Returns the information about all the access granted.
-    AccessRightsElementsWithOptions getElements() const;
+    AccessRightsElements getElements() const;
 
     /// Grants access on a specified database/table/column.
     /// Does nothing if the specified access has been already granted.
@@ -49,8 +49,6 @@ public:
     void grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column);
     void grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
     void grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns);
-    void grantWithGrantOption(const AccessRightsElement & element);
-    void grantWithGrantOption(const AccessRightsElements & elements);
 
     /// Revokes a specified access granted earlier on a specified database/table/column.
     /// For example, revoke(AccessType::ALL) revokes all grants at all, just like clear();
@@ -69,8 +67,6 @@ public:
     void revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column);
     void revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
     void revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns);
-    void revokeGrantOption(const AccessRightsElement & element);
-    void revokeGrantOption(const AccessRightsElements & elements);
 
     /// Whether a specified access granted.
     bool isGranted(const AccessFlags & flags) const;
@@ -88,8 +84,6 @@ public:
     bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
     bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
     bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    bool hasGrantOption(const AccessRightsElement & element) const;
-    bool hasGrantOption(const AccessRightsElements & elements) const;
 
     /// Merges two sets of access rights together.
     /// It's used to combine access rights from multiple roles.
@@ -119,11 +113,8 @@ private:
     template <bool with_grant_option, typename... Args>
     void grantImpl(const AccessFlags & flags, const Args &... args);
 
-    template <bool with_grant_options>
+    template <bool with_grant_option>
     void grantImpl(const AccessRightsElement & element);
-
-    template <bool with_grant_options>
-    void grantImpl(const AccessRightsElements & elements);
 
     template <bool grant_option, typename... Args>
     void revokeImpl(const AccessFlags & flags, const Args &... args);
@@ -131,16 +122,12 @@ private:
     template <bool grant_option>
     void revokeImpl(const AccessRightsElement & element);
 
-    template <bool grant_option>
-    void revokeImpl(const AccessRightsElements & elements);
-
     template <bool grant_option, typename... Args>
     bool isGrantedImpl(const AccessFlags & flags, const Args &... args) const;
 
     template <bool grant_option>
     bool isGrantedImpl(const AccessRightsElement & element) const;
 
-    template <bool grant_option>
     bool isGrantedImpl(const AccessRightsElements & elements) const;
 
     void logTree() const;

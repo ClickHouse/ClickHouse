@@ -86,13 +86,11 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & conte
 BlockIO executeDDLQueryOnCluster(
     const ASTPtr & query_ptr,
     const Context & context,
-    const AccessRightsElements & query_requires_access,
-    bool query_requires_grant_option = false);
+    const AccessRightsElements & query_requires_access);
 BlockIO executeDDLQueryOnCluster(
     const ASTPtr & query_ptr,
     const Context & context,
-    AccessRightsElements && query_requires_access,
-    bool query_requires_grant_option = false);
+    AccessRightsElements && query_requires_access);
 
 
 class DDLWorker

@@ -32,8 +32,8 @@ namespace
     {
         ASTs res;
 
-        std::shared_ptr<ASTRolesOrUsersSet> to_roles = std::make_shared<ASTRolesOrUsersSet>();
-        to_roles->names.push_back(grantee.getName());
+        std::shared_ptr<ASTRolesOrUsersSet> grantees = std::make_shared<ASTRolesOrUsersSet>();
+        grantees->names.push_back(grantee.getName());
 
         std::shared_ptr<ASTGrantQuery> current_query = nullptr;
 
@@ -43,10 +43,7 @@ namespace
             if (current_query)
             {
                 const auto & prev_element = current_query->access_rights_elements.back();
-                bool continue_using_current_query = (element.database == prev_element.database)
-                    && (element.any_database == prev_element.any_database) && (element.table == prev_element.table)
-                    && (element.any_table == prev_element.any_table) && (element.grant_option == current_query->grant_option)
-                    && (element.kind == current_query->kind);
+                bool continue_using_current_query = element.sameDatabaseAndTable(prev_element) && element.sameOptions(prev_element);
                 if (!continue_using_current_query)
                     current_query = nullptr;
             }
@@ -54,10 +51,8 @@ namespace
             if (!current_query)
             {
                 current_query = std::make_shared<ASTGrantQuery>();
-                current_query->kind = element.kind;
-                current_query->attach = attach_mode;
-                current_query->grant_option = element.grant_option;
-                current_query->to_roles = to_roles;
+                current_query->grantees = grantees;
+                current_query->attach_mode = attach_mode;
                 res.push_back(current_query);
             }
 
@@ -73,11 +68,9 @@ namespace
                 continue;
 
             auto grant_query = std::make_shared<ASTGrantQuery>();
-            using Kind = ASTGrantQuery::Kind;
-            grant_query->kind = Kind::GRANT;
-            grant_query->attach = attach_mode;
+            grant_query->grantees = grantees;
             grant_query->admin_option = admin_option;
-            grant_query->to_roles = to_roles;
+            grant_query->attach_mode = attach_mode;
             if (attach_mode)
                 grant_query->roles = RolesOrUsersSet{roles}.toAST();
             else

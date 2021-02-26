@@ -9,14 +9,12 @@ namespace DB
 {
 namespace
 {
-    using Kind = AccessRightsElementWithOptions::Kind;
-
     struct ProtoElement
     {
         AccessFlags access_flags;
         boost::container::small_vector<std::string_view, 3> full_name;
         bool grant_option = false;
-        Kind kind = Kind::GRANT;
+        bool is_revoke = false;
 
         friend bool operator<(const ProtoElement & left, const ProtoElement & right)
         {
@@ -43,8 +41,8 @@ namespace
             if (int cmp = compare_name(left.full_name, right.full_name, 1))
                 return cmp < 0;
 
-            if (left.kind != right.kind)
-                return (left.kind == Kind::GRANT);
+            if (left.is_revoke != right.is_revoke)
+                return right.is_revoke;
 
             if (left.grant_option != right.grant_option)
                 return right.grant_option;
@@ -55,12 +53,12 @@ namespace
             return (left.access_flags < right.access_flags);
         }
 
-        AccessRightsElementWithOptions getResult() const
+        AccessRightsElement getResult() const
         {
-            AccessRightsElementWithOptions res;
+            AccessRightsElement res;
             res.access_flags = access_flags;
             res.grant_option = grant_option;
-            res.kind = kind;
+            res.is_revoke = is_revoke;
             switch (full_name.size())
             {
                 case 0:
@@ -105,11 +103,11 @@ namespace
     class ProtoElements : public std::vector<ProtoElement>
     {
     public:
-        AccessRightsElementsWithOptions getResult() const
+        AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
             boost::range::sort(sorted);
-            AccessRightsElementsWithOptions res;
+            AccessRightsElements res;
             res.reserve(sorted.size());
 
             for (size_t i = 0; i != sorted.size();)
@@ -144,7 +142,7 @@ namespace
             {
                 return (element.full_name.size() != 3) || (element.full_name[0] != start_element.full_name[0])
                     || (element.full_name[1] != start_element.full_name[1]) || (element.grant_option != start_element.grant_option)
-                    || (element.kind != start_element.kind);
+                    || (element.is_revoke != start_element.is_revoke);
             });
 
             return it - (begin() + start);
@@ -153,7 +151,7 @@ namespace
         /// Collects columns together to write multiple columns into one AccessRightsElement.
         /// That procedure allows to output access rights in more compact way,
         /// e.g. "SELECT(x, y)" instead of "SELECT(x), SELECT(y)".
-        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElementsWithOptions & res) const
+        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElements & res) const
         {
             const auto * pbegin = data() + start;
             const auto * pend = pbegin + count;
@@ -180,7 +178,7 @@ namespace
                 res.emplace_back();
                 auto & back = res.back();
                 back.grant_option = pbegin->grant_option;
-                back.kind = pbegin->kind;
+                back.is_revoke = pbegin->is_revoke;
                 back.any_database = false;
                 back.database = pbegin->full_name[0];
                 back.any_table = false;
@@ -515,10 +513,10 @@ private:
         auto grants = flags - parent_fl;
 
         if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes, full_name, false, true});
 
         if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
+            res.push_back(ProtoElement{grants, full_name, false, false});
 
         if (node.children)
         {
@@ -550,16 +548,16 @@ private:
         auto grants = flags - parent_fl - grants_go;
 
         if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes, full_name, false, true});
 
         if (revokes_go)
-            res.push_back(ProtoElement{revokes_go, full_name, true, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes_go, full_name, true, true});
 
         if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
+            res.push_back(ProtoElement{grants, full_name, false, false});
 
         if (grants_go)
-            res.push_back(ProtoElement{grants_go, full_name, true, Kind::GRANT});
+            res.push_back(ProtoElement{grants_go, full_name, true, false});
 
         if (node && node->children)
         {
@@ -786,21 +784,12 @@ void AccessRights::grantImpl(const AccessRightsElement & element)
         grantImpl<with_grant_option>(element.access_flags, element.database, element.table, element.columns);
 }
 
-template <bool with_grant_option>
-void AccessRights::grantImpl(const AccessRightsElements & elements)
-{
-    for (const auto & element : elements)
-        grantImpl<with_grant_option>(element);
-}
-
 void AccessRights::grant(const AccessFlags & flags) { grantImpl<false>(flags); }
 void AccessRights::grant(const AccessFlags & flags, const std::string_view & database) { grantImpl<false>(flags, database); }
 void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) { grantImpl<false>(flags, database, table); }
 void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { grantImpl<false>(flags, database, table, column); }
 void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { grantImpl<false>(flags, database, table, columns); }
 void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { grantImpl<false>(flags, database, table, columns); }
-void AccessRights::grant(const AccessRightsElement & element) { grantImpl<false>(element); }
-void AccessRights::grant(const AccessRightsElements & elements) { grantImpl<false>(elements); }
 
 void AccessRights::grantWithGrantOption(const AccessFlags & flags) { grantImpl<true>(flags); }
 void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database) { grantImpl<true>(flags, database); }
@@ -808,8 +797,33 @@ void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::st
 void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { grantImpl<true>(flags, database, table, column); }
 void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { grantImpl<true>(flags, database, table, columns); }
 void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { grantImpl<true>(flags, database, table, columns); }
-void AccessRights::grantWithGrantOption(const AccessRightsElement & element) { grantImpl<true>(element); }
-void AccessRights::grantWithGrantOption(const AccessRightsElements & elements) { grantImpl<true>(elements); }
+
+void AccessRights::grant(const AccessRightsElement & element)
+{
+    if (element.is_revoke)
+    {
+        if (element.grant_option)
+            revokeImpl<true>(element);
+        else
+            revokeImpl<false>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            grantImpl<true>(element);
+        else
+            grantImpl<false>(element);
+    }
+}
+
+void AccessRights::grant(const AccessRightsElements & elements)
+{
+    for (const auto & element : elements)
+    {
+        if (element.grant_option)
+            grant(element);
+    }
+}
 
 
 template <bool grant_option, typename... Args>
@@ -842,21 +856,12 @@ void AccessRights::revokeImpl(const AccessRightsElement & element)
         revokeImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
 }
 
-template <bool grant_option>
-void AccessRights::revokeImpl(const AccessRightsElements & elements)
-{
-    for (const auto & element : elements)
-        revokeImpl<grant_option>(element);
-}
-
 void AccessRights::revoke(const AccessFlags & flags) { revokeImpl<false>(flags); }
 void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database) { revokeImpl<false>(flags, database); }
 void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) { revokeImpl<false>(flags, database, table); }
 void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<false>(flags, database, table, column); }
 void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<false>(flags, database, table, columns); }
 void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<false>(flags, database, table, columns); }
-void AccessRights::revoke(const AccessRightsElement & element) { revokeImpl<false>(element); }
-void AccessRights::revoke(const AccessRightsElements & elements) { revokeImpl<false>(elements); }
 
 void AccessRights::revokeGrantOption(const AccessFlags & flags) { revokeImpl<true>(flags); }
 void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database) { revokeImpl<true>(flags, database); }
@@ -864,11 +869,29 @@ void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::strin
 void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<true>(flags, database, table, column); }
 void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<true>(flags, database, table, columns); }
 void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<true>(flags, database, table, columns); }
-void AccessRights::revokeGrantOption(const AccessRightsElement & element) { revokeImpl<true>(element); }
-void AccessRights::revokeGrantOption(const AccessRightsElements & elements) { revokeImpl<true>(elements); }
+
+void AccessRights::revoke(const AccessRightsElement & element)
+{
+    if (element.is_revoke)
+        throw Exception("Partial revoke cannot be revoked", ErrorCodes::LOGICAL_ERROR);
+
+    if (element.grant_option)
+        revokeImpl<true>(element);
+    else
+        revokeImpl<false>(element);
+}
+
+void AccessRights::revoke(const AccessRightsElements & elements)
+{
+    for (const auto & element : elements)
+    {
+        if (element.grant_option)
+            revoke(element);
+    }
+}
 
 
-AccessRightsElementsWithOptions AccessRights::getElements() const
+AccessRightsElements AccessRights::getElements() const
 {
 #if 0
     logTree();
@@ -915,23 +938,12 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
         return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
 }
 
-template <bool grant_option>
-bool AccessRights::isGrantedImpl(const AccessRightsElements & elements) const
-{
-    for (const auto & element : elements)
-        if (!isGrantedImpl<grant_option>(element))
-            return false;
-    return true;
-}
-
 bool AccessRights::isGranted(const AccessFlags & flags) const { return isGrantedImpl<false>(flags); }
 bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database) const { return isGrantedImpl<false>(flags, database); }
 bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return isGrantedImpl<false>(flags, database, table); }
 bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return isGrantedImpl<false>(flags, database, table, column); }
 bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return isGrantedImpl<false>(flags, database, table, columns); }
 bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return isGrantedImpl<false>(flags, database, table, columns); }
-bool AccessRights::isGranted(const AccessRightsElement & element) const { return isGrantedImpl<false>(element); }
-bool AccessRights::isGranted(const AccessRightsElements & elements) const { return isGrantedImpl<false>(elements); }
 
 bool AccessRights::hasGrantOption(const AccessFlags & flags) const { return isGrantedImpl<true>(flags); }
 bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database) const { return isGrantedImpl<true>(flags, database); }
@@ -939,8 +951,25 @@ bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_v
 bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return isGrantedImpl<true>(flags, database, table, column); }
 bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return isGrantedImpl<true>(flags, database, table, columns); }
 bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return isGrantedImpl<true>(flags, database, table, columns); }
-bool AccessRights::hasGrantOption(const AccessRightsElement & element) const { return isGrantedImpl<true>(element); }
-bool AccessRights::hasGrantOption(const AccessRightsElements & elements) const { return isGrantedImpl<true>(elements); }
+
+bool AccessRights::isGranted(const AccessRightsElement & element) const
+{
+    if (element.is_revoke)
+        throw Exception("Cannot check grant for a partial revoke", ErrorCodes::LOGICAL_ERROR);
+
+    if (element.grant_option)
+        return isGrantedImpl<true>(element);
+    else
+        return isGrantedImpl<false>(element);
+}
+
+bool AccessRights::isGranted(const AccessRightsElements & elements) const
+{
+    for (const auto & element : elements)
+        if (!isGranted(element))
+            return false;
+    return true;
+}
 
 
 bool operator ==(const AccessRights & left, const AccessRights & right)

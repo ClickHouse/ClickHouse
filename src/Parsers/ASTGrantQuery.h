@@ -19,14 +19,12 @@ class ASTRolesOrUsersSet;
 class ASTGrantQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    using Kind = AccessRightsElementWithOptions::Kind;
-    Kind kind = Kind::GRANT;
-    bool attach = false;
+    bool attach_mode = false;
+    bool is_revoke = false;
     AccessRightsElements access_rights_elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
-    bool grant_option = false;
     bool admin_option = false;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;
     ASTPtr clone() const override;
