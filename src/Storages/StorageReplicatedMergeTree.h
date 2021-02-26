@@ -212,17 +212,23 @@ public:
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
-    struct ZooKeeperAccessData
-    {
-        zkutil::ZooKeeperPtr zookeeper;
-        String zookeeper_path;
-        String replica_name;
-    };
-
-    ZooKeeperAccessData getZooKeeperAccessData() const;
-
     /// Fetch part only when it stored on shared storage like S3
     bool executeFetchShared(ReplicatedMergeTreeLogEntry & entry);
+
+    /// Lock part in zookeeper for use common S3 data in several nodes
+    void lockSharedData(const IMergeTreeDataPart & part) const override;
+
+    /// Unlock common S3 data part in zookeeper
+    /// Return true if data unlocked
+    /// Return false if data is still used by another node
+    bool unlockSharedData(const IMergeTreeDataPart & part) const override;
+    bool unlockSharedData(const IMergeTreeDataPart & part, const String & path) const override;
+
+    /// Fetch part only if some replica has it on shared storage like S3
+    bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) const override;
+
+    /// Get best replica having this partition on S3
+    String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
 private:
     /// Get a sequential consistent view of current parts.
@@ -502,10 +508,6 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
-
-    /** Returns a replica with part on shared storage like S3.
-     */
-    String findReplicaHavingSharedPart(const String & part_name, bool active);
 
     bool checkReplicaHavePart(const String & replica, const String & part_name);
 

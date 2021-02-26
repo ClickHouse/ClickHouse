@@ -662,7 +662,7 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
-    Disks getDisksByType(const String & type) const { return getStoragePolicy()->getDisksByType(type); }
+    Disks getDisksByType(DiskType::Type type) const { return getStoragePolicy()->getDisksByType(type); }
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
@@ -734,6 +734,19 @@ public:
     /// Return job to move parts between disks/volumes and so on.
     std::optional<JobAndPool> getDataMovingJob();
     bool areBackgroundMovesNeeded() const;
+
+    /// Lock part in zookeeper for use common S3 data in several nodes
+    /// Overrided in StorageReplicatedMergeTree
+    virtual void lockSharedData(const IMergeTreeDataPart &) const {}
+
+    /// Unlock common S3 data part in zookeeper
+    /// Overrided in StorageReplicatedMergeTree
+    virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
+    virtual bool unlockSharedData(const IMergeTreeDataPart &, const String &) const { return true; }
+
+    /// Fetch part only if some replica has it on shared storage like S3
+    /// Overrided in StorageReplicatedMergeTree
+    virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) const { return false; }
 
 protected:
 

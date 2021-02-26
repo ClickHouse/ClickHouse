@@ -35,13 +35,6 @@ public:
     std::string getId(const std::string & node_id) const override;
     void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
-    void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_) override
-    {
-        zookeeper = zookeeper_;
-        zookeeper_path = zookeeper_path_;
-        replica_name = replica_name_;
-    }
-
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
     void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
@@ -53,9 +46,6 @@ private:
     /// so Service will never access dangling reference to storage
     MergeTreeData & data;
     Poco::Logger * log;
-    zkutil::ZooKeeperPtr zookeeper;
-    String zookeeper_path;
-    String replica_name;
 };
 
 /** Client for getting the parts from the table *MergeTree.
@@ -87,13 +77,6 @@ public:
     /// You need to stop the data transfer.
     ActionBlocker blocker;
 
-    void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_)
-    {
-        zookeeper = zookeeper_;
-        zookeeper_path = zookeeper_path_;
-        replica_name = replica_name_;
-    }
-
 private:
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
             const String & part_name,
@@ -121,9 +104,6 @@ private:
 
     MergeTreeData & data;
     Poco::Logger * log;
-    zkutil::ZooKeeperPtr zookeeper;
-    String zookeeper_path;
-    String replica_name;
 };
 
 }
