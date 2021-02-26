@@ -2,8 +2,6 @@
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -25,9 +23,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -123,21 +121,20 @@ void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t ro
 }
 
 
-static inline void alignStringLength(const DataTypeFixedString & type,
-                                     ColumnFixedString::Chars & data,
-                                     size_t string_start)
+void DataTypeFixedString::alignStringLength(PaddedPODArray<UInt8> & chars, size_t old_size) const
 {
-    size_t length = data.size() - string_start;
-    if (length < type.getN())
+    size_t length = chars.size() - old_size;
+    if (length < n)
     {
-        data.resize_fill(string_start + type.getN());
+        chars.resize_fill(old_size + n);
     }
-    else if (length > type.getN())
+    else if (length > n)
     {
-        data.resize_assume_reserved(string_start);
-        throw Exception("Too large value for " + type.getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+        chars.resize_assume_reserved(old_size);
+        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 }
+
 
 template <typename Reader>
 static inline void read(const DataTypeFixedString & self, IColumn & column, Reader && reader)
@@ -147,7 +144,7 @@ static inline void read(const DataTypeFixedString & self, IColumn & column, Read
     try
     {
         reader(data);
-        alignStringLength(self, data, prev_size);
+        self.alignStringLength(data, prev_size);
     }
     catch (...)
     {
@@ -212,53 +209,6 @@ void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_nu
 void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
-}
-
-
-void DataTypeFixedString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    value_index = static_cast<bool>(protobuf.writeString(StringRef(pos, n)));
-}
-
-
-void DataTypeFixedString::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    auto & column_string = assert_cast<ColumnFixedString &>(column);
-    ColumnFixedString::Chars & data = column_string.getChars();
-    size_t old_size = data.size();
-    try
-    {
-        if (allow_add_row)
-        {
-            if (protobuf.readStringInto(data))
-            {
-                alignStringLength(*this, data, old_size);
-                row_added = true;
-            }
-            else
-                data.resize_assume_reserved(old_size);
-        }
-        else
-        {
-            ColumnFixedString::Chars temp_data;
-            if (protobuf.readStringInto(temp_data))
-            {
-                alignStringLength(*this, temp_data, 0);
-                column_string.popBack(1);
-                old_size = data.size();
-                data.insertSmallAllowReadWriteOverflow15(temp_data.begin(), temp_data.end());
-            }
-        }
-    }
-    catch (...)
-    {
-        data.resize_assume_reserved(old_size);
-        throw;
-    }
 }
 
 

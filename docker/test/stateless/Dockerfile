@@ -3,6 +3,9 @@ FROM yandex/clickhouse-test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
+RUN echo "deb [trusted=yes] http://repo.mysql.com/apt/ubuntu/ bionic mysql-5.7" >> /etc/apt/sources.list \
+    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8C718D3B5072E1F5
+
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
@@ -13,6 +16,7 @@ RUN apt-get update -y \
             ncdu \
             netcat-openbsd \
             openssl \
+            protobuf-compiler \
             python3 \
             python3-lxml \
             python3-requests \
@@ -23,7 +27,8 @@ RUN apt-get update -y \
             telnet \
             tree \
             unixodbc \
-            wget
+            wget \
+            mysql-client=5.7*
 
 RUN pip3 install numpy scipy pandas
 

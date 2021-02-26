@@ -37,7 +37,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void drop() override;
-    void dropInnerTable(bool no_delay);
+    void dropInnerTable(bool no_delay, const Context & context);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
@@ -51,6 +51,8 @@ public:
         const Context & context) override;
 
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
