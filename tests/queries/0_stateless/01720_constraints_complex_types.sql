@@ -1,3 +1,5 @@
+SET allow_suspicious_low_cardinality_types = 1;
+
 DROP TABLE IF EXISTS constraint_on_nullable_type;
 CREATE TABLE constraint_on_nullable_type
 (
@@ -12,8 +14,6 @@ INSERT INTO constraint_on_nullable_type VALUES (1);
 SELECT * FROM constraint_on_nullable_type;
 
 DROP TABLE constraint_on_nullable_type;
-
-SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS constraint_on_low_cardinality_type;
 CREATE TABLE constraint_on_low_cardinality_type
