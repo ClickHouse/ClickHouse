@@ -1,23 +1,17 @@
 #if __has_include(<mysql.h>)
+#include <errmsg.h>
 #include <mysql.h>
 #else
+#include <mysql/errmsg.h>
 #include <mysql/mysql.h>
 #endif
 
-#include <Poco/Util/Application.h>
+#include <Poco/Logger.h>
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Types.h>
 
-
-namespace
-{
-// USE MySQL ERROR CODE:
-// https://dev.mysql.com/doc/mysql-errors/5.7/en/client-error-reference.html
-const unsigned int CR_SERVER_GONE_ERROR = 2006;
-const unsigned int CR_SERVER_LOST = 2013;
-};
 
 namespace mysqlxx
 {
@@ -71,8 +65,8 @@ void Query::executeImpl()
 
     MYSQL* mysql_driver = conn->getDriver();
 
-    auto & logger = Poco::Util::Application::instance().logger();
-    logger.trace("mysqlxx::Query: running MySQL query using connection %lu", mysql_thread_id(mysql_driver));
+    auto & logger = Poco::Logger::get("mysqlxx::Query");
+    logger.trace("Running MySQL query using connection %lu", mysql_thread_id(mysql_driver));
     if (mysql_real_query(mysql_driver, query_string.data(), query_string.size()))
     {
         const auto err_no = mysql_errno(mysql_driver);

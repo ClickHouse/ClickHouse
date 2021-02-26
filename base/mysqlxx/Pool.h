@@ -169,7 +169,7 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
          bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT)
-    : logger(Poco::Util::Application::instance().logger()), default_connections(default_connections_),
+    : logger(Poco::Logger::get("mysqlxx::Pool")), default_connections(default_connections_),
     max_connections(max_connections_), db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
     connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
     opt_reconnect(opt_reconnect_) {}
