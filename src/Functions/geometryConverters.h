@@ -51,12 +51,12 @@ using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 using CartesianGeometry = Geometry<CartesianPoint>;
 
-// using GeographicPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::geographic<boost::geometry::degree>>;
-using GeographicPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
-using GeographicRing = Ring<GeographicPoint>;
-using GeographicPolygon = Polygon<GeographicPoint>;
-using GeographicMultiPolygon = MultiPolygon<GeographicPoint>;
-using GeographicGeometry = Geometry<GeographicPoint>;
+// using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::Spherical<boost::geometry::degree>>;
+using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
+using SphericalRing = Ring<SphericalPoint>;
+using SphericalPolygon = Polygon<SphericalPoint>;
+using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
+using SphericalGeometry = Geometry<SphericalPoint>;
 
 
 template<class Point>
@@ -70,7 +70,7 @@ class MultiPolygonFromColumnConverter;
 
 /**
  * Class which takes some boost type and returns a pair of numbers.
- * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of geographic.
+ * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of Spherical.
 */
 template <typename Point>
 class PointFromColumnConverter
@@ -151,16 +151,16 @@ private:
 
 
 extern template class PointFromColumnConverter<CartesianPoint>;
-extern template class PointFromColumnConverter<GeographicPoint>;
+extern template class PointFromColumnConverter<SphericalPoint>;
 extern template class RingFromColumnConverter<CartesianPoint>;
-extern template class RingFromColumnConverter<GeographicPoint>;
+extern template class RingFromColumnConverter<SphericalPoint>;
 extern template class PolygonFromColumnConverter<CartesianPoint>;
-extern template class PolygonFromColumnConverter<GeographicPoint>;
+extern template class PolygonFromColumnConverter<SphericalPoint>;
 extern template class MultiPolygonFromColumnConverter<CartesianPoint>;
-extern template class MultiPolygonFromColumnConverter<GeographicPoint>;
+extern template class MultiPolygonFromColumnConverter<SphericalPoint>;
 
 
-/// To serialize Geographic or Cartesian point (a pair of numbers in both cases).
+/// To serialize Spherical or Cartesian point (a pair of numbers in both cases).
 template <typename Point>
 class PointSerializer
 {
