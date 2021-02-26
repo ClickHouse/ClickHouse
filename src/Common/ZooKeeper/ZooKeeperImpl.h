@@ -167,6 +167,8 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
+    void finalize()  override { finalize(false, false); }
+
 private:
     String root_path;
     ACLs default_acls;
