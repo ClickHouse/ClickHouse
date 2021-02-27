@@ -1661,7 +1661,12 @@ void Context::resetZooKeeper() const
 static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
 {
     if (!zk || zk->configChanged(*config, config_name))
+    {
+        if (zk)
+            zk->finalize();
+
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name);
+    }
 }
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
