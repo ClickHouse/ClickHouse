@@ -104,7 +104,7 @@ CREATE DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_hierarchy_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(CACHE(SIZE_IN_CELLS 10));
+LAYOUT(FLAT());
 
 SELECT 'Dictionary flat_dictionary_simple_key_hierarchy';
 SELECT 'dictGet';

@@ -301,7 +301,8 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns);
+    Arena complex_keys_arena;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
     auto & keys = extractor.getKeys();
 
     return getColumnsImpl(attribute_names, key_columns, keys, default_values_columns);
@@ -424,7 +425,8 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
 template <DictionaryKeyType dictionary_key_type>
 ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns);
+    Arena complex_keys_arena;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
     const auto & keys = extractor.getKeys();
 
     /// We make empty request just to fetch if keys exists
@@ -707,7 +709,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     block_columns.erase(block_columns.begin());
                 }
 
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, *update_unit_ptr->complex_key_arena);
+                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, update_unit_ptr->complex_key_arena);
                 const auto & keys = keys_extractor.getKeys();
 
                 cache_storage_ptr->insertColumnsForKeys(keys, block_columns);
