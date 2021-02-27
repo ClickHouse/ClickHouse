@@ -91,6 +91,8 @@ public:
 
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
+
+    ColumnPtr compress() const override;
 };
 
 }

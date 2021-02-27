@@ -59,13 +59,16 @@ void NuKeeperStorageSerializer::deserialize(NuKeeperStorage & storage, ReadBuffe
 
     size_t container_size;
     Coordination::read(container_size, in);
-    while (storage.container.size() < container_size)
+
+    size_t current_size = 0;
+    while (current_size < container_size)
     {
         std::string path;
         Coordination::read(path, in);
         NuKeeperStorage::Node node;
         readNode(node, in);
         storage.container[path] = node;
+        current_size++;
     }
     size_t ephemerals_size;
     Coordination::read(ephemerals_size, in);
