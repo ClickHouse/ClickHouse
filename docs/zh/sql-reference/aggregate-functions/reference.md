@@ -561,19 +561,8 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 
 
 
-## stddevSamp(x) {#stddevsampx}
-
-结果等于平方根 `varSamp(x)`。
-
-!!! note "注"
-    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## stddevPop(x) {#stddevpopx}
-
-结果等于平方根 `varPop(x)`。
-
-!!! note "注"
-    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevPopStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## topK(N)(x) {#topknx}
 
