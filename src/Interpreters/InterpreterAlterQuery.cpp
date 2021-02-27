@@ -104,6 +104,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
+        table->checkMutationIsPossible(mutation_commands, context.getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate();
         table->mutate(mutation_commands, context);
     }

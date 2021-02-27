@@ -61,39 +61,57 @@ int32samoa: 1546300800
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
 
+Alias: `YEAR`.
+
 ## toQuarter {#toquarter}
 
 Converts a date or date with time to a UInt8 number containing the quarter number.
+
+Alias: `QUARTER`.
 
 ## toMonth {#tomonth}
 
 Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
+Alias: `MONTH`.
+
 ## toDayOfYear {#todayofyear}
 
 Converts a date or date with time to a UInt16 number containing the number of the day of the year (1-366).
+
+Alias: `DAYOFYEAR`.
 
 ## toDayOfMonth {#todayofmonth}
 
 Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
+Aliases: `DAYOFMONTH`, `DAY`.
+
 ## toDayOfWeek {#todayofweek}
 
 Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+
+Alias: `DAYOFWEEK`.
 
 ## toHour {#tohour}
 
 Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true – even in Moscow the clocks were twice changed at a different time).
 
+Alias: `HOUR`.
+
 ## toMinute {#tominute}
 
 Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
+
+Alias: `MINUTE`.
 
 ## toSecond {#tosecond}
 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
+
+Alias: `SECOND`.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 

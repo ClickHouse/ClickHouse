@@ -253,6 +253,11 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
     }
 }
 
+void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
+}
+
 void StorageMemory::mutate(const MutationCommands & commands, const Context & context)
 {
     std::lock_guard lock(mutex);
