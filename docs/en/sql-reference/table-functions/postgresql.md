@@ -67,7 +67,7 @@ SELECT * FROM postgresql('localhost:5432', 'test_database', 'test_table', 'postg
 
 **See Also**
 
--   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/postgresql.md)
--   [Using MySQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+-   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
+-   [Using PostgreSQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table_functions/postgresql/) <!--hide-->
