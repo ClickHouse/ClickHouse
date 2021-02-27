@@ -116,7 +116,9 @@ static inline void deserializeAndInsertIntoColumns(
     const DictionaryStorageFetchRequest & fetch_request,
     const char * place_for_serialized_columns)
 {
-    for (size_t column_index = 0; column_index < columns.size(); ++column_index)
+    size_t columns_size = columns.size();
+
+    for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
         const auto & column = columns[column_index];
 
