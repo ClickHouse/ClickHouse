@@ -72,6 +72,6 @@ SELECT * FROM test_database.test_table;
 ## See Also {#see-also}
 
 -   [The 'postgresql' table function](../../../sql-reference/table-functions/postgresql.md)
--   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#example-of-connecting-postgresql)
+-   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/postgresql/) <!--hide-->
