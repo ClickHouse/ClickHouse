@@ -291,7 +291,7 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 
 HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(AsyncCallback async_callback)
 {
-    /// Firstly, resume replica with the last received packet if needed.
+    /// Firstly, resume replica with the last received packet if it has pending data.
     if (replica_with_last_received_packet)
     {
         ReplicaLocation location = replica_with_last_received_packet.value();
