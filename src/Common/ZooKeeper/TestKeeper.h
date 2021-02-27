@@ -30,7 +30,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
   *
   * NOTE: You can add various failure modes for better testing.
   */
-class TestKeeper : public IKeeper
+class TestKeeper final : public IKeeper
 {
 public:
     TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);

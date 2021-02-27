@@ -134,10 +134,10 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
 ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,
                      int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
-    Strings hosts_;
-    splitInto<','>(hosts_, hosts_string);
+    Strings hosts_strings;
+    splitInto<','>(hosts_strings, hosts_string);
 
-    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
 }
 
 ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
