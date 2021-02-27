@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -120,12 +121,20 @@ void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t ro
 }
 
 
-static inline void alignStringLength(const DataTypeFixedString & type,
-                                     ColumnFixedString::Chars & data,
-                                     size_t string_start)
+void DataTypeFixedString::alignStringLength(PaddedPODArray<UInt8> & chars, size_t old_size) const
 {
-    ColumnFixedString::alignStringLength(data, type.getN(), string_start);
+    size_t length = chars.size() - old_size;
+    if (length < n)
+    {
+        chars.resize_fill(old_size + n);
+    }
+    else if (length > n)
+    {
+        chars.resize_assume_reserved(old_size);
+        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
 }
+
 
 template <typename Reader>
 static inline void read(const DataTypeFixedString & self, IColumn & column, Reader && reader)
@@ -135,7 +144,7 @@ static inline void read(const DataTypeFixedString & self, IColumn & column, Read
     try
     {
         reader(data);
-        alignStringLength(self, data, prev_size);
+        self.alignStringLength(data, prev_size);
     }
     catch (...)
     {

@@ -117,6 +117,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    ColumnPtr compress() const override;
+
     void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(nested_column);
