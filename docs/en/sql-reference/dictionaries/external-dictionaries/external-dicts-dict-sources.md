@@ -68,6 +68,8 @@ Types of sources (`source_type`):
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)    
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -672,5 +674,53 @@ Default value is 1 (the first key column is a partition key and other key column
 `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
 - `where` – Optional selection criteria.
 - `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
+
+### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
+
+Example of settings:
+
+``` xml
+<source>
+    <postgresql>
+        <db>clickhouse</db>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>mysecretpassword</password>
+        <table>test_table</table>
+        <invalidate_query>SELECT value FROM test_table WHERE id = 0</invalidate_query>
+    </postgresql>
+</source>
+<layout>
+    <hashed/>
+</layout>
+<structure>
+    <id>
+        <name>id</name>
+        <type>UInt32</type>
+    </id>
+    <attribute>
+        <name>id</name>
+        <type>UInt32</type>
+        <null_value></null_value>
+    </attribute>
+    <attribute>
+        <name>value</name>
+        <type>UInt32</type>
+        <null_value></null_value>
+    </attribute>
+</structure>
+<lifetime>1</lifetime>      
+```
+
+Setting fields:
+
+- `db` — Remote database name.
+- `host` — The PostgreSQL host.
+- `port` – The port on the PostgreSQL server. If not specified, default port is used.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `table` — Remote table name.
+- `invalidate_query` — Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
