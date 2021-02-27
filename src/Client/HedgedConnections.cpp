@@ -296,7 +296,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
     {
         ReplicaLocation location = replica_with_last_received_packet.value();
         replica_with_last_received_packet.reset();
-        if (resumePacketReceiver(location))
+        if (offset_states[location.offset].replicas[location.index].connection->hasReadPendingData() && resumePacketReceiver(location))
             return location;
     }
 
