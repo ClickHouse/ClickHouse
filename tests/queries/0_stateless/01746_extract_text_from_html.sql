@@ -58,5 +58,15 @@ SELECT extractTextFromHTML('Hello<style type="text/css">World <!-- abc --> </sty
 
 SELECT extractTextFromHTML('Hello<style type="text/css">World <![CDATA[</style>]]> </stylea> goodbye');
 SELECT extractTextFromHTML('Hello<style type="text/css">World <![CDATA[</style>]]> </style> goodbye');
+SELECT extractTextFromHTML('Hello<style type="text/css">World <![CDAT[</style>]]> </style> goodbye');
+SELECT extractTextFromHTML('Hello<style type="text/css">World <![endif]--> </style> goodbye');
 SELECT extractTextFromHTML('Hello<style type="text/css">World <script>abc</script> </stylea> goodbye');
 SELECT extractTextFromHTML('Hello<style type="text/css">World <script>abc</script> </style> goodbye');
+
+SELECT extractTextFromHTML('<![CDATA[]]]]><![CDATA[>]]>');
+
+SELECT extractTextFromHTML('
+<img src="pictures/power.png" style="margin-bottom: -30px;" />
+<br><span style="padding-right: 10px; font-size: 10px;">xkcd.com</span>
+</div>
+');
