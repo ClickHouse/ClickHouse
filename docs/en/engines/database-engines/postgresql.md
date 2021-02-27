@@ -104,7 +104,7 @@ SELECT * FROM test_database.test_table;
 
 Consider the table structure was modified in PostgreSQL: 
 
-```
+``` sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text
 ```
 
