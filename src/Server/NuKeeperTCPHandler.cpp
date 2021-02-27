@@ -40,7 +40,7 @@ namespace ErrorCodes
 
 struct PollResult
 {
-    size_t ready_responses_count{0};
+    size_t responses_count{0};
     bool has_requests{false};
     bool error{false};
 };
@@ -70,14 +70,14 @@ struct SocketInterruptablePollWrapper
         if (epollfd < 0)
             throwFromErrno("Cannot epoll_create", ErrorCodes::SYSTEM_ERROR);
 
-        socket_event.events = EPOLLIN | EPOLLERR;
+        socket_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
             ::close(epollfd);
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
-        pipe_event.events = EPOLLIN | EPOLLERR;
+        pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
@@ -92,97 +92,92 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollResult poll(Poco::Timespan remaining_time)
+    PollResult poll(Poco::Timespan remaining_time, const std::shared_ptr<ReadBufferFromPocoSocket> & in)
     {
-        std::array<int, 2> outputs = {-1, -1};
+
+        bool socket_ready = false;
+        bool fd_ready = false;
+
+        if (in->available() != 0)
+            socket_ready = true;
+
+        if (response_in.available() != 0)
+            fd_ready = true;
+
+        int rc = 0;
+        if (!fd_ready)
+        {
 #if defined(POCO_HAVE_FD_EPOLL)
-        int rc;
-        epoll_event evout[2];
-        memset(evout, 0, sizeof(evout));
-        do
-        {
-            Poco::Timestamp start;
-            rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
-            if (rc < 0 && errno == EINTR)
+            epoll_event evout[2];
+            evout[0].data.fd = evout[1].data.fd = -1;
+            do
             {
-                Poco::Timestamp end;
-                Poco::Timespan waited = end - start;
-                if (waited < remaining_time)
-                    remaining_time -= waited;
-                else
-                    remaining_time = 0;
-            }
-        }
-        while (rc < 0 && errno == EINTR);
-
-        if (rc >= 1 && evout[0].events & EPOLLIN)
-            outputs[0] = evout[0].data.fd;
-        if (rc == 2 && evout[1].events & EPOLLIN)
-            outputs[1] = evout[1].data.fd;
-#else
-        pollfd poll_buf[2];
-        poll_buf[0].fd = sockfd;
-        poll_buf[0].events = POLLIN;
-        poll_buf[1].fd = pipe.fds_rw[0];
-        poll_buf[1].events = POLLIN;
-
-        int rc;
-        do
-        {
-            Poco::Timestamp start;
-            rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
-            if (rc < 0 && errno == POCO_EINTR)
-            {
-                Poco::Timestamp end;
-                Poco::Timespan waited = end - start;
-                if (waited < remaining_time)
-                    remaining_time -= waited;
-                else
-                    remaining_time = 0;
-            }
-        }
-        while (rc < 0 && errno == POCO_EINTR);
-        if (rc >= 1 && poll_buf[0].revents & POLLIN)
-            outputs[0] = sockfd;
-        if (rc == 2 && poll_buf[1].revents & POLLIN)
-            outputs[1] = pipe.fds_rw[0];
-#endif
-
-        PollResult result{};
-        if (rc < 0)
-        {
-            result.error = true;
-            return result;
-        }
-        else if (rc == 0)
-        {
-            return result;
-        }
-        else
-        {
-            for (auto fd : outputs)
-            {
-                if (fd != -1)
+                Poco::Timestamp start;
+                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
+                if (rc < 0 && errno == EINTR)
                 {
-                    if (fd == sockfd)
-                        result.has_requests = true;
+                    Poco::Timestamp end;
+                    Poco::Timespan waited = end - start;
+                    if (waited < remaining_time)
+                        remaining_time -= waited;
                     else
-                    {
-                        UInt8 dummy;
-                        do
-                        {
-                            /// All ready responses stored in responses queue,
-                            /// but we have to count amount of ready responses in pipe
-                            /// and process them only. Otherwise states of response_in
-                            /// and response queue will be inconsistent and race condition is possible.
-                            readIntBinary(dummy, response_in);
-                            result.ready_responses_count++;
-                        }
-                        while (response_in.available());
-                    }
+                        remaining_time = 0;
                 }
             }
+            while (rc < 0 && errno == EINTR);
+
+            for (int i = 0; i < rc; ++i)
+            {
+                if (evout[i].data.fd == sockfd)
+                    socket_ready = true;
+                if (evout[i].data.fd == pipe.fds_rw[0])
+                    fd_ready = true;
+            }
+#else
+            pollfd poll_buf[2];
+            poll_buf[0].fd = sockfd;
+            poll_buf[0].events = POLLIN;
+            poll_buf[1].fd = pipe.fds_rw[0];
+            poll_buf[1].events = POLLIN;
+
+            do
+            {
+                Poco::Timestamp start;
+                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
+                if (rc < 0 && errno == POCO_EINTR)
+                {
+                    Poco::Timestamp end;
+                    Poco::Timespan waited = end - start;
+                    if (waited < remaining_time)
+                        remaining_time -= waited;
+                    else
+                        remaining_time = 0;
+                }
+            }
+            while (rc < 0 && errno == POCO_EINTR);
+
+            if (rc >= 1 && poll_buf[0].revents & POLLIN)
+                socket_ready = true;
+            if (rc == 2 && poll_buf[1].revents & POLLIN)
+                fd_ready = true;
+#endif
         }
+
+        PollResult result{};
+        result.has_requests = socket_ready;
+        if (fd_ready)
+        {
+            UInt8 dummy;
+            readIntBinary(dummy, response_in);
+            result.responses_count = 1;
+            auto available = response_in.available();
+            response_in.ignore(available);
+            result.responses_count += available;
+        }
+
+        if (rc < 0)
+            result.error = true;
+
         return result;
     }
 
@@ -339,43 +334,40 @@ void NuKeeperTCPHandler::runImpl()
         {
             using namespace std::chrono_literals;
 
-            PollResult result = poll_wrapper->poll(session_timeout);
+            PollResult result = poll_wrapper->poll(session_timeout, in);
             if (result.has_requests && !close_received)
             {
-                do
-                {
-                    auto [received_op, received_xid] = receiveRequest();
+                auto [received_op, received_xid] = receiveRequest();
 
-                    if (received_op == Coordination::OpNum::Close)
-                    {
-                        LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received_xid, session_id);
-                        close_xid = received_xid;
-                        close_received = true;
-                        break;
-                    }
-                    else if (received_op == Coordination::OpNum::Heartbeat)
-                    {
-                        LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
-                        session_stopwatch.restart();
-                    }
+                if (received_op == Coordination::OpNum::Close)
+                {
+                    LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received_xid, session_id);
+                    close_xid = received_xid;
+                    close_received = true;
                 }
-                while (in->available());
+                else if (received_op == Coordination::OpNum::Heartbeat)
+                {
+                    LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
+                    session_stopwatch.restart();
+                }
             }
 
             /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
             /// became inconsistent and race condition is possible.
-            while (result.ready_responses_count != 0)
+            while (result.responses_count != 0)
             {
                 Coordination::ZooKeeperResponsePtr response;
+
                 if (!responses->tryPop(response))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have at least {} ready responses, but queue is empty. It's a bug.", result.ready_responses_count);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
 
                 if (response->xid == close_xid)
                 {
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
                     return;
                 }
+
                 response->write(*out);
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -383,7 +375,8 @@ void NuKeeperTCPHandler::runImpl()
                     nu_keeper_storage_dispatcher->finishSession(session_id);
                     return;
                 }
-                result.ready_responses_count--;
+
+                result.responses_count--;
             }
 
             if (result.error)
