@@ -4,7 +4,7 @@ toc_priority: 30
 
 # stddevPop {#stddevpop}
 
-The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varpop.md).
+结果等于 [varPop] (../../../sql-reference/aggregate-functions/reference/varpop.md)的平方根。
 
-!!! note "Note"
-    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower but provides a lower computational error.
+!!! note "注"
+该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevPopStable` 函数。 它的工作速度较慢，但提供较低的计算错误。
