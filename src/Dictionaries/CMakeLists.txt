@@ -18,8 +18,11 @@ target_link_libraries(clickhouse_dictionaries
         Poco::MongoDB
         Poco::Redis
         string_utils
-        abseil_swiss_tables
 )
+
+target_link_libraries(clickhouse_dictionaries
+    PUBLIC
+        abseil_swiss_tables)
 
 if(USE_CASSANDRA)
     target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${CASSANDRA_INCLUDE_DIR})
