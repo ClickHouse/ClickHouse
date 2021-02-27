@@ -65,10 +65,8 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
                 /// Check if constraint value is nullable
                 const auto & null_map = column_nullable->getNullMapColumn();
-                const auto & data = null_map.getData();
-                const auto * it = std::find(data.begin(), data.end(), true);
-
-                bool null_map_contains_null = it != data.end();
+                const PaddedPODArray<UInt8> & data = null_map.getData();
+                bool null_map_contains_null = !memoryIsZero(data.raw_data(), data.size() * sizeof(UInt8));
 
                 if (null_map_contains_null)
                     throw Exception(
