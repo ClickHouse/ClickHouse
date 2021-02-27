@@ -99,7 +99,7 @@ public:
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
 
-        LOG_DEBUG(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
+        LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
