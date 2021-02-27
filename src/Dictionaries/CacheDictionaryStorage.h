@@ -72,12 +72,10 @@ public:
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
         {
-            SimpleKeysStorageFetchResult result;
-            fetchColumnsForKeysImpl(keys, fetch_request, result);
-            return result;
+            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         }
         else
-            throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception("Method fetchColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -104,9 +102,7 @@ public:
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         {
-            ComplexKeysStorageFetchResult result;
-            fetchColumnsForKeysImpl(keys, column_fetch_requests, result);
-            return result;
+            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
         }
         else
             throw Exception("Method fetchColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
@@ -125,7 +121,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return getCachedKeysImpl();
         else
-            throw Exception("Method getCachedSimpleKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception("Method getCachedComplexKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     size_t getSize() const override { return cache.size(); }
@@ -137,11 +133,12 @@ public:
 private:
 
     template <typename KeysStorageFetchResult>
-    void fetchColumnsForKeysImpl(
+    ALWAYS_INLINE KeysStorageFetchResult fetchColumnsForKeysImpl(
         const PaddedPODArray<KeyType> & keys,
-        const DictionaryStorageFetchRequest & fetch_request,
-        KeysStorageFetchResult & result)
+        const DictionaryStorageFetchRequest & fetch_request)
     {
+        KeysStorageFetchResult result;
+
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
         result.key_index_to_state.resize_fill(keys.size(), {KeyState::not_found});
 
@@ -149,7 +146,11 @@ private:
 
         size_t fetched_columns_index = 0;
 
-        for (size_t key_index = 0; key_index < keys.size(); ++key_index)
+        std::chrono::seconds max_lifetime_seconds(configuration.strict_max_lifetime_seconds);
+
+        size_t keys_size = keys.size();
+
+        for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
             auto key = keys[key_index];
             auto * it = cache.find(key);
@@ -161,7 +162,7 @@ private:
 
                 bool has_deadline = cellHasDeadline(cell);
 
-                if (has_deadline && now > cell.deadline + std::chrono::seconds(configuration.strict_max_lifetime_seconds))
+                if (has_deadline && now > cell.deadline + max_lifetime_seconds)
                 {
                     result.key_index_to_state[key_index] = {KeyState::not_found};
                     ++result.not_found_keys_size;
@@ -189,6 +190,8 @@ private:
                 ++result.not_found_keys_size;
             }
         }
+
+        return result;
     }
 
     void insertColumnsForKeysImpl(const PaddedPODArray<KeyType> & keys, Columns columns)

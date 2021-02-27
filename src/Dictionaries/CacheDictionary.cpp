@@ -322,8 +322,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-        auto fetch_result = cache_storage_ptr->fetchColumnsForKeys(keys, request);
-        result_of_fetch_from_storage = std::move(fetch_result);
+        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
     }
 
     size_t found_keys_size = result_of_fetch_from_storage.found_keys_size;
@@ -806,10 +805,10 @@ namespace
                 config.getUInt64(dictionary_configuration_prefix + "strict_max_lifetime_seconds",
                 static_cast<size_t>(dict_lifetime.max_sec));
 
-        // size_t rounded_size = roundUpToPowerOfTwoOrZero(size);
+        size_t rounded_size = roundUpToPowerOfTwoOrZero(size);
 
         CacheDictionaryStorageConfiguration storage_configuration {
-            size,
+            rounded_size,
             strict_max_lifetime_seconds,
             dict_lifetime
         };

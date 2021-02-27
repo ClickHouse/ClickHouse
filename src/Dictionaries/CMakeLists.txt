@@ -18,6 +18,7 @@ target_link_libraries(clickhouse_dictionaries
         Poco::MongoDB
         Poco::Redis
         string_utils
+        abseil_swiss_tables
 )
 
 if(USE_CASSANDRA)
