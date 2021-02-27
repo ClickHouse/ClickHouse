@@ -61,7 +61,7 @@ bool processCDATA(const char * __restrict & src, const char * end, char * __rest
     if (!checkAndSkip(src, end, "<![CDATA["))
         return false;
 
-    if (pending_whitespace && src < end)
+    if (dst && pending_whitespace && src < end)
     {
         pending_whitespace = false;
         *dst = ' ';
@@ -77,9 +77,12 @@ bool processCDATA(const char * __restrict & src, const char * end, char * __rest
 
         if (gt[-1] == ']' && gt[-2] == ']')
         {
-            size_t bytes_to_copy = gt - src - strlen("]]");
-            memcpy(dst, src, bytes_to_copy);
-            dst += bytes_to_copy;
+            if (dst)
+            {
+                size_t bytes_to_copy = gt - src - strlen("]]");
+                memcpy(dst, src, bytes_to_copy);
+                dst += bytes_to_copy;
+            }
             src = gt + 1;
             break;
         }
@@ -127,6 +130,17 @@ bool processElementAndSkipContent(const char * __restrict & src, const char * en
             break;
 
         ++src;
+
+        /// Skip comments and CDATA
+        if (*src == '!')
+        {
+            --src;
+            bool pending_whitespace = false;
+            char * dst = nullptr;
+            processComment(src, end) || processCDATA(src, end, dst, pending_whitespace);
+            continue;
+        }
+
         if (*src != '/')
             continue;
         ++src;

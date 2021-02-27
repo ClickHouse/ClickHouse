@@ -1,106 +1,53 @@
--- { echo }
 
-SELECT extractTextFromHTML('');
 
-SELECT extractTextFromHTML(' ');
 
-SELECT extractTextFromHTML('  ');
-
-SELECT extractTextFromHTML('Hello');
 Hello
-SELECT extractTextFromHTML('Hello, world');
 Hello, world
-SELECT extractTextFromHTML('Hello,  world');
 Hello, world
-SELECT extractTextFromHTML(' Hello,  world');
  Hello, world
-SELECT extractTextFromHTML(' Hello,  world ');
  Hello, world
-SELECT extractTextFromHTML(' \t Hello,\rworld \n ');
  Hello, world
-SELECT extractTextFromHTML('Hello<world');
 Hello
-SELECT extractTextFromHTML('Hello < world');
 Hello
-SELECT extractTextFromHTML('Hello > world');
 Hello > world
-SELECT extractTextFromHTML('Hello<world>');
 Hello
-SELECT extractTextFromHTML('Hello<>world');
 Helloworld
-SELECT extractTextFromHTML('Hello<!>world');
 Helloworld
-SELECT extractTextFromHTML('Hello<!->world');
 Helloworld
-SELECT extractTextFromHTML('Hello<!-->world');
 Helloworld
-SELECT extractTextFromHTML('Hello<!--->world');
 Helloworld
-SELECT extractTextFromHTML('Hello<!---->world');
 Helloworld
-SELECT extractTextFromHTML('Hello <!-- --> World');
 Hello World
-SELECT extractTextFromHTML('Hello<!-- --> World');
 Hello World
-SELECT extractTextFromHTML('Hello<!-- -->World');
 HelloWorld
-SELECT extractTextFromHTML('Hello <!-- -->World');
 Hello World
-SELECT extractTextFromHTML('Hello <u> World</u>');
 Hello World
-SELECT extractTextFromHTML('Hello <u>World</u>');
 Hello World
-SELECT extractTextFromHTML('Hello<u>World</u>');
 HelloWorld
-SELECT extractTextFromHTML('Hello<u> World</u>');
 Hello World
-SELECT extractTextFromHTML('<![CDATA[ \t Hello,\rworld \n ]]>');
  \t Hello,\rworld \n 
-SELECT extractTextFromHTML('Hello <![CDATA[Hello\tworld]]> world!');
 Hello Hello\tworld world!
-SELECT extractTextFromHTML('Hello<![CDATA[Hello\tworld]]>world!');
 HelloHello\tworldworld!
-SELECT extractTextFromHTML('Hello <![CDATA[Hello <b>world</b>]]> world!');
 Hello Hello <b>world</b> world!
-SELECT extractTextFromHTML('<![CDATA[<sender>John Smith</sender>]]>');
 <sender>John Smith</sender>
-SELECT extractTextFromHTML('<![CDATA[<sender>John <![CDATA[Smith</sender>]]>');
 <sender>John <![CDATA[Smith</sender>
-SELECT extractTextFromHTML('<![CDATA[<sender>John <![CDATA[]]>Smith</sender>]]>');
 <sender>John <![CDATA[Smith]]>
-SELECT extractTextFromHTML('<![CDATA[<sender>John ]]><![CDATA[Smith</sender>]]>');
 <sender>John Smith</sender>
-SELECT extractTextFromHTML('<![CDATA[<sender>John ]]> <![CDATA[Smith</sender>]]>');
 <sender>John  Smith</sender>
-SELECT extractTextFromHTML('<![CDATA[<sender>John]]> <![CDATA[Smith</sender>]]>');
 <sender>John Smith</sender>
-SELECT extractTextFromHTML('<![CDATA[<sender>John ]]>]]><![CDATA[Smith</sender>]]>');
 <sender>John ]]>Smith</sender>
-SELECT extractTextFromHTML('Hello<script>World</script> goodbye');
 Hello goodbye
-SELECT extractTextFromHTML('Hello<script >World</script> goodbye');
 Hello goodbye
-SELECT extractTextFromHTML('Hello<scripta>World</scripta> goodbye');
 HelloWorld goodbye
-SELECT extractTextFromHTML('Hello<script type="text/javascript">World</script> goodbye');
 Hello goodbye
-SELECT extractTextFromHTML('Hello<style type="text/css">World</style> goodbye');
 Hello goodbye
-SELECT extractTextFromHTML('Hello<script:p>World</script:p> goodbye');
 HelloWorld goodbye
-SELECT extractTextFromHTML('Hello<script:p type="text/javascript">World</script:p> goodbye');
 HelloWorld goodbye
-SELECT extractTextFromHTML('Hello<style type="text/css">World <!-- abc --> </style> goodbye');
 Hello goodbye
-SELECT extractTextFromHTML('Hello<style type="text/css">World <!-- abc --> </style \n > goodbye');
 Hello goodbye
-SELECT extractTextFromHTML('Hello<style type="text/css">World <!-- abc --> </ style> goodbye');
 Hello
-SELECT extractTextFromHTML('Hello<style type="text/css">World <!-- abc --> </stylea> goodbye');
 Hello
-SELECT extractTextFromHTML('Hello<style type="text/css">World <![CDATA[</style>]]> </stylea> goodbye');
-Hello]]> goodbye
-SELECT extractTextFromHTML('Hello<style type="text/css">World <script>abc</script> </stylea> goodbye');
 Hello
-SELECT extractTextFromHTML('Hello<style type="text/css">World <script>abc</script> </style> goodbye');
+Hello goodbye
+Hello
 Hello goodbye
