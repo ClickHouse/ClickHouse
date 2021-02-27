@@ -111,3 +111,4 @@ GROUP BY c.host_name; -- { serverError 403 }
 
 -- LIMIT BY
 select _shard_num, * from remote('127.{1,2}', system.one) limit 1 by dummy;
+select materialize(_shard_num), * from remote('127.{1,2}', system.one) limit 1 by dummy;

@@ -167,6 +167,15 @@ void rewriteShardNum(ASTPtr & ast, const Field & shard_num)
     if (!visitor_data.alias_name.empty())
         visitor.visit(ast);
 
+    /// Sometimes _shard_num will be required on initiator,
+    /// since the type of _shard_num is unknown on initator, for example:
+    ///
+    ///     SELECT materialize(_shard_num), * FROM remote('127.{1,2}', system.one) LIMIT 1 BY dummy
+    ///
+    /// so it is added implicitly into SELECT clause.
+    const auto & select = ast->as<ASTSelectQuery &>().refSelect();
+    select->children.push_back(std::make_shared<ASTIdentifier>("_shard_num"));
+
     /// toUInt32 to match type with system.clusters.shard_num
     VirtualColumnUtils::rewriteEntityInAst(ast, "_shard_num", shard_num, "toUInt32");
 }
