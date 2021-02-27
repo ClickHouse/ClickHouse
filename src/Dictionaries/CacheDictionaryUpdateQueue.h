@@ -60,7 +60,6 @@ public:
         : requested_complex_key_columns(requested_complex_key_columns_)
         , requested_complex_key_rows(std::move(requested_complex_key_rows_))
         , request(request_)
-        , complex_key_arena(std::make_shared<Arena>())
         , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_complex_key_rows.size())
     {
         fetched_columns_during_update = request.makeAttributesResultColumns();
@@ -79,8 +78,8 @@ public:
 
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
     MutableColumns fetched_columns_during_update;
-    /// Complex keys are serialized in this arena and added to map
-    const std::shared_ptr<Arena> complex_key_arena;
+    /// Complex keys are serialized in this arena
+    Arena complex_key_arena;
 
 private:
     template <DictionaryKeyType>

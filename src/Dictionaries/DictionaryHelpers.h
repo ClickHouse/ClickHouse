@@ -205,7 +205,7 @@ class DictionaryDefaultValueExtractor
 public:
     using DefaultValueType = DictionaryValueType<DictionaryAttributeType>;
 
-    DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
+    explicit DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
         : default_value(std::move(attribute_default_value))
     {
         if (default_values_column_ == nullptr)
@@ -251,16 +251,6 @@ class DictionaryKeysExtractor
 public:
     using KeyType = std::conditional_t<key_type == DictionaryKeyType::simple, UInt64, StringRef>;
     static_assert(key_type != DictionaryKeyType::range, "Range key type is not supported by DictionaryKeysExtractor");
-
-    explicit DictionaryKeysExtractor(const Columns & key_columns)
-    {
-        assert(!key_columns.empty());
-
-        if constexpr (key_type == DictionaryKeyType::simple)
-            keys = getColumnVectorData(key_columns.front());
-        else
-            keys = deserializeKeyColumnsInArena(key_columns, complex_keys_temporary_arena);
-    }
 
     explicit DictionaryKeysExtractor(const Columns & key_columns, Arena & existing_arena)
     {
@@ -322,7 +312,7 @@ private:
     }
 
     PaddedPODArray<KeyType> keys;
-    Arena complex_keys_temporary_arena;
+
 };
 
 /**

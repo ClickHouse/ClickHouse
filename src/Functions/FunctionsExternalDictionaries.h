@@ -24,6 +24,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/castColumn.h>
 
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
@@ -338,17 +339,28 @@ public:
             if (current_arguments_index >= arguments.size())
                 throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-            auto default_column_type = arguments[current_arguments_index].type;
+            const auto & column_before_cast = arguments[current_arguments_index];
 
-            if (!default_column_type->equals(*result_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Wrong argument for function ({}) default values column must be the same type as dictionary attribute type",
-                    getName());
+            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(column_before_cast.type.get()))
+            {
+                const DataTypes & nested_types = type_tuple->getElements();
+
+                for (const auto & nested_type : nested_types)
+                    if (nested_type->isNullable())
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong argument for function ({}) default values column nullable is not supported", getName());
+            }
+            else if (column_before_cast.type->isNullable())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong argument for function ({}) default values column nullable is not supported", getName());
+
+            auto result_type_no_nullable = removeNullable(result_type);
+
+            ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
+
+            auto result = castColumnAccurate(column_to_cast, result_type_no_nullable);
 
             if (attribute_names.size() > 1)
             {
-                const auto * tuple_column = checkAndGetColumn<ColumnTuple>(arguments[current_arguments_index].column.get());
+                const auto * tuple_column = checkAndGetColumn<ColumnTuple>(result.get());
 
                 if (!tuple_column)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -362,7 +374,7 @@ public:
                 default_cols = tuple_column->getColumnsCopy();
             }
             else
-                default_cols.emplace_back(arguments[current_arguments_index].column);
+                default_cols.emplace_back(result);
         }
         else
         {
