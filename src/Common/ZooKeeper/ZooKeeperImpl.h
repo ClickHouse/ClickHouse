@@ -170,7 +170,7 @@ public:
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
     /// two ZooKeeper sessions simultaneously in different parts of code.
-    /// This is stong antipattern and we always prevented it.
+    /// This is strong antipattern and we always prevented it.
 
     /// ZooKeeper is linearizeable for writes, but not linearizeable for
     /// reads, it only maintains "sequential consistency": in every session
