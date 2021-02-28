@@ -61,10 +61,9 @@
 
 Удалённый LDAP-сервер можно использовать для проверки паролей пользователей, определённых локально, в ClickHouse (в конфигурационных файлах или через SQL-воркфлоу). Для этого при определении пользователя укажите имя предварительно описанного LDAP-сервера вместо секции `password` или ей аналогичной.
 
-При каждой попытке логина ClickHouse будет пытаться подключиться как DN, указанному в параметре `bind_dn` в [Определении сервера LDAP](#ldap-server-definition)
-At each login attempt, ClickHouse will try to "bind" to the specified DN defined by the `bind_dn` parameter in the [LDAP server definition](#ldap-server-definition) using the provided credentials, and if successful, the user will be considered authenticated. This is often called a "simple bind" method.
+При каждой попытке логина ClickHouse будет пытаться авторизоваться как DN, указанный в параметре `bind_dn` в [Определении сервера LDAP](#ldap-server-definition) с использованием указанных учётных данных. Если попытка увенчается успехом, то пользователь будет аутентифицирован. Инода это также называют простым подсоединением (simple bind).
 
-For example,
+Пример конфигурации:
 
 ```xml
 <yandex>
@@ -81,22 +80,23 @@ For example,
 </yandex>
 ```
 
-Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
+Отметим, что пользователь `my_user` относится к `my_ldap_server`. Этот сервер нужно предварительно определить в главном конфигурационном файле `config.xml`, как описывалось ранее.
 
-When SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled in ClickHouse, users that are authenticated by LDAP servers can also be created using the [CRATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement.
-
+Если [управление доступом через SQL-воркфлоу](../access-rights.md#access-control) включено в ClickHouse, то с его помощью также можно создавать пользователей для аутентификации через LDAP, используя выражение [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server'
 ```
 
-## LDAP Exernal User Directory {#ldap-external-user-directory}
+## Внешний каталог пользователей LDAP {#ldap-external-user-directory}
 
-In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. In order to achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
+Кроме описанного выше использования LDAP в качестве внешнего аутентификатора, ClickHouse также предоставляет возможность использования LDAP как внешний пользовательские каталог. Для этого необходимо указать предварительно описанное (см. [определение LDAP-сервера](#ldap-server-definition)) имя LDAP-сервера в секции `ldap` внутри `users_directories` в конфигурационном файле `config.xml`
 
-At each login attempt, ClickHouse will try to find the user definition locally and authenticate it as usual, but if the user is not defined, ClickHouse will assume it exists in the external LDAP directory, and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled and roles are created using the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
+При каждой попытке авторизации ClickHouse сначала пытается найти пользователя среди определённых локально (посредством конфигурационных файлов или SQL-воркфлоу). Если там пользователь не найден, то полагается, что он существует во внешнем каталоге, и ClickHouse попытается выполнить "привязку" к уникальному имени (DN) на LDAP-сервере, используя предоставленные ему данные. Если попытка увенчается успехом, то пользователь будет сочтён существующим и прошедшим аутентификацию.
 
-Example (goes into `config.xml`):
+Пользователю будут присвоены роли из списка, приведённого в секции `roles`. Кроме того, может быть выполнен "поиск" в LDAP, результаты которого могут быть использованы как имена ролей и в дальнейшем присвоены пользователю, если также определена секция `role_mapping`. При этом полагается, что включен SQL-воркфлоу (см. [Управление доступом](../access-rights.md#access-control)) и роли уже созданы командой [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement).
+
+Пример, как это выглядит в `config.xml`:
 
 ```xml
 <yandex>
@@ -121,33 +121,26 @@ Example (goes into `config.xml`):
 </yandex>
 ```
 
-Note that `my_ldap_server` referred in the `ldap` section inside the `user_directories` section must be a previously
-defined LDAP server that is configured in the `config.xml` (see [LDAP Server Definition](#ldap-server-definition)).
+!!! info "Note"
+    LDAP-сервер `my_ldap_server`, упоминаемый в секции `ldap` внутри секции `user_directories`, должен быть предварительно определён в конфигурационном файле `config.xml` (см. [Определение LDAP-сервера](#ldap-server-definition)).
 
-Parameters:
+Параметры:
 
-- `server` - one of LDAP server names defined in the `ldap_servers` config section above.
-  This parameter is mandatory and cannot be empty.
-- `roles` - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-    - If no roles are specified here or assigned during role mapping (below), user will not be able
-      to perform any actions after authentication.
-- `role_mapping` - section with LDAP search parameters and mapping rules.
-    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter`
-      and the name of the logged in user. For each entry found during that search, the value of the specified
-      attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed,
-      and the rest of the value becomes the name of a local role defined in ClickHouse,
-      which is expected to be created beforehand by the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
-    - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
-        - `base_dn` - template used to construct the base DN for the LDAP search.
-           - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}`
-             substrings of the template with the actual user name and bind DN during each LDAP search.
-        - `scope` - scope of the LDAP search.
-            - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` - template used to construct the search filter for the LDAP search.
-            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}`
-              substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
-            - Note, that the special characters must be escaped properly in XML.
-        - `attribute` - attribute name whose values will be returned by the LDAP search.
-        - `prefix` - prefix, that will be expected to be in front of each string in the original
-          list of strings returned by the LDAP search. Prefix will be removed from the original
-          strings and resulting strings will be treated as local role names. Empty, by default.
+- `server` -  один из LDAP-серверов, определённых в секции `ldap_servers`/
+  Этот параметр является обязательным к указанию и не может быть пустым.
+
+- `roles` - секция, содержащая список локально определённых ролей, присваеваемых каждому пользователю, авторизованному посредством обращения к LDAP-серверу.
+    - Если ни одна роль здесь не указана или не присвоена пользователю (см. ниже), пользователь не будет иметь возможности совершать никакие действия после аутентификации.
+- `role_mapping` - секция, содержащая параметры поиска LDAP и сопоставления ролей.
+    - При аутентификации пользователя выполняется LDAP-поиск по `search_filter` и имени авторизованного пользователя. Для каждой найденной записи извлекается значение указанного атрибута. Специальный префикс атрибутов ударяется, и полученное значение становится именем роли, определённой в ClickHouse. Ожидается, что эта роль уже создана командой [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement).
+    - Допускается наличие более одной секции `role_mapping` внутри секции `ldap`. Каждая из них будет принята к сведению.
+        - `base_dn` - шаблон, используемый для построения основного DN для LDAP-поиска.
+           - DN получается из шаблона заменой всех подстрок `{user_name}` и `{bind_dn}` на реальное имя пользователя и bind DN (см. [определение LDAP-сервера](#ldap-server-definition)) во время каждого поиска LDAP.
+        - `scope` - область поиска.
+            - Возможные значения: `base`, `one_level`, `children`, `subtree` (по умолчанию).
+        - `search_filter` - шаблон для построения поискового фильтра.
+            - Фильтр получается заменой всех подстрок `{user_name}`, `{bind_dn}` и `{base_dn}` на реальные значения этих параметров.
+            - Не забудьте, что все специальные символы (если они есть) должны быть экранированы при их использовании в XML.
+        - `attribute` - имя атрибут, значения которого будут возвращены после поиска.
+        - `prefix` - префикс, который ожидается в начале каждой строки исходного списка строк, полученного LDAP-поиском. В дальнейшем префикс будет удалён их строк и полученные строки будут трактованы как имена ролей.
+            - По умолчанию, этот параметр пустой.
