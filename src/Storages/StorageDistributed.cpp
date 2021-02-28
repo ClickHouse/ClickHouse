@@ -580,7 +580,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
-    auto name_deps = getColumnNamesAndReferencedMvMap(context);
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN
@@ -593,7 +593,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
                 ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::DROP_COLUMN)
         {
-            auto deps_mv = name_deps[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(

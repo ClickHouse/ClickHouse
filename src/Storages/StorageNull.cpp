@@ -38,7 +38,7 @@ void registerStorageNull(StorageFactory & factory)
 
 void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
-    auto name_deps = getColumnNamesAndReferencedMvMap(context);
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -48,7 +48,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Con
                 ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::DROP_COLUMN)
         {
-            auto deps_mv = name_deps[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(

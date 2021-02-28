@@ -913,7 +913,7 @@ void StorageBuffer::reschedule()
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
-    auto name_deps = getColumnNamesAndReferencedMvMap(context);
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -923,7 +923,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const C
                 ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::Type::DROP_COLUMN)
         {
-            auto deps_mv = name_deps[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(

@@ -75,7 +75,7 @@ ENGINE = Memory;
 
 DROP TABLE IF EXISTS `01746_dist`;
 CREATE TABLE `01746_dist` AS `01746_local`
-ENGINE = Distributed('test_shard_localhost', default, `01746_local`, rand());
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), `01746_local`, rand());
 
 DROP TABLE IF EXISTS `01746_dist_mv`;
 CREATE MATERIALIZED VIEW `01746_dist_mv`
@@ -111,7 +111,7 @@ ENGINE = Memory;
 
 DROP TABLE IF EXISTS `01746_merge`;
 CREATE TABLE `01746_merge` AS `01746_merge_t`
-ENGINE = Merge(default, '01746_merge_t');
+ENGINE = Merge(currentDatabase(), '01746_merge_t');
 
 DROP TABLE IF EXISTS `01746_merge_mv`;
 CREATE MATERIALIZED VIEW `01746_merge_mv`
@@ -147,7 +147,7 @@ ENGINE = Memory;
 
 DROP TABLE IF EXISTS `01746_buffer`;
 CREATE TABLE `01746_buffer` AS `01746_buffer_t`
-ENGINE = Buffer(default, `01746_buffer_t`, 16, 10, 100, 10000, 1000000, 10000000, 100000000);
+ENGINE = Buffer(currentDatabase(), `01746_buffer_t`, 16, 10, 100, 10000, 1000000, 10000000, 100000000);
 
 DROP TABLE IF EXISTS `01746_buffer_mv`;
 CREATE MATERIALIZED VIEW `01746_buffer_mv`
