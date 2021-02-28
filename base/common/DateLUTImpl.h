@@ -320,7 +320,7 @@ public:
         /// To consider the DST changing situation within this day.
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account
         DayNum index = findIndex(t);
-        time_t res = t - lut[index].date;
+        UInt32 res = t - lut[index].date;
         if (lut[index].amount_of_offset_change != 0 && t >= lut[index].date + lut[index].time_at_offset_change)
             res += lut[index].amount_of_offset_change;
 
