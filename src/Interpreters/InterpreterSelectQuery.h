@@ -89,6 +89,8 @@ public:
 
     static void addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
+    Names getRequiredColumns() { return required_columns; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
