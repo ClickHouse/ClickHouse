@@ -400,9 +400,6 @@ private:
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
-
-    bool empty() const;
-    bool overDictionary() const;
 };
 
 }

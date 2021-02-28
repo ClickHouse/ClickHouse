@@ -411,21 +411,6 @@ void HashJoin::init(Type type_)
     joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { map.create(data->type); });
 }
 
-bool HashJoin::overDictionary() const
-{
-    return data->type == Type::DICT;
-}
-
-bool HashJoin::empty() const
-{
-    return data->type == Type::EMPTY;
-}
-
-bool HashJoin::alwaysReturnsEmptySet() const
-{
-    return isInnerOrRight(getKind()) && data->empty && !overDictionary();
-}
-
 size_t HashJoin::getTotalRowCount() const
 {
     size_t res = 0;
