@@ -1360,8 +1360,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
+
         if (!query.prewhere() && !query.where())
+        {
             num_rows = storage->totalRows(settings);
+        }
         else // It's possible to optimize count() given only partition predicates
         {
             SelectQueryInfo temp_query_info;
@@ -1371,6 +1374,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
         }
+
         if (num_rows)
         {
             AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
@@ -1859,7 +1863,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
             query_plan.getCurrentDataStream(),
             std::move(transform_params),
-            settings.distributed_aggregation_memory_efficient,
+            settings.distributed_aggregation_memory_efficient && storage && storage->isRemote(),
             settings.max_threads,
             settings.aggregation_memory_efficient_merge_threads);
 

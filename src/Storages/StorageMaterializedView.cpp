@@ -320,6 +320,12 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
     }
 }
 
+void StorageMaterializedView::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->checkMutationIsPossible(commands, settings);
+}
+
 Pipe StorageMaterializedView::alterPartition(
     const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {

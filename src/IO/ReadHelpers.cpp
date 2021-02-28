@@ -831,14 +831,18 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
-    /// unix timestamp max length
-    static constexpr auto unix_timestamp_max_length = 10;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
 
-    /// A piece similar to unix timestamp.
-    while (s_pos < s + unix_timestamp_max_length && !buf.eof() && isNumericASCII(*buf.position()))
+    /** Read characters, that could represent unix timestamp.
+      * Only unix timestamp of at least 5 characters is supported.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
+      */
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
     {
         *s_pos = *buf.position();
         ++s_pos;
@@ -846,7 +850,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
 
     /// 2015-01-01 01:02:03 or 2015-01-01
-    if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
+    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
@@ -885,8 +889,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
     else
     {
-        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
-        if (s_pos - s >= 5 && s_pos - s <= 10)
+        if (s_pos - s >= 5)
         {
             /// Not very efficient.
             datetime = 0;
