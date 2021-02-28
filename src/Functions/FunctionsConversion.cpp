@@ -94,6 +94,32 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToUUIDOrNull>();
 
+    factory.registerFunction<FunctionToUInt8OrDefault>();
+    factory.registerFunction<FunctionToUInt16OrDefault>();
+    factory.registerFunction<FunctionToUInt32OrDefault>();
+    factory.registerFunction<FunctionToUInt64OrDefault>();
+    factory.registerFunction<FunctionToUInt256OrDefault>();
+    factory.registerFunction<FunctionToInt8OrDefault>();
+    factory.registerFunction<FunctionToInt16OrDefault>();
+    factory.registerFunction<FunctionToInt32OrDefault>();
+    factory.registerFunction<FunctionToInt64OrDefault>();
+    factory.registerFunction<FunctionToInt128OrDefault>();
+    factory.registerFunction<FunctionToInt256OrDefault>();
+    factory.registerFunction<FunctionToFloat32OrDefault>();
+    factory.registerFunction<FunctionToFloat64OrDefault>();
+    /*
+    factory.registerFunction<FunctionToDateOrDefault>();
+    factory.registerFunction<FunctionToDateTimeOrDefault>();
+    factory.registerFunction<FunctionToDateTime64OrDefault>();
+
+    factory.registerFunction<FunctionToDecimal32OrDefault>();
+    factory.registerFunction<FunctionToDecimal64OrDefault>();
+    factory.registerFunction<FunctionToDecimal128OrDefault>();
+    factory.registerFunction<FunctionToDecimal256OrDefault>();
+    */
+
+    factory.registerFunction<FunctionToUUIDOrDefault>();
+
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();

@@ -838,9 +838,10 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 
 enum class ConvertFromStringExceptionMode
 {
-    Throw,  /// Throw exception if value cannot be parsed.
-    Zero,   /// Fill with zero or default if value cannot be parsed.
-    Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
+    Throw,      /// Throw exception if value cannot be parsed.
+    Zero,       /// Fill with zero or default if value cannot be parsed.
+    Null,       /// Return ColumnNullable with NULLs when value cannot be parsed.
+    Default     /// Return a user-defined nonnull default value if value cannot be parsed.
 };
 
 enum class ConvertFromStringParsingMode
@@ -940,10 +941,15 @@ struct ConvertThroughParsing
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
+        ColumnPtr col_default;
         if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
         {
             col_null_map_to = ColumnUInt8::create(size);
             vec_null_map_to = &col_null_map_to->getData();
+        }
+        else if constexpr (exception_mode == ConvertFromStringExceptionMode::Default)
+        {
+            col_default = arguments.back().column->convertToFullColumnIfConst();
         }
 
         const ColumnString::Chars * chars = nullptr;
@@ -1052,7 +1058,16 @@ struct ConvertThroughParsing
                 parsed = parsed && isAllRead(read_buffer);
 
                 if (!parsed)
-                    vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                {
+                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Default)
+                    {
+                        vec_to[i] = (*col_default)[i].get<typename ToDataType::FieldType>();
+                    }
+                    else
+                    {
+                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                    }
+                }
 
                 if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
                     (*vec_null_map_to)[i] = !parsed;
@@ -1556,8 +1571,9 @@ public:
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>;
-
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+    static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
+    static constexpr bool is_exception_mode_default = exception_mode == ConvertFromStringExceptionMode::Default;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertFromString>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
@@ -1575,17 +1591,28 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if constexpr (is_exception_mode_default && (to_decimal || to_datetime || to_datetime64))
+            throw Exception("Fcuntion toXXXOrDefault not implemented for Decimal/DateTime family", ErrorCodes::NOT_IMPLEMENTED);
+
         DataTypePtr res;
 
         if (isDateTime64<Name, ToDataType>(arguments))
         {
-            validateFunctionArgumentTypes(*this, arguments,
-                FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
-                // optional
-                FunctionArgumentDescriptors{
-                    {"precision", isUInt8, isColumnConst, "const UInt8"},
-                    {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
-                });
+            FunctionArgumentDescriptors mandatory_args{{"string", isStringOrFixedString, nullptr, "String or FixedString"}};
+            FunctionArgumentDescriptors optional_args{
+                {"precision", isUInt8, isColumnConst, "const UInt8"},
+                {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"}
+            };
+            /*
+            if constexpr (is_exception_mode_default)
+            {
+                if constexpr (to_datetime64)
+                    optional_args.push_back({"default", isDateTime64, isColumnConst, "const DateTime64"});
+                else
+                    optional_args.push_back({"default", isDateTime, isColumnConst, "const DateTime"});
+            }
+            */
+            validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
@@ -1596,15 +1623,18 @@ public:
         }
         else
         {
-            if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
+            constexpr size_t extra_args = is_exception_mode_default ? 1 : 0;
+            if ((arguments.size() != 1+extra_args && arguments.size() != 2+extra_args) || (to_decimal && arguments.size() != 2+extra_args))
                 throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) +
-                    ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
+                    ", should be " + toString(1+extra_args) + " or " + toString(2+extra_args) +
+                    ". Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             if (!isStringOrFixedString(arguments[0].type))
             {
                 if (this->getName().find("OrZero") != std::string::npos ||
-                    this->getName().find("OrNull") != std::string::npos)
+                    this->getName().find("OrNull") != std::string::npos ||
+                    this->getName().find("OrDefault") != std::string::npos)
                     throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
                             ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1613,13 +1643,13 @@ public:
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
-            if (arguments.size() == 2)
+            if (arguments.size() == 2 + extra_args)
             {
                 if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 {
                     if (!isString(arguments[1].type))
                         throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 }
                 else if constexpr (to_decimal)
                 {
@@ -1635,6 +1665,15 @@ public:
                         + toString(arguments.size()) + ", should be 1. Second argument makes sense only for DateTime and Decimal.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
                 }
+            }
+
+            if constexpr (is_exception_mode_default)
+            {
+                // if constexpr (!std::is_same_v<ToDataType, std::decay_t<decltype(*(arguments.back().type))>>)
+                auto default_type = typeid_cast<std::shared_ptr<const ToDataType>>(arguments.back().type);
+                if (!default_type)
+                    throw Exception("Illegal type " + arguments.back().type->getName() + " of last argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
@@ -2086,6 +2125,54 @@ using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+
+struct NameToUInt8OrDefault { static constexpr auto name = "toUInt8OrDefault"; };
+struct NameToUInt16OrDefault { static constexpr auto name = "toUInt16OrDefault"; };
+struct NameToUInt32OrDefault { static constexpr auto name = "toUInt32OrDefault"; };
+struct NameToUInt64OrDefault { static constexpr auto name = "toUInt64OrDefault"; };
+struct NameToUInt256OrDefault { static constexpr auto name = "toUInt256OrDefault"; };
+struct NameToInt8OrDefault { static constexpr auto name = "toInt8OrDefault"; };
+struct NameToInt16OrDefault { static constexpr auto name = "toInt16OrDefault"; };
+struct NameToInt32OrDefault { static constexpr auto name = "toInt32OrDefault"; };
+struct NameToInt64OrDefault { static constexpr auto name = "toInt64OrDefault"; };
+struct NameToInt128OrDefault { static constexpr auto name = "toInt128OrDefault"; };
+struct NameToInt256OrDefault { static constexpr auto name = "toInt256OrDefault"; };
+struct NameToFloat32OrDefault { static constexpr auto name = "toFloat32OrDefault"; };
+struct NameToFloat64OrDefault { static constexpr auto name = "toFloat64OrDefault"; };
+/*
+struct NameToDateOrDefault { static constexpr auto name = "toDateOrDefault"; };
+struct NameToDateTimeOrDefault { static constexpr auto name = "toDateTimeOrDefault"; };
+struct NameToDateTime64OrDefault { static constexpr auto name = "toDateTime64OrDefault"; };
+struct NameToDecimal32OrDefault { static constexpr auto name = "toDecimal32OrDefault"; };
+struct NameToDecimal64OrDefault { static constexpr auto name = "toDecimal64OrDefault"; };
+struct NameToDecimal128OrDefault { static constexpr auto name = "toDecimal128OrDefault"; };
+struct NameToDecimal256OrDefault { static constexpr auto name = "toDecimal256OrDefault"; };
+*/
+struct NameToUUIDOrDefault { static constexpr auto name = "toUUIDOrDefault"; };
+
+using FunctionToUInt8OrDefault = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToUInt16OrDefault = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToUInt32OrDefault = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToUInt64OrDefault = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToUInt256OrDefault = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToInt8OrDefault = FunctionConvertFromString<DataTypeInt8, NameToInt8OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToInt16OrDefault = FunctionConvertFromString<DataTypeInt16, NameToInt16OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToInt32OrDefault = FunctionConvertFromString<DataTypeInt32, NameToInt32OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToInt64OrDefault = FunctionConvertFromString<DataTypeInt64, NameToInt64OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToInt128OrDefault = FunctionConvertFromString<DataTypeInt128, NameToInt128OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToInt256OrDefault = FunctionConvertFromString<DataTypeInt256, NameToInt256OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToFloat32OrDefault = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToFloat64OrDefault = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrDefault, ConvertFromStringExceptionMode::Default>;
+/*
+using FunctionToDateOrDefault = FunctionConvertFromString<DataTypeDate, NameToDateOrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToDateTimeOrDefault = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToDateTime64OrDefault = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToDecimal32OrDefault = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToDecimal64OrDefault = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToDecimal128OrDefault = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrDefault, ConvertFromStringExceptionMode::Default>;
+using FunctionToDecimal256OrDefault = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrDefault, ConvertFromStringExceptionMode::Default>;
+*/
+using FunctionToUUIDOrDefault = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrDefault, ConvertFromStringExceptionMode::Default>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
