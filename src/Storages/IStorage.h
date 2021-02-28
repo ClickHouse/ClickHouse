@@ -176,7 +176,7 @@ public:
 
     Names getAllRegisteredNames() const override;
 
-    NameDependencies getColumnNamesAndReferencedMvMap(const Context & context) const;
+    NameDependencies getDependentViewsByColumn(const Context & context) const;
 
 protected:
     /// Returns whether the column is virtual - by default all columns are real.

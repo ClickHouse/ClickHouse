@@ -1487,7 +1487,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const C
         old_types.emplace(column.name, column.type.get());
 
     NamesAndTypesList columns_to_check_conversion;
-    auto name_deps = getColumnNamesAndReferencedMvMap(context);
+    auto name_deps = getDependentViewsByColumn(context);
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
@@ -1568,7 +1568,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const C
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
 
-            auto deps_mv = name_deps[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(
