@@ -4,12 +4,11 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
@@ -17,10 +16,11 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,10 +30,11 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -1407,11 +1408,13 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
-void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+
+    const auto & settings = context.getSettingsRef();
 
     if (!settings.allow_non_metadata_alters)
     {
@@ -1484,6 +1487,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         old_types.emplace(column.name, column.type.get());
 
     NamesAndTypesList columns_to_check_conversion;
+    auto name_deps = getColumnNamesAndReferencedMvMap(context);
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
@@ -1563,6 +1567,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     "Trying to ALTER DROP key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
+
+            auto deps_mv = name_deps[command.column_name];
+            if (!deps_mv.empty())
+            {
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+
             dropped_columns.emplace(command.column_name);
         }
         else if (command.isRequireMutationStage(getInMemoryMetadata()))
