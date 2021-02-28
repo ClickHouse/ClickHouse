@@ -496,7 +496,7 @@ void MergeJoin::setTotals(const Block & totals_block)
 
 void MergeJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
+    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
 }
 
 void MergeJoin::mergeRightBlocks()
