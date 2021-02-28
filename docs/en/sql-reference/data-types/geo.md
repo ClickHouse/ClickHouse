@@ -24,7 +24,7 @@ Query:
 SET allow_experimental_geo_types = 1;
 CREATE TABLE geo_point (p Point) ENGINE=Memory();
 INSERT INTO geo_point VALUES((10, 10));
-SELECT p, toTypeName(p) from geo_point;
+SELECT p, toTypeName(p) FROM geo_point;
 ```
 Result: 
 
@@ -46,7 +46,7 @@ Query:
 SET allow_experimental_geo_types = 1;
 CREATE TABLE geo_ring (r Ring) ENGINE=Memory();
 INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
-SELECT r, toTypeName(r) from geo_ring;
+SELECT r, toTypeName(r) FROM geo_ring;
 ```
 Result: 
 
@@ -68,7 +68,7 @@ This is a polygon with one hole:
 SET allow_experimental_geo_types = 1;
 CREATE TABLE geo_polygon (pg Polygon) ENGINE=Memory();
 INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]);
-SELECT pg, toTypeName(pg) from geo_polygon;
+SELECT pg, toTypeName(pg) FROM geo_polygon;
 ```
 
 Result: 
@@ -91,7 +91,7 @@ This multipolygon consists of two separate polygons — the first one without ho
 SET allow_experimental_geo_types = 1;
 CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE=Memory();
 INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
-SELECT mpg, toTypeName(mpg) from geo_multipolygon;
+SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 ```
 Result: 
 
