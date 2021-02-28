@@ -147,7 +147,7 @@ public:
         }
 
         if (params[0].getType() != Field::Types::String)
-            throw Exception("Aggregate function " + getName() + " require require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Aggregate function " + getName() + " require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto param = params[0].get<String>();
         if (param == "two-sided")
@@ -158,13 +158,13 @@ public:
             alternative = Alternative::Greater;
         else
             throw Exception("Unknown parameter in aggregate function " + getName() +
-                    ". It must be one of: 'two sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
+                    ". It must be one of: 'two-sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
 
         if (params.size() != 2)
             return;
 
         if (params[1].getType() != Field::Types::UInt64)
-                throw Exception("Aggregate function " + getName() + " require require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("Aggregate function " + getName() + " require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         continuity_correction = static_cast<bool>(params[1].get<UInt64>());
     }

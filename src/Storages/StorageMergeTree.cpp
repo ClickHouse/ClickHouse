@@ -962,9 +962,11 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
         return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
             if (merge_entry)
-                mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
+                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
             else if (mutate_entry)
-                mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
+                return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
+
+            __builtin_unreachable();
         }, PoolType::MERGE_MUTATE};
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
@@ -978,6 +980,7 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
             clearOldWriteAheadLogs();
             clearOldMutations();
             clearEmptyParts();
+            return true;
         }, PoolType::MERGE_MUTATE};
     }
     return {};

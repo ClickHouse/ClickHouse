@@ -90,6 +90,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     if (bytes_read)
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
+        working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
     }
     else

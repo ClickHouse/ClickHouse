@@ -70,8 +70,19 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
             }
             else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
-                const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
-                res.emplace_back(ColumnWithTypeAndName{ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
+
+                ColumnPtr nullable_res;
+                if (nullable_column)
+                {
+                    const auto & nested_col = nullable_column->getNestedColumnPtr();
+                    nullable_res = ColumnConst::create(nested_col, col.column->size());
+                }
+                else
+                {
+                    nullable_res = makeNullable(col.column);
+                }
+                res.emplace_back(ColumnWithTypeAndName{ nullable_res, nested_type, col.name });
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);

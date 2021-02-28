@@ -1,7 +1,9 @@
 #include <IO/PeekableReadBuffer.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -107,22 +109,29 @@ bool PeekableReadBuffer::peekNext()
     return sub_buf.next();
 }
 
-void PeekableReadBuffer::rollbackToCheckpoint()
+void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
+
     if (!checkpoint)
         throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
     else if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
         pos = *checkpoint;
     else /// Checkpoint is in own memory and pos is not. Switch to reading from own memory
         BufferBase::set(memory.data(), peeked_size, *checkpoint - memory.data());
+
+    if (drop)
+        dropCheckpoint();
+
     checkStateCorrect();
 }
 
 bool PeekableReadBuffer::nextImpl()
 {
-    /// FIXME wrong bytes count because it can read the same data again after rollbackToCheckpoint()
-    /// However, changing bytes count on every call of next() (even after rollback) allows to determine if some pointers were invalidated.
+    /// FIXME: wrong bytes count because it can read the same data again after rollbackToCheckpoint()
+    ///        however, changing bytes count on every call of next() (even after rollback) allows to determine
+    ///        if some pointers were invalidated.
+
     checkStateCorrect();
     bool res;
 
@@ -138,7 +147,7 @@ bool PeekableReadBuffer::nextImpl()
         if (useSubbufferOnly())
         {
             /// Load next data to sub_buf
-            sub_buf.position() = pos;
+            sub_buf.position() = position();
             res = sub_buf.next();
         }
         else

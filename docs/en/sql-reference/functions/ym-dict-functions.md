@@ -115,7 +115,7 @@ Finds the highest continent in the hierarchy for the region.
 regionToTopContinent(id[, geobase]);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `id` — Region ID from the Yandex geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
 -   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.

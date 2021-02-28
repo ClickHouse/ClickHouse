@@ -67,8 +67,6 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyFile(const String & from_path, const String & to_path) override;
-
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;

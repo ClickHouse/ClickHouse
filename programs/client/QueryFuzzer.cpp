@@ -363,6 +363,16 @@ void QueryFuzzer::fuzzWindowFrame(WindowFrame & frame)
             frame.end_offset = getRandomField(0).get<Int64>();
             break;
         }
+        case 5:
+        {
+            frame.begin_preceding = fuzz_rand() % 2;
+            break;
+        }
+        case 6:
+        {
+            frame.end_preceding = fuzz_rand() % 2;
+            break;
+        }
         default:
             break;
     }

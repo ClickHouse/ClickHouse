@@ -163,9 +163,6 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
-    /// Copy the file from `from_path` to `to_path`.
-    virtual void copyFile(const String & from_path, const String & to_path) = 0;
-
     /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
     virtual void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
@@ -221,6 +218,9 @@ public:
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Invoked on partitions freeze query.
+    virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
@@ -292,4 +292,11 @@ inline String fileName(const String & path)
 {
     return Poco::Path(path).getFileName();
 }
+
+/// Return directory path for the specified path.
+inline String directoryPath(const String & path)
+{
+    return Poco::Path(path).setFileName("").toString();
+}
+
 }
