@@ -85,7 +85,7 @@ Result:
 
 **Example**
 
-This multipolygon consists of three separate polygons:
+This multipolygon consists of two separate polygons — the first one without holes, and the second with one hole:
 
 ```sql
 SET allow_experimental_geo_types = 1;
