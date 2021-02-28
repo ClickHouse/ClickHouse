@@ -53,7 +53,7 @@ private:
     Poco::Semaphore empty_count;
 
 public:
-    ConcurrentBoundedQueue(size_t max_fill)
+    explicit ConcurrentBoundedQueue(size_t max_fill)
         : fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
 
     void push(const T & x)
