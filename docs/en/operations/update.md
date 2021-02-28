@@ -15,7 +15,8 @@ $ sudo service clickhouse-server restart
 
 If you installed ClickHouse using something other than the recommended `deb` packages, use the appropriate update method.
 
-ClickHouse does not support a distributed update. The operation should be performed consecutively on each separate server. Do not update all the servers on a cluster simultaneously, or the cluster will be unavailable for some time.
+!!! warning "Warning"
+    ClickHouse does not support a distributed update. The operation should be performed consecutively on each separate server. Do not update all the servers on a cluster simultaneously, or the cluster will be unavailable for some time.
 
 The upgrade of older version of ClickHouse to specific version:
 
@@ -29,6 +30,4 @@ $ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b c
 $ sudo service clickhouse-server restart
 ```
 
-
-
-
+[Original article](https://clickhouse.tech/docs/en/operations/update/) <!--hide-->
