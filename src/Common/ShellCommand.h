@@ -23,7 +23,7 @@ namespace DB
   * The second difference - allows to work simultaneously with stdin, and with stdout, and with stderr of running process,
   *  and also to obtain the return code and completion status.
   */
-class ShellCommand
+class ShellCommand final
 {
 private:
     pid_t pid;

@@ -1,9 +1,11 @@
 #pragma once
 
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
 #include <Core/Block.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Interpreters/Context.h>
+
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 
 namespace Poco { class Logger; }
 
@@ -11,19 +13,22 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-/// Allows loading dictionaries from executable
-class ExecutableDictionarySource final : public IDictionarySource
+using ProcessPool = ConcurrentBoundedQueue<std::unique_ptr<ShellCommand>>;
+
+/// Allows loading data from pool of processes
+/// TODO: Add documentation
+class ExecutablePoolDictionarySource final : public IDictionarySource
 {
 public:
-    ExecutableDictionarySource(
+    ExecutablePoolDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block_,
         const Context & context_);
 
-    ExecutableDictionarySource(const ExecutableDictionarySource & other);
-    ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
+    ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
+    ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 
@@ -57,8 +62,11 @@ private:
     const std::string command;
     const std::string update_field;
     const std::string format;
+    const size_t pool_size;
+
     Block sample_block;
     Context context;
+    std::shared_ptr<ProcessPool> process_pool;
 };
 
 }
