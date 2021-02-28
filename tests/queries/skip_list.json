@@ -260,7 +260,8 @@
         "00121_drop_column_zookeeper",
         "00116_storage_set",
         "00083_create_merge_tree_zookeeper",
-        "00062_replicated_merge_tree_alter_zookeeper"
+        "00062_replicated_merge_tree_alter_zookeeper",
+        "01720_constraints_complex_types"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed

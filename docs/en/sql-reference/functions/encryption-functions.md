@@ -132,7 +132,7 @@ aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text that needs to be encrypted. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](../../sql-reference/data-types/string.md#string).
--   `iv` — Initialization vector. Optinal, only first 16 bytes are taken into account [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
