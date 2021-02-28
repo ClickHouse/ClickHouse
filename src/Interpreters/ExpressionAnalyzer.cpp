@@ -739,7 +739,7 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 {
     if (auto * table = analyzed_join->joined_storage.get())
         if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoin(analyzed_join);
+            return storage_join->getJoinLocked(analyzed_join);
     return {};
 }
 
