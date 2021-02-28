@@ -14,7 +14,7 @@ toc_title: Geo
 
 ## Point {#point-data-type}
 
-`Point` is represented by its X and Y coordinates, stored as a [Tuple](../tuple.md)([Float64](../float.md), [Float64](../float.md)).
+`Point` is represented by its X and Y coordinates, stored as a [Tuple](tuple.md)([Float64](float.md), [Float64](float.md)).
 
 **Example**
 
@@ -36,7 +36,7 @@ Result:
 
 ## Ring {#ring-data-type}
 
-`Ring` is a simple polygon without holes stored as an array of points: [Array](../array.md)([Point](#point-data-type)).
+`Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point-data-type)).
 
 **Example**
 
@@ -58,7 +58,7 @@ Result:
 
 ## Polygon {#polygon-data-type}
 
-`Polygon` is polygon with holes stored as an array of rings: [Array](../array.md)([Ring](#ring-data-type)). First element of outer array is outer shape of polygon and all the following elements are holes.
+`Polygon` is polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring-data-type)). First element of outer array is outer shape of polygon and all the following elements are holes.
 
 **Example**
 
@@ -81,7 +81,7 @@ Result:
 
 ## MultiPolygon {#multipolygon-data-type}
 
-`MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](../array.md)([Polygon](#polygon-data-type)). 
+`MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon-data-type)). 
 
 **Example**
 
