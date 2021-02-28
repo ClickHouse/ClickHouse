@@ -90,6 +90,27 @@ Result:
 └─────────────────────────┴───────────────────────────┘
 ```
 
+## toInt(8\|16\|32\|64\|128\|256)OrDefault {#toint8163264128256orDefault}
+
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns the default nonnull value you input(default value must have the same type with result).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe123', cast('-1' as Int8));
+```
+
+Result:
+
+``` text
+┌─toInt64OrDefault('123123', CAST('-1', 'Int64'))─┬─toInt8OrDefault('123qwe123', CAST('-1', 'Int8'))─┐
+│                                          123123 │                                               -1 │
+└─────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
+```
+
+
 ## toUInt(8\|16\|32\|64\|256) {#touint8163264256}
 
 Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
@@ -131,6 +152,8 @@ Result:
 ## toUInt(8\|16\|32\|64\|256)OrZero {#touint8163264256orzero}
 
 ## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264256ornull}
+
+## toUInt(8\|16\|32\|64\|256)OrDefault {#touint8163264256ordefault}
 
 ## toFloat(32\|64) {#tofloat3264}
 
