@@ -70,12 +70,12 @@ namespace ErrorCodes
 namespace
 {
 
-ALWAYS_INLINE bool startsWith(const char * s, const char * end, const char * prefix)
+inline bool startsWith(const char * s, const char * end, const char * prefix)
 {
     return s + strlen(prefix) < end && 0 == memcmp(s, prefix, strlen(prefix));
 }
 
-ALWAYS_INLINE bool checkAndSkip(const char * __restrict & s, const char * end, const char * prefix)
+inline bool checkAndSkip(const char * __restrict & s, const char * end, const char * prefix)
 {
     if (startsWith(s, end, prefix))
     {
@@ -140,7 +140,7 @@ bool processCDATA(const char * __restrict & src, const char * end, char * __rest
 
 bool processElementAndSkipContent(const char * __restrict & src, const char * end, const char * tag_name)
 {
-    auto old_src = src;
+    const auto * old_src = src;
 
     if (!(src < end && *src == '<'))
         return false;
