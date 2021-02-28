@@ -110,23 +110,21 @@ const ColumnsDescription StorageInMemoryMetadata::getColumnsForNames(
         const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
     ColumnsDescription res;
-    std::unordered_map<String, DataTypePtr> columns_map;
+    std::unordered_map<String, ColumnDescription> columns_map;
 
-    NamesAndTypesList all_columns = getColumns().getAll();
-    for (const auto & elem : all_columns)
-        columns_map.emplace(elem.name, elem.type);
+    for (const auto & column : columns)
+        columns_map.emplace(column.name, column);
 
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
+    /// Virtual columns also included.
     for (const auto & column : virtuals)
-        columns_map.emplace(column.name, column.type);
+        columns_map.emplace(column.name, ColumnDescription(column.name, column.type));
 
     for (const auto & name : column_names)
     {
         auto it = columns_map.find(name);
         if (it != columns_map.end())
         {
-            res.add(ColumnDescription(it->first, it->second));
+            res.add(it->second);
         }
         else
         {
