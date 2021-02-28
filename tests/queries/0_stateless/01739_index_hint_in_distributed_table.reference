@@ -1,0 +1,14 @@
+SELECT
+    p,
+    t,
+    f
+FROM dist
+WHERE indexHint(p = 0)
+0	0	0
+0	1	1
+0	2	0
+0	3	1
+0	0	0
+0	1	1
+0	2	0
+0	3	1

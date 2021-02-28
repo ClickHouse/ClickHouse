@@ -14,6 +14,7 @@ NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
         {"supports_skipping_indices", std::make_shared<DataTypeUInt8>()},
         {"supports_sort_order", std::make_shared<DataTypeUInt8>()},
         {"supports_ttl", std::make_shared<DataTypeUInt8>()},
+        {"supports_index_hint", std::make_shared<DataTypeUInt8>()},
         {"supports_replication", std::make_shared<DataTypeUInt8>()},
         {"supports_deduplication", std::make_shared<DataTypeUInt8>()},
         {"supports_parallel_insert", std::make_shared<DataTypeUInt8>()},
@@ -30,6 +31,7 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPt
         res_columns[i++]->insert(pair.second.features.supports_skipping_indices);
         res_columns[i++]->insert(pair.second.features.supports_sort_order);
         res_columns[i++]->insert(pair.second.features.supports_ttl);
+        res_columns[i++]->insert(pair.second.features.supports_index_hint);
         res_columns[i++]->insert(pair.second.features.supports_replication);
         res_columns[i++]->insert(pair.second.features.supports_deduplication);
         res_columns[i++]->insert(pair.second.features.supports_parallel_insert);

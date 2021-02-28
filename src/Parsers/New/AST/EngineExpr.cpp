@@ -72,6 +72,7 @@ ASTPtr EngineClause::convertToOld() const
     }
     if (has(SAMPLE_BY)) storage->set(storage->sample_by, get(SAMPLE_BY)->convertToOld());
     if (has(TTL)) storage->set(storage->ttl_table, get(TTL)->convertToOld());
+    if (has(INDEX_HINT)) storage->set(storage->index_hint, get(INDEX_HINT)->convertToOld());
     if (has(SETTINGS))
     {
         storage->set(storage->settings, get(SETTINGS)->convertToOld());

@@ -35,6 +35,7 @@ using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
 class ASTInsertQuery;
+class ASTSelectQuery;
 
 struct Settings;
 
@@ -184,6 +185,8 @@ public:
     Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
+
+    virtual void attachIndexHint(ASTSelectQuery &) const {}
 
 protected:
     /// Returns whether the column is virtual - by default all columns are real.

@@ -382,6 +382,17 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
     };
 }
 
+void StorageDistributed::attachIndexHint(ASTSelectQuery & query) const
+{
+    if (index_hint)
+    {
+        if (query.where())
+            query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", index_hint->clone(), query.where()->clone()));
+        else
+            query.setExpression(ASTSelectQuery::Expression::WHERE, index_hint->clone());
+    }
+}
+
 StorageDistributed::StorageDistributed(
     const StorageID & id_,
     const ColumnsDescription & columns_,
@@ -394,6 +405,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
+    const IAST * index_hint_,
     bool attach_,
     ClusterPtr owned_cluster_)
     : IStorage(id_)
@@ -419,6 +431,9 @@ StorageDistributed::StorageDistributed(
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministics(sharding_key_expr);
     }
+
+    if (index_hint_)
+        index_hint = makeASTFunction("indexHint", index_hint_->clone());
 
     if (!relative_data_path.empty())
     {
@@ -450,10 +465,10 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
+    const IAST * index_hint_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_,
-    storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, distributed_settings_, index_hint_, attach, std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -1258,10 +1273,12 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
+            args.storage_def->index_hint,
             args.attach);
     },
     {
         .supports_settings = true,
+        .supports_index_hint = true,
         .supports_parallel_insert = true,
         .source_access_type = AccessType::REMOTE,
     });

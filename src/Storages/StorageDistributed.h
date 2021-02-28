@@ -118,6 +118,8 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    void attachIndexHint(ASTSelectQuery & query) const override;
+
 private:
     StorageDistributed(
         const StorageID & id_,
@@ -131,6 +133,7 @@ private:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
+        const IAST * index_hint_,
         bool attach_,
         ClusterPtr owned_cluster_ = {});
 
@@ -145,6 +148,7 @@ private:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
+        const IAST * index_hint_,
         bool attach,
         ClusterPtr owned_cluster_ = {});
 
@@ -195,6 +199,9 @@ private:
     bool sharding_key_is_deterministic = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
+
+    /// Index hint expression for local table
+    ASTPtr index_hint;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;

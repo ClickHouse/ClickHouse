@@ -58,6 +58,7 @@ public:
         bool supports_skipping_indices = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
+        bool supports_index_hint = false;
         /// See also IStorage::supportsReplication()
         bool supports_replication = false;
         /// See also IStorage::supportsDeduplication()
@@ -92,6 +93,7 @@ public:
         .supports_skipping_indices = false,
         .supports_sort_order = false,
         .supports_ttl = false,
+        .supports_index_hint = false,
         .supports_replication = false,
         .supports_deduplication = false,
         .supports_parallel_insert = false,

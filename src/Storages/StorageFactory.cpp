@@ -179,6 +179,11 @@ StoragePtr StorageFactory::get(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
 
+            if (storage_def->index_hint)
+                check_feature(
+                    "INDEX_HINT clause",
+                    [](StorageFeatures features) { return features.supports_index_hint; });
+
             if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
                 check_feature(
                     "skipping indices",

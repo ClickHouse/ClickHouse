@@ -35,6 +35,7 @@ class EngineClause : public INode
             PRIMARY_KEY,   // PrimaryKeyClause (optional)
             SAMPLE_BY,     // SampleByClause (optional)
             TTL,           // TTLClause (optional)
+            INDEX_HINT,    // indexHintClause (optional)
             SETTINGS,      // SettingsClause (optional)
 
             MAX_INDEX,
