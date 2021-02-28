@@ -865,15 +865,14 @@ namespace
             directory_path = std::filesystem::path{config.getString("path")}.concat(directory_path).string();
 
         const size_t max_stored_keys_in_partition = config.getInt64(dictionary_configuration_prefix + "max_stored_keys", DEFAULT_MAX_STORED_KEYS);
-        /// TODO: FIX
-        // const size_t rounded_size = roundUpToPowerOfTwoOrZero(max_stored_keys_in_partition);
+        const size_t rounded_size = roundUpToPowerOfTwoOrZero(max_stored_keys_in_partition);
 
         SSDCacheDictionaryStorageConfiguration configuration {
             strict_max_lifetime_seconds,
             dict_lifetime,
             directory_path,
             max_partitions_count,
-            max_stored_keys_in_partition,
+            rounded_size,
             block_size,
             file_size / block_size,
             read_buffer_size / block_size,
