@@ -1,10 +1,11 @@
-#pragma once
 /**
   * This file implements template methods of IColumn that depend on other types
   * we don't want to include.
   * Currently, this is only the scatterImpl method that depends on PODArray
   * implementation.
   */
+
+#pragma once
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>

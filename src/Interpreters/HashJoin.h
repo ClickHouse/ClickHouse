@@ -22,7 +22,6 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 
-#include <Core/Block.h>
 
 namespace DB
 {
@@ -150,6 +149,9 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
+    bool empty() const { return data->type == Type::EMPTY; }
+    bool overDictionary() const { return data->type == Type::DICT; }
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -160,11 +162,11 @@ public:
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
-    /// Check joinGet arguments and infer the return type.
-    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
+    /// Infer the return type for joinGet function
+    DataTypePtr joinGetReturnType(const String & column_name, bool or_null) const;
 
-    /// Used by joinGet function that turns StorageJoin into a dictionary.
-    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
+    /// Used by joinGet function that turns StorageJoin into a dictionary
+    void joinGet(Block & block, const String & column_name, bool or_null) const;
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
@@ -185,7 +187,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
 
-    bool alwaysReturnsEmptySet() const final;
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty && !overDictionary(); }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
@@ -387,16 +389,9 @@ private:
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     template <typename Maps>
-    ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
+    void joinGetImpl(Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
-
-    /// Call with already locked rwlock.
-    size_t getTotalRowCountLocked() const;
-    size_t getTotalByteCountLocked() const;
-
-    bool empty() const;
-    bool overDictionary() const;
 };
 
 }

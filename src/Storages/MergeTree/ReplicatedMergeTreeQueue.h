@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -21,7 +22,6 @@ class StorageReplicatedMergeTree;
 class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
-class ReplicatedMergeTreeMergeStrategyPicker;
 
 
 class ReplicatedMergeTreeQueue
@@ -46,18 +46,11 @@ private:
         }
     };
 
-    struct OperationsInQueue
-    {
-        size_t merges = 0;
-        size_t mutations = 0;
-        size_t merges_with_ttl = 0;
-    };
-
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
+
     StorageReplicatedMergeTree & storage;
-    ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -206,7 +199,6 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
-        const String & log_entry_name,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -261,7 +253,6 @@ private:
         ~CurrentlyExecuting();
     };
 
-    using CurrentlyExecutingPtr = std::unique_ptr<CurrentlyExecuting>;
     /// ZK contains a limit on the number or total size of operations in a multi-request.
     /// If the limit is exceeded, the connection is simply closed.
     /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
@@ -276,7 +267,7 @@ private:
     size_t current_multi_batch_size = 1;
 
 public:
-    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreeQueue();
 
 
@@ -335,19 +326,8 @@ public:
     /** Select the next action to process.
       * merger_mutator is used only to check if the merges are not suspended.
       */
-    struct SelectedEntry
-    {
-        ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
-        CurrentlyExecutingPtr currently_executing_holder;
-
-        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
-            : log_entry(log_entry_)
-            , currently_executing_holder(std::move(currently_executing_holder_))
-        {}
-    };
-
-    using SelectedEntryPtr = std::shared_ptr<SelectedEntry>;
-    SelectedEntryPtr selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
+    using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
+    SelectedEntry selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
     /** Execute `func` function to handle the action.
       * In this case, at runtime, mark the queue element as running
@@ -358,7 +338,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    OperationsInQueue countMergesAndPartMutations() const;
+    std::pair<size_t, size_t> countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;

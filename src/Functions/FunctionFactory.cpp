@@ -8,8 +8,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
 namespace DB
 {
 
@@ -48,15 +46,12 @@ FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
     auto res = tryGetImpl(name, context);
     if (!res)
     {
-        String extra_info;
-        if (AggregateFunctionFactory::instance().hasNameOrAlias(name))
-            extra_info = ". There is an aggregate function with the same name, but ordinary function is expected here";
-
         auto hints = this->getHints(name);
         if (!hints.empty())
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
+            throw Exception("Unknown function " + name + ". Maybe you meant: " + toString(hints),
+                            ErrorCodes::UNKNOWN_FUNCTION);
         else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
+            throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
     }
     return res;
 }

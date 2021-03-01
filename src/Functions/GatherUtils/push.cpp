@@ -5,9 +5,6 @@
 namespace DB::GatherUtils
 {
 
-namespace
-{
-
 struct ArrayPush : public ArrayAndValueSourceSelectorBySink<ArrayPush>
 {
     template <typename ArraySource, typename ValueSource, typename Sink>
@@ -21,7 +18,6 @@ struct ArrayPush : public ArrayAndValueSourceSelectorBySink<ArrayPush>
     }
 };
 
-}
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front)
 {

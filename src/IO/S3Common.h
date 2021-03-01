@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <Poco/URI.h>
@@ -36,28 +36,22 @@ public:
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
+        const RemoteHostFilter & remote_host_filter);
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const Aws::Client::ClientConfiguration & cfg,
+        Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
+        const RemoteHostFilter & remote_host_filter);
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const Aws::Client::ClientConfiguration & cfg,
+        const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
+        const RemoteHostFilter & remote_host_filter);
 
 private:
     ClientFactory();

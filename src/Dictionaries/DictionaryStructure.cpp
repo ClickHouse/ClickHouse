@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <numeric>
@@ -231,7 +230,7 @@ std::string DictionaryStructure::getKeyDescription() const
     if (id)
         return "UInt64";
 
-    WriteBufferFromOwnString out;
+    std::ostringstream out;
 
     out << '(';
 

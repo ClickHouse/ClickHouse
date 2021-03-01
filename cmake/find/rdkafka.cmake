@@ -1,4 +1,5 @@
-if (NOT ARCH_ARM AND OPENSSL_FOUND)
+# Freebsd: contrib/cppkafka/include/cppkafka/detail/endianness.h:53:23: error: 'betoh16' was not declared in this scope
+if (NOT ARCH_ARM AND NOT OS_FREEBSD AND OPENSSL_FOUND)
     option (ENABLE_RDKAFKA "Enable kafka" ${ENABLE_LIBRARIES})
 elseif(ENABLE_RDKAFKA AND NOT OPENSSL_FOUND)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use librdkafka without SSL")
@@ -13,10 +14,10 @@ if (NOT ENABLE_RDKAFKA)
     return()
 endif()
 
-if (NOT ARCH_ARM)
+if (NOT ARCH_ARM AND USE_LIBGSASL)
     option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
 elseif(USE_INTERNAL_RDKAFKA_LIBRARY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal librdkafka with ARCH_ARM=${ARCH_ARM}")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal librdkafka with ARCH_ARM=${ARCH_ARM} AND USE_LIBGSASL=${USE_LIBGSASL}")
 endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cppkafka/CMakeLists.txt")

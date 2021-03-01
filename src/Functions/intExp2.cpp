@@ -11,9 +11,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-
 template <typename A>
 struct IntExp2Impl
 {
@@ -43,8 +40,6 @@ struct IntExp2Impl
 /// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
 struct NameIntExp2 { static constexpr auto name = "intExp2"; };
 using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
-
-}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
 {

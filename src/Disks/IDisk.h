@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
@@ -148,19 +148,22 @@ public:
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite) = 0;
+        WriteMode mode = WriteMode::Rewrite,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0) = 0;
 
-    /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    virtual void removeFile(const String & path) = 0;
-
-    /// Remove file if it exists.
-    virtual void removeFileIfExists(const String & path) = 0;
-
-    /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
-    virtual void removeDirectory(const String & path) = 0;
+    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
+    virtual void remove(const String & path) = 0;
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
+
+    /// Remove file or directory if it exists.
+    void removeIfExists(const String & path)
+    {
+        if (exists(path))
+            remove(path);
+    }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
@@ -174,15 +177,6 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
-    /// Wrapper for POSIX open
-    virtual int open(const String & path, int flags) const = 0;
-
-    /// Wrapper for POSIX close
-    virtual void close(int fd) const = 0;
-
-    /// Wrapper for POSIX fsync
-    virtual void sync(int fd) const = 0;
-
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
@@ -192,10 +186,10 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
-
 private:
+    /// Returns executor to perform asynchronous operations.
+    Executor & getExecutor() { return *executor; }
+
     std::unique_ptr<Executor> executor;
 };
 

@@ -45,10 +45,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Execute the function on the columns.
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    /// Execute the function on the block.
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & src = arguments[0];
+        auto & src = block.getByPosition(arguments[0]);
         size_t size = input_rows_count;
 
         auto res_col = ColumnUInt64::create(size);
@@ -68,7 +68,7 @@ public:
             res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
         }
 
-        return res_col;
+        block.getByPosition(result).column = std::move(res_col);
     }
 };
 

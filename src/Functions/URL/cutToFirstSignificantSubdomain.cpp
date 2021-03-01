@@ -1,12 +1,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include "ExtractFirstSignificantSubdomain.h"
+#include "firstSignificantSubdomain.h"
 
 
 namespace DB
 {
 
-template <bool without_www>
 struct CutToFirstSignificantSubdomain
 {
     static size_t getReserveLengthForElement() { return 15; }
@@ -19,7 +18,7 @@ struct CutToFirstSignificantSubdomain
         Pos tmp_data;
         size_t tmp_length;
         Pos domain_end;
-        ExtractFirstSignificantSubdomain<without_www>::execute(data, size, tmp_data, tmp_length, &domain_end);
+        ExtractFirstSignificantSubdomain::execute(data, size, tmp_data, tmp_length, &domain_end);
 
         if (tmp_length == 0)
             return;
@@ -30,15 +29,11 @@ struct CutToFirstSignificantSubdomain
 };
 
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
-using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain<true>>, NameCutToFirstSignificantSubdomain>;
-
-struct NameCutToFirstSignificantSubdomainWithWWW { static constexpr auto name = "cutToFirstSignificantSubdomainWithWWW"; };
-using FunctionCutToFirstSignificantSubdomainWithWWW = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain<false>>, NameCutToFirstSignificantSubdomainWithWWW>;
+using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 
 void registerFunctionCutToFirstSignificantSubdomain(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutToFirstSignificantSubdomain>();
-    factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>();
 }
 
 }

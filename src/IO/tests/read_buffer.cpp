@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 

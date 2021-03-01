@@ -252,8 +252,6 @@ public:
     {
         return nested_func->isState();
     }
-
-    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 

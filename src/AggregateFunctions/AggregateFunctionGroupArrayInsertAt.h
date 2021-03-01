@@ -80,7 +80,7 @@ public:
         }
 
         if (!isUnsignedInteger(arguments[1]))
-            throw Exception("Second argument of aggregate function " + getName() + " must be unsigned integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (default_value.isNull())
             default_value = type->getDefault();
@@ -107,7 +107,7 @@ public:
         /// TODO Do positions need to be 1-based for this function?
         size_t position = columns[1]->getUInt(row_num);
 
-        /// If position is larger than size to which array will be cut - simply ignore value.
+        /// If position is larger than size to which array will be cutted - simply ignore value.
         if (length_to_resize && position >= length_to_resize)
             return;
 

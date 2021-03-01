@@ -5,7 +5,7 @@ toc_priority: 52
 toc_title: AggregateFunction (nom, types_of_arguments...)
 ---
 
-# AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [une vue matérialisée](../../sql-reference/statements/create.md#create-view). La manière courante de produire un État de fonction d'agrégat est d'appeler la fonction d'agrégat avec le `-State` suffixe. Pour obtenir le résultat final de l'agrégation dans l'avenir, vous devez utiliser la même fonction d'agrégation avec la `-Merge`suffixe.
 

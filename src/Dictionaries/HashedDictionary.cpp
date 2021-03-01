@@ -2,7 +2,6 @@
 #include <ext/size.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-#include "ClickHouseDictionarySource.h"
 #include <Core/Defines.h>
 
 
@@ -407,130 +406,18 @@ void HashedDictionary::updateData()
     }
 
     if (saved_block)
-    {
-        resize(saved_block->rows());
         blockToAttributes(*saved_block.get());
-    }
-}
-
-template <typename T>
-void HashedDictionary::resize(Attribute & attribute, size_t added_rows)
-{
-    if (!sparse)
-    {
-        const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
-        added_rows += map_ref->size();
-        map_ref->reserve(added_rows);
-    }
-    else
-    {
-        const auto & map_ref = std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
-        added_rows += map_ref->size();
-        map_ref->resize(added_rows);
-    }
-}
-void HashedDictionary::resize(size_t added_rows)
-{
-    if (!added_rows)
-        return;
-
-    for (auto & attribute : attributes)
-    {
-        switch (attribute.type)
-        {
-            case AttributeUnderlyingType::utUInt8:
-                resize<UInt8>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                resize<UInt16>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                resize<UInt32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                resize<UInt64>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                resize<UInt128>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                resize<Int8>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                resize<Int16>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                resize<Int32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                resize<Int64>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                resize<Float32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                resize<Float64>(attribute, added_rows);
-                break;
-
-            case AttributeUnderlyingType::utDecimal32:
-                resize<Decimal32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                resize<Decimal64>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                resize<Decimal128>(attribute, added_rows);
-                break;
-
-            case AttributeUnderlyingType::utString:
-                resize<StringRef>(attribute, added_rows);
-                break;
-        }
-    }
 }
 
 void HashedDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        /// atomic since progress callbac called in parallel
-        std::atomic<uint64_t> new_size = 0;
         auto stream = source_ptr->loadAll();
-
-        /// preallocation can be used only when we know number of rows, for this we need:
-        /// - source clickhouse
-        /// - no filtering (i.e. lack of <where>), since filtering can filter
-        ///   too much rows and eventually it may allocate memory that will
-        ///   never be used.
-        bool preallocate = false;
-        if (const auto & clickhouse_source = dynamic_cast<ClickHouseDictionarySource *>(source_ptr.get()))
-        {
-            if (!clickhouse_source->hasWhere())
-                preallocate = true;
-        }
-
-        if (preallocate)
-        {
-            stream->setProgressCallback([&new_size](const Progress & progress)
-            {
-                new_size += progress.total_rows_to_read;
-            });
-        }
-
         stream->readPrefix();
 
         while (const auto block = stream->read())
-        {
-            if (new_size)
-            {
-                size_t current_new_size = new_size.exchange(0);
-                if (current_new_size)
-                    resize(current_new_size);
-            }
-            else
-                resize(block.rows());
             blockToAttributes(block);
-        }
 
         stream->readSuffix();
     }

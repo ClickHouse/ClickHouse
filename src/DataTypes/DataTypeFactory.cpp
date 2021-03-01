@@ -43,7 +43,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name(), {});
+        return get(ident->name, {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
@@ -77,16 +77,6 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
     }
 
     return findCreatorByName(family_name)(parameters);
-}
-
-DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
-{
-    if (!customization->name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create custom type without name");
-
-    auto type = get(customization->name->getName());
-    type->setCustomization(std::move(customization));
-    return type;
 }
 
 
@@ -175,6 +165,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeDateTime64(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
@@ -190,7 +181,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
-    registerDataTypeMap(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()
