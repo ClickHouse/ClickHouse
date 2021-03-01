@@ -125,19 +125,16 @@ ExternalTable::ExternalTable(const boost::program_options::variables_map & exter
 }
 
 
-void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
+void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream)
 {
     const Settings & settings = context.getSettingsRef();
 
-    /// The buffer is initialized here, not in the virtual function initReadBuffer
-    read_buffer_impl = std::make_unique<ReadBufferFromIStream>(stream);
-
     if (settings.http_max_multipart_form_data_size)
         read_buffer = std::make_unique<LimitReadBuffer>(
-            *read_buffer_impl, settings.http_max_multipart_form_data_size,
+            stream, settings.http_max_multipart_form_data_size,
             true, "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting");
     else
-        read_buffer = std::move(read_buffer_impl);
+        read_buffer = wrapReadBufferReference(stream);
 
     /// Retrieve a collection of parameters from MessageHeader
     Poco::Net::NameValueCollection content;

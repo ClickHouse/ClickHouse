@@ -13,7 +13,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/HexWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -21,6 +20,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -1482,6 +1482,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
+    NamesAndTypesList columns_to_check_conversion;
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
@@ -1571,9 +1572,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
 
-            if (columns_alter_type_check_safe_for_partition.count(command.column_name))
+            if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                if (command.type == AlterCommand::MODIFY_COLUMN)
+                if (columns_alter_type_check_safe_for_partition.count(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
 
@@ -1584,11 +1585,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                                 + " is not safe because it can change the representation of partition key",
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
-            }
 
-            if (columns_alter_type_metadata_only.count(command.column_name))
-            {
-                if (command.type == AlterCommand::MODIFY_COLUMN)
+                if (columns_alter_type_metadata_only.count(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
                     assert(it != old_types.end());
@@ -1598,12 +1596,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                                     + " is not safe because it can change the representation of primary key",
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
+
+                if (old_metadata.getColumns().has(command.column_name))
+                {
+                    columns_to_check_conversion.push_back(
+                        new_metadata.getColumns().getPhysical(command.column_name));
+                }
             }
         }
     }
 
     checkProperties(new_metadata, old_metadata);
     checkTTLExpressions(new_metadata, old_metadata);
+
+    if (!columns_to_check_conversion.empty())
+    {
+        auto old_header = old_metadata.getSampleBlock();
+        performRequiredConversions(old_header, columns_to_check_conversion, global_context);
+    }
 
     if (old_metadata.hasSettingsChanges())
     {
@@ -1657,6 +1667,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "Cannot drop or clear column{} '{}', because all columns in part '{}' will be removed from disk. Empty parts are not allowed", postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
         }
     }
+}
+
+
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
 }
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
@@ -2362,7 +2378,7 @@ size_t MergeTreeData::getPartsCount() const
 }
 
 
-size_t MergeTreeData::getMaxPartsCountForPartition() const
+size_t MergeTreeData::getMaxPartsCountForPartitionWithState(DataPartState state) const
 {
     auto lock = lockParts();
 
@@ -2370,7 +2386,7 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
     size_t cur_count = 0;
     const String * cur_partition_id = nullptr;
 
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(state))
     {
         if (cur_partition_id && part->info.partition_id == *cur_partition_id)
         {
@@ -2386,6 +2402,18 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
     }
 
     return res;
+}
+
+
+size_t MergeTreeData::getMaxPartsCountForPartition() const
+{
+    return getMaxPartsCountForPartitionWithState(DataPartState::Committed);
+}
+
+
+size_t MergeTreeData::getMaxInactivePartsCountForPartition() const
+{
+    return getMaxPartsCountForPartitionWithState(DataPartState::Outdated);
 }
 
 
@@ -2414,19 +2442,47 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
     }
 
-    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
+    size_t parts_count_in_partition = getMaxPartsCountForPartition();
+    ssize_t k_inactive = -1;
+    if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
+    {
+        size_t inactive_parts_count_in_partition = getMaxInactivePartsCountForPartition();
+        if (inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTS,
+                "Too many inactive parts ({}). Parts cleaning are processing significantly slower than inserts",
+                inactive_parts_count_in_partition);
+        }
+        k_inactive = ssize_t(inactive_parts_count_in_partition) - ssize_t(settings->inactive_parts_to_delay_insert);
+    }
 
     if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception(
+            ErrorCodes::TOO_MANY_PARTS,
+            "Too many parts ({}). Parts cleaning are processing significantly slower than inserts",
+            parts_count_in_partition);
     }
 
-    if (parts_count_in_partition < settings->parts_to_delay_insert)
+    if (k_inactive < 0 && parts_count_in_partition < settings->parts_to_delay_insert)
         return;
 
-    const size_t max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert; /// always > 0
-    const size_t k = 1 + parts_count_in_partition - settings->parts_to_delay_insert; /// from 1 to max_k
+    const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(settings->parts_to_delay_insert);
+    size_t max_k;
+    size_t k;
+    if (k_active > k_inactive)
+    {
+        max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert;
+        k = k_active + 1;
+    }
+    else
+    {
+        max_k = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
+        k = k_inactive + 1;
+    }
     const double delay_milliseconds = ::pow(settings->max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
@@ -3796,7 +3852,7 @@ std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
 
     return JobAndPool{[this, moving_tagger] () mutable
     {
-        moveParts(moving_tagger);
+        return moveParts(moving_tagger);
     }, PoolType::MOVE};
 }
 

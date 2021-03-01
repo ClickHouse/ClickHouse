@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -245,6 +246,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -423,6 +425,7 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp

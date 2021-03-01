@@ -43,7 +43,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
 
@@ -62,7 +62,7 @@ public:
         }
     }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
@@ -102,7 +102,7 @@ public:
         // Otherwise lhs either has data or is uninitialized, so we don't need to modify its values.
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeIntBinary(this->data(place).sum, buf);
         writeIntBinary(this->data(place).first, buf);
@@ -111,7 +111,7 @@ public:
         writePODBinary<bool>(this->data(place).seen_last, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         readIntBinary(this->data(place).sum, buf);
         readIntBinary(this->data(place).first, buf);
@@ -120,7 +120,7 @@ public:
         readPODBinary<bool>(this->data(place).seen_last, buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).sum);
     }

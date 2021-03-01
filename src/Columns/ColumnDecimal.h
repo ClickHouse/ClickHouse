@@ -50,6 +50,14 @@ private:
     UInt32 scale;
 };
 
+/// Prevent implicit template instantiation of DecimalPaddedPODArray for common decimal types
+
+extern template class DecimalPaddedPODArray<Decimal32>;
+extern template class DecimalPaddedPODArray<Decimal64>;
+extern template class DecimalPaddedPODArray<Decimal128>;
+extern template class DecimalPaddedPODArray<Decimal256>;
+extern template class DecimalPaddedPODArray<DateTime64>;
+
 /// A ColumnVector for Decimals
 template <typename T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
@@ -164,6 +172,8 @@ public:
         return false;
     }
 
+    ColumnPtr compress() const override;
+
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -214,5 +224,15 @@ ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size
 
     return res;
 }
+
+
+/// Prevent implicit template instantiation of ColumnDecimal for common decimal types
+
+extern template class ColumnDecimal<Decimal32>;
+extern template class ColumnDecimal<Decimal64>;
+extern template class ColumnDecimal<Decimal128>;
+extern template class ColumnDecimal<Decimal256>;
+extern template class ColumnDecimal<DateTime64>;
+
 
 }
