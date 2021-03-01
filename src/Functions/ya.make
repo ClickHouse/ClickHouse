@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -245,6 +246,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
