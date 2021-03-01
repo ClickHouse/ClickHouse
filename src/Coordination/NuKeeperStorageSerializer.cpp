@@ -71,7 +71,8 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
     Coordination::write(snapshot.zxid, out);
     Coordination::write(snapshot.session_id, out);
     Coordination::write(snapshot.snapshot_container_size, out);
-    for (auto it = snapshot.begin; it != snapshot.end; ++it)
+    size_t counter = 0;
+    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++it, ++counter)
     {
         const auto & path = it->key;
         const auto & node = it->value;
@@ -79,7 +80,8 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
         writeNode(node, out);
     }
 
-    Coordination::write(snapshot.session_and_timeout.size(), out);
+    size_t size = snapshot.session_and_timeout.size();
+    Coordination::write(size, out);
     for (const auto & [session_id, timeout] : snapshot.session_and_timeout)
     {
         Coordination::write(session_id, out);
@@ -125,8 +127,8 @@ void NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & storage, ReadBuffer 
 
     size_t active_sessions_size;
     Coordination::read(active_sessions_size, in);
-    size_t current_session_size = 0;
 
+    size_t current_session_size = 0;
     while (current_session_size < active_sessions_size)
     {
         int64_t active_session_id, timeout;
