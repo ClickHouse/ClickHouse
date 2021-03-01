@@ -322,8 +322,14 @@ public:
         if (offset_is_whole_number_of_hours_everytime)
             return (UInt32(t) / 60) % 60;
 
-        UInt32 date = find(t).date;
-        return (UInt32(t) - date) / 60 % 60;
+        /// To consider the DST changing situation within this day.
+        /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account
+        DayNum index = findIndex(t);
+        UInt32 res = t - lut[index].date;
+        if (lut[index].amount_of_offset_change != 0 && t >= lut[index].date + lut[index].time_at_offset_change)
+            res += lut[index].amount_of_offset_change;
+
+        return res / 60 % 60;
     }
 
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
