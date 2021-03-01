@@ -264,6 +264,8 @@ Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
+Note that after running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from other replicas.
+
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
 Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
