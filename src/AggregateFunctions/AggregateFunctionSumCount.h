@@ -50,7 +50,7 @@ struct AggregateFunctionSumCountData
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T value)
     {
         Impl::add(sum, value);
-	    ++count;
+        ++count;
     }
 
     /// Vectorized version
@@ -89,7 +89,7 @@ struct AggregateFunctionSumCountData
             ++ptr;
         }
         Impl::add(sum, local_sum);
-	count += tmp_count; 
+        count += tmp_count; 
     }
 
     template <typename Value>
@@ -130,13 +130,13 @@ struct AggregateFunctionSumCountData
             ++null_map;
         }
         Impl::add(sum, local_sum);
-	count += tmp_count;
+        count += tmp_count;
     }
 
     void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumCountData & rhs)
     {
         Impl::add(sum, rhs.sum);
-	count += rhs.count;
+        count += rhs.count;
     }
 
     void write(WriteBuffer & buf) const
@@ -187,7 +187,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-	    DataTypes types;
+        DataTypes types;
         if constexpr (IsDecimalNumber<T>)
         {
             types.emplace_back(std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale));
@@ -197,7 +197,7 @@ public:
             types.emplace_back(std::make_shared<ResultDataType>());
         }
  
-	    types.emplace_back(std::make_shared<DataTypeUInt64>());
+        types.emplace_back(std::make_shared<DataTypeUInt64>());
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -267,9 +267,9 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & to_tuple = assert_cast<ColumnTuple &>(to);
-	    auto & column_sum = assert_cast<ColVecResult &>(to_tuple.getColumn(0));
-	    auto & column_count = assert_cast<ColumnUInt64 &>(to_tuple.getColumn(1));
-	    auto res = this->data(place).get();
+        auto & column_sum = assert_cast<ColVecResult &>(to_tuple.getColumn(0));
+        auto & column_count = assert_cast<ColumnUInt64 &>(to_tuple.getColumn(1));
+        auto res = this->data(place).get();
         column_sum.getData().push_back(res.first);
         column_count.getData().push_back(res.second);
     }
