@@ -1,8 +1,9 @@
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/IStorage.h>
@@ -15,6 +16,9 @@
 #include <Common/typeid_cast.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <algorithm>
+#include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseFactory.h>
 
 
 namespace DB
@@ -24,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -37,11 +42,21 @@ BlockIO InterpreterAlterQuery::execute()
     BlockIO res;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
+
     if (!alter.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
+
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        guard->releaseTableLock();
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+    }
+
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
     auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -79,8 +94,17 @@ BlockIO InterpreterAlterQuery::execute()
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
 
+    if (typeid_cast<DatabaseReplicated *>(database.get()))
+    {
+        int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !live_view_commands.empty() + !alter_commands.empty();
+        if (1 < command_types_count)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
+                                                         "to execute ALTERs of different types in single query");
+    }
+
     if (!mutation_commands.empty())
     {
+        table->checkMutationIsPossible(mutation_commands, context.getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate();
         table->mutate(mutation_commands, context);
     }
@@ -299,6 +323,51 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
     }
 
     return required_access;
+}
+
+void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
+{
+    const auto & alter = ast->as<const ASTAlterQuery &>();
+
+    elem.query_kind = "Alter";
+    if (alter.command_list != nullptr)
+    {
+        // Alter queries already have their target table inserted into `elem`.
+        if (elem.query_tables.size() != 1)
+            throw Exception("Alter query should have target table recorded already", ErrorCodes::LOGICAL_ERROR);
+
+        String prefix = *elem.query_tables.begin() + ".";
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto * command = child->as<ASTAlterCommand>();
+
+            if (command->column)
+                elem.query_columns.insert(prefix + command->column->getColumnName());
+
+            if (command->rename_to)
+                elem.query_columns.insert(prefix + command->rename_to->getColumnName());
+
+            // ADD COLUMN
+            if (command->col_decl)
+            {
+                elem.query_columns.insert(prefix + command->col_decl->as<ASTColumnDeclaration &>().name);
+            }
+
+            if (!command->from_table.empty())
+            {
+                String database = command->from_database.empty() ? context.getCurrentDatabase() : command->from_database;
+                elem.query_databases.insert(database);
+                elem.query_tables.insert(database + "." + command->from_table);
+            }
+
+            if (!command->to_table.empty())
+            {
+                String database = command->to_database.empty() ? context.getCurrentDatabase() : command->to_database;
+                elem.query_databases.insert(database);
+                elem.query_tables.insert(database + "." + command->to_table);
+            }
+        }
+    }
 }
 
 }

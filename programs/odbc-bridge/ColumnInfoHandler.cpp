@@ -4,14 +4,14 @@
 
 #    include <DataTypes/DataTypeFactory.h>
 #    include <DataTypes/DataTypeNullable.h>
-#    include <IO/WriteBufferFromHTTPServerResponse.h>
+#    include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #    include <IO/WriteHelpers.h>
 #    include <Parsers/ParserQueryWithOutput.h>
 #    include <Parsers/parseQuery.h>
 #    include <Poco/Data/ODBC/ODBCException.h>
 #    include <Poco/Data/ODBC/SessionImpl.h>
 #    include <Poco/Data/ODBC/Utility.h>
-#    include <Poco/Net/HTMLForm.h>
+#    include <Server/HTTP/HTMLForm.h>
 #    include <Poco/Net/HTTPServerRequest.h>
 #    include <Poco/Net/HTTPServerResponse.h>
 #    include <Poco/NumberParser.h>
@@ -59,16 +59,16 @@ namespace
     }
 }
 
-void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    Poco::Net::HTMLForm params(request, request.stream());
+    HTMLForm params(request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            response.send() << message << std::endl;
+            *response.send() << message << std::endl;
         LOG_WARNING(log, message);
     };
 
@@ -115,7 +115,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);
         WriteBufferFromOwnString buf;
         std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
-        ParserQueryWithOutput parser;
+        ParserQueryWithOutput parser(input.data() + input.size());
         ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", context_settings.max_query_size, context_settings.max_parser_depth);
 
         IAST::FormatSettings settings(buf, true);
@@ -159,8 +159,16 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             columns.emplace_back(reinterpret_cast<char *>(column_name), std::move(column_type));
         }
 
-        WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
-        writeStringBinary(columns.toString(), out);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        try
+        {
+            writeStringBinary(columns.toString(), out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            out.finalize();
+        }
     }
     catch (...)
     {

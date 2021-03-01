@@ -41,12 +41,14 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    bool optimize_on_insert_)
+    bool optimize_on_insert_,
+    bool is_attach_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
+    , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
@@ -122,8 +124,6 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
     last_block_is_duplicate = false;
-
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -256,13 +256,24 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             part->info.min_block = block_number;
             part->info.max_block = block_number;
             part->info.level = 0;
+            part->info.mutation = 0;
 
             part->name = part->getNewName(part->info);
 
-            /// Will add log entry about new part.
-
             StorageReplicatedMergeTree::LogEntry log_entry;
-            log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
+            if (is_attach)
+            {
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
+
+                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
+                /// the MutableDataPartPtr here, we already have the data thus being able to
+                /// calculate the checksums.
+                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+            }
+            else
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
             log_entry.create_time = time(nullptr);
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;
@@ -493,6 +504,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 if (!zookeeper->tryGet(quorum_info.status_path, value, nullptr, event))
                     break;
 
+                LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_info.status_path);
+
                 ReplicatedMergeTreeQuorumEntry quorum_entry(value);
 
                 /// If the node has time to disappear, and then appear again for the next insert.
@@ -501,6 +514,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
                 if (!event->tryWait(quorum_timeout_ms))
                     throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
+
+                LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_info.status_path);
             }
 
             /// And what if it is possible that the current replica at this time has ceased to be active
@@ -524,7 +539,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
 void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 {
-    storage.throwInsertIfNeeded();
+    /// Only check "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 }
 
 

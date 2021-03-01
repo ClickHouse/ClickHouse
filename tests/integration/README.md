@@ -38,7 +38,8 @@ sudo -H pip install \
     pytest-timeout \
     redis \
     tzlocal \
-    urllib3
+    urllib3 \
+    requests-kerberos
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`

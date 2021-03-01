@@ -187,6 +187,11 @@ public:
         return data->byteSize() + sizeof(s);
     }
 
+    size_t byteSizeAt(size_t) const override
+    {
+        return data->byteSizeAt(0);
+    }
+
     size_t allocatedBytes() const override
     {
         return data->allocatedBytes() + sizeof(s);

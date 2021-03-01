@@ -61,9 +61,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[clang::optnone]] void executeImpl(Block & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    [[clang::optnone]]
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & block, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(columns[arguments[0]].column.get()))
+        if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(block[0].column.get()))
         {
             String mode = column->getValue<String>();
 
@@ -135,6 +136,15 @@ public:
             {
                 (void)context.getCurrentQueryId();
             }
+            else if (mode == "stack overflow")
+            {
+                executeImpl(block, result_type, input_rows_count);
+            }
+            else if (mode == "harmful function")
+            {
+                double res = drand48();
+                (void)res;
+            }
             else if (mode == "mmap many")
             {
                 std::vector<void *> maps;
@@ -160,7 +170,7 @@ public:
         else
             throw Exception("The only argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        columns[result].column = columns[result].type->createColumnConst(input_rows_count, 0ULL);
+        return result_type->createColumnConst(input_rows_count, 0ULL);
     }
 };
 

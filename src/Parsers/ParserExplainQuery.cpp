@@ -5,6 +5,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserQuery.h>
 
 namespace DB
 {
@@ -51,7 +52,13 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCreateTableQuery create_p;
     ParserSelectWithUnionQuery select_p;
     ASTPtr query;
-    if (select_p.parse(pos, query, expected) ||
+    if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
+    {
+        ParserQuery p(end);
+        if (p.parse(pos, query, expected))
+            explain_query->setExplainedQuery(std::move(query));
+    }
+    else if (select_p.parse(pos, query, expected) ||
         create_p.parse(pos, query, expected))
         explain_query->setExplainedQuery(std::move(query));
     else

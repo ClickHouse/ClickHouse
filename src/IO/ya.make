@@ -5,6 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd
+    contrib/restricted/fast_float
 )
 
 PEERDIR(
@@ -13,6 +14,7 @@ PEERDIR(
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/zstd
+    contrib/restricted/fast_float
 )
 
 
@@ -24,9 +26,9 @@ SRCS(
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
+    HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
-    HexWriteBuffer.cpp
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
@@ -49,13 +51,11 @@ SRCS(
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
-    WriteBufferAIO.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp
-    WriteBufferFromHTTPServerResponse.cpp
     WriteBufferFromOStream.cpp
     WriteBufferFromPocoSocket.cpp
     WriteBufferFromTemporaryFile.cpp
@@ -67,7 +67,6 @@ SRCS(
     ZstdInflatingReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
-    createWriteBufferFromFileBase.cpp
     parseDateTimeBestEffort.cpp
     readFloatText.cpp
 

@@ -5,6 +5,7 @@
 #include <Common/TaskStatsInfoGetter.h>
 #include <Poco/File.h>
 #include <Common/Stopwatch.h>
+#include <common/getPageSize.h>
 #include <common/getThreadId.h>
 #include <IO/WriteBufferFromString.h>
 #include <linux/taskstats.h>
@@ -61,8 +62,9 @@ static void do_io(size_t id)
     std::string path_dst = "test_out_" + std::to_string(id);
 
     {
+        size_t page_size = static_cast<size_t>(::getPageSize());
         ReadBufferFromFile rb("/dev/urandom");
-        WriteBufferFromFile wb(path_dst, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT, 0666, nullptr, 4096);
+        WriteBufferFromFile wb(path_dst, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT, 0666, nullptr, page_size);
         copyData(rb, wb, copy_size);
         wb.close();
     }

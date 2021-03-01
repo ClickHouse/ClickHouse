@@ -25,6 +25,8 @@ std::pair<String, StoragePtr> createTableFromAST(
   */
 String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
+
 
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */
@@ -38,6 +40,8 @@ public:
         const String & table_name,
         const StoragePtr & table,
         const ASTPtr & query) override;
+
+    void detachTablePermanently(const Context & context, const String & table_name) override;
 
     void dropTable(
         const Context & context,
@@ -67,9 +71,14 @@ public:
 
     static ASTPtr parseQueryFromMetadata(Poco::Logger * log, const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
 
+    /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
+    void checkMetadataFilenameAvailability(const String & to_table_name) const;
+    void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
+
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
+    static constexpr const char * detached_suffix = ".detached";
 
     using IteratingFunction = std::function<void(const String &)>;
 
@@ -83,10 +92,13 @@ protected:
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
 
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path);
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path, const Context & query_context);
 
     const String metadata_path;
     const String data_path;
+
+private:
+    void removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const;
 };
 
 }

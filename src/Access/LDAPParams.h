@@ -2,11 +2,45 @@
 
 #include <common/types.h>
 
+#include <boost/container_hash/hash.hpp>
+
 #include <chrono>
+#include <set>
+#include <vector>
 
 
 namespace DB
 {
+
+struct LDAPSearchParams
+{
+    enum class Scope
+    {
+        BASE,
+        ONE_LEVEL,
+        SUBTREE,
+        CHILDREN
+    };
+
+    String base_dn;
+    Scope scope = Scope::SUBTREE;
+    String search_filter;
+    String attribute = "cn";
+    String prefix;
+
+    void combineHash(std::size_t & seed) const
+    {
+        boost::hash_combine(seed, base_dn);
+        boost::hash_combine(seed, static_cast<int>(scope));
+        boost::hash_combine(seed, search_filter);
+        boost::hash_combine(seed, attribute);
+        boost::hash_combine(seed, prefix);
+    }
+};
+
+using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
+using LDAPSearchResults = std::set<String>;
+using LDAPSearchResultsList = std::vector<LDAPSearchResults>;
 
 struct LDAPServerParams
 {
@@ -62,16 +96,25 @@ struct LDAPServerParams
 
     SASLMechanism sasl_mechanism = SASLMechanism::SIMPLE;
 
-    String auth_dn_prefix;
-    String auth_dn_suffix;
-
+    String bind_dn;
     String user;
     String password;
+
+    std::chrono::seconds verification_cooldown{0};
 
     std::chrono::seconds operation_timeout{40};
     std::chrono::seconds network_timeout{30};
     std::chrono::seconds search_timeout{20};
     std::uint32_t search_limit = 100;
+
+    void combineCoreHash(std::size_t & seed) const
+    {
+        boost::hash_combine(seed, host);
+        boost::hash_combine(seed, port);
+        boost::hash_combine(seed, bind_dn);
+        boost::hash_combine(seed, user);
+        boost::hash_combine(seed, password);
+    }
 };
 
 }

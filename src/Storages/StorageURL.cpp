@@ -14,6 +14,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -105,10 +106,9 @@ namespace
                     context.getRemoteHostFilter()),
                 compression_method);
 
-            reader = FormatFactory::instance().getInput(format, *read_buf,
-                sample_block, context, max_block_size, format_settings);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader,
-                columns, context);
+            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
+            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
         }
 
         String getName() const override
@@ -155,7 +155,7 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
             compression_method, 3);
-    writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block,
+    writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
 }
 

@@ -57,6 +57,11 @@ public:
         return chars.size() + sizeof(n);
     }
 
+    size_t byteSizeAt(size_t) const override
+    {
+        return n;
+    }
+
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + sizeof(n);
@@ -151,6 +156,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    ColumnPtr compress() const override;
+
     void reserve(size_t size) override
     {
         chars.reserve(n * size);
@@ -178,6 +185,5 @@ public:
 
     size_t getN() const { return n; }
 };
-
 
 }

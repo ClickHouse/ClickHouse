@@ -11,7 +11,7 @@ try
 {
     std::string input = std::string(reinterpret_cast<const char*>(data), size);
 
-    DB::ParserQueryWithOutput parser;
+    DB::ParserQueryWithOutput parser(input.data() + input.size());
     DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
     DB::formatAST(*ast, std::cerr);

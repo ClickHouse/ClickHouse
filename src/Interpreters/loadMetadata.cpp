@@ -108,6 +108,7 @@ void loadMetadata(Context & context, const String & default_database_name)
 
         if (!it->isDirectory())
         {
+            /// TODO: DETACH DATABASE PERMANENTLY ?
             if (endsWith(it.name(), ".sql"))
             {
                 String db_name = it.name().substr(0, it.name().size() - 4);

@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 
 #include <Parsers/New/ParserErrorListener.h>
 
@@ -24,9 +25,10 @@ void ParserErrorListener::syntaxError(
 {
     auto * parser = dynamic_cast<ClickHouseParser*>(recognizer);
 
-    std::cerr << "Last element parsed so far:" << std::endl
-              << parser->getRuleContext()->toStringTree(parser, true) << std::endl
-              << "Parser error: (pos " << token->getStartIndex() << ") " << message << std::endl;
+    LOG_ERROR(&Poco::Logger::get("ClickHouseParser"),
+              "Last element parsed so far:\n"
+              "{}\n"
+              "Parser error: (pos {}) {}", parser->getRuleContext()->toStringTree(parser, true), token->getStartIndex(), message);
 
     throw DB::Exception("Can't parse input: " + message, ErrorCodes::SYNTAX_ERROR);
 }

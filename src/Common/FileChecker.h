@@ -18,6 +18,7 @@ public:
     void update(const String & full_file_path);
     void setEmpty(const String & full_file_path);
     void save() const;
+    bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
     CheckResults check() const;
@@ -27,21 +28,18 @@ public:
     /// The purpose of this function is to rollback a group of unfinished writes.
     void repair();
 
-private:
     /// File name -> size.
     using Map = std::map<String, UInt64>;
 
-    void initialize();
-    void updateImpl(const String & file_path);
-    void load(Map & local_map, const String & path) const;
+    Map getFileSizes() const;
+
+private:
+    void load();
 
     DiskPtr disk;
     String files_info_path;
-    String tmp_files_info_path;
 
-    /// The data from the file is read lazily.
     Map map;
-    bool initialized = false;
 
     Poco::Logger * log = &Poco::Logger::get("FileChecker");
 };

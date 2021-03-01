@@ -25,10 +25,27 @@ The Distributed engine accepts parameters:
     -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
     -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
+Also it accept the following settings:
+
+- `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
+
+- `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
+
+!!! note "Note"
+
+    **Durability settings** (`fsync_...`):
+
+    - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
+    - May significantly decrease the inserts' performance
+    - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+
 Example:
 
 ``` sql
 Distributed(logs, default, hits[, sharding_key[, policy_name]])
+SETTINGS
+    fsync_after_insert=0,
+    fsync_directories=0;
 ```
 
 Data will be read from all servers in the `logs` cluster, from the default.hits table located on every server in the cluster.

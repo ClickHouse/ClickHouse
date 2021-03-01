@@ -44,6 +44,10 @@ static Context createQueryContext(const Context & global_context)
     Settings new_query_settings = global_context.getSettings();
     new_query_settings.insert_allow_materialized_columns = true;
 
+    /// To avoid call AST::format
+    /// TODO: We need to implement the format function for MySQLAST
+    new_query_settings.enable_global_with_statement = false;
+
     Context query_context(global_context);
     query_context.setSettings(new_query_settings);
     CurrentThread::QueryScope query_scope(query_context);
@@ -95,19 +99,22 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
          "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
          "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
          "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
-         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
+         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD') "
+         "OR (Variable_name = 'log_bin_use_v1_row_events' AND upper(Value) = 'OFF');";
 
     MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
 
     Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 4)
+    if (!variables_block || variables_block.rows() != 5)
     {
         std::unordered_map<String, String> variables_error_message{
             {"log_bin", "log_bin = 'ON'"},
             {"binlog_format", "binlog_format='ROW'"},
             {"binlog_row_image", "binlog_row_image='FULL'"},
-            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"}
+            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
+            {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
         };
+
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
 
         for (size_t index = 0; index < variables_block.rows(); ++index)

@@ -2,15 +2,17 @@
 
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/QueryLog.h>
 #include <Access/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Databases/DatabaseReplicated.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -30,6 +32,8 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DICTIONARY;
+    extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -55,6 +59,8 @@ BlockIO InterpreterDropQuery::execute()
     {
         if (!drop.is_dictionary)
             return executeToTable(drop);
+        else if (drop.permanently && drop.kind == ASTDropQuery::Kind::Detach)
+            throw Exception("DETACH PERMANENTLY is not implemented for dictionaries", ErrorCodes::NOT_IMPLEMENTED);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
@@ -114,11 +120,34 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
 
     if (database && table)
     {
-        if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
+        if (query.as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
+
+        /// Prevents recursive drop from drop database query. The original query must specify a table.
+        bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
+        bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
+                                       context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                       !is_drop_or_detach_database;
+        if (is_replicated_ddl_query)
+        {
+            if (query.kind == ASTDropQuery::Kind::Detach && !query.permanently)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
+                                                             "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA");
+
+            if (query.kind == ASTDropQuery::Kind::Detach)
+                context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+            else if (query.kind == ASTDropQuery::Kind::Truncate)
+                context.checkAccess(AccessType::TRUNCATE, table_id);
+            else if (query.kind == ASTDropQuery::Kind::Drop)
+                context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+
+            ddl_guard->releaseTableLock();
+            table.reset();
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query.clone(), context);
+        }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
@@ -126,10 +155,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             table->checkTableCanBeDetached();
             table->shutdown();
             TableExclusiveLockHolder table_lock;
+
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            /// Drop table from memory, don't touch data and metadata
-            database->detachTable(table_id.table_name);
+
+            if (query.permanently)
+            {
+                /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
+                database->detachTablePermanently(context, table_id.table_name);
+            }
+            else
+            {
+                /// Drop table from memory, don't touch data and metadata
+                database->detachTable(table_id.table_name);
+            }
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
@@ -179,6 +218,21 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name) : nullptr);
 
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
+
+    bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
+    bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
+                                   context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                   !is_drop_or_detach_database;
+    if (is_replicated_ddl_query)
+    {
+        if (kind == ASTDropQuery::Kind::Detach)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH DICTIONARY is not allowed for Replicated databases.");
+
+        context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
+
+        ddl_guard->releaseTableLock();
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+    }
 
     if (!database || !database->isDictionaryExist(dictionary_name))
     {
@@ -286,10 +340,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
+            if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
+                throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
+
 #if USE_MYSQL
             if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
+            if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
+                replicated->stopReplication();
 
             if (database->shouldBeEmptyOnDetach())
             {
@@ -364,6 +423,11 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     }
 
     return required_access;
+}
+
+void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const
+{
+    elem.query_kind = "Drop";
 }
 
 }

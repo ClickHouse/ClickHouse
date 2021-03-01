@@ -96,7 +96,7 @@ def user_with_privilege_on_columns(self, table_type):
 
 @TestOutline
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_Column("1.0"),
+    RQ_SRS_006_RBAC_Insert_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass", [
     ("d", "d", "x", "d", '\'woo\'', '\'2020-01-01\''),
@@ -219,7 +219,7 @@ def role_with_privilege_on_columns(self, table_type):
 
 @TestOutline
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_Column("1.0"),
+    RQ_SRS_006_RBAC_Insert_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass", [
     ("d", "d", "x", "d", '\'woo\'', '\'2020-01-01\''),
@@ -264,7 +264,7 @@ def role_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_Cluster("1.0"),
+    RQ_SRS_006_RBAC_Insert_Cluster("1.0"),
 )
 def user_with_privilege_on_cluster(self, table_type, node=None):
     """Check that user is able or unable to insert into a table
@@ -305,7 +305,7 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_Cluster("1.0"),
+    RQ_SRS_006_RBAC_Insert_Cluster("1.0"),
 )
 def role_with_privilege_on_cluster(self, table_type, node=None):
     """Check that user with role is able to insert into a table
@@ -351,8 +351,8 @@ def role_with_privilege_on_cluster(self, table_type, node=None):
 
 @TestOutline(Feature)
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_Insert_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Insert("1.0"),
+    RQ_SRS_006_RBAC_Insert_TableEngines("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
@@ -360,6 +360,8 @@ def role_with_privilege_on_cluster(self, table_type, node=None):
 @Flags(TE)
 @Name("insert")
 def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
+    """Check the RBAC functionality of INSERT.
+    """
     self.context.node = self.context.cluster.node(node)
 
     self.context.node1 = self.context.cluster.node("clickhouse1")

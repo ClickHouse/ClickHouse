@@ -48,8 +48,8 @@ CREATE DICTIONARY IF NOT EXISTS db_01501.cache_dict (
 	Decimal64_ Decimal64(15) DEFAULT 444.11,
 	Decimal128_ Decimal128(35) DEFAULT 555.11,
 	ParentKeyField UInt64 DEFAULT 444)
-PRIMARY KEY KeyField 
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_cache_dict' DB 'db_01501')) 
+PRIMARY KEY KeyField
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_cache_dict' DB 'db_01501'))
 LIFETIME(5) LAYOUT(CACHE(SIZE_IN_CELLS 20));
 
 
@@ -61,31 +61,31 @@ INSERT INTO db_01501.table_cache_dict VALUES (5, 22222, 33333, 44444, 55555, -11
 
 
 SELECT arrayDistinct(groupArray(dictGetUInt8('db_01501.cache_dict', 'UInt8_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetUInt16('db_01501.cache_dict', 'UInt16_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetUInt32('db_01501.cache_dict', 'UInt32_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetUInt64('db_01501.cache_dict', 'UInt64_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetInt8('db_01501.cache_dict', 'Int8_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetInt16('db_01501.cache_dict', 'Int16_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetInt32('db_01501.cache_dict', 'Int32_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetInt64('db_01501.cache_dict', 'Int64_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetFloat32('db_01501.cache_dict', 'Float32_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetFloat64('db_01501.cache_dict', 'Float64_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGet('db_01501.cache_dict', 'Decimal32_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGet('db_01501.cache_dict', 'Decimal64_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGet('db_01501.cache_dict', 'Decimal128_', toUInt64(number)))) from numbers(10);
-system reload dictionaries; 
+system reload dictionaries;
 SELECT arrayDistinct(groupArray(dictGetString('db_01501.cache_dict', 'String_', toUInt64(number)))) from numbers(10);
 
 
@@ -106,7 +106,7 @@ SELECT arrayDistinct(groupArray(dictGet('db_01501.cache_dict', 'Decimal128_', to
 SELECT arrayDistinct(groupArray(dictGetString('db_01501.cache_dict', 'String_', toUInt64(number)))) from numbers(10);
 
 
-system reload dictionaries; 
+system reload dictionaries;
 
 
 SELECT groupArray(dictHas('db_01501.cache_dict', toUInt64(number))) from numbers(10);

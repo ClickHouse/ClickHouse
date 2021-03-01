@@ -3,7 +3,11 @@
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
+#include <Common/FiberStack.h>
+#include <Common/TimerDescriptor.h>
+#include <variant>
 
 namespace DB
 {
@@ -19,10 +23,14 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct BlockStreamProfileInfo;
 using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & info)>;
 
+class RemoteQueryExecutorReadContext;
+
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
 public:
+    using ReadContext = RemoteQueryExecutorReadContext;
+
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
@@ -49,16 +57,23 @@ public:
     /// Create connection and send query, external tables and scalars.
     void sendQuery();
 
+    /// Query is resent to a replica, the query itself can be modified.
+    std::atomic<bool> resent_query { false };
+
     /// Read next block of data. Returns empty block if query is finished.
     Block read();
 
+    /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
+    /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
+    std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
+
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish();
+    void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
-    void cancel();
+    void cancel(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
@@ -93,7 +108,7 @@ private:
 
     const String query;
     String query_id = "";
-    const Context & context;
+    Context context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
@@ -140,6 +155,14 @@ private:
       */
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
+    /** Got duplicated uuids from replica
+      */
+    std::atomic<bool> got_duplicated_part_uuids{ false };
+
+    /// Parts uuids, collected from remote replicas
+    std::mutex duplicated_part_uuids_mutex;
+    std::vector<UUID> duplicated_part_uuids;
+
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
@@ -151,14 +174,29 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
+    /// Set part uuids to a query context, collected from remote replicas.
+    /// Return true if duplicates found.
+    bool setPartUUIDs(const std::vector<UUID> & uuids);
+
+    /// Cancell query and restart it with info about duplicated UUIDs
+    /// only for `allow_experimental_query_deduplication`.
+    std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
+
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void tryCancel(const char * reason);
+    void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
 
     /// Returns true if exception was thrown
     bool hasThrownException() const;
+
+    /// Process packet for read and return data block if possible.
+    std::optional<Block> processPacket(Packet packet);
+
+    /// Reads packet by packet
+    Block readPackets();
+
 };
 
 }

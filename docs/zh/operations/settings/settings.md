@@ -1310,3 +1310,14 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 **另请参阅**
 
 -   [IN 运算符中的 NULL 处理](../../sql-reference/operators/in.md#in-null-processing)
+
+## max_final_threads {#max-final-threads}
+
+设置使用[FINAL](../../sql-reference/statements/select/from.md#select-from-final) 限定符的`SELECT`查询, 在数据读取阶段的最大并发线程数。
+
+可能的值:
+
+-   正整数。
+-   0 or 1 — 禁用。 此时`SELECT` 查询单线程执行。
+
+默认值: `16`。

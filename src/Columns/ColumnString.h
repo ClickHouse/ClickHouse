@@ -71,6 +71,12 @@ public:
         return chars.size() + offsets.size() * sizeof(offsets[0]);
     }
 
+    size_t byteSizeAt(size_t n) const override
+    {
+        assert(n < size());
+        return sizeAt(n) + sizeof(offsets[0]);
+    }
+
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + offsets.allocated_bytes();
@@ -254,6 +260,8 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
 

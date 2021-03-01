@@ -17,7 +17,7 @@ SET select_sequential_consistency=1;
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;
 
-SET insert_quorum=2;
+SET insert_quorum=2, insert_quorum_parallel=0;
 
 INSERT INTO quorum1 VALUES (4, '1990-11-15');
 INSERT INTO quorum1 VALUES (5, '1990-11-15');

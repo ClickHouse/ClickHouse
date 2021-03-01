@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
@@ -17,7 +18,7 @@ CREATE DICTIONARY ordinary_db.dict1
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'view_for_dict' PASSWORD '' DB 'ordinary_db'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'view_for_dict' PASSWORD '' DB 'ordinary_db'))
 LIFETIME(MIN 1 MAX 3)
 LAYOUT(CACHE(SIZE_IN_CELLS 3));
 "

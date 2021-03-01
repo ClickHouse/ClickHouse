@@ -425,6 +425,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
             elem.master_thread_id = thread_group->master_thread_id;
             elem.query = thread_group->query;
+            elem.normalized_query_hash = thread_group->normalized_query_hash;
         }
     }
 
@@ -499,6 +500,8 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
 {
     CurrentThread::initializeQuery();
     CurrentThread::attachQueryContext(query_context);
+    if (!query_context.hasQueryContext())
+        query_context.makeQueryContext();
 }
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()

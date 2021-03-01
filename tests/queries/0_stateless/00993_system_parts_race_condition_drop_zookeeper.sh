@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 set -e
@@ -98,6 +99,6 @@ timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from Zo
 wait
 
 for i in {0..9}; do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" &
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" 2>&1 | grep "was not completely removed from ZooKeeper" &
 done
 wait

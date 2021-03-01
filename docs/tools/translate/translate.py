@@ -11,8 +11,6 @@ import googletrans
 import requests
 import yaml
 
-import typograph_ru
-
 
 translator = googletrans.Translator()
 default_target_language = os.environ.get('TARGET_LANGUAGE', 'ru')
@@ -25,8 +23,6 @@ def translate_impl(text, target_language=None):
     target_language = target_language or default_target_language
     if target_language == 'en':
         return text
-    elif target_language == 'typograph_ru':
-        return typograph_ru.typograph(text)
     elif is_yandex:
         text = text.replace('‘', '\'')
         text = text.replace('’', '\'')
@@ -59,25 +55,10 @@ def translate(text, target_language=None):
     )
 
 
-def translate_toc(root, lang):
-    global is_yandex
-    is_yandex = True
-    if isinstance(root, dict):
-        result = []
-        for key, value in root.items():
-            key = translate(key, lang) if key != 'hidden' and not key.isupper() else key
-            result.append((key, translate_toc(value, lang),))
-        return dict(result)
-    elif isinstance(root, list):
-        return [translate_toc(item, lang) for item in root]
-    elif isinstance(root, str):
-        return root
-
-
 def translate_po():
     import babel.messages.pofile
     base_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'website', 'locale')
-    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja', 'tr', 'fa']:
+    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja']:
         po_path = os.path.join(base_dir, lang, 'LC_MESSAGES', 'messages.po')
         with open(po_path, 'r') as f:
             po_file = babel.messages.pofile.read_po(f, locale=lang, domain='messages')

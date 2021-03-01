@@ -3,7 +3,7 @@
 set -x -e
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+tar xJf MacOSX10.15.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
 mkdir -p build/cmake/toolchain/linux-aarch64
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1
@@ -31,6 +31,7 @@ find . -name '*.so.*' -print -exec mv '{}' /output \;
 if [ "performance" == "$COMBINED_OUTPUT" ]
 then
     cp -r ../tests/performance /output
+    cp -r ../tests/config/top_level_domains  /output
     cp -r ../docker/test/performance-comparison/config /output ||:
     rm /output/unit_tests_dbms ||:
     rm /output/clickhouse-odbc-bridge ||:

@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -53,6 +54,7 @@ SRCS(
     FunctionsRandom.cpp
     FunctionsRound.cpp
     FunctionsStringArray.cpp
+    FunctionsStringHash.cpp
     FunctionsStringSimilarity.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
@@ -185,6 +187,7 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
+    bitHammingDistance.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -202,6 +205,7 @@ SRCS(
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
+    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -218,6 +222,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
@@ -241,6 +246,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -325,6 +331,7 @@ SRCS(
     lowCardinalityKeys.cpp
     lower.cpp
     lowerUTF8.cpp
+    map.cpp
     match.cpp
     materialize.cpp
     minus.cpp
@@ -404,8 +411,6 @@ SRCS(
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAs.cpp
-    reinterpretAsFixedString.cpp
-    reinterpretAsString.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
@@ -420,9 +425,11 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
+    sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp
@@ -448,6 +455,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
     toDayOfMonth.cpp
@@ -503,6 +511,7 @@ SRCS(
     tryBase64Decode.cpp
     tuple.cpp
     tupleElement.cpp
+    tupleHammingDistance.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp

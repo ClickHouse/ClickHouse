@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -37,7 +38,7 @@ struct StringSearcherBase
 {
 #ifdef __SSE2__
     static constexpr auto n = sizeof(__m128i);
-    const int page_size = getpagesize();
+    const int page_size = ::getPageSize();
 
     bool pageSafe(const void * const ptr) const
     {
@@ -97,14 +98,31 @@ public:
         }
         else
         {
-            const auto first_u32 = UTF8::convert(needle);
-            const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
-            const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
+            auto first_u32 = UTF8::convertUTF8ToCodePoint(needle, needle_size);
 
-            /// lower and uppercase variants of the first octet of the first character in `needle`
-            UTF8::convert(first_l_u32, l_seq, sizeof(l_seq));
+            /// Invalid UTF-8
+            if (!first_u32)
+            {
+                /// Process it verbatim as a sequence of bytes.
+                size_t src_len = UTF8::seqLength(*needle);
+
+                memcpy(l_seq, needle, src_len);
+                memcpy(u_seq, needle, src_len);
+            }
+            else
+            {
+                uint32_t first_l_u32 = Poco::Unicode::toLower(*first_u32);
+                uint32_t first_u_u32 = Poco::Unicode::toUpper(*first_u32);
+
+                /// lower and uppercase variants of the first octet of the first character in `needle`
+                size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, l_seq, sizeof(l_seq));
+                size_t length_r = UTF8::convertCodePointToUTF8(first_u_u32, u_seq, sizeof(u_seq));
+
+                if (length_l != length_r)
+                    throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
+            }
+
             l = l_seq[0];
-            UTF8::convert(first_u_u32, u_seq, sizeof(u_seq));
             u = u_seq[0];
         }
 
@@ -127,18 +145,21 @@ public:
                 continue;
             }
 
-            const auto src_len = UTF8::seqLength(*needle_pos);
-            const auto c_u32 = UTF8::convert(needle_pos);
+            size_t src_len = std::min<size_t>(needle_end - needle_pos, UTF8::seqLength(*needle_pos));
+            auto c_u32 = UTF8::convertUTF8ToCodePoint(needle_pos, src_len);
 
-            const auto c_l_u32 = Poco::Unicode::toLower(c_u32);
-            const auto c_u_u32 = Poco::Unicode::toUpper(c_u32);
+            if (c_u32)
+            {
+                int c_l_u32 = Poco::Unicode::toLower(*c_u32);
+                int c_u_u32 = Poco::Unicode::toUpper(*c_u32);
 
-            const auto dst_l_len = static_cast<uint8_t>(UTF8::convert(c_l_u32, l_seq, sizeof(l_seq)));
-            const auto dst_u_len = static_cast<uint8_t>(UTF8::convert(c_u_u32, u_seq, sizeof(u_seq)));
+                uint8_t dst_l_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq)));
+                uint8_t dst_u_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq)));
 
-            /// @note Unicode standard states it is a rare but possible occasion
-            if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
-                throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
+                /// @note Unicode standard states it is a rare but possible occasion
+                if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
+                    throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
+            }
 
             cache_actual_len += src_len;
             if (cache_actual_len < n)
@@ -163,7 +184,7 @@ public:
     }
 
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
+    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * haystack_end, const CharT * pos) const
     {
 
 #ifdef __SSE4_1__
@@ -182,11 +203,20 @@ public:
                     pos += cache_valid_len;
                     auto needle_pos = needle + cache_valid_len;
 
-                    while (needle_pos < needle_end &&
-                           Poco::Unicode::toLower(UTF8::convert(pos)) ==
-                           Poco::Unicode::toLower(UTF8::convert(needle_pos)))
+                    while (needle_pos < needle_end)
                     {
-                        /// @note assuming sequences for lowercase and uppercase have exact same length
+                        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(pos, haystack_end - pos);
+                        auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+
+                        /// Invalid UTF-8, should not compare equals
+                        if (!haystack_code_point || !needle_code_point)
+                            break;
+
+                        /// Not equals case insensitive.
+                        if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
+                            break;
+
+                        /// @note assuming sequences for lowercase and uppercase have exact same length (that is not always true)
                         const auto len = UTF8::seqLength(*pos);
                         pos += len;
                         needle_pos += len;
@@ -208,10 +238,19 @@ public:
             pos += first_needle_symbol_is_ascii;
             auto needle_pos = needle + first_needle_symbol_is_ascii;
 
-            while (needle_pos < needle_end &&
-                   Poco::Unicode::toLower(UTF8::convert(pos)) ==
-                   Poco::Unicode::toLower(UTF8::convert(needle_pos)))
+            while (needle_pos < needle_end)
             {
+                auto haystack_code_point = UTF8::convertUTF8ToCodePoint(pos, haystack_end - pos);
+                auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+
+                /// Invalid UTF-8, should not compare equals
+                if (!haystack_code_point || !needle_code_point)
+                    break;
+
+                /// Not equals case insensitive.
+                if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
+                    break;
+
                 const auto len = UTF8::seqLength(*pos);
                 pos += len;
                 needle_pos += len;
@@ -269,11 +308,20 @@ public:
                             auto haystack_pos = haystack + cache_valid_len;
                             auto needle_pos = needle + cache_valid_len;
 
-                            while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                                   Poco::Unicode::toLower(UTF8::convert(haystack_pos)) ==
-                                   Poco::Unicode::toLower(UTF8::convert(needle_pos)))
+                            while (haystack_pos < haystack_end && needle_pos < needle_end)
                             {
-                                /// @note assuming sequences for lowercase and uppercase have exact same length
+                                auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+                                auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+
+                                /// Invalid UTF-8, should not compare equals
+                                if (!haystack_code_point || !needle_code_point)
+                                    break;
+
+                                /// Not equals case insensitive.
+                                if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
+                                    break;
+
+                                /// @note assuming sequences for lowercase and uppercase have exact same length (that is not always true)
                                 const auto len = UTF8::seqLength(*haystack_pos);
                                 haystack_pos += len;
                                 needle_pos += len;
@@ -301,10 +349,19 @@ public:
                 auto haystack_pos = haystack + first_needle_symbol_is_ascii;
                 auto needle_pos = needle + first_needle_symbol_is_ascii;
 
-                while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                       Poco::Unicode::toLower(UTF8::convert(haystack_pos)) ==
-                       Poco::Unicode::toLower(UTF8::convert(needle_pos)))
+                while (haystack_pos < haystack_end && needle_pos < needle_end)
                 {
+                    auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+                    auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+
+                    /// Invalid UTF-8, should not compare equals
+                    if (!haystack_code_point || !needle_code_point)
+                        break;
+
+                    /// Not equals case insensitive.
+                    if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
+                        break;
+
                     const auto len = UTF8::seqLength(*haystack_pos);
                     haystack_pos += len;
                     needle_pos += len;

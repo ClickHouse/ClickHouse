@@ -45,6 +45,8 @@ struct PrewhereDAGInfo
     PrewhereDAGInfo() = default;
     explicit PrewhereDAGInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+
+    std::string dump() const;
 };
 
 /// Helper struct to store all the information about the filter expression.
@@ -53,6 +55,8 @@ struct FilterInfo
     ActionsDAGPtr actions_dag;
     String column_name;
     bool do_remove_column = false;
+
+    std::string dump() const;
 };
 
 struct InputOrderInfo

@@ -54,7 +54,7 @@ void MergeTreeMutationEntry::removeFile()
         if (!disk->exists(path_prefix + file_name))
             return;
 
-        disk->remove(path_prefix + file_name);
+        disk->removeFile(path_prefix + file_name);
         file_name.clear();
     }
 }

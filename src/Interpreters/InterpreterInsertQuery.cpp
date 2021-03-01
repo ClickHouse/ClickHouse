@@ -12,7 +12,6 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
-#include <IO/ConcatReadBuffer.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -29,10 +28,13 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/processColumnTransformers.h>
 
 namespace
 {
@@ -50,7 +52,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
 }
-
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
@@ -94,27 +95,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 
     Block table_sample = metadata_snapshot->getSampleBlock();
 
-    /// Process column transformers (e.g. * EXCEPT(a)), asterisks and qualified columns.
-    const auto & columns = metadata_snapshot->getColumns();
-    auto names_and_types = columns.getOrdinary();
-    removeDuplicateColumns(names_and_types);
-    auto table_expr = std::make_shared<ASTTableExpression>();
-    table_expr->database_and_table_name = createTableIdentifier(table->getStorageID());
-    table_expr->children.push_back(table_expr->database_and_table_name);
-    TablesWithColumns tables_with_columns;
-    tables_with_columns.emplace_back(DatabaseAndTableWithAlias(*table_expr, context.getCurrentDatabase()), names_and_types);
-
-    tables_with_columns[0].addHiddenColumns(columns.getMaterialized());
-    tables_with_columns[0].addHiddenColumns(columns.getAliases());
-    tables_with_columns[0].addHiddenColumns(table->getVirtuals());
-
-    NameSet source_columns_set;
-    for (const auto & identifier : query.columns->children)
-        source_columns_set.insert(identifier->getColumnName());
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
-    TranslateQualifiedNamesVisitor visitor(visitor_data);
-    auto columns_ast = query.columns->clone();
-    visitor.visit(columns_ast);
+    const auto columns_ast = processColumnTransformers(context.getCurrentDatabase(), table, metadata_snapshot, query.columns);
 
     /// Form the block based on the column names from the query
     Block res;
@@ -124,7 +105,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(),
+            throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
@@ -185,7 +166,7 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
-    auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(context.getInitialQueryId(), settings.lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
@@ -287,7 +268,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & selects = select_query.list_of_selects->children;
                 const auto & union_modes = select_query.list_of_modes;
 
-                /// ASTSelectWithUnionQuery is not normalized now, so it may pass some querys which can be Trivial select querys
+                /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
                 is_trivial_insert_select
                     = std::all_of(
                           union_modes.begin(),
@@ -308,7 +289,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
-                if (settings.min_insert_block_size_rows)
+                if (settings.min_insert_block_size_rows && table->prefersLargeBlocks())
                     new_settings.max_block_size = settings.min_insert_block_size_rows;
 
                 Context new_context = context;
@@ -360,20 +341,22 @@ BlockIO InterpreterInsertQuery::execute()
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), metadata_snapshot->getColumns(), context);
+                out, query_sample_block, metadata_snapshot->getColumns(), context);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
 
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-            if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
+            if (!(settings.insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
             {
+                bool table_prefers_large_blocks = table->prefersLargeBlocks();
+
                 out = std::make_shared<SquashingBlockOutputStream>(
                     out,
                     out->getHeader(),
-                    context.getSettingsRef().min_insert_block_size_rows,
-                    context.getSettingsRef().min_insert_block_size_bytes);
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0);
             }
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
@@ -443,6 +426,18 @@ BlockIO InterpreterInsertQuery::execute()
 StorageID InterpreterInsertQuery::getDatabaseTable() const
 {
     return query_ptr->as<ASTInsertQuery &>().table_id;
+}
+
+
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context & context_) const
+{
+    elem.query_kind = "Insert";
+    const auto & insert_table = context_.getInsertionTable();
+    if (!insert_table.empty())
+    {
+        elem.query_databases.insert(insert_table.getDatabaseName());
+        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+    }
 }
 
 }

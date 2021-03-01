@@ -205,7 +205,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication/#table_engines-replication) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
 
@@ -264,6 +264,8 @@ Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a
 ``` sql
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
+
+Note that after running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from other replicas.
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 

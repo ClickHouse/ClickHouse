@@ -13,6 +13,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Access/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -33,40 +34,41 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/PartialSortingStep.h>
-#include <Processors/QueryPlan/MergeSortingStep.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/MergingSortedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -98,6 +100,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int ACCESS_DENIED;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -210,6 +213,48 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
+/// Checks that the current user has the SELECT privilege.
+static void checkAccessRightsForSelect(
+    const Context & context,
+    const StorageID & table_id,
+    const StorageMetadataPtr & table_metadata,
+    const Strings & required_columns,
+    const TreeRewriterResult & syntax_analyzer_result)
+{
+    if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
+    {
+        /// For a trivial query like "SELECT count() FROM table" access is granted if at least
+        /// one column is accessible.
+        /// In this case just checking access for `required_columns` doesn't work correctly
+        /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
+        /// which is probably not the same column as the column the current user has access to.
+        auto access = context.getAccess();
+        for (const auto & column : table_metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+                return;
+        }
+        throw Exception(context.getUserName() + ": Not enough privileges. "
+                        "To execute this query it's necessary to have grant SELECT for at least one column on " + table_id.getFullTableName(),
+                        ErrorCodes::ACCESS_DENIED);
+    }
+
+    /// General check.
+    context.checkAccess(AccessType::SELECT, table_id, required_columns);
+}
+
+/// Returns true if we should ignore quotas and limits for a specified table in the system database.
+static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+{
+    if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(table_id.table_name))
+            return true;
+    }
+    return false;
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -248,20 +293,28 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
-    if (context->getSettingsRef().enable_global_with_statement)
-        ApplyWithAliasVisitor().visit(query_ptr);
-    ApplyWithSubqueryVisitor().visit(query_ptr);
+    // Only propagate WITH elements to subqueries if we're not a subquery
+    if (!options.is_subquery)
+    {
+        if (context->getSettingsRef().enable_global_with_statement)
+            ApplyWithAliasVisitor().visit(query_ptr);
+        ApplyWithSubqueryVisitor().visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
+    bool got_storage_from_query = false;
     if (!has_input && !storage)
+    {
         storage = joined_tables.getLeftTableStorage();
+        got_storage_from_query = true;
+    }
 
     if (storage)
     {
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
-        if (metadata_snapshot == nullptr)
+        if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
@@ -279,9 +332,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage && joined_tables.isLeftTableSubquery())
         {
             /// Rewritten with subquery. Free storage locks here.
-            storage = {};
+            storage = nullptr;
             table_lock.reset();
             table_id = StorageID::createEmpty();
+            metadata_snapshot = nullptr;
         }
     }
 
@@ -335,13 +389,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
             {
+                /// Extract column compressed sizes.
+                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                for (const auto & [name, sizes] : column_sizes)
+                    column_compressed_sizes[name] = sizes.data_compressed;
+
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, *context, std::move(column_compressed_sizes), metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
 
@@ -444,16 +503,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const StorageID & left_table_id = joined_tables.leftTableID();
-
-    if (left_table_id)
-        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
-
-    /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system")
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
-        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        /// The current user should have the SELECT privilege.
+        /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
+        checkAccessRightsForSelect(*context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
+
+        /// Remove limits for some tables in the `system` database.
+        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
             options.ignore_quota = true;
             options.ignore_limits = true;
@@ -491,7 +548,7 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = std::move(*query_plan.buildQueryPipeline());
+    res.pipeline = std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context->getSettingsRef())));
     return res;
 }
 
@@ -504,10 +561,20 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
 
-    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    /// Do I need to perform the first part of the pipeline?
+    /// Running on remote servers during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=1 or when there is
+    /// only one remote server, it is equal to local query in terms of query
+    /// stages (or when due to optimize_distributed_group_by_sharding_key the query was processed up to Complete stage).
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
         && options.to_stage >= QueryProcessingStage::WithMergeableState;
-    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    /// Do I need to execute the second part of the pipeline?
+    /// Running on the initiating server during distributed processing or if query is not distributed.
+    ///
+    /// Also note that with distributed_group_by_no_merge=2 (i.e. when optimize_distributed_group_by_sharding_key takes place)
+    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregation,
+    /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
@@ -527,7 +594,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (analysis_result.prewhere_info)
         {
             ExpressionActions(analysis_result.prewhere_info->prewhere_actions).execute(header);
-            header = materializeBlock(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
@@ -537,7 +603,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     if (options.to_stage == QueryProcessingStage::Enum::WithMergeableState)
     {
         if (!analysis_result.need_aggregate)
-            return analysis_result.before_order_and_select->getResultColumns();
+        {
+            // What's the difference with selected_columns?
+            return analysis_result.before_order_by->getResultColumns();
+        }
 
         Block header = analysis_result.before_aggregation->getResultColumns();
 
@@ -563,7 +632,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
-        return analysis_result.before_order_and_select->getResultColumns();
+        // What's the difference with selected_columns?
+        return analysis_result.before_order_by->getResultColumns();
     }
 
     return analysis_result.final_projection->getResultColumns();
@@ -724,9 +794,22 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
+            /// NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
+            /// and after normalization, the height of the AST tree is at most 2
             for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
-                    return true;
+            {
+                if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & child_elem : child_union->list_of_selects->children)
+                        if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
+                            return true;
+                }
+                else
+                {
+                    if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
+                        return true;
+                }
+            }
         }
     }
 
@@ -957,7 +1040,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
             else
             {
-                executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeExpression(query_plan, expressions.before_window, "Before window functions");
+                executeWindow(query_plan);
+                executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
 
@@ -1003,7 +1088,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 else if (expressions.hasHaving())
                     executeHaving(query_plan, expressions.before_having);
 
-                executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeExpression(query_plan, expressions.before_window,
+                    "Before window functions");
+                executeWindow(query_plan);
+                executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
 
             }
@@ -1015,9 +1103,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 /** If there is an ORDER BY for distributed query processing,
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
+                  *
+                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregation
+                  * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
+                  * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
                   */
 
-                if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+                if (from_aggregation_stage)
+                    executeMergeSorted(query_plan, "for ORDER BY");
+                else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, query_info.input_order_info);
@@ -1026,10 +1120,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
+            bool has_withfill = false;
+            if (query.orderBy())
+            {
+                SortDescription order_descr = getSortDescription(query, *context);
+                for (auto & desc : order_descr)
+                    if (desc.with_fill)
+                    {
+                        has_withfill = true;
+                        break;
+                    }
+            }
+
             bool has_prelimit = false;
             if (!to_aggregation_stage &&
                 query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
+                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
+                !has_withfill)
             {
                 executePreLimit(query_plan, false);
                 has_prelimit = true;
@@ -1178,16 +1285,21 @@ void InterpreterSelectQuery::executeFetchColumns(
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
+
         if (!query.prewhere() && !query.where())
+        {
             num_rows = storage->totalRows(settings);
+        }
         else // It's possible to optimize count() given only partition predicates
         {
             SelectQueryInfo temp_query_info;
             temp_query_info.query = query_ptr;
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
             temp_query_info.sets = query_analyzer->getPreparedSets();
+
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
         }
+
         if (num_rows)
         {
             AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
@@ -1292,9 +1404,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (is_alias)
                 {
                     auto column_decl = storage_columns.get(column);
-                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
-                    column_expr = setAlias(cast_column_default->clone(), column);
+                    column_expr = column_default->expression->clone();
+                    // recursive visit for alias to alias
+                    replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), *context);
+
+                    column_expr = addTypeConversionToAST(std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), *context);
+                    column_expr = setAlias(column_expr, column);
                 }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
@@ -1506,7 +1621,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, *context);
         }
 
         StreamLocalLimits limits;
@@ -1527,6 +1642,13 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
+
+        if (context->hasQueryContext() && !options.is_internal)
+        {
+            auto local_storage_id = storage->getStorageID();
+            context->getQueryContext().addQueryAccessInfo(
+                backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName(), required_columns);
+        }
 
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
@@ -1672,7 +1794,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
             query_plan.getCurrentDataStream(),
             std::move(transform_params),
-            settings.distributed_aggregation_memory_efficient,
+            settings.distributed_aggregation_memory_efficient && storage && storage->isRemote(),
             settings.max_threads,
             settings.aggregation_memory_efficient_merge_threads);
 
@@ -1735,10 +1857,151 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
 void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description)
 {
+    if (!expression)
+    {
+        return;
+    }
+
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
 
     expression_step->setStepDescription(description);
     query_plan.addStep(std::move(expression_step));
+}
+
+static bool windowDescriptionComparator(const WindowDescription * _left,
+    const WindowDescription * _right)
+{
+    const auto & left = _left->full_sort_description;
+    const auto & right = _right->full_sort_description;
+
+    for (size_t i = 0; i < std::min(left.size(), right.size()); ++i)
+    {
+        if (left[i].column_name < right[i].column_name)
+        {
+            return true;
+        }
+        else if (left[i].column_name > right[i].column_name)
+        {
+            return false;
+        }
+        else if (left[i].column_number < right[i].column_number)
+        {
+            return true;
+        }
+        else if (left[i].column_number > right[i].column_number)
+        {
+            return false;
+        }
+        else if (left[i].direction < right[i].direction)
+        {
+            return true;
+        }
+        else if (left[i].direction > right[i].direction)
+        {
+            return false;
+        }
+        else if (left[i].nulls_direction < right[i].nulls_direction)
+        {
+            return true;
+        }
+        else if (left[i].nulls_direction > right[i].nulls_direction)
+        {
+            return false;
+        }
+
+        assert(left[i] == right[i]);
+    }
+
+    // Note that we check the length last, because we want to put together the
+    // sort orders that have common prefix but different length.
+    return left.size() > right.size();
+}
+
+static bool sortIsPrefix(const WindowDescription & _prefix,
+    const WindowDescription & _full)
+{
+    const auto & prefix = _prefix.full_sort_description;
+    const auto & full = _full.full_sort_description;
+
+    if (prefix.size() > full.size())
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if (full[i] != prefix[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
+{
+    // Try to sort windows in such an order that the window with the longest
+    // sort description goes first, and all window that use its prefixes follow.
+    std::vector<const WindowDescription *> windows_sorted;
+    for (const auto & [_, w] : query_analyzer->windowDescriptions())
+    {
+        windows_sorted.push_back(&w);
+    }
+
+    std::sort(windows_sorted.begin(), windows_sorted.end(),
+        windowDescriptionComparator);
+
+    const Settings & settings = context->getSettingsRef();
+    for (size_t i = 0; i < windows_sorted.size(); ++i)
+    {
+        const auto & w = *windows_sorted[i];
+        if (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1]))
+        {
+            auto partial_sorting = std::make_unique<PartialSortingStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                0 /* LIMIT */,
+                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
+                    settings.sort_overflow_mode));
+            partial_sorting->setStepDescription("Sort each block for window '"
+                + w.window_name + "'");
+            query_plan.addStep(std::move(partial_sorting));
+
+            auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                settings.max_block_size,
+                0 /* LIMIT */,
+                settings.max_bytes_before_remerge_sort,
+                settings.remerge_sort_lowered_memory_bytes_ratio,
+                settings.max_bytes_before_external_sort,
+                context->getTemporaryVolume(),
+                settings.min_free_disk_space_for_temporary_data);
+            merge_sorting_step->setStepDescription(
+                "Merge sorted blocks for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(merge_sorting_step));
+
+            // First MergeSorted, now MergingSorted.
+            auto merging_sorted = std::make_unique<MergingSortedStep>(
+                query_plan.getCurrentDataStream(),
+                w.full_sort_description,
+                settings.max_block_size,
+                0 /* LIMIT */);
+            merging_sorted->setStepDescription(
+                "Merge sorted streams for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(merging_sorted));
+        }
+
+        auto window_step = std::make_unique<WindowStep>(
+            query_plan.getCurrentDataStream(),
+            w,
+            w.window_functions);
+        window_step->setStepDescription("Window step for window '"
+            + w.window_name + "'");
+
+        query_plan.addStep(std::move(window_step));
+    }
 }
 
 
@@ -1788,9 +2051,13 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     /// Merge the sorted blocks.
     auto merge_sorting_step = std::make_unique<MergeSortingStep>(
             query_plan.getCurrentDataStream(),
-            output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort, settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
+            output_order_descr,
+            settings.max_block_size,
+            limit,
+            settings.max_bytes_before_remerge_sort,
+            settings.remerge_sort_lowered_memory_bytes_ratio,
+            settings.max_bytes_before_external_sort,
+            context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
     merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");

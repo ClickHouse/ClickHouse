@@ -12,6 +12,10 @@
 namespace DB
 {
 
+class ASTExpressionList;
+class ASTOrderByElement;
+struct WindowFrame;
+
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
  * AST, changing numbers, list of columns, functions, etc. It remembers part of
@@ -22,6 +26,13 @@ namespace DB
 struct QueryFuzzer
 {
     pcg64 fuzz_rand{randomSeed()};
+
+    // We add elements to expression lists with fixed probability. Some elements
+    // are so large, that the expected number of elements we add to them is
+    // one or higher, hence this process might never finish. Put some limit on the
+    // total depth of AST to prevent this.
+    // This field is reset for each fuzzMain() call.
+    size_t current_ast_depth = 0;
 
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
@@ -36,6 +47,12 @@ struct QueryFuzzer
     std::unordered_map<std::string, ASTPtr> table_like_map;
     std::vector<ASTPtr> table_like;
 
+    // Some debug fields for detecting problematic ASTs with loops.
+    // These are reset for each fuzzMain call.
+    std::unordered_set<const IAST *> debug_visited_nodes;
+    ASTPtr * debug_top_ast;
+
+
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
@@ -46,7 +63,10 @@ struct QueryFuzzer
     ASTPtr getRandomColumnLike();
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
-    void fuzzColumnLikeExpressionList(ASTPtr ast);
+    void fuzzOrderByElement(ASTOrderByElement * elem);
+    void fuzzOrderByList(IAST * ast);
+    void fuzzColumnLikeExpressionList(IAST * ast);
+    void fuzzWindowFrame(WindowFrame & frame);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(const ASTPtr ast);

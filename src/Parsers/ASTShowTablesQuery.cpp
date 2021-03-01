@@ -55,6 +55,12 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTER" << (settings.hilite ? hilite_none : "");
         settings.ostr << " " << backQuoteIfNeed(cluster_str);
     }
+    else if (m_settings)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS" <<
+            (settings.hilite ? hilite_none : "");
+        formatLike(settings);
+    }
     else
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<

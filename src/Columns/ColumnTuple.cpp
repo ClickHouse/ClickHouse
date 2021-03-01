@@ -1,6 +1,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Columns/IColumnImpl.h>
+#include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/Operators.h>
@@ -424,6 +425,14 @@ size_t ColumnTuple::byteSize() const
     return res;
 }
 
+size_t ColumnTuple::byteSizeAt(size_t n) const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->byteSizeAt(n);
+    return res;
+}
+
 size_t ColumnTuple::allocatedBytes() const
 {
     size_t res = 0;
@@ -478,7 +487,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
 
 bool ColumnTuple::isCollationSupported() const
 {
-    for (const auto& column : columns)
+    for (const auto & column : columns)
     {
         if (column->isCollationSupported())
             return true;
@@ -486,5 +495,26 @@ bool ColumnTuple::isCollationSupported() const
     return false;
 }
 
+
+ColumnPtr ColumnTuple::compress() const
+{
+    size_t byte_size = 0;
+    Columns compressed;
+    compressed.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        auto compressed_column = column->compress();
+        byte_size += compressed_column->byteSize();
+        compressed.emplace_back(std::move(compressed_column));
+    }
+
+    return ColumnCompressed::create(size(), byte_size,
+        [compressed = std::move(compressed)]() mutable
+        {
+            for (auto & column : compressed)
+                column = column->decompress();
+            return ColumnTuple::create(compressed);
+        });
+}
 
 }

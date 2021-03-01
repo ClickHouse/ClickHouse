@@ -465,25 +465,32 @@ void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_ar
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
+
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments,
+                                                                                        const DefaultReturnTypeGetter & getter)
+{
+    NullPresence null_presence = getNullPresense(arguments);
+
+    if (null_presence.has_null_constant)
+    {
+        return makeNullable(std::make_shared<DataTypeNothing>());
+    }
+    if (null_presence.has_nullable)
+    {
+        Block nested_columns = createBlockWithNestedColumns(arguments);
+        auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+        return makeNullable(return_type);
+    }
+
+    return getter(arguments);
+}
+
 DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
 {
     checkNumberOfArguments(arguments.size());
 
     if (!arguments.empty() && impl->useDefaultImplementationForNulls())
-    {
-        NullPresence null_presence = getNullPresense(arguments);
-
-        if (null_presence.has_null_constant)
-        {
-            return makeNullable(std::make_shared<DataTypeNothing>());
-        }
-        if (null_presence.has_nullable)
-        {
-            Block nested_columns = createBlockWithNestedColumns(arguments);
-            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-            return makeNullable(return_type);
-        }
-    }
+        return getReturnTypeDefaultImplementationForNulls(arguments, [&](const auto & args) { return impl->getReturnType(args); });
 
     return impl->getReturnType(arguments);
 }

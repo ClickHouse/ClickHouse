@@ -39,13 +39,14 @@ namespace DB
   * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
-  * - select the leader replica (/leader_election) - these are the replicas that assigning merges, mutations and partition manipulations
+  * - the leader replica election (/leader_election) - these are the replicas that assign merges, mutations
+  *   and partition manipulations.
   *   (after ClickHouse version 20.5 we allow multiple leaders to act concurrently);
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
-  * - coordinates writes with quorum (/quorum).
+  * - coordinate writes with quorum (/quorum).
   * - Storage of mutation entries (ALTER DELETE, ALTER UPDATE etc.) to execute (/mutations).
   *   See comments in StorageReplicatedMergeTree::mutate() for details.
   */
@@ -64,6 +65,8 @@ namespace DB
   * - when creating a new replica, actions are put on GET from other replicas (createReplica);
   * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check (at start - checkParts, while running - searchForMissingPart),
   *   actions are put on GET from other replicas;
+  *
+  * TODO Update the GET part after rewriting the code (search locally).
   *
   * The replica to which INSERT was made in the queue will also have an entry of the GET of this data.
   * Such an entry is considered to be executed as soon as the queue handler sees it.
@@ -120,6 +123,7 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         const Context & query_context) override;
 
     void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
@@ -133,7 +137,7 @@ public:
       */
     void drop() override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context & query_context, TableExclusiveLockHolder &) override;
 
     void checkTableCanBeRenamed() const override;
 
@@ -232,6 +236,8 @@ private:
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
+
+    using MergeTreeData::MutableDataPartPtr;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
     mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
@@ -380,6 +386,9 @@ private:
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
 
+    /// Just removes part from ZooKeeper using previous method
+    void removePartFromZooKeeper(const String & part_name);
+
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);
@@ -397,6 +406,9 @@ private:
       */
     bool executeLogEntry(LogEntry & entry);
 
+    /// Lookup the part for the entry in the detached/ folder.
+    /// returns nullptr if the part is corrupt or missing.
+    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry) const;
 
     void executeDropRange(const LogEntry & entry);
 
@@ -470,6 +482,7 @@ private:
         const UUID & merged_part_uuid,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -572,7 +585,7 @@ private:
 
     bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
     bool dropAllPartsInPartition(
-        zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach);
+        zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, const Context & query_context, bool detach);
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context, bool throw_if_noop) override;

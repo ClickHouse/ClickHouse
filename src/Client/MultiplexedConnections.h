@@ -50,6 +50,9 @@ public:
     /// Send a request to the replica to cancel the request
     void sendCancel();
 
+    /// Send parts' uuids to replicas to exclude them from query processing
+    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
+
     /** On each replica, read and skip all packets to EndOfStream or Exception.
       * Returns EndOfStream if no exception has been received. Otherwise
       * returns the last received packet of type Exception.
@@ -69,7 +72,7 @@ public:
 
 private:
     /// Internal version of `receivePacket` function without locking.
-    Packet receivePacketUnlocked();
+    Packet receivePacketUnlocked(std::function<void(Poco::Net::Socket &)> async_callback = {});
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -105,6 +108,8 @@ private:
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.
     mutable std::mutex cancel_mutex;
+
+    friend struct RemoteQueryExecutorRoutine;
 };
 
 }

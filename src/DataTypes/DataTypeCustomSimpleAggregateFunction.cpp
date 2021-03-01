@@ -25,10 +25,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::vector<String> supported_functions{"any", "anyLast", "min",
-    "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
-    "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray"};
+void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+{
+    static const std::vector<String> supported_functions{"any", "anyLast", "min",
+        "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
+        "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray",
+        "argMin", "argMax"};
 
+    // check function
+    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
+    {
+        throw Exception("Unsupported aggregate function " + function->getName() + ", supported functions are " + boost::algorithm::join(supported_functions, ","),
+                ErrorCodes::BAD_ARGUMENTS);
+    }
+}
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
@@ -114,12 +124,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
 
-    // check function
-    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
-    {
-        throw Exception("Unsupported aggregate function " + function->getName() + ", supported functions are " + boost::algorithm::join(supported_functions, ","),
-                        ErrorCodes::BAD_ARGUMENTS);
-    }
+    DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
 

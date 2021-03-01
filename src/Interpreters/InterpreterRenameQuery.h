@@ -54,9 +54,10 @@ class InterpreterRenameQuery : public IInterpreter
 public:
     InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_);
     BlockIO execute() override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
-    BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
+    BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
     static BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
     AccessRightsElements getRequiredAccess() const;

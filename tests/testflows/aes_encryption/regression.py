@@ -8,41 +8,47 @@ from helpers.cluster import Cluster
 from helpers.argparser import argparser
 from aes_encryption.requirements import *
 
+issue_18249 = "https://github.com/ClickHouse/ClickHouse/issues/18249"
+issue_18250 = "https://github.com/ClickHouse/ClickHouse/issues/18250"
+issue_18251 = "https://github.com/ClickHouse/ClickHouse/issues/18251"
+
 xfails = {
     # encrypt
     "encrypt/invalid key or iv length for mode/mode=\"'aes-???-gcm'\", key_len=??, iv_len=12, aad=True/iv is too short":
      [(Fail, "known issue")],
     "encrypt/invalid key or iv length for mode/mode=\"'aes-???-gcm'\", key_len=??, iv_len=12, aad=True/iv is too long":
      [(Fail, "known issue")],
+    "encrypt/invalid plaintext data type/data_type='IPv6', value=\"toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001')\"":
+     [(Fail, "known issue as IPv6 is implemented as FixedString(16)")],
     # encrypt_mysql
     "encrypt_mysql/key or iv length for mode/mode=\"'aes-???-ecb'\", key_len=??, iv_len=None":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-190")],
+     [(Fail, issue_18251)],
     "encrypt_mysql/invalid parameters/iv not valid for mode":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-190")],
-    "encrypt_mysql/invalid parameters/no parameters":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-191")],
+     [(Fail, issue_18251)],
+    "encrypt_mysql/invalid plaintext data type/data_type='IPv6', value=\"toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001')\"":
+     [(Fail, "known issue as IPv6 is implemented as FixedString(16)")],
     # decrypt_mysql
     "decrypt_mysql/key or iv length for mode/mode=\"'aes-???-ecb'\", key_len=??, iv_len=None:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-190")],
+     [(Fail, issue_18251)],
     # compatibility
     "compatibility/insert/encrypt using materialized view/:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-193")],
+     [(Fail, issue_18249)],
     "compatibility/insert/decrypt using materialized view/:":
-     [(Error, "https://altinity.atlassian.net/browse/CH-193")],
+     [(Error, issue_18249)],
     "compatibility/insert/aes encrypt mysql using materialized view/:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-193")],
+     [(Fail, issue_18249)],
     "compatibility/insert/aes decrypt mysql using materialized view/:":
-     [(Error, "https://altinity.atlassian.net/browse/CH-193")],
+     [(Error, issue_18249)],
     "compatibility/select/decrypt unique":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-193")],
+     [(Fail, issue_18249)],
     "compatibility/mysql/:engine/decrypt/mysql_datatype='TEXT'/:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-194")],
+     [(Fail, issue_18250)],
     "compatibility/mysql/:engine/decrypt/mysql_datatype='VARCHAR(100)'/:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-194")],
+     [(Fail, issue_18250)],
     "compatibility/mysql/:engine/encrypt/mysql_datatype='TEXT'/:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-194")],
+     [(Fail, issue_18250)],
     "compatibility/mysql/:engine/encrypt/mysql_datatype='VARCHAR(100)'/:":
-     [(Fail, "https://altinity.atlassian.net/browse/CH-194")]
+     [(Fail, issue_18250)]
 }
 
 @TestFeature

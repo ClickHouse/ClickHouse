@@ -13,10 +13,16 @@ Block MergeTreeBlockOutputStream::getHeader() const
 }
 
 
+void MergeTreeBlockOutputStream::writePrefix()
+{
+    /// Only check "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    storage.delayInsertOrThrowIfNeeded();
+}
+
+
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
-    storage.delayInsertOrThrowIfNeeded();
-
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
     for (auto & current_block : part_blocks)
     {

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
-from subprocess import Popen, check_call
+from subprocess import Popen, call, STDOUT
 import os
+import sys
 import shutil
 import argparse
 import logging
@@ -22,12 +23,15 @@ def get_options(i):
     if 0 < i:
         options += " --order=random"
 
-    if i % 2 == 1:
+    if i % 3 == 1:
         options += " --db-engine=Ordinary"
+
+    if i % 3 == 2:
+        options += ''' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
-    if i % 3 == 1:
+    if i % 2 == 1:
         options += " --database=test_{}".format(i)
 
     if i == 13:
@@ -64,7 +68,8 @@ if __name__ == "__main__":
     parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=3600)
-    parser.add_argument("--num-parallel", default=cpu_count());
+    parser.add_argument("--num-parallel", default=cpu_count())
+    parser.add_argument('--hung-check', action='store_true', default=False)
 
     args = parser.parse_args()
     func_pipes = []
@@ -80,5 +85,14 @@ if __name__ == "__main__":
             break
         logging.info("Finished %s from %s processes", len(retcodes), len(func_pipes))
         time.sleep(5)
+
+    logging.info("All processes finished")
+    if args.hung_check:
+        logging.info("Checking if some queries hung")
+        cmd = "{} {} {}".format(args.test_cmd, "--hung-check", "00001_select_1")
+        res = call(cmd, shell=True, stderr=STDOUT)
+        if res != 0:
+            logging.info("Hung check failed with exit code {}".format(res))
+            sys.exit(1)
 
     logging.info("Stress test finished")
