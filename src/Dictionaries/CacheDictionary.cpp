@@ -68,7 +68,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , update_queue(
         dict_id_.getNameForLogs(),
         update_queue_configuration_,
-        [this](CacheDictionaryUpdateUnitPtr<dictionary_key_type> & unit_to_update)
+        [this](CacheDictionaryUpdateUnitPtr<dictionary_key_type> unit_to_update)
         {
             update(unit_to_update);
         })
@@ -423,8 +423,11 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes &) const
+ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
+    if (dictionary_key_type == DictionaryKeyType::complex)
+        dict_struct.validateKeyTypes(key_types);
+
     Arena complex_keys_arena;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
     const auto & keys = extractor.getKeys();
@@ -642,10 +645,9 @@ BlockInputStreamPtr CacheDictionary<dictionary_key_type>::getBlockInputStream(co
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr)
+void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr)
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, update_unit_ptr->requested_simple_keys.size());
 
     size_t found_num = 0;
 
@@ -664,6 +666,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     }
     else
         requested_keys_size = update_unit_ptr->requested_complex_key_rows.size();
+
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_keys_size);
 
     const auto & fetch_request = update_unit_ptr->request;
 

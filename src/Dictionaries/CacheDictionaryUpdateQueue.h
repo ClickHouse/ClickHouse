@@ -120,7 +120,7 @@ class CacheDictionaryUpdateQueue
 {
 public:
     /// Client of update queue must provide this function in constructor and perform update using update unit.
-    using UpdateFunction = std::function<void (CacheDictionaryUpdateUnitPtr<dictionary_key_type> &)>;
+    using UpdateFunction = std::function<void (CacheDictionaryUpdateUnitPtr<dictionary_key_type>)>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryUpdateQueue");
 
     CacheDictionaryUpdateQueue(

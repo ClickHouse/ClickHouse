@@ -77,12 +77,6 @@ struct LRUHashMapCellNodeTraits
     static void set_previous(node * __restrict ptr, node * __restrict prev) { ptr->prev = prev; }
 };
 
-template <typename Key, typename Value>
-struct DefaultDisposer
-{
-    void operator()(const Key &, const Value &) const {}
-};
-
 template <typename TKey, typename TValue, typename Disposer, typename Hash, bool save_hash_in_cells>
 class LRUHashMapImpl :
     private HashMapTable<
@@ -164,14 +158,12 @@ public:
             /// Erase least recently used element from front of the list
             Cell & node = lru_list.front();
 
-            disposer(node.getKey(), node.getMapped());
-
             const Key & element_to_remove_key = node.getKey();
             size_t key_hash = node.getHash(*this);
 
             lru_list.pop_front();
 
-            [[maybe_unused]] bool erased = Base::erase(element_to_remove_key, key_hash);
+            [[maybe_unused]] bool erased = Base::erase(element_to_remove_key, key_hash, disposer);
             assert(erased);
         }
 
@@ -235,11 +227,8 @@ public:
         if (!it)
             return false;
 
-        disposer(it->getKey(), it->getMapped());
-
         lru_list.erase(lru_list.iterator_to(*it));
-
-        return Base::erase(key, key_hash);
+        return Base::erase(key, key_hash, disposer);
     }
 
     void ALWAYS_INLINE clear()
@@ -275,8 +264,8 @@ private:
     Disposer disposer;
 };
 
-template <typename Key, typename Value, typename Disposer = DefaultDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMap = LRUHashMapImpl<Key, Value, Disposer, Hash, false>;
 
-template <typename Key, typename Value, typename Disposer = DefaultDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMapWithSavedHash = LRUHashMapImpl<Key, Value, Disposer, Hash, true>;

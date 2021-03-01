@@ -645,7 +645,8 @@ public:
         AIOContext aio_context(read_from_file_buffer_blocks_size);
 
         PaddedPODArray<bool> processed(requests.size(), false);
-        PaddedPODArray<io_event> events(requests.size());
+        PaddedPODArray<io_event> events;
+        events.resize_fill(requests.size());
 
         size_t to_push = 0;
         size_t to_pop = 0;
@@ -1046,8 +1047,7 @@ private:
                 throw Exception("Serialized columns size is greater than allowed block size and metadata", ErrorCodes::UNSUPPORTED_METHOD);
 
             /// We cannot reuse place that is already allocated in file or memory cache so we erase key from index
-            if (index.contains(key))
-                index.erase(key);
+            index.erase(key);
 
             Cell cell;
             setCellDeadline(cell, now);
