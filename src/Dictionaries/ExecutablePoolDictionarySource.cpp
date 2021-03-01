@@ -201,7 +201,6 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Bloc
         {
             auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
-            std::cerr << "Write block to process " << std::endl;
         });
 
     if (implicit_key)
