@@ -10,11 +10,9 @@ def fill_nodes(nodes):
     for node in nodes:
         node.query(
         '''
-            CREATE DATABASE test;
-
-            CREATE TABLE test.test_table(n UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/1/test_table', '{replica}')
-            ORDER BY n PARTITION BY intDiv(n, 1000);
+            CREATE TABLE test(n UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+            ORDER BY n PARTITION BY n % 1000;
         '''.format(replica=node.name))
 
 cluster = ClickHouseCluster(__file__)
@@ -39,9 +37,9 @@ def start_cluster():
 
 
 def check_data():
-    res: str = node_1.query("SELECT sum(n), count(n) FROM test.test_table")
-    assert_eq_with_retry(node_2, "SELECT sum(n), count(n) FROM test.test_table", res)
-    assert_eq_with_retry(node_3, "SELECT sum(n), count(n) FROM test.test_table", res)
+    res: str = node_1.query("SELECT sum(n), count(n) FROM test")
+    assert_eq_with_retry(node_2, "SELECT sum(n), count(n) FROM test", res)
+    assert_eq_with_retry(node_3, "SELECT sum(n), count(n) FROM test", res)
 
 
 def test_restore_replica(start_cluster):
@@ -53,50 +51,41 @@ def test_restore_replica(start_cluster):
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA system.numbers")
 
     # 0. Assert all the replicas have the inserted data and output debug info
-    node_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
+    node_1.query("INSERT INTO test SELECT * FROM numbers(1000, 2000)")
     check_data()
-
-    print("Partition\tRows\tCount")
-    print(node_1.query(
-        "SELECT partition, sum(rows) AS rows, count() FROM system.parts WHERE"
-        " table = 'test_table' AND active GROUP BY partition"))
-
-    print(node_1.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/tables/test/1/'"))
 
     # 1. Delete individual replicas paths in ZK and check that the restoration query will return an error
     # (there's nothing to restore as long as there is a single replica path in ZK)
 
-    zk.delete("/clickhouse/tables/test/1/test_table/replicas/replica1", recursive=True)
-    assert zk.exists("/clickhouse/tables/test/1/test_table/replicas/replica1") is None
+    zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
+    assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test.test_table")
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
-    zk.delete("/clickhouse/tables/test/1/test_table/replicas/replica2", recursive=True)
-    assert zk.exists("/clickhouse/tables/test/1/test_table/replicas/replica2") is None
+    zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
+    assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
 
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test.test_table")
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
     # 2. Delete metadata for the root zk path (emulating a Zookeeper error)
     zk.delete("/clickhouse/tables/test/1/test_table", recursive=True)
     assert zk.exists("/clickhouse/tables/test/1/test_table") is None
 
-    node_1.query("SYSTEM RESTART REPLICA test.test_table")
+    node_1.query("SYSTEM RESTART REPLICA test")
 
     # 3. Assert there is an exception as the metadata is missing
-    node_1.query_and_get_error(
-            "INSERT INTO test.test_table "
-            "SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
+    node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
 
     # 4. restore replica
-    node_1.query("SYSTEM RESTORE REPLICA test.test_table")
+    node_1.query("SYSTEM RESTORE REPLICA test")
 
     # 5. Check if the data is same on all nodes
-    assert zk.exists("/clickhouse/tables/test/1/test_table")
+    assert zk.exists("/clickhouse/tables/test/")
     check_data()
 
     # 6. Check the initial table being attached (not in readonly) and the result being replicated.
-    node_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
+    node_1.query("INSERT INTO test SELECT * FROM numbers(1000, 2000)")
     check_data()
 
     # 7. check we cannot restore the already restored replica
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test.test_table")
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")

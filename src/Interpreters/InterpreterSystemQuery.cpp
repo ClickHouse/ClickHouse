@@ -497,6 +497,10 @@ void InterpreterSystemQuery::restoreReplica()
         LOG_DEBUG(log, "Stopped replica fetches for " + db_name + "." + old_table_name);
     }
 
+    /// 3. Move all the old table parts to the detached/ folder of the new table and execute ALTER ... ATTACH that will
+    /// automatically attach the data and add the info to the ZooKeeper.
+    /// TODO
+
     /// 3. Move parts to a new table that will register them in zookeeper.
     {
         /// 3.1 Form a partitions request (from the old table)
