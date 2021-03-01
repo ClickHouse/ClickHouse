@@ -414,6 +414,7 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BYTEA", "String", DataTypeFactory::CaseInsensitive); /// PostgreSQL
+    factory.registerAlias("TIME", "String", DataTypeFactory::CaseInsensitive); /// MySQL
 
     factory.registerAlias("CHARACTER LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("CHARACTER VARYING", "String", DataTypeFactory::CaseInsensitive);

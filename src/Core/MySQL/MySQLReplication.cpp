@@ -9,6 +9,7 @@
 #include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -196,6 +197,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_INT24:
                 case MYSQL_TYPE_DATE:
                 case MYSQL_TYPE_DATETIME:
+                case MYSQL_TYPE_TIME:
                 case MYSQL_TYPE_NEWDATE:
                 {
                     /// No data here.
@@ -214,6 +216,7 @@ namespace MySQLReplication
                     break;
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
+                case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_STRING:
                 {
                     /// Big-Endian
@@ -463,6 +466,28 @@ namespace MySQLReplication
                             components.fractional = fsp;
                             row.push_back(Field(DecimalUtils::decimalFromComponents<DateTime64>(components, meta)));
                         }
+
+                        break;
+                    }
+                    case MYSQL_TYPE_TIME2:
+                    {
+                        UInt32 sec = 0;
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 3);
+
+                        auto sign = "-1";
+                        if (readBits(sec, 0, 1, 24) != "0") {
+                            sign = "1";
+                        }
+
+                        time_t date_time = DateLUT::instance().makeDateTime(
+                            1970, 1, 1,
+                            readBits(sec, 2, 10, 24), readBits(sec, 12, 6, 24), readBits(sec, 18, 6, 24)
+                        );
+
+                        std::vector<String> parts;
+                        String str = String (DateLUT::instance().timeToString(date_time));
+                        boost::split(parts, str, [](char c) { return c == ' '; });
+                        row.push_back(Field{String{parts[1]}});
 
                         break;
                     }

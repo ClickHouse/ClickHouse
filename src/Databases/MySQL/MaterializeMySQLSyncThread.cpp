@@ -301,7 +301,7 @@ static inline void dumpDataForTables(
 
             auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
             MySQLBlockInputStream input(
-                connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
+                connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name) + " LIMIT 1",
                 out->getHeader(), DEFAULT_BLOCK_SIZE);
 
             Stopwatch watch;

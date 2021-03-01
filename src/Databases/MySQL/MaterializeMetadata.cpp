@@ -29,20 +29,22 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
     std::unordered_map<String, String> tables_create_query;
     for (const auto & fetch_table_name : fetch_tables)
     {
-        Block show_create_table_header{
-            {std::make_shared<DataTypeString>(), "Table"},
-            {std::make_shared<DataTypeString>(), "Create Table"},
-        };
+        // if (fetch_table_name == "rules") {
+            Block show_create_table_header{
+                {std::make_shared<DataTypeString>(), "Table"},
+                {std::make_shared<DataTypeString>(), "Create Table"},
+            };
 
-        MySQLBlockInputStream show_create_table(
-            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
-            show_create_table_header, DEFAULT_BLOCK_SIZE, false, true);
+            MySQLBlockInputStream show_create_table(
+                connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
+                show_create_table_header, DEFAULT_BLOCK_SIZE, false, true);
 
-        Block create_query_block = show_create_table.read();
-        if (!create_query_block || create_query_block.rows() != 1)
-            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
+            Block create_query_block = show_create_table.read();
+            if (!create_query_block || create_query_block.rows() != 1)
+                throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
 
-        tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
+            tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
+        // }
     }
 
     return tables_create_query;
@@ -247,10 +249,10 @@ MaterializeMetadata::MaterializeMetadata(
 
     try
     {
-        connection->query("FLUSH TABLES;").execute();
-        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
+        // connection->query("FLUSH TABLES;").execute();
+        // connection->query("FLUSH TABLES WITH READ LOCK;").execute();
 
-        locked_tables = true;
+        locked_tables = false;
         fetchMasterStatus(connection);
         fetchMasterVariablesValue(connection);
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
@@ -258,7 +260,7 @@ MaterializeMetadata::MaterializeMetadata(
 
         opened_transaction = true;
         need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database));
-        connection->query("UNLOCK TABLES;").execute();
+        // connection->query("UNLOCK TABLES;").execute();
     }
     catch (...)
     {

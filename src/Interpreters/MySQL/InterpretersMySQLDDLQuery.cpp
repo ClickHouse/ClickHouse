@@ -110,7 +110,11 @@ static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_defin
         if (is_nullable)
             data_type = makeASTFunction("Nullable", data_type);
 
-        columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get(data_type));
+        try {
+            columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get(data_type));
+        } catch (...) {
+            columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get("text"));
+        }
     }
 
     return columns_name_and_type;
@@ -393,9 +397,9 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     NamesAndTypesList columns_name_and_type = getColumnsList(create_defines->columns);
     const auto & [primary_keys, unique_keys, keys, increment_columns] = getKeys(create_defines->columns, create_defines->indices, context, columns_name_and_type);
 
-    if (primary_keys.empty())
-        throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
-            + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
+    // if (primary_keys.empty())
+    //     throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
+    //         + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto columns = std::make_shared<ASTColumns>();
 
@@ -421,8 +425,10 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     auto storage = std::make_shared<ASTStorage>();
 
     /// The `partition by` expression must use primary keys, otherwise the primary keys will not be merge.
-    if (ASTPtr partition_expression = getPartitionPolicy(primary_keys))
-        storage->set(storage->partition_by, partition_expression);
+    if (!primary_keys.empty()) {
+        if (ASTPtr partition_expression = getPartitionPolicy(primary_keys))
+            storage->set(storage->partition_by, partition_expression);
+    }
 
     /// The `order by` expression must use primary keys, otherwise the primary keys will not be merge.
     if (ASTPtr order_by_expression = getOrderByPolicy(primary_keys, unique_keys, keys, increment_columns))
