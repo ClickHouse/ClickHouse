@@ -137,8 +137,6 @@ xfails = {
         [(Fail, issue_21083)],
     "privileges/: row policy/nested mat:":
         [(Fail, issue_21084)],
-    "privileges/: row policy/populate mat:":
-        [(Fail, "Investigating")],
 }
 
 xflags = {
