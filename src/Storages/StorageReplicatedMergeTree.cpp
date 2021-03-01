@@ -148,6 +148,12 @@ std::atomic_uint StorageReplicatedMergeTree::total_fetches {0};
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
+    /// Every ReplicatedMergeTree table is using only one ZooKeeper session.
+    /// But if several ReplicatedMergeTree tables are using different
+    /// ZooKeeper sessions, some queries like ATTACH PARTITION FROM may have
+    /// strange effects. So we always use only one session for all tables.
+    /// (excluding auxiliary zookeepers)
+
     std::lock_guard lock(current_zookeeper_mutex);
     if (zookeeper_name == default_zookeeper_name)
     {
@@ -3909,7 +3915,7 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 

@@ -251,12 +251,22 @@ void createMissedColumns(Block & block)
     }
 }
 
-void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block)
+/// Append totals from right to left block, correct types if needed
+void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block)
 {
+    if (table_join.forceNullableLeft())
+        convertColumnsToNullable(block);
+
     if (Block totals_without_keys = totals)
     {
-        for (const auto & name : key_names_right)
+        for (const auto & name : table_join.keyNamesRight())
             totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+
+        for (auto & col : totals_without_keys)
+        {
+            if (table_join.rightBecomeNullable(col.type))
+                JoinCommon::convertColumnToNullable(col);
+        }
 
         for (size_t i = 0; i < totals_without_keys.columns(); ++i)
             block.insert(totals_without_keys.safeGetByPosition(i));
