@@ -30,6 +30,7 @@ public:
 
 private:
     void nextImpl() override;
+    void finalize() override { out->finalize(); }
 
     void finish();
     void finishImpl();

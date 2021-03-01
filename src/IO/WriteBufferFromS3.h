@@ -67,15 +67,11 @@ public:
     ~WriteBufferFromS3() override;
 
 private:
-    bool finalized = false;
-
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();
 
     void makeSinglepartUpload();
-
-    void finalizeImpl();
 };
 
 }

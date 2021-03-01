@@ -81,13 +81,6 @@ void WriteBufferFromS3::finalize()
 {
     /// FIXME move final flush into the caller
     MemoryTracker::LockExceptionInThread lock;
-    finalizeImpl();
-}
-
-void WriteBufferFromS3::finalizeImpl()
-{
-    if (finalized)
-        return;
 
     next();
 
@@ -101,13 +94,18 @@ void WriteBufferFromS3::finalizeImpl()
         writePart();
         completeMultipartUpload();
     }
-
-    finalized = true;
 }
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    finalizeImpl();
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()

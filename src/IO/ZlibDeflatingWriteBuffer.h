@@ -28,6 +28,7 @@ public:
 
 private:
     void nextImpl() override;
+    void finalize() override { out->finalize(); }
 
     void finishImpl();
     /// Flush all pending data and write zlib footer to the underlying buffer.

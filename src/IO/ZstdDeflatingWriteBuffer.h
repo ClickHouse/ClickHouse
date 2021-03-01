@@ -26,6 +26,7 @@ public:
 
 private:
     void nextImpl() override;
+    void finalize() override { out->finalize(); }
 
     /// Flush all pending data and write zstd footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
