@@ -339,9 +339,7 @@ public:
                 if (elem.second[col].isNull())
                     to_values_col.insertDefault();
                 else
-                {
                     to_values_col.insert(elem.second[col]);
-                }
             }
         }
     }
