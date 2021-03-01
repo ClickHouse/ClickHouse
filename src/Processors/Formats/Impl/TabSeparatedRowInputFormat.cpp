@@ -170,7 +170,7 @@ void TabSeparatedRowInputFormat::readPrefix()
             skipTSVRow(in, column_mapping->column_indexes_for_input_fields.size());
         }
     }
-    else
+    else if (!column_mapping->is_set)
         setupAllColumnsByTableSchema();
 
     if (with_types)

@@ -10,6 +10,8 @@ namespace DB
 /// Used to pass info from header between different InputFormats in ParallelParsing
 struct ColumnMapping
 {
+    /// Non-atomic because only read access in possible
+    bool is_set;
     /// Maps indexes of columns in the input file to indexes of table columns
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
@@ -59,7 +61,7 @@ public:
     /// Must be called from ParallelParsingInputFormat after readSuffix
     ColumnMappingPtr getColumnMapping() const { return column_mapping; }
     /// Must be called from ParallelParsingInputFormat before readPrefix
-    void setColumnMapping(ColumnMappingPtr column_mapping_ ) { column_mapping = column_mapping_; }
+    void setColumnMapping(ColumnMappingPtr column_mapping_) { column_mapping = column_mapping_; }
 
     size_t getCurrentUnitNumber() const { return current_unit_number; }
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
