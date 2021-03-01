@@ -16,7 +16,7 @@ This function doesn’t provide a guaranteed result. In certain situations, erro
 
 We recommend using the `N < 10` value; performance is reduced with large `N` values. Maximum value of `N = 65536`.
 
-**Parameters**
+**Arguments**
 
 -   ‘N’ is the number of elements to return.
 

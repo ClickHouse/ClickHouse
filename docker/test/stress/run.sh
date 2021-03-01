@@ -8,16 +8,23 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 dpkg -i package_folder/clickhouse-test_*.deb
 
+function configure()
+{
+    # install test configs
+    /usr/share/clickhouse-test/config/install.sh
+
+    # for clickhouse-server (via service)
+    echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
+    # for clickhouse-client
+    export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
+
+    # since we run clickhouse from root
+    sudo chown root: /var/lib/clickhouse
+}
+
 function stop()
 {
-    timeout 120 service clickhouse-server stop
-
-    # Wait for process to disappear from processlist and also try to kill zombies.
-    while kill -9 "$(pidof clickhouse-server)"
-    do
-        echo "Killed clickhouse-server"
-        sleep 0.5
-    done
+    clickhouse stop
 }
 
 function start()
@@ -33,19 +40,26 @@ function start()
             tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
-        timeout 120 service clickhouse-server start
+        # use root to match with current uid
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
         sleep 0.5
         counter=$((counter + 1))
     done
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
 }
 
-# install test configs
-/usr/share/clickhouse-test/config/install.sh
-
-# for clickhouse-server (via service)
-echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
-# for clickhouse-client
-export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
+configure
 
 start
 
@@ -64,9 +78,11 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION"
+./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" && echo "OK" > /test_output/script_exit_code.txt || echo "FAIL" > /test_output/script_exit_code.txt
 
 stop
+# TODO remove me when persistent snapshots will be ready
+rm -fr /var/lib/clickhouse/coordination ||:
 start
 
 clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt

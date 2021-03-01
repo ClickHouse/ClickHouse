@@ -37,26 +37,6 @@ protected:
     Block getBlock(size_t start, size_t length) const override;
 
 private:
-    template <typename Type>
-    using DictionaryGetter = void (DictionaryType::*)(
-        const std::string &, const PaddedPODArray<Key> &, const PaddedPODArray<Int64> &, PaddedPODArray<Type> &) const;
-
-    template <typename Type>
-    using DictionaryDecimalGetter = void (DictionaryType::*)(
-        const std::string &, const PaddedPODArray<Key> &, const PaddedPODArray<Int64> &, DecimalPaddedPODArray<Type> &) const;
-
-    template <typename AttributeType, typename Getter>
-    ColumnPtr getColumnFromAttribute(
-        Getter getter,
-        const PaddedPODArray<Key> & ids_to_fill,
-        const PaddedPODArray<Int64> & dates,
-        const DictionaryAttribute & attribute,
-        const DictionaryType & concrete_dictionary) const;
-    ColumnPtr getColumnFromAttributeString(
-        const PaddedPODArray<Key> & ids_to_fill,
-        const PaddedPODArray<Int64> & dates,
-        const DictionaryAttribute & attribute,
-        const DictionaryType & concrete_dictionary) const;
     template <typename T>
     ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
@@ -67,7 +47,8 @@ private:
         const std::string & default_name,
         const std::unordered_set<std::string> & column_names_set,
         const PaddedPODArray<T> & values,
-        ColumnsWithTypeAndName & columns) const;
+        ColumnsWithTypeAndName & columns,
+        bool force = false) const;
 
     Block fillBlock(
         const PaddedPODArray<Key> & ids_to_fill,
@@ -123,41 +104,6 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getBlock(
 }
 
 template <typename DictionaryType, typename RangeType, typename Key>
-template <typename AttributeType, typename Getter>
-ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getColumnFromAttribute(
-    Getter getter,
-    const PaddedPODArray<Key> & ids_to_fill,
-    const PaddedPODArray<Int64> & dates,
-    const DictionaryAttribute & attribute,
-    const DictionaryType & concrete_dictionary) const
-{
-    if constexpr (IsDecimalNumber<AttributeType>)
-    {
-        auto column = ColumnDecimal<AttributeType>::create(ids_to_fill.size(), 0); /// NOTE: There's wrong scale here, but it's unused.
-        (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column->getData());
-        return column;
-    }
-    else
-    {
-        auto column_vector = ColumnVector<AttributeType>::create(ids_to_fill.size());
-        (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
-        return column_vector;
-    }
-}
-
-template <typename DictionaryType, typename RangeType, typename Key>
-ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getColumnFromAttributeString(
-    const PaddedPODArray<Key> & ids_to_fill,
-    const PaddedPODArray<Int64> & dates,
-    const DictionaryAttribute & attribute,
-    const DictionaryType & concrete_dictionary) const
-{
-    auto column_string = ColumnString::create();
-    concrete_dictionary.getString(attribute.name, ids_to_fill, dates, column_string.get());
-    return column_string;
-}
-
-template <typename DictionaryType, typename RangeType, typename Key>
 template <typename T>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getColumnFromPODArray(const PaddedPODArray<T> & array) const
 {
@@ -168,7 +114,6 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getCo
     return column_vector;
 }
 
-
 template <typename DictionaryType, typename RangeType, typename Key>
 template <typename DictionarySpecialAttributeType, typename T>
 void RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::addSpecialColumn(
@@ -177,13 +122,14 @@ void RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::addSpecial
     const std::string & default_name,
     const std::unordered_set<std::string> & column_names_set,
     const PaddedPODArray<T> & values,
-    ColumnsWithTypeAndName & columns) const
+    ColumnsWithTypeAndName & columns,
+    bool force) const
 {
     std::string name = default_name;
     if (attribute)
         name = attribute->name;
 
-    if (column_names_set.find(name) != column_names_set.end())
+    if (force || column_names_set.find(name) != column_names_set.end())
         columns.emplace_back(getColumnFromPODArray(values), type, name);
 }
 
@@ -215,69 +161,25 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::fillBlock
 
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
-    addSpecialColumn(structure.id, std::make_shared<DataTypeUInt64>(), "ID", names, ids_to_fill, columns);
+    addSpecialColumn(structure.id, std::make_shared<DataTypeUInt64>(), "ID", names, ids_to_fill, columns, true);
+    auto ids_column = columns.back().column;
     addSpecialColumn(structure.range_min, structure.range_max->type, "Range Start", names, block_start_dates, columns);
     addSpecialColumn(structure.range_max, structure.range_max->type, "Range End", names, block_end_dates, columns);
 
     auto date_key = makeDateKey(block_start_dates, block_end_dates);
+    auto date_column = getColumnFromPODArray(date_key);
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
         const DictionaryAttribute & attribute = structure.attributes[idx];
         if (names.find(attribute.name) != names.end())
         {
-            ColumnPtr column;
-#define GET_COLUMN_FORM_ATTRIBUTE(TYPE) \
-    column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids_to_fill, date_key, attribute, *dictionary)
-            switch (attribute.underlying_type)
-            {
-                case AttributeUnderlyingType::utUInt8:
-                    GET_COLUMN_FORM_ATTRIBUTE(UInt8);
-                    break;
-                case AttributeUnderlyingType::utUInt16:
-                    GET_COLUMN_FORM_ATTRIBUTE(UInt16);
-                    break;
-                case AttributeUnderlyingType::utUInt32:
-                    GET_COLUMN_FORM_ATTRIBUTE(UInt32);
-                    break;
-                case AttributeUnderlyingType::utUInt64:
-                    GET_COLUMN_FORM_ATTRIBUTE(UInt64);
-                    break;
-                case AttributeUnderlyingType::utUInt128:
-                    GET_COLUMN_FORM_ATTRIBUTE(UInt128);
-                    break;
-                case AttributeUnderlyingType::utInt8:
-                    GET_COLUMN_FORM_ATTRIBUTE(Int8);
-                    break;
-                case AttributeUnderlyingType::utInt16:
-                    GET_COLUMN_FORM_ATTRIBUTE(Int16);
-                    break;
-                case AttributeUnderlyingType::utInt32:
-                    GET_COLUMN_FORM_ATTRIBUTE(Int32);
-                    break;
-                case AttributeUnderlyingType::utInt64:
-                    GET_COLUMN_FORM_ATTRIBUTE(Int64);
-                    break;
-                case AttributeUnderlyingType::utFloat32:
-                    GET_COLUMN_FORM_ATTRIBUTE(Float32);
-                    break;
-                case AttributeUnderlyingType::utFloat64:
-                    GET_COLUMN_FORM_ATTRIBUTE(Float64);
-                    break;
-                case AttributeUnderlyingType::utDecimal32:
-                    GET_COLUMN_FORM_ATTRIBUTE(Decimal32);
-                    break;
-                case AttributeUnderlyingType::utDecimal64:
-                    GET_COLUMN_FORM_ATTRIBUTE(Decimal64);
-                    break;
-                case AttributeUnderlyingType::utDecimal128:
-                    GET_COLUMN_FORM_ATTRIBUTE(Decimal128);
-                    break;
-                case AttributeUnderlyingType::utString:
-                    column = getColumnFromAttributeString(ids_to_fill, date_key, attribute, *dictionary);
-                    break;
-            }
-#undef GET_COLUMN_FORM_ATTRIBUTE
+            ColumnPtr column = dictionary->getColumn(
+                attribute.name,
+                attribute.type,
+                {ids_column, date_column},
+                {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeInt64>()},
+                nullptr);
             columns.emplace_back(column, attribute.type, attribute.name);
         }
     }

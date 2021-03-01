@@ -59,7 +59,6 @@
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/TestKeeperTCPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -70,6 +69,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/HTTP/HTTPServer.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -82,6 +82,7 @@
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
+#    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
 #endif
 
@@ -94,12 +95,16 @@
 #   include <Server/GRPCServer.h>
 #endif
 
+#if USE_NURAFT
+#   include <Server/NuKeeperTCPHandlerFactory.h>
+#endif
 
 namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
 }
 
 
@@ -476,16 +481,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
-                " to the reference checksum stored in the binary ({1})."
-                " It may indicate one of the following:"
-                " - the file {2} was changed just after startup;"
-                " - the file {2} is damaged on disk due to faulty hardware;"
-                " - the loaded executable is damaged in memory due to faulty hardware;"
-                " - the file {2} was intentionally modified;"
-                " - logical error in code."
-                , calculated_binary_hash, stored_binary_hash, executable_path);
+            /// If program is run under debugger, ptrace will fail.
+            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            {
+                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                LOG_WARNING(log, "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                    " to the reference checksum stored in the binary ({1})."
+                    " It may indicate one of the following:"
+                    " - the file {2} was changed just after startup;"
+                    " - the file {2} is damaged on disk due to faulty hardware;"
+                    " - the loaded executable is damaged in memory due to faulty hardware;"
+                    " - the file {2} was intentionally modified;"
+                    " - logical error in code."
+                    , calculated_binary_hash, stored_binary_hash, executable_path);
+            }
         }
     }
     else
@@ -842,23 +857,33 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    for (const auto & listen_host : listen_hosts)
+    if (config().has("test_keeper_server"))
     {
-        /// TCP TestKeeper
-        const char * port_name = "test_keeper_server.tcp_port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+#if USE_NURAFT
+        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
+        global_context->initializeNuKeeperStorageDispatcher();
+        for (const auto & listen_host : listen_hosts)
         {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
-            servers_to_start_before_tables->emplace_back(
-                port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new TestKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+            /// TCP NuKeeper
+            const char * port_name = "test_keeper_server.tcp_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers_to_start_before_tables->emplace_back(
+                    port_name,
+                    std::make_unique<Poco::Net::TCPServer>(
+                        new NuKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
-            LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
-        });
+                LOG_INFO(log, "Listening for connections to NuKeeper (tcp): {}", address.toString());
+            });
+        }
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
+#endif
+
     }
 
     for (auto & server : *servers_to_start_before_tables)
@@ -898,6 +923,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
+
+            global_context->shutdownNuKeeperStorageDispatcher();
         }
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -997,7 +1024,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         int pool_size = config().getInt("distributed_ddl.pool_size", 1);
         if (pool_size < 1)
             throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+                                                                 "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
@@ -1056,8 +1084,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
 
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(), createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://{}", address.toString());
             });
@@ -1071,8 +1101,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(), createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://{}", address.toString());
 #else
@@ -1146,8 +1178,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(),
+                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
@@ -1160,8 +1198,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(),
+                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
 #else
@@ -1221,8 +1265,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
-                    createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(
+                    port_name,
+                    std::make_unique<HTTPServer>(
+                        context(),
+                        createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
             });

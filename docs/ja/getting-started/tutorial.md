@@ -262,7 +262,6 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 ``` sql
@@ -458,7 +457,6 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 これらのクエリは、`clickhouse-client` の対話型モード(事前にクエリを指定せずにターミナルで起動するだけです)を使って実行するか、[代替インターフェイス](../interfaces/index.md) で実行できます。

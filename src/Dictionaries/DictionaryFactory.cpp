@@ -41,7 +41,7 @@ DictionaryPtr DictionaryFactory::create(
         throw Exception{name + ": element dictionary.layout should have exactly one child element",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
-    const DictionaryStructure dict_struct{config, config_prefix + ".structure"};
+    const DictionaryStructure dict_struct{config, config_prefix};
 
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(
         name, config, config_prefix + ".source", dict_struct, context, config.getString(config_prefix + ".database", ""), check_source_config);
