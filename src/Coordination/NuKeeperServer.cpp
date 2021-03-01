@@ -25,7 +25,7 @@ NuKeeperServer::NuKeeperServer(
     ResponsesQueue & responses_queue_)
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
+    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, config.getString("test_keeper_server.snapshot_storage_path"), coordination_settings))
     , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
