@@ -131,7 +131,7 @@ template <typename Derived>
 bool IColumn::hasEqualValuesImpl() const
 {
     size_t num_rows = size();
-    for (size_t i = 0; i < num_rows; ++i)
+    for (size_t i = 1; i < num_rows; ++i)
     {
         if (compareAt(i, 0, static_cast<const Derived &>(*this), false) != 0)
             return false;
