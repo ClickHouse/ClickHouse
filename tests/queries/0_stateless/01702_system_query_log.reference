@@ -8,15 +8,15 @@ GRANT queries
 REVOKE queries
 Misc queries
 ACTUAL LOG CONTENT:
-Select	-- SET ROLE sqllt_role; -- tests are executed by user `default` which is defined in XML and is impossble to update.\n\nSELECT \'ALTER TABLE queries\';
+Select	-- SET ROLE sqllt_role; -- tests are executed by user `default` which is defined in XML and is impossible to update.\n\nSELECT \'ALTER TABLE queries\';
 Select	-- SYSTEM RELOAD DICTIONARY sqllt.dictionary; -- temporary out of order: Code: 210, Connection refused (localhost:9001) (version 21.3.1.1)\n-- DROP REPLICA\n-- haha, no\n-- SYSTEM KILL;\n-- SYSTEM SHUTDOWN;\n\n-- Since we don\'t really care about the actual output, suppress it with `FORMAT Null`.\nSELECT \'SHOW queries\';
 Select	-- not done, seems to hard, so I\'ve skipped queries of ALTER-X, where X is:\n-- PARTITION\n-- ORDER BY\n-- SAMPLE BY\n-- INDEX\n-- CONSTRAINT\n-- TTL\n-- USER\n-- QUOTA\n-- ROLE\n-- ROW POLICY\n-- SETTINGS PROFILE\n\nSELECT \'SYSTEM queries\';
-Alter	ALTER TABLE table ADD COLUMN new_col UInt32 DEFAULT 1;
+Alter	ALTER TABLE table ADD COLUMN new_col UInt32 DEFAULT 123456789;
 Alter	ALTER TABLE table CLEAR COLUMN new_col;
 Alter	ALTER TABLE table COMMENT COLUMN new_col \'dummy column with a comment\';
 Alter	ALTER TABLE table DELETE WHERE i > 65535;
 Alter	ALTER TABLE table DROP COLUMN the_new_col;
-Alter	ALTER TABLE table MODIFY COLUMN new_col FixedString(12) DEFAULT \'Hello world!\';
+Alter	ALTER TABLE table MODIFY COLUMN new_col DateTime DEFAULT \'2015-05-18 07:40:13\';
 Alter	ALTER TABLE table MODIFY COLUMN new_col REMOVE COMMENT;
 Alter	ALTER TABLE table RENAME COLUMN new_col TO the_new_col;
 Alter	ALTER TABLE table UPDATE i = i + 1 WHERE 1;
@@ -69,7 +69,6 @@ Select	SELECT \'SET queries\';
 	SHOW GRANTS FOR sqllt_user FORMAT Null;
 	SHOW GRANTS FORMAT Null;
 	SHOW TABLES FROM sqllt FORMAT Null;
-System	SYSTEM DROP COMPILED EXPRESSION CACHE;
 System	SYSTEM DROP DNS CACHE;
 System	SYSTEM DROP MARK CACHE;
 System	SYSTEM DROP UNCOMPRESSED CACHE;
