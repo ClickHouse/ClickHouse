@@ -263,7 +263,7 @@ SELECT
 
 ## toIPv6 {#toipv6string}
 
-Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. Returns empty value if `string` is not a valid IP address.
+Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. If the IPv6 address has an invalid format, it returns  empty value.
 Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
