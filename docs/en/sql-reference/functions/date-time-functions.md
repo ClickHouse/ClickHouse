@@ -61,39 +61,57 @@ int32samoa: 1546300800
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
 
+Alias: `YEAR`.
+
 ## toQuarter {#toquarter}
 
 Converts a date or date with time to a UInt8 number containing the quarter number.
+
+Alias: `QUARTER`.
 
 ## toMonth {#tomonth}
 
 Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
+Alias: `MONTH`.
+
 ## toDayOfYear {#todayofyear}
 
 Converts a date or date with time to a UInt16 number containing the number of the day of the year (1-366).
+
+Alias: `DAYOFYEAR`.
 
 ## toDayOfMonth {#todayofmonth}
 
 Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
+Aliases: `DAYOFMONTH`, `DAY`.
+
 ## toDayOfWeek {#todayofweek}
 
 Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+
+Alias: `DAYOFWEEK`.
 
 ## toHour {#tohour}
 
 Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true – even in Moscow the clocks were twice changed at a different time).
 
+Alias: `HOUR`.
+
 ## toMinute {#tominute}
 
 Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
+
+Alias: `MINUTE`.
 
 ## toSecond {#tosecond}
 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
+
+Alias: `SECOND`.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
@@ -186,7 +204,7 @@ Truncates sub-seconds.
 toStartOfSecond(value[, timezone])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
@@ -328,7 +346,7 @@ For mode values with a meaning of “contains January 1”, the week contains Ja
 toWeek(date, [, mode][, Timezone])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `date` – Date or DateTime.
 -   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
@@ -378,7 +396,7 @@ date_trunc(unit, value[, timezone])
 
 Alias: `dateTrunc`. 
 
-**Parameters**
+**Arguments**
 
 -   `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
@@ -447,7 +465,7 @@ date_add(unit, value, date)
 
 Aliases: `dateAdd`, `DATE_ADD`. 
 
-**Parameters**
+**Arguments**
 
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
@@ -484,7 +502,7 @@ date_diff('unit', startdate, enddate, [timezone])
 
 Aliases: `dateDiff`, `DATE_DIFF`. 
 
-**Parameters**
+**Arguments**
 
 -   `unit` — The type of interval for result [String](../../sql-reference/data-types/string.md).
 
@@ -530,7 +548,7 @@ date_sub(unit, value, date)
 
 Aliases: `dateSub`, `DATE_SUB`. 
 
-**Parameters**
+**Arguments**
 
 -   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
 
@@ -570,7 +588,7 @@ timestamp_add(date, INTERVAL value unit)
 
 Aliases: `timeStampAdd`, `TIMESTAMP_ADD`. 
 
-**Parameters**
+**Arguments**
     
 -   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)
@@ -606,7 +624,7 @@ timestamp_sub(unit, value, date)
 
 Aliases: `timeStampSub`, `TIMESTAMP_SUB`. 
 
-**Parameters**
+**Arguments**
 
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
@@ -640,7 +658,7 @@ Returns the current date and time.
 now([timezone])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
@@ -753,7 +771,7 @@ This is necessary for searching for pageviews in the corresponding session.
 
 ## formatDateTime {#formatdatetime}
 
-Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
+Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
 **Syntax**
 
@@ -812,18 +830,19 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
-
 ## FROM\_UNIXTIME {#fromunixfime}
 
-When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
-type.
+Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
-For example:
+**Example:**
+
+Query:
 
 ```sql
-SELECT FROM_UNIXTIME(423543535)
+SELECT FROM_UNIXTIME(423543535);
 ```
+
+Result:
 
 ```text
 ┌─FROM_UNIXTIME(423543535)─┐
@@ -831,12 +850,12 @@ SELECT FROM_UNIXTIME(423543535)
 └──────────────────────────┘
 ```
 
-When there are two arguments, first is integer or DateTime, second is constant format string, it act in the same way as `formatDateTime` and return `String` type.
+When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
 
 For example:
 
 ```sql
-SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
+SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
 
 ```text
@@ -855,7 +874,7 @@ Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Prolepti
 toModifiedJulianDay(date)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
@@ -891,7 +910,7 @@ Similar to [toModifiedJulianDay()](#tomodifiedjulianday), but instead of raising
 toModifiedJulianDayOrNull(date)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
@@ -927,7 +946,7 @@ Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Varian
 fromModifiedJulianDay(day)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
 
@@ -963,7 +982,7 @@ Similar to [fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull), but in
 fromModifiedJulianDayOrNull(day)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
 
@@ -988,3 +1007,5 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
