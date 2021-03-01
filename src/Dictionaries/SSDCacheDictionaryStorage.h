@@ -1143,13 +1143,17 @@ private:
                     PaddedPODArray<KeyType> keys_to_update;
                     current_memory_buffer_partition.readKeys(keys_to_update);
 
+                    absl::flat_hash_set<KeyType, DefaultHash<KeyType>> updated_keys;
+
                     for (auto key_to_update : keys_to_update)
                     {
                         auto * it = index.find(key_to_update);
 
-                        /// If lru cache does not contain old keys
-                        if (!it)
+                        /// If lru cache does not contain old keys or there were duplicated keys in memory buffer partition
+                        if (!it || updated_keys.contains(it->getKey()))
                             continue;
+
+                        updated_keys.insert(key_to_update);
 
                         Cell & cell_to_update = it->getMapped();
 
