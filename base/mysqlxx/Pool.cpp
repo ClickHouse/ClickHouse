@@ -81,6 +81,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
+
+        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
+            cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
     }
     else
     {
@@ -99,6 +102,8 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
+
+        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -245,7 +250,8 @@ void Pool::Entry::forceConnected() const
             pool->ssl_key.c_str(),
             pool->connect_timeout,
             pool->rw_timeout,
-            pool->enable_local_infile);
+            pool->enable_local_infile,
+            pool->opt_reconnect);
     }
 }
 
@@ -308,7 +314,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             ssl_key.c_str(),
             connect_timeout,
             rw_timeout,
-            enable_local_infile);
+            enable_local_infile,
+            opt_reconnect);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
