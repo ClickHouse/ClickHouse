@@ -13,7 +13,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/HexWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -1668,6 +1667,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "Cannot drop or clear column{} '{}', because all columns in part '{}' will be removed from disk. Empty parts are not allowed", postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
         }
     }
+}
+
+
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
 }
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
