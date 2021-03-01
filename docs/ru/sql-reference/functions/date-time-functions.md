@@ -63,39 +63,57 @@ int32samoa: 1546300800
 
 Переводит дату или дату-с-временем в число типа UInt16, содержащее номер года (AD).
 
+Синоним: `YEAR`.
+
 ## toQuarter {#toquarter}
 
 Переводит дату или дату-с-временем в число типа UInt8, содержащее номер квартала.
+
+Синоним: `QUARTER`.
 
 ## toMonth {#tomonth}
 
 Переводит дату или дату-с-временем в число типа UInt8, содержащее номер месяца (1-12).
 
+Синоним: `MONTH`.
+
 ## toDayOfYear {#todayofyear}
 
 Переводит дату или дату-с-временем в число типа UInt16, содержащее номер дня года (1-366).
+
+Синоним: `DAYOFYEAR`.
 
 ## toDayOfMonth {#todayofmonth}
 
 Переводит дату или дату-с-временем в число типа UInt8, содержащее номер дня в месяце (1-31).
 
+Синонимы: `DAYOFMONTH`, `DAY`.
+
 ## toDayOfWeek {#todayofweek}
 
 Переводит дату или дату-с-временем в число типа UInt8, содержащее номер дня в неделе (понедельник - 1, воскресенье - 7).
+
+Синоним: `DAYOFWEEK`.
 
 ## toHour {#tohour}
 
 Переводит дату-с-временем в число типа UInt8, содержащее номер часа в сутках (0-23).
 Функция исходит из допущения, что перевод стрелок вперёд, если осуществляется, то на час, в два часа ночи, а перевод стрелок назад, если осуществляется, то на час, в три часа ночи (что, в общем, не верно - даже в Москве два раза перевод стрелок был осуществлён в другое время).
 
+Синоним: `HOUR`.
+
 ## toMinute {#tominute}
 
 Переводит дату-с-временем в число типа UInt8, содержащее номер минуты в часе (0-59).
+
+Синоним: `MINUTE`.
 
 ## toSecond {#tosecond}
 
 Переводит дату-с-временем в число типа UInt8, содержащее номер секунды в минуте (0-59).
 Секунды координации не учитываются.
+
+Синоним: `SECOND`.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
@@ -305,7 +323,9 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 
 Переводит дату-с-временем или дату в число типа UInt16, содержащее номер ISO года. ISO год отличается от обычного года, потому что в соответствии с [ISO 8601:1988](https://en.wikipedia.org/wiki/ISO_8601) ISO год начинается необязательно первого января.
 
-Пример:
+**Пример**
+
+Запрос:
 
 ```sql
 SELECT
@@ -313,6 +333,9 @@ SELECT
     toYear(date),
     toISOYear(date)
 ```
+
+Результат:
+
 ```text
 ┌───────date─┬─toYear(toDate('2017-01-01'))─┬─toISOYear(toDate('2017-01-01'))─┐
 │ 2017-01-01 │                         2017 │                            2016 │
@@ -326,11 +349,17 @@ SELECT
 
 1 Января 2017 г. - воскресение, т.е. первая ISO неделя 2017 года началась в понедельник 2 января, поэтому 1 января 2017 это последняя неделя 2016 года.
 
+**Пример**
+
+Запрос:
+
 ```sql
 SELECT
     toISOWeek(toDate('2017-01-01')) AS ISOWeek20170101,
     toISOWeek(toDate('2017-01-02')) AS ISOWeek20170102
 ```
+
+Результат:
 
 ```text
 ┌─ISOWeek20170101─┬─ISOWeek20170102─┐
@@ -368,9 +397,13 @@ SELECT
 
 **Пример**
 
+Запрос:
+
 ```sql
 SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
 ```
+
+Результат:
 
 ```text
 ┌───────date─┬─week0─┬─week1─┬─week9─┐
@@ -387,9 +420,13 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 
 **Пример**
 
+Запрос:
+
 ```sql
 SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
 ```
+
+Результат:
 
 ```text
 ┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
@@ -573,7 +610,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
@@ -654,15 +691,54 @@ formatDateTime(Time, Format\[, Timezone\])
 Запрос:
 
 ``` sql
-SELECT formatDateTime(toDate('2010-01-04'), '%g')
+SELECT formatDateTime(toDate('2010-01-04'), '%g');
 ```
 
-Ответ:
+Результат:
 
 ```
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
 │ 10                                         │
 └────────────────────────────────────────────┘
+```
+
+## FROM\_UNIXTIME {#fromunixtime}
+
+Функция преобразует Unix timestamp в календарную дату и время. 
+
+**Примеры**
+
+Если указан только один аргумент типа [Integer](../../sql-reference/data-types/int-uint.md), то функция действует так же, как [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime), и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
+
+Запрос:
+
+```sql
+SELECT FROM_UNIXTIME(423543535);
+```
+
+Результат:
+
+```text
+┌─FROM_UNIXTIME(423543535)─┐
+│      1983-06-04 10:58:55 │
+└──────────────────────────┘
+```
+
+В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
+
+
+Запрос:
+
+```sql
+SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
+```
+
+Результат:
+
+```text
+┌─DateTime────────────┐
+│ 2009-02-11 14:42:23 │
+└─────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/date_time_functions/) <!--hide-->

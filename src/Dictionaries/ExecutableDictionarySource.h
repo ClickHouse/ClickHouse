@@ -49,9 +49,9 @@ public:
 
 private:
     Poco::Logger * log;
-
     time_t update_time = 0;
     const DictionaryStructure dict_struct;
+    bool implicit_key;
     const std::string command;
     const std::string update_field;
     const std::string format;

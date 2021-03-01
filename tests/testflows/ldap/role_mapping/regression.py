@@ -18,7 +18,7 @@ xfails = {
 @Name("role mapping")
 @ArgumentParser(argparser)
 @Specifications(
-    QA_SRS014_ClickHouse_LDAP_Role_Mapping
+    SRS_014_ClickHouse_LDAP_Role_Mapping
 )
 @Requirements(
     RQ_SRS_014_LDAP_RoleMapping("1.0")

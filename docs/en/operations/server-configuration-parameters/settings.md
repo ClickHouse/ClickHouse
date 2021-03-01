@@ -296,10 +296,32 @@ Useful for breaking away from a specific network interface.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
+## interserver_https_port {#interserver-https-port}
+
+Port for exchanging data between ClickHouse servers over `HTTPS`.
+
+**Example**
+
+``` xml
+<interserver_https_port>9010</interserver_https_port>
+```
+
+## interserver_https_host {#interserver-https-host}
+
+Similar to `interserver_http_host`, except that this hostname can be used by other servers to access this server over `HTTPS`.
+
+**Example**
+
+``` xml
+<interserver_https_host>example.yandex.ru</interserver_https_host>
+```
+
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
 By default, the authentication is not used.
+
+**Note:** These credentials are common for replication through `HTTP` and `HTTPS`.
 
 This section contains the following parameters:
 

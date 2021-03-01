@@ -70,25 +70,25 @@ public:
         return type_res;
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (this->data(place).value.changeIfBetter(*columns[1], row_num, arena))
             this->data(place).result.change(*columns[0], row_num, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (this->data(place).value.changeIfBetter(this->data(rhs).value, arena))
             this->data(place).result.change(this->data(rhs).result, arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).result.write(buf, *type_res);
         this->data(place).value.write(buf, *type_val);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).result.read(buf, *type_res, arena);
         this->data(place).value.read(buf, *type_val, arena);
@@ -96,7 +96,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if (tuple_argument)
         {

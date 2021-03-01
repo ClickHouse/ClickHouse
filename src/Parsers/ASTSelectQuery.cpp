@@ -307,10 +307,11 @@ bool ASTSelectQuery::final() const
 
 bool ASTSelectQuery::withFill() const
 {
-    if (!orderBy())
+    const ASTPtr order_by = orderBy();
+    if (!order_by)
         return false;
 
-    for (const auto & order_expression_element : orderBy()->children)
+    for (const auto & order_expression_element : order_by->children)
         if (order_expression_element->as<ASTOrderByElement &>().with_fill)
             return true;
 

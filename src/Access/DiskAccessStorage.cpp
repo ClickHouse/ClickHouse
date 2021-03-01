@@ -217,6 +217,7 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{tmp_file_path.string()};
         out.write(file_contents.data(), file_contents.size());
+        out.close();
 
         /// Rename.
         std::filesystem::rename(tmp_file_path, file_path);
@@ -274,6 +275,7 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        out.close();
     }
 
 

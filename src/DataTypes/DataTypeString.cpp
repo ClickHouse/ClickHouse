@@ -9,8 +9,6 @@
 #include <Core/Field.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -310,55 +308,6 @@ void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, con
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
-
-void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num)));
-}
-
-
-void DataTypeString::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    auto & column_string = assert_cast<ColumnString &>(column);
-    ColumnString::Chars & data = column_string.getChars();
-    ColumnString::Offsets & offsets = column_string.getOffsets();
-    size_t old_size = offsets.size();
-    try
-    {
-        if (allow_add_row)
-        {
-            if (protobuf.readStringInto(data))
-            {
-                data.emplace_back(0);
-                offsets.emplace_back(data.size());
-                row_added = true;
-            }
-            else
-                data.resize_assume_reserved(offsets.back());
-        }
-        else
-        {
-            ColumnString::Chars temp_data;
-            if (protobuf.readStringInto(temp_data))
-            {
-                temp_data.emplace_back(0);
-                column_string.popBack(1);
-                old_size = offsets.size();
-                data.insertSmallAllowReadWriteOverflow15(temp_data.begin(), temp_data.end());
-                offsets.emplace_back(data.size());
-            }
-        }
-    }
-    catch (...)
-    {
-        offsets.resize_assume_reserved(old_size);
-        data.resize_assume_reserved(offsets.back());
-        throw;
-    }
-}
 
 Field DataTypeString::getDefault() const
 {

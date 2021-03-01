@@ -314,7 +314,7 @@ public:
             return std::make_shared<ResultDataType>();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if constexpr (is_big_int_v<T>)
@@ -361,22 +361,22 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & column = assert_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).get());

@@ -37,6 +37,12 @@ class MySQLNodeInstance:
         self.docker_compose = docker_compose
         self.project_name = project_name
 
+        self.base_dir = p.dirname(__file__)
+        self.instances_dir = p.join(self.base_dir, '_instances_mysql')
+        if not os.path.exists(self.instances_dir):
+            os.mkdir(self.instances_dir)
+        self.docker_logs_path = p.join(self.instances_dir, 'docker_mysql.log')
+
 
     def alloc_connection(self):
         if self.mysql_connection is None:
@@ -71,9 +77,27 @@ class MySQLNodeInstance:
             cursor.execute(executio_query)
             return cursor.fetchall()
 
+    def start_and_wait(self):
+        run_and_check(['docker-compose',
+            '-p', cluster.project_name,
+            '-f', self.docker_compose,
+            'up', '--no-recreate', '-d',
+        ])
+        self.wait_mysql_to_start(120)
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
+
+        with open(self.docker_logs_path, "w+") as f:
+            try:
+                run_and_check([
+                    'docker-compose',
+                    '-p', cluster.project_name,
+                    '-f', self.docker_compose, 'logs',
+                ], stdout=f)
+            except Exception as e:
+                print("Unable to get logs from docker mysql.")
 
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
@@ -95,9 +119,7 @@ def started_mysql_5_7():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
-        run_and_check(
-            ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
-        mysql_node.wait_mysql_to_start(120)
+        mysql_node.start_and_wait()
         yield mysql_node
     finally:
         mysql_node.close()
@@ -111,9 +133,7 @@ def started_mysql_8_0():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
-        run_and_check(
-            ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
-        mysql_node.wait_mysql_to_start(120)
+        mysql_node.start_and_wait()
         yield mysql_node
     finally:
         mysql_node.close()
@@ -228,3 +248,21 @@ def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7, 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_utf8mb4(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_system_parts_table(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.system_parts_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_multi_table_update(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_system_tables_table(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_8_0, "mysql8_0")

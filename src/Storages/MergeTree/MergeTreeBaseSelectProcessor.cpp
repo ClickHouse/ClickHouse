@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
@@ -205,6 +206,7 @@ namespace
 
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
+        virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
     };
 }
 
@@ -241,6 +243,16 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
 
                 inserter.insertUInt64Column(column, virtual_column_name);
             }
+            else if (virtual_column_name == "_part_uuid")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUUID().createColumnConst(rows, task->data_part->uuid)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUUID().createColumn();
+
+                inserter.insertUUIDColumn(column, virtual_column_name);
+            }
             else if (virtual_column_name == "_partition_id")
             {
                 ColumnPtr column;
@@ -271,6 +283,11 @@ namespace
             block.insert({column, std::make_shared<DataTypeUInt64>(), name});
         }
 
+        void insertUUIDColumn(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeUUID>(), name});
+        }
+
         Block & block;
     };
 
@@ -288,6 +305,10 @@ namespace
             columns.push_back(column);
         }
 
+        void insertUUIDColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
         Columns & columns;
     };
 }
