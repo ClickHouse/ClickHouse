@@ -140,7 +140,6 @@ IPv6StringToNum(string)
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
-
 **Returned value**
 
 -   IPv6 address in binary format. 
