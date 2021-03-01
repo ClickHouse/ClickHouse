@@ -24,6 +24,7 @@ welchTTest(sample_data, sample_index)
 **Возвращаемые значения**
 
 [Кортеж](../../../sql-reference/data-types/tuple.md) с двумя элементами:
+
 -   вычисленное значение критерия Уэлча. [Float64](../../../sql-reference/data-types/float.md).
 -   вычисленное p-значение. [Float64](../../../sql-reference/data-types/float.md).
 

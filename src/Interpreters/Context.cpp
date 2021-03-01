@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -305,8 +305,10 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+#if USE_NURAFT
+    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+#endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -331,7 +333,8 @@ struct ContextShared
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    std::unique_ptr<AccessControlManager> access_control_manager;
+    String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
+    AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -339,6 +342,7 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
@@ -388,8 +392,7 @@ struct ContextShared
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared()
-        : access_control_manager(std::make_unique<AccessControlManager>())
-        , macros(std::make_unique<Macros>())
+        : macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -435,7 +438,6 @@ struct ContextShared
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
 
-        access_control_manager.reset();
         system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
@@ -450,8 +452,7 @@ struct ContextShared
         trace_collector.reset();
         /// Stop zookeeper connection
         zookeeper.reset();
-        /// Stop test_keeper storage
-        test_keeper_storage_dispatcher.reset();
+
     }
 
     bool hasTraceCollector() const
@@ -642,7 +643,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
-    shared->access_control_manager->setExternalAuthenticatorsConfig(*shared->config);
+    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -654,25 +655,25 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 
 AccessControlManager & Context::getAccessControlManager()
 {
-    return *shared->access_control_manager;
+    return shared->access_control_manager;
 }
 
 const AccessControlManager & Context::getAccessControlManager() const
 {
-    return *shared->access_control_manager;
+    return shared->access_control_manager;
 }
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
-    shared->access_control_manager->setExternalAuthenticatorsConfig(config);
+    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager->setUsersConfig(*shared->users_config);
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -1299,6 +1300,13 @@ Context & Context::getGlobalContext()
     return *global_context;
 }
 
+const Context & Context::getBufferContext() const
+{
+    if (!buffer_context)
+        throw Exception("Logical error: there is no buffer context", ErrorCodes::LOGICAL_ERROR);
+    return *buffer_context;
+}
+
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
@@ -1545,6 +1553,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
     auto lock = getLock();
     if (shared->ddl_worker)
         throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
+    ddl_worker->startup();
     shared->ddl_worker = std::move(ddl_worker);
 }
 
@@ -1577,14 +1586,47 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
-{
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
-    if (!shared->test_keeper_storage_dispatcher)
-        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    return shared->test_keeper_storage_dispatcher;
+void Context::initializeNuKeeperStorageDispatcher() const
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+
+    if (shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
+
+    const auto & config = getConfigRef();
+    if (config.has("test_keeper_server"))
+    {
+        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher->initialize(config);
+    }
+#endif
 }
+
+#if USE_NURAFT
+std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
+{
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (!shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
+
+    return shared->nu_keeper_storage_dispatcher;
+}
+#endif
+
+void Context::shutdownNuKeeperStorageDispatcher() const
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (shared->nu_keeper_storage_dispatcher)
+    {
+        shared->nu_keeper_storage_dispatcher->shutdown();
+        shared->nu_keeper_storage_dispatcher.reset();
+    }
+#endif
+}
+
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
@@ -1619,7 +1661,12 @@ void Context::resetZooKeeper() const
 static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
 {
     if (!zk || zk->configChanged(*config, config_name))
+    {
+        if (zk)
+            zk->finalize();
+
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name);
+    }
 }
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
@@ -2221,6 +2268,10 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
+
+    shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
+    buffer_context = std::make_shared<Context>(*this);
+    buffer_context->setProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -2505,6 +2556,19 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
+}
+
+void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
+{
+    assert(!metadata_transaction);
+    assert(attach_existing || query_context == this);
+    metadata_transaction = std::move(txn);
+}
+
+ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
+{
+    assert(!metadata_transaction || hasQueryContext());
+    return metadata_transaction;
 }
 
 PartUUIDsPtr Context::getPartUUIDs()

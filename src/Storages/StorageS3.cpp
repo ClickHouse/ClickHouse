@@ -234,6 +234,7 @@ StorageS3::StorageS3(
         uri_.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
+        settings.server_side_encryption_customer_key_base64,
         std::move(settings.headers),
         settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false))
     );
