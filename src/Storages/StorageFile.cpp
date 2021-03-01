@@ -243,6 +243,20 @@ public:
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
 
+    static Block getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
+    {
+        auto header = metadata_snapshot->getSampleBlock();
+
+        /// Note: AddingDefaultsBlockInputStream doesn't change header.
+
+        if (need_path_column)
+            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        if (need_file_column)
+            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+
+        return header;
+    }
+
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -250,7 +264,8 @@ public:
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_)
-        : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_description_.getNamesOfPhysical(), storage_->getVirtuals(), storage_->getStorageID()))
+        : SourceWithProgress(storage_->isColumnOriented() ? metadata_snapshot_->getSampleBlockForColumns(columns_description_.getNamesOfPhysical(), storage_->getVirtuals(), storage_->getStorageID())
+                : getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
@@ -331,8 +346,8 @@ public:
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
                 auto format = FormatFactory::instance().getInput(storage->format_name, *read_buf,
-                                metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical()),
-                                        context, max_block_size, storage->format_settings);
+                                storage->isColumnOriented() ? metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical())
+                                : metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
@@ -399,6 +414,12 @@ private:
     std::unique_lock<std::shared_timed_mutex> unique_lock;
 };
 
+bool StorageFile::isColumnOriented() const
+{
+    if (format_name == "Parquet" || format_name == "Arrow" || format_name == "Native" || format_name == "ORC")
+        return true;
+    return false;
+};
 
 Pipe StorageFile::read(
     const Names & column_names,
@@ -445,7 +466,9 @@ Pipe StorageFile::read(
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumnsForNames(column_names, getVirtuals(), getStorageID())));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info,
+            isColumnOriented() ? metadata_snapshot->getColumnsForNames(column_names, getVirtuals(), getStorageID())
+            : metadata_snapshot->getColumns()));
     }
 
     return Pipe::unitePipes(std::move(pipes));

@@ -64,6 +64,9 @@ public:
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
+    /// Check if the format is column-oriented
+    bool isColumnOriented() const;
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
