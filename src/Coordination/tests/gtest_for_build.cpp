@@ -989,6 +989,46 @@ TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     }
 }
 
+
+TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
+{
+    ChangelogDirTest test("./snapshots");
+    DB::NuKeeperSnapshotManager manager("./snapshots", 3);
+
+    DB::NuKeeperStorage storage(500);
+    storage.getSessionID(130);
+
+    for (size_t j = 1; j <= 5; ++j)
+    {
+        for (size_t i = (j - 1) * 50; i < j * 50; ++i)
+        {
+            addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
+        }
+
+        DB::NuKeeperStorageSnapshot snapshot(&storage, j * 50);
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        manager.serializeSnapshotBufferToDisk(*buf, j * 50);
+        EXPECT_TRUE(fs::exists(std::string{"./snapshots/snapshot_"} + std::to_string(j * 50) + ".bin"));
+    }
+
+    EXPECT_FALSE(fs::exists("./snapshots/snapshot_50.bin"));
+    EXPECT_FALSE(fs::exists("./snapshots/snapshot_100.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_150.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_200.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin"));
+
+
+    DB::NuKeeperStorage restored_storage(500);
+    manager.restoreFromLatestSnapshot(&restored_storage);
+
+    EXPECT_EQ(restored_storage.container.size(), 251);
+
+    for (size_t i = 0; i < 250; ++i)
+    {
+        EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+    }
+}
+
 int main(int argc, char ** argv)
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
