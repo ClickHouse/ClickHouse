@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
    kerberos:
-     image: gcavalcante8808/krb5-server
+     image: zvonand/docker-krb5-server:1.0.0 
      restart: always
      expose:
        - "88"
