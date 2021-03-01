@@ -32,7 +32,7 @@ SELECT p, toTypeName(p) FROM geo_point;
 
 ``` text
 ┌─p─────┬─toTypeName(p)─┐
-│ (0,0) │ Point         │
+│ (10,10) │ Point         │
 └───────┴───────────────┘
 ```
 

@@ -32,7 +32,7 @@ Result:
 
 ``` text
 ┌─p─────┬─toTypeName(p)─┐
-│ (0,0) │ Point         │
+│ (10,10) │ Point         │
 └───────┴───────────────┘
 ```
 
@@ -60,7 +60,7 @@ Result:
 
 ## Polygon {#polygon-data-type}
 
-`Polygon` is polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring-data-type)). First element of outer array is outer shape of polygon and all the following elements are holes.
+`Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring-data-type)). First element of outer array is the outer shape of polygon and all the following elements are holes.
 
 **Example**
 
