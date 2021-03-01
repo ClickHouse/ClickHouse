@@ -895,16 +895,20 @@ TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     map_snp.disableSnapshotMode();
 }
 
-TEST(CoordinationTest, TestStorageSnapshotSimple)
+void addNode(DB::NuKeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
 {
     using Node = DB::NuKeeperStorage::Node;
+    storage.container.insert(path, Node{.data=data, .ephemeral_owner = ephemeral_owner});
+}
 
+TEST(CoordinationTest, TestStorageSnapshotSimple)
+{
     ChangelogDirTest test("./snapshots");
-    DB::NuKeeperSnapshotManager manager("./snapshots");
+    DB::NuKeeperSnapshotManager manager("./snapshots", 3);
 
     DB::NuKeeperStorage storage(500);
-    storage.container.insert("/hello", Node{.data="world", .ephemeral_owner = 1});
-    storage.container.insert("/hello/somepath", Node{.data="somedata", .ephemeral_owner = 3});
+    addNode(storage, "/hello", "world", 1);
+    addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
     storage.zxid = 2;
     storage.ephemerals[3] = {"/hello"};
@@ -944,7 +948,6 @@ TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage.ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage.session_and_timeout.size(), 2);
 }
-
 
 int main(int argc, char ** argv)
 {
