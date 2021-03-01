@@ -5,7 +5,7 @@ toc_title: Поддержка OpenTelemetry
 
 # [экспериментально] Поддержка OpenTelemetry
 
-[OpenTelemetry](https://opentelemetry.io/) — это открытый стандарт для сбора трассировок и метрик из распределенного приложения. В ClickHouse есть поддержка `OpenTelemetry`.
+ ClickHouse поддерживает [OpenTelemetry](https://opentelemetry.io/) — открытый стандарт для сбора трассировок и метрик из распределенного приложения. 
 
 !!! warning "Предупреждение"
 Поддержка стандарта экспериментальная и будет со временем меняться.
