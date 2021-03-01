@@ -1937,6 +1937,21 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Значение по умолчанию: 16.
 
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Задает количество потоков для фонового потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+**Смотрите также**
+
+-   Движок [Kafka](../../engines/table-engines/integrations/kafka.md#kafka).
+-   Движок [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine).
+
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
