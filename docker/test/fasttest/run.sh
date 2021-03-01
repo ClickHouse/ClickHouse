@@ -70,6 +70,7 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
+        --test_keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
@@ -355,7 +356,6 @@ function run_tests
 
         # JSON functions
         01666_blns
-        01674_htm_xml_coarse_parse
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
@@ -375,7 +375,7 @@ function run_tests
         stop_server ||:
 
         # Clean the data so that there is no interference from the previous test run.
-        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files} ||:
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
 
         start_server
 
