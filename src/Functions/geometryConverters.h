@@ -43,6 +43,7 @@ using CartesianRing = Ring<CartesianPoint>;
 using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
+/// Latitude, longitude
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 using SphericalRing = Ring<SphericalPoint>;
 using SphericalPolygon = Polygon<SphericalPoint>;
