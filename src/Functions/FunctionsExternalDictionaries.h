@@ -361,6 +361,13 @@ public:
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
             ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
 
+            if (!isTuple(key_col_with_type.type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Third argument of function ({}) must be tuple when dictionary is complex. Actual type ({}).",
+                    getName(),
+                    key_col_with_type.type->getName());
+
             const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
