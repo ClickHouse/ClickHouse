@@ -63,7 +63,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
         database->recoverLostReplica(current_zookeeper, our_log_ptr, max_log_ptr);
     else
-        last_skipped_entry_name.emplace(log_ptr_str);
+        last_skipped_entry_name.emplace(DDLTaskBase::getLogEntryName(our_log_ptr));
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
