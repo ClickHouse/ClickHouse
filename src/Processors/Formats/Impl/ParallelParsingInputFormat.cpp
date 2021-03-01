@@ -92,7 +92,11 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         /// Propagate column_mapping to other parsers.
         /// Note: column_mapping is used only for *WithNames types
         if (current_ticket_number != 0)
+        {
+            column_mapping->is_set = true;
             input_format->setColumnMapping(column_mapping);
+        }
+            
 
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
@@ -105,7 +109,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
         }
 
-        /// Extract column_mapping from first parser to propage it to others
+        /// Extract column_mapping from first parser to propagate it to others
         if (current_ticket_number == 0)
             column_mapping = input_format->getColumnMapping();
 
