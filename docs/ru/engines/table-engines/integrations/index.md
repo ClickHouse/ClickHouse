@@ -14,6 +14,7 @@ toc_priority: 30
 -   [MySQL](../../../engines/table-engines/integrations/mysql.md)
 -   [MongoDB](../../../engines/table-engines/integrations/mongodb.md)
 -   [HDFS](../../../engines/table-engines/integrations/hdfs.md)
+-   [S3](../../../engines/table-engines/integrations/s3.md)
 -   [Kafka](../../../engines/table-engines/integrations/kafka.md)
 -   [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md)
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
