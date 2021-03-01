@@ -264,7 +264,7 @@ SELECT
 
 ## toIPv6 {#toipv6string}
 
-Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. 
+Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. Returns empty value if `string` is not a valid IP address.
 Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
@@ -290,21 +290,10 @@ Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 Query:
 
 ``` sql
-WITH '2001:438:ffff::407d:1bc1' as IPv6_string SELECT toTypeName(IPv6StringToNum(IPv6_string)), toTypeName(toIPv6(IPv6_string));
-```
-
-Result:
-
-``` text
-┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
-│ FixedString(16)                          │ IPv6                            │
-└──────────────────────────────────────────┴─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-WITH '2001:438:ffff::407d:1bc1' as IPv6_string SELECT hex(IPv6StringToNum(IPv6_string)), hex(toIPv6(IPv6_string));
+WITH '2001:438:ffff::407d:1bc1' AS IPv6_string
+SELECT
+    hex(IPv6StringToNum(IPv6_string)),
+    hex(toIPv6(IPv6_string));
 ```
 
 Result:
