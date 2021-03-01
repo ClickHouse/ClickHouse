@@ -144,6 +144,12 @@ static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
+    /// Every ReplicatedMergeTree table is using only one ZooKeeper session.
+    /// But if several ReplicatedMergeTree tables are using different
+    /// ZooKeeper sessions, some queries like ATTACH PARTITION FROM may have
+    /// strange effects. So we always use only one session for all tables.
+    /// (excluding auxiliary zookeepers)
+
     std::lock_guard lock(current_zookeeper_mutex);
     if (zookeeper_name == default_zookeeper_name)
     {
@@ -749,8 +755,12 @@ void StorageReplicatedMergeTree::drop()
     if (has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
-        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
-        auto zookeeper = global_context.getZooKeeper();
+        /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
+        zkutil::ZooKeeperPtr zookeeper;
+        if (zookeeper_name == default_zookeeper_name)
+            zookeeper = global_context.getZooKeeper();
+        else
+            zookeeper = global_context.getAuxiliaryZooKeeper(zookeeper_name);
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
