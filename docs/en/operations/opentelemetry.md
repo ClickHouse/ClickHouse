@@ -26,7 +26,7 @@ The trace context is propagated to downstream services in the following cases:
 
 ## Tracing the ClickHouse Itself
 
-ClickHouse creates _trace spans_ for each query and some of the query execution stages, such as query planning or distributed queries.
+ClickHouse creates `trace spans` for each query and some of the query execution stages, such as query planning or distributed queries.
 
 To be useful, the tracing information has to be exported to a monitoring system that supports `OpenTelemetry`, such as `Jaeger` or `Prometheus`. ClickHouse avoids a dependency on a particular monitoring system, instead only providing the tracing data through a system table. `OpenTelemetry` trace span information [required by the standard](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span) is stored in the [system.opentelemetry_span_log](../operations/system-tables/opentelemetry_span_log.md) table.
 
