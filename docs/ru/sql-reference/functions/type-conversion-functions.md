@@ -140,6 +140,8 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 
 ## toDate {#todate}
 
+Cиноним: `DATE`.
+
 ## toDateOrZero {#todateorzero}
 
 ## toDateOrNull {#todateornull}

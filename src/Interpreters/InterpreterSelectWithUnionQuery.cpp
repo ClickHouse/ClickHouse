@@ -413,7 +413,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline = query_plan.buildQueryPipeline();
+    auto pipeline = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context->getSettingsRef()));
 
     res.pipeline = std::move(*pipeline);
     res.pipeline.addInterpreterContext(context);
