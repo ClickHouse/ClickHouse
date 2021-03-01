@@ -253,6 +253,9 @@ private:
         {
             parserThreadFunction(group, ticket_number);
         });
+        /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
+        if (ticket_number == 0)
+            pool.wait();
     }
 
     void finishAndWait()
