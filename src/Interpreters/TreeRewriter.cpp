@@ -26,6 +26,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -181,8 +182,60 @@ struct CustomizeAggregateFunctionsMoveSuffixData
     }
 };
 
+struct CustomizeFuseAggregateFunctionsData
+{
+    using TypeToVisit = ASTFunction;
+
+    std::map<String, UInt8> fuse_info;
+
+    inline UInt8 BitCount(UInt8 n) const
+    {
+        UInt8 c = 0;
+        for (c = 0; n; n >>= 1)
+            c += n & 1;
+        return c;
+    }
+
+    void visit(ASTFunction & func, ASTPtr &) const
+    {
+        if (func.name == "sum" || func.name == "avg" || func.name == "count")
+        {
+            ASTIdentifier * ident = func.arguments->children.at(0)->as<ASTIdentifier>();
+            if (!ident)
+                return;
+            auto column = fuse_info.find(ident->name());
+            if (column != fuse_info.end() && BitCount(column->second) > 1)
+            {
+                auto func_base = makeASTFunction("sumCount", func.arguments->children.at(0)->clone());
+                auto exp_list = std::make_shared<ASTExpressionList>();
+
+                if (func.name == "sum" || func.name == "count")
+                {
+                    // Rewrite "sum" to sumCount().1, rewrite "count" to sumCount().2
+                    UInt8 idx = (func.name == "sum" ? 1 : 2);
+                    func.name = "tupleElement";
+                    exp_list->children.push_back(func_base);
+                    exp_list->children.push_back(std::make_shared<ASTLiteral>(idx));
+                }
+                else
+                {
+                    // Rewrite "avg" to sumCount().1 / sumCount().2
+                    auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
+                    auto new_arg2 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2)));
+                    func.name = "divide";
+                    exp_list->children.push_back(new_arg1);
+                    exp_list->children.push_back(new_arg2);
+                }
+                func.arguments = exp_list;
+                func.children.push_back(func.arguments);
+            }
+        }
+    }
+};
+
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
+using CustomizeFuseAggregateFunctionsVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFuseAggregateFunctionsData>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -915,6 +968,18 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
 
         CustomizeGlobalNotInVisitor::Data data_global_not_null_in{"globalNotNullIn"};
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
+    }
+
+    // Try to fuse sum/avg/count with identical column(at least two functions exist) to sumCount()
+    if (settings.optimize_fuse_sum_count_avg)
+    {
+        // Get statistics about sum/avg/count
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(query);
+
+        // Try to fuse
+        CustomizeFuseAggregateFunctionsVisitor::Data data_fuse{.fuse_info = data.fuse_sum_count_avg};
+        CustomizeFuseAggregateFunctionsVisitor(data_fuse).visit(query);
     }
 
     // Rewrite all aggregate functions to add -OrNull suffix to them

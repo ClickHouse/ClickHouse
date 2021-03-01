@@ -25,6 +25,7 @@ public:
         std::unordered_set<String> uniq_names {};
         std::vector<const ASTFunction *> aggregates {};
         std::vector<const ASTFunction *> window_functions {};
+        std::map<String, UInt8> fuse_sum_count_avg {};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -72,6 +73,14 @@ private:
 
             data.uniq_names.insert(column_name);
             data.aggregates.push_back(&node);
+            if ((node.name == "sum" || node.name == "avg" || node.name == "count") && node.arguments->children.size() == 1)
+            {
+                const auto & argument = node.arguments->children.at(0);
+                ASTIdentifier * column = argument->as<ASTIdentifier>();
+                if (column)
+                    data.fuse_sum_count_avg[column->name()] |= ((node.name == "sum") ? 0x1 : ((node.name == "count") ? 0x2 : 0x4));
+            }
+
         }
         else if (node.is_window_function)
         {
