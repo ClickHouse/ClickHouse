@@ -560,49 +560,6 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 所有分位数函数也有相应的函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`。这些函数一次计算所列层次的所有分位数，并返回结果值的数组。
 
 
-
-
-## stddevPop(x) {#stddevpopx}
-
-## topK(N)(x) {#topknx}
-
-返回指定列中近似最常见值的数组。 生成的数组按值的近似频率降序排序（而不是值本身）。
-
-实现了[过滤节省空间](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)算法， 使用基于reduce-and-combine的算法，借鉴[并行节省空间](https://arxiv.org/pdf/1401.0702.pdf).
-
-``` sql
-topK(N)(column)
-```
-
-此函数不提供保证的结果。 在某些情况下，可能会发生错误，并且可能会返回不是最高频的值。
-
-我们建议使用 `N < 10` 值，`N` 值越大，性能越低。最大值 `N = 65536`。
-
-**参数**
-
--   ‘N’ 是要返回的元素数。
-
-如果省略该参数，则使用默认值10。
-
-**参数**
-
--   ' x ' – 计算的频率值。
-
-**示例**
-
-就拿 [OnTime](../../getting-started/example-datasets/ontime.md) 数据集来说，选择`AirlineID` 列中出现最频繁的三个。
-
-``` sql
-SELECT topK(3)(AirlineID) AS res
-FROM ontime
-```
-
-``` text
-┌─res─────────────────┐
-│ [19393,19790,19805] │
-└─────────────────────┘
-```
-
 ## topKWeighted {#topkweighted}
 
 类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每个输入都被记入 `weight` 次频率计算。

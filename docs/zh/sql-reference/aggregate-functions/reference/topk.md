@@ -4,31 +4,32 @@ toc_priority: 108
 
 # topK {#topk}
 
-Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+返回指定列中近似最常见值的数组。 生成的数组按值的近似频率降序排序（而不是值本身）。
 
-Implements the [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+实现了[过滤节省空间](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)算法， 使用基于reduce-and-combine的算法，借鉴[并行节省空间](https://arxiv.org/pdf/1401.0702.pdf)。
+
+**语法**
 
 ``` sql
 topK(N)(column)
 ```
+此函数不提供保证的结果。 在某些情况下，可能会发生错误，并且可能会返回不是最高频的值。
 
-This function doesn’t provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren’t the most frequent values.
+我们建议使用 `N < 10` 值，`N` 值越大，性能越低。最大值 `N = 65536`。
 
-We recommend using the `N < 10` value; performance is reduced with large `N` values. Maximum value of `N = 65536`.
+**参数**
 
-**Parameters**
+-   ‘N’ 是要返回的元素数。
 
--   ‘N’ is the number of elements to return.
+如果省略该参数，则使用默认值10。
 
-If the parameter is omitted, default value 10 is used.
+**参数**
 
-**Arguments**
+-   ’ x ’ – 计算的频率值。
 
--   ’ x ’ – The value to calculate frequency.
+**示例**
 
-**Example**
-
-Take the [OnTime](../../../getting-started/example-datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
+就拿 [OnTime](../../../getting-started/example-datasets/ontime.md) 数据集来说，选择`AirlineID` 列中出现最频繁的三个。
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res
