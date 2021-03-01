@@ -233,7 +233,10 @@ size_t NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * stor
 void NuKeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
+    {
+        std::filesystem::remove(existing_snapshots.begin()->second);
         existing_snapshots.erase(existing_snapshots.begin());
+    }
 }
 
 
