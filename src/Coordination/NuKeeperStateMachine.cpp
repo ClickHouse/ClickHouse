@@ -29,14 +29,21 @@ NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     return request_for_session;
 }
 
-NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, const CoordinationSettingsPtr & coordination_settings_)
+NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_)
     : coordination_settings(coordination_settings_)
     , storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds())
+    , snapshot_manager(snapshots_path_)
     , responses_queue(responses_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("NuKeeperStateMachine"))
 {
-    LOG_DEBUG(log, "Created nukeeper state machine");
+}
+
+void NuKeeperStateMachine::init()
+{
+    LOG_DEBUG(log, "Trying to load state machine");
+    last_committed_idx = snapshot_manager.restoreFromLatestSnapshot(&storage);
+    LOG_DEBUG(log, "Loaded snapshot with last commited log index {}", last_committed_idx);
 }
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
@@ -76,16 +83,12 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
 bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
     LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
-    StorageSnapshotPtr snapshot;
-    {
-        std::lock_guard<std::mutex> lock(snapshots_lock);
-        auto entry = snapshots.find(s.get_last_log_idx());
-        if (entry == snapshots.end())
-            return false;
-        snapshot = entry->second;
-    }
+    if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to apply snapshot with last log index {}, but our last log index is {}",
+                        s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+
     std::lock_guard lock(storage_lock);
-    storage = snapshot->storage;
+    snapshot_manager.deserializeSnapshotFromBuffer(&storage, latest_snapshot_buf);
     last_committed_idx = s.get_last_log_idx();
     return true;
 }
@@ -94,41 +97,7 @@ nuraft::ptr<nuraft::snapshot> NuKeeperStateMachine::last_snapshot()
 {
    // Just return the latest snapshot.
     std::lock_guard<std::mutex> lock(snapshots_lock);
-    auto entry = snapshots.rbegin();
-    if (entry == snapshots.rend())
-        return nullptr;
-
-    return entry->second->snapshot;
-}
-
-NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::createSnapshotInternal(nuraft::snapshot & s)
-{
-    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-    nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
-    std::lock_guard lock(storage_lock);
-    return std::make_shared<NuKeeperStateMachine::StorageSnapshot>(ss, storage);
-}
-
-NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nuraft::snapshot & s, nuraft::buffer & in)
-{
-    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-    nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
-    NuKeeperStorageSerializer serializer;
-
-    ReadBufferFromNuraftBuffer reader(in);
-    NuKeeperStorage new_storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
-    serializer.deserialize(new_storage, reader);
-    return std::make_shared<StorageSnapshot>(ss, new_storage);
-}
-
-
-void NuKeeperStateMachine::writeSnapshot(const NuKeeperStateMachine::StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out)
-{
-    NuKeeperStorageSerializer serializer;
-
-    WriteBufferFromNuraftBuffer writer;
-    serializer.serialize(snapshot->storage, writer);
-    out = writer.getBuffer();
+    return latest_snapshot_meta;
 }
 
 void NuKeeperStateMachine::create_snapshot(
@@ -136,26 +105,12 @@ void NuKeeperStateMachine::create_snapshot(
     nuraft::async_result<bool>::handler_type & when_done)
 {
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
-    auto snapshot = createSnapshotInternal(s);
-    {
-        std::lock_guard<std::mutex> lock(snapshots_lock);
-        snapshots[s.get_last_log_idx()] = snapshot;
-        size_t num = snapshots.size();
-        if (num > coordination_settings->max_stored_snapshots)
-        {
-            auto entry = snapshots.begin();
+    std::lock_guard lock(storage_lock);
+    NuKeeperStorageSnapshot snapshot(&storage, s.get_last_log_idx());
+    latest_snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(snapshot);
+    auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*latest_snapshot_buf, s.get_last_log_idx());
+    LOG_DEBUG(log, "Created snapshot {} with path {}", s.get_last_log_idx(), result_path);
 
-            for (size_t i = 0; i < num - coordination_settings->max_stored_snapshots; ++i)
-            {
-                if (entry == snapshots.end())
-                    break;
-                entry = snapshots.erase(entry);
-            }
-        }
-
-    }
-
-    LOG_DEBUG(log, "Created snapshot {}", s.get_last_log_idx());
     nuraft::ptr<std::exception> except(nullptr);
     bool ret = true;
     when_done(ret, except);
@@ -170,19 +125,23 @@ void NuKeeperStateMachine::save_logical_snp_obj(
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
+    // Object ID == 0: it contains dummy value, create snapshot context.
     if (obj_id == 0)
     {
-        auto new_snapshot = createSnapshotInternal(s);
-        std::lock_guard<std::mutex> lock(snapshots_lock);
-        snapshots.try_emplace(s.get_last_log_idx(), std::move(new_snapshot));
+        std::lock_guard lock(storage_lock);
+        NuKeeperStorageSnapshot snapshot(&storage, s.get_last_log_idx());
+        latest_snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(snapshot);
     }
     else
     {
-        auto received_snapshot = readSnapshot(s, data);
-
-        std::lock_guard<std::mutex> lock(snapshots_lock);
-        snapshots[s.get_last_log_idx()] = std::move(received_snapshot);
+        latest_snapshot_buf = nuraft::buffer::clone(data);
     }
+
+    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
+    latest_snapshot_meta = nuraft::snapshot::deserialize(*snp_buf);
+
+    auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*latest_snapshot_buf, s.get_last_log_idx());
+    LOG_DEBUG(log, "Created snapshot {} with path {}", s.get_last_log_idx(), result_path);
 
     obj_id++;
 }
@@ -196,29 +155,19 @@ int NuKeeperStateMachine::read_logical_snp_obj(
 {
 
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
-    StorageSnapshotPtr required_snapshot;
-    {
-        std::lock_guard<std::mutex> lock(snapshots_lock);
-        auto entry = snapshots.find(s.get_last_log_idx());
-        if (entry == snapshots.end())
-        {
-            // Snapshot doesn't exist.
-            data_out = nullptr;
-            is_last_obj = true;
-            return 0;
-        }
-        required_snapshot = entry->second;
-    }
-
     if (obj_id == 0)
     {
-        auto new_snapshot = createSnapshotInternal(s);
-        writeSnapshot(new_snapshot, data_out);
+        data_out = nuraft::buffer::alloc(sizeof(int32_t));
+        nuraft::buffer_serializer bs(data_out);
+        bs.put_i32(0);
         is_last_obj = false;
     }
     else
     {
-        writeSnapshot(required_snapshot, data_out);
+        if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to apply snapshot with last log index {}, but our last log index is {}",
+                            s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+        data_out = nuraft::buffer::clone(*latest_snapshot_buf);
         is_last_obj = true;
     }
     return 0;

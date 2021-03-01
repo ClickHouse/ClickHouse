@@ -50,6 +50,33 @@ public:
         return false;
     }
 
+
+    void insertOrReplace(const std::string & key, const V & value)
+    {
+        auto it = map.find(key);
+        if (it == map.end())
+        {
+            ListElem elem{key, value, true};
+            auto itr = list.insert(list.end(), elem);
+            map.emplace(itr->key, itr);
+        }
+        else
+        {
+            auto list_itr = it->second;
+            if (snapshot_mode)
+            {
+                ListElem elem{key, value, true};
+                list_itr->active_in_map = false;
+                auto new_list_itr = list.insert(list.end(), elem);
+                map[new_list_itr->key] = new_list_itr;
+            }
+            else
+            {
+                list_itr->value = value;
+            }
+        }
+    }
+
     bool erase(const std::string & key)
     {
         auto it = map.find(key);

@@ -18,6 +18,9 @@ struct NuKeeperStorageRequest;
 using NuKeeperStorageRequestPtr = std::shared_ptr<NuKeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = std::unordered_set<std::string>;
+using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
+
+struct NuKeeperStorageSnapshot;
 
 class NuKeeperStorage
 {
@@ -54,7 +57,6 @@ public:
     using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
     using SessionIDs = std::vector<int64_t>;
 
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
@@ -87,6 +89,12 @@ public:
         session_and_timeout.emplace(result, session_timeout_ms);
         session_expiry_queue.update(result, session_timeout_ms);
         return result;
+    }
+
+    void addSessionID(int64_t session_id, int64_t session_timeout_ms)
+    {
+        session_and_timeout.emplace(session_id, session_timeout_ms);
+        session_expiry_queue.update(session_id, session_timeout_ms);
     }
 
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid);
