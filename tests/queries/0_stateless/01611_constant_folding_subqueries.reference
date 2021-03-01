@@ -1,9 +1,5 @@
--- { echo }
-SELECT * FROM (SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n)) FORMAT CSV;
 1,10
-SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) FORMAT CSV;
 1,10
-EXPLAIN SYNTAX SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n);
 SELECT
-    identity(cast(0, \'UInt64\')) AS n,
+    identity(CAST(0, \'UInt64\')) AS n,
     toUInt64(10 / n)
