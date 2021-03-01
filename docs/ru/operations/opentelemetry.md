@@ -28,7 +28,7 @@ ClickHouse принимает контекстную информацию тра
 
 ClickHouse создает _trace spans_ для каждого запроса и некоторых этапов выполнения запроса, таких как планирование запросов или распределенные запросы.
 
-Чтобы быть полезной, информация трассировки должна быть экспортирована в систему мониторинга, поддерживающую `OpenTelemetry`, такую как `Jaeger` или `Prometheus`. ClickHouse не зависит от конкретной системы мониторинга, вместо этого предоставляя данные трассировки только через системную таблицу. Информация о диапазоне трассировки в `OpenTelemetry`, [требуемая стандартом](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span), хранится в системной таблице [system.opentelemetry_span_log](../operations/system-tables/opentelemetry_span_log.md).
+Чтобы анализировать информацию трассировки, ее следует экспортировать в систему мониторинга, поддерживающую `OpenTelemetry`, такую как `Jaeger` или `Prometheus`. ClickHouse не зависит от конкретной системы мониторинга, вместо этого предоставляя данные трассировки только через системную таблицу. Информация о диапазоне трассировки в `OpenTelemetry`, [требуемая стандартом](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span), хранится в системной таблице [system.opentelemetry_span_log](../operations/system-tables/opentelemetry_span_log.md).
 
 Таблица должна быть включена в конфигурации сервера, смотрите элемент `opentelemetry_span_log` в файле конфигурации `config.xml`. По умолчанию таблица уже включена.
 
