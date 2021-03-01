@@ -33,6 +33,7 @@ NuKeeperStateManager::NuKeeperStateManager(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
+    total_servers = keys.size();
 
     for (const auto & server_key : keys)
     {

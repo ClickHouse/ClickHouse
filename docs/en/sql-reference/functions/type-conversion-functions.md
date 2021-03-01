@@ -36,9 +36,13 @@ The behavior of functions for the [NaN and Inf](../../sql-reference/data-types/f
 
 **Example**
 
+Query:
+
 ``` sql
-SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
+SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8);
 ```
+
+Result:
 
 ``` text
 ┌─────────toInt64(nan)─┬─toInt32(32)─┬─toInt16('16')─┬─toInt8(8.8)─┐
@@ -52,9 +56,13 @@ It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 3
 
 **Example**
 
+Query:
+
 ``` sql
-select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
+SELECT toInt64OrZero('123123'), toInt8OrZero('123qwe123');
 ```
+
+Result:
 
 ``` text
 ┌─toInt64OrZero('123123')─┬─toInt8OrZero('123qwe123')─┐
@@ -68,9 +76,13 @@ It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 3
 
 **Example**
 
+Query:
+
 ``` sql
-select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
+SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 ```
+
+Result:
 
 ``` text
 ┌─toInt64OrNull('123123')─┬─toInt8OrNull('123qwe123')─┐
@@ -102,9 +114,13 @@ The behavior of functions for negative agruments and for the [NaN and Inf](../..
 
 **Example**
 
+Query:
+
 ``` sql
-SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
+SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 ```
+
+Result:
 
 ``` text
 ┌───────toUInt64(nan)─┬─toUInt32(-32)─┬─toUInt16('16')─┬─toUInt8(8.8)─┐
@@ -123,6 +139,8 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 ## toFloat(32\|64)OrNull {#tofloat3264ornull}
 
 ## toDate {#todate}
+
+Alias: `DATE`.
 
 ## toDateOrZero {#todateorzero}
 
@@ -168,9 +186,13 @@ A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
 **Examples**
 
+Query:
+
 ``` sql
-SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val)
+SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
 ```
+
+Result:
 
 ``` text
 ┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
@@ -178,9 +200,13 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val)
 └──────────┴────────────────────────────────────────────────────┘
 ```
 
+Query:
+
 ``` sql
-SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
+SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 ```
+
+Result:
 
 ``` text
 ┌──val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 2))─┐
@@ -213,9 +239,13 @@ A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
 **Example**
 
+Query:
+
 ``` sql
-SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val)
+SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
 ```
+
+Result:
 
 ``` text
 ┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
@@ -223,9 +253,13 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val)
 └──────────┴────────────────────────────────────────────────────┘
 ```
 
+Query:
+
 ``` sql
-SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val)
+SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val);
 ```
+
+Result:
 
 ``` text
 ┌──val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 2))─┐
@@ -258,11 +292,17 @@ Conversion between numeric types uses the same rules as assignments between diff
 
 Additionally, the toString function of the DateTime argument can take a second String argument containing the name of the time zone. Example: `Asia/Yekaterinburg` In this case, the time is formatted according to the specified time zone.
 
+**Example**
+
+Query:
+
 ``` sql
 SELECT
     now() AS now_local,
-    toString(now(), 'Asia/Yekaterinburg') AS now_yekat
+    toString(now(), 'Asia/Yekaterinburg') AS now_yekat;
 ```
+
+Result:
 
 ``` text
 ┌───────────now_local─┬─now_yekat───────────┐
@@ -281,11 +321,15 @@ If the string has fewer bytes than N, it is padded with null bytes to the right.
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
 
-Example:
+**Example**
+
+Query:
 
 ``` sql
-SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut;
 ```
+
+Result:
 
 ``` text
 ┌─s─────────────┬─s_cut─┐
@@ -293,9 +337,13 @@ SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 └───────────────┴───────┘
 ```
 
+Query:
+
 ``` sql
-SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 ```
+
+Result:
 
 ``` text
 ┌─s──────────┬─s_cut─┐
@@ -303,14 +351,51 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
+## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}
+
+## reinterpretAsInt(8\|16\|32\|64) {#reinterpretasint8163264}
+
+## reinterpretAsFloat(32\|64) {#reinterpretasfloat3264}
+
+## reinterpretAsDate {#reinterpretasdate}
+
+## reinterpretAsDateTime {#reinterpretasdatetime}
+
+These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn’t long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
+
+## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
+
+This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+
+## reinterpretAsFixedString {#reinterpretasfixedstring}
+
+This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
+
+## reinterpretAsUUID {#reinterpretasuuid}
+
+This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
+**Syntax**
+
+``` sql
+reinterpretAsUUID(fixed_string)
+```
+
+**Parameters**
+
+-   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+
 ## reinterpret(x, T) {#type_conversion_function-reinterpret}
 
-Performs byte reinterpretation of ‘x’ as ‘t’ data type.
+**Returned value**
 
-Following reinterpretations are allowed:
-1. Any type that has fixed size and value of that type can be represented continuously into FixedString.
-2. Any type that if value of that type can be represented continuously into String. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
-3. FixedString, String, types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
+-   The UUID type value. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
+
+**Examples**
+
+String to UUID.
+
+Query:
 
 ``` sql
 SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
@@ -318,39 +403,45 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
     reinterpret('1', 'UInt32') as string_to_int;
 ```
 
+Result:
+
 ``` text
-┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
-│         255 │        1e-45 │            49 │
-└─────────────┴──────────────┴───────────────┘
+┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
+│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretAsUInt8163264256}
+Going back and forth from String to UUID.
 
-## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretAsInt8163264128256}
+Query:
 
-## reinterpretAsDecimal(32\|64\|128\|256) {#reinterpretAsDecimal3264128256}
+``` sql
+WITH
+    generateUUIDv4() AS uuid,
+    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
+    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
+SELECT uuid = uuid2;
+```
 
-## reinterpretAsFloat(32\|64) {#type_conversion_function-reinterpretAsFloat}
+Result:
 
-## reinterpretAsDate {#type_conversion_function-reinterpretAsDate}
-
-## reinterpretAsDateTime {#type_conversion_function-reinterpretAsDateTime}
-
-## reinterpretAsDateTime64 {#type_conversion_function-reinterpretAsDateTime64}
-
-## reinterpretAsString {#type_conversion_function-reinterpretAsString}
-
-## reinterpretAsFixedString {#type_conversion_function-reinterpretAsFixedString}
-
-## reinterpretAsUUID {#type_conversion_function-reinterpretAsUUID}
-
-These functions are aliases for `reinterpret` function.
+``` text
+┌─equals(uuid, uuid2)─┐
+│                   1 │
+└─────────────────────┘
+```
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
+Converts input value `x` to the `T` data type.
 
-Example:
+The syntax `CAST(x AS t)` is also supported.
+
+Note, that if value `x` does not fit the bounds of type T, the function overflows. For example, CAST(-1, 'UInt8') returns 255.
+
+**Example**
+
+Query:
 
 ``` sql
 SELECT
@@ -358,8 +449,10 @@ SELECT
     CAST(timestamp AS DateTime) AS datetime,
     CAST(timestamp AS Date) AS date,
     CAST(timestamp, 'String') AS string,
-    CAST(timestamp, 'FixedString(22)') AS fixed_string
+    CAST(timestamp, 'FixedString(22)') AS fixed_string;
 ```
+
+Result:
 
 ``` text
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
@@ -369,11 +462,17 @@ SELECT
 
 Conversion to FixedString(N) only works for arguments of type String or FixedString(N).
 
-Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported. Example:
+Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported. 
+
+**Example**
+
+Query:
 
 ``` sql
-SELECT toTypeName(x) FROM t_null
+SELECT toTypeName(x) FROM t_null;
 ```
+
+Result:
 
 ``` text
 ┌─toTypeName(x)─┐
@@ -382,9 +481,13 @@ SELECT toTypeName(x) FROM t_null
 └───────────────┘
 ```
 
+Query:
+
 ``` sql
-SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
+SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 ```
+
+Result:
 
 ``` text
 ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
@@ -399,15 +502,19 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 ## accurateCast(x, T) {#type_conversion_function-accurate-cast}
 
-Converts ‘x’ to the ‘t’ data type. The differente from cast(x, T) is that accurateCast
-does not allow overflow of numeric types during cast if type value x does not fit
-bounds of type T.
+Converts `x` to the `T` data type. 
 
-Example
+The difference from [cast(x, T)](#type_conversion_function-cast) is that `accurateCast` does not allow overflow of numeric types during cast if type value `x` does not fit the bounds of type `T`. For example, `accurateCast(-1, 'UInt8')` throws an exception.
+
+**Example**
+
+Query:
+
 ``` sql
 SELECT cast(-1, 'UInt8') as uint8;
 ```
 
+Result:
 
 ``` text
 ┌─uint8─┐
@@ -415,43 +522,68 @@ SELECT cast(-1, 'UInt8') as uint8;
 └───────┘
 ```
 
+Query:
+
 ```sql
 SELECT accurateCast(-1, 'UInt8') as uint8;
 ```
 
+Result:
+
 ``` text
 Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
-
 ```
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL
-if the casted value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../../sql-reference/data-types/nullable.md) type and returns [NULL](../../sql-reference/syntax.md#null-literal) if the casted value is not representable in the target type.
 
-Example:
+**Syntax**
+
+```sql
+accurateCastOrNull(x, T)
+```
+
+**Parameters**
+
+-   `x` — Input value.
+-   `T` — The name of the returned data type.
+
+**Returned value**
+
+-   The value, converted to the specified data type `T`.
+
+**Example**
+
+Query:
 
 ``` sql
-SELECT
-    accurateCastOrNull(-1, 'UInt8') as uint8,
-    accurateCastOrNull(128, 'Int8') as int8,
-    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string
+SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
 ```
 
-``` text
-┌─uint8─┬─int8─┬─fixed_string─┐
-│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
-└───────┴──────┴──────────────┘┘
-```
-
-``` sql
-SELECT toTypeName(accurateCastOrNull(5, 'UInt8'))
-```
+Result:
 
 ``` text
 ┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
 │ Nullable(UInt8)                            │
 └────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT
+    accurateCastOrNull(-1, 'UInt8') as uint8,
+    accurateCastOrNull(128, 'Int8') as int8,
+    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string;
+```
+
+Result:
+
+``` text
+┌─uint8─┬─int8─┬─fixed_string─┐
+│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
+└───────┴──────┴──────────────┘
 ```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
@@ -481,6 +613,8 @@ toIntervalYear(number)
 
 **Example**
 
+Query:
+
 ``` sql
 WITH
     toDate('2019-01-01') AS date,
@@ -488,8 +622,10 @@ WITH
     toIntervalWeek(1) AS interval_to_week
 SELECT
     date + interval_week,
-    date + interval_to_week
+    date + interval_to_week;
 ```
+
+Result:
 
 ``` text
 ┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
@@ -506,7 +642,7 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
 **Syntax**
 
 ``` sql
-parseDateTimeBestEffort(time_string [, time_zone]);
+parseDateTimeBestEffort(time_string [, time_zone])
 ```
 
 **Arguments**
@@ -549,7 +685,7 @@ Query:
 
 ``` sql
 SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow')
-AS parseDateTimeBestEffort
+AS parseDateTimeBestEffort;
 ```
 
 Result:
@@ -564,7 +700,7 @@ Query:
 
 ``` sql
 SELECT parseDateTimeBestEffort('1284101485')
-AS parseDateTimeBestEffort
+AS parseDateTimeBestEffort;
 ```
 
 Result:
@@ -579,7 +715,7 @@ Query:
 
 ``` sql
 SELECT parseDateTimeBestEffort('2018-12-12 10:12:12')
-AS parseDateTimeBestEffort
+AS parseDateTimeBestEffort;
 ```
 
 Result:
@@ -593,7 +729,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('10 20:19')
+SELECT parseDateTimeBestEffort('10 20:19');
 ```
 
 Result:
@@ -613,12 +749,12 @@ Result:
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
-This function is similar to [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), the only difference is that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
+This function is similar to [parseDateTimeBestEffort](#parsedatetimebesteffort), the only difference is that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
 
 **Syntax**
 
 ``` sql
-parseDateTimeBestEffortUS(time_string [, time_zone]);
+parseDateTimeBestEffortUS(time_string [, time_zone])
 ```
 
 **Arguments**
@@ -892,7 +1028,7 @@ Type: `LowCardinality(expr_result_type)`
 Query:
 
 ``` sql
-SELECT toLowCardinality('1')
+SELECT toLowCardinality('1');
 ```
 
 Result:
@@ -931,7 +1067,7 @@ Query:
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
-SELECT toUnixTimestamp64Milli(dt64)
+SELECT toUnixTimestamp64Milli(dt64);
 ```
 
 Result:
@@ -944,7 +1080,7 @@ Result:
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
-SELECT toUnixTimestamp64Nano(dt64)
+SELECT toUnixTimestamp64Nano(dt64);
 ```
 
 Result:
@@ -978,12 +1114,16 @@ fromUnixTimestamp64Milli(value [, ti])
 
 -   `value` converted to the `DateTime64` data type.
 
-**Examples**
+**Example**
+
+Query:
 
 ``` sql
 WITH CAST(1234567891011, 'Int64') AS i64
-SELECT fromUnixTimestamp64Milli(i64, 'UTC')
+SELECT fromUnixTimestamp64Milli(i64, 'UTC');
 ```
+
+Result:
 
 ``` text
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
@@ -1016,7 +1156,7 @@ Query:
 
 ``` sql
 SELECT formatRow('CSV', number, 'good')
-FROM numbers(3)
+FROM numbers(3);
 ```
 
 Result:
@@ -1057,7 +1197,7 @@ Query:
 
 ``` sql
 SELECT formatRowNoNewline('CSV', number, 'good')
-FROM numbers(3)
+FROM numbers(3);
 ```
 
 Result:
