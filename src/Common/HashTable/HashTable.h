@@ -366,6 +366,11 @@ struct AllocatorBufferDeleter<true, Allocator, Cell>
     size_t size;
 };
 
+template <typename Key, typename Mapped>
+struct DefaultCellDisposer
+{
+    void operator()(const Key &, const Mapped &) const {}
+};
 
 // The HashTable
 template
@@ -1024,14 +1029,16 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
+    template <typename Disposer = DefaultCellDisposer<typename Cell::key_type, typename Cell::mapped_type>>
     std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
-    ALWAYS_INLINE erase(const Key & x)
+    ALWAYS_INLINE erase(const Key & x, Disposer && disposer = Disposer())
     {
-        return erase(x, hash(x));
+        return erase(x, hash(x), disposer);
     }
 
+    template <typename Disposer = DefaultCellDisposer<typename Cell::key_type, typename Cell::mapped_type>>
     std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
-    ALWAYS_INLINE erase(const Key & x, size_t hash_value)
+    ALWAYS_INLINE erase(const Key & x, size_t hash_value, Disposer && disposer = Disposer())
     {
         /** Deletion from open addressing hash table without tombstones
           *
@@ -1134,7 +1141,9 @@ public:
             erased_key_position = next_position;
         }
 
-        buf[erased_key_position].setZero();
+        auto & cell = buf[erased_key_position];
+        disposer(cell.getKey(), cell.getMapped());
+        cell.setZero();
         --m_size;
 
         return true;

@@ -181,7 +181,7 @@ private:
 
     void setupHierarchicalAttribute();
 
-    void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr);
+    void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 
     /// Update dictionary source pointer if required and return it. Thread safe.
     /// MultiVersion is not used here because it works with constant pointers.
