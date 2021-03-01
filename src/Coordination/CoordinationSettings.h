@@ -30,6 +30,7 @@ struct Settings;
     M(Milliseconds, startup_timeout, 30000, "How many time we will until RAFT to start", 0) \
     M(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
     M(UInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
+    M(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
     M(Bool, force_sync, true, " Call fsync on each change in RAFT changelog", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)

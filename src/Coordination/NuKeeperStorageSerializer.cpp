@@ -156,8 +156,9 @@ NuKeeperStorageSnapshot::~NuKeeperStorageSnapshot()
     storage->disableSnapshotMode();
 }
 
-NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_path_)
+NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_)
     : snapshots_path(snapshots_path_)
+    , snapshots_to_keep(snapshots_to_keep_)
 {
     namespace fs = std::filesystem;
 
@@ -169,6 +170,8 @@ NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_p
         size_t snapshot_up_to = getSnapshotPathUpToLogIdx(p.path());
         existing_snapshots[snapshot_up_to] = p.path();
     }
+
+    removeOutdatedSnapshotsIfNeeded();
 }
 
 
@@ -182,6 +185,8 @@ std::string NuKeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffe
     copyData(reader, plain_buf);
     plain_buf.sync();
     existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
+    removeOutdatedSnapshotsIfNeeded();
+
     return new_snapshot_path;
 }
 
@@ -223,6 +228,11 @@ size_t NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * stor
     return log_id;
 }
 
+void NuKeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
+{
+    while (existing_snapshots.size() > snapshots_to_keep)
+        existing_snapshots.erase(existing_snapshots.begin());
+}
 
 
 }
