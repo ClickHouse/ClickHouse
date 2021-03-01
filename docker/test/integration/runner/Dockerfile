@@ -39,7 +39,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN python3 -m pip install \
     PyMySQL \
-    aerospike \
+    aerospike==4.0.0 \
     avro \
     cassandra-driver \
     confluent-kafka==1.5.0 \
