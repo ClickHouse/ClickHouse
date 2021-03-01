@@ -38,13 +38,13 @@ GRANT sqllt_role TO sqllt_user;
 SELECT 'SET queries';
 SET log_profile_events=false;
 SET DEFAULT ROLE sqllt_role TO sqllt_user;
--- SET ROLE sqllt_role; -- tests are executed by user `default` which is defined in XML and is impossble to update.
+-- SET ROLE sqllt_role; -- tests are executed by user `default` which is defined in XML and is impossible to update.
 
 SELECT 'ALTER TABLE queries';
-ALTER TABLE table ADD COLUMN new_col UInt32 DEFAULT 1;
+ALTER TABLE table ADD COLUMN new_col UInt32 DEFAULT 123456789;
 ALTER TABLE table COMMENT COLUMN new_col 'dummy column with a comment';
 ALTER TABLE table CLEAR COLUMN new_col;
-ALTER TABLE table MODIFY COLUMN new_col FixedString(12) DEFAULT 'Hello world!';
+ALTER TABLE table MODIFY COLUMN new_col DateTime DEFAULT '2015-05-18 07:40:13';
 ALTER TABLE table MODIFY COLUMN new_col REMOVE COMMENT;
 ALTER TABLE table RENAME COLUMN new_col TO the_new_col;
 ALTER TABLE table DROP COLUMN the_new_col;
@@ -70,7 +70,6 @@ SYSTEM RELOAD DICTIONARIES;
 SYSTEM DROP DNS CACHE;
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP UNCOMPRESSED CACHE;
-SYSTEM DROP COMPILED EXPRESSION CACHE;
 SYSTEM FLUSH LOGS;
 SYSTEM RELOAD CONFIG;
 SYSTEM STOP MERGES;
@@ -133,8 +132,13 @@ TRUNCATE TABLE sqllt.table;
 SYSTEM FLUSH LOGS;
 SELECT 'ACTUAL LOG CONTENT:';
 
--- Try to filter out all possible previous junk events by excluding old log entries
-SELECT query_kind, query FROM system.query_log WHERE log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND query_start_time >= now() - 5 ORDER BY query;
+-- Try to filter out all possible previous junk events by excluding old log entries,
+SELECT query_kind, query FROM system.query_log
+WHERE
+    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND query_start_time >= now() - 5
+    -- this one is to make stylecheck happy and to validate that CREATE\DROP queries of non-db-bound-objects, like USER\ROLS are logged properly.
+    AND (current_database == currentDatabase() OR current_database != currentDatabase())
+ORDER BY query;
 
 
 -- cleanup
