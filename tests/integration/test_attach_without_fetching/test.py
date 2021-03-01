@@ -40,13 +40,9 @@ def check_data(nodes, detached_parts):
     for node in nodes:
         node.query("SYSTEM SYNC REPLICA test")
 
-        print("Checking data integrity for", node.name, "; parts missing:", detached_parts)
-
         for i in range(10):
             assert node.query("SELECT count() FROM test WHERE n % 10 == " + str(i)) == \
                 "0\n" if i in detached_parts else "10\n"
-
-        print(node.query("SELECT partition_id, name FROM system.parts WHERE table='test'"))
 
         assert node.query("SELECT count() FROM system.parts WHERE table='test'") == \
             str(10 - len(detached_parts)) + "\n"
@@ -73,12 +69,6 @@ def test_attach_without_fetching(start_cluster):
 
     check_data([node_1, node_2], detached_parts=[])
 
-    path_to_detached_part_1 = node_1.query("SELECT path from system.parts WHERE table='test' AND name='1_0_0_0'") \
-        .strip()
-    path_to_detached_part_1 =  path_to_detached_part_1.split('/')[:-1]
-    path_to_detached_part_1 = path_to_detached_part_1[:-1] + ["detached", path_to_detached_part_1[-1]]
-    path_to_detached_part_1 = "/".join(path_to_detached_part_1)
-
     # 1. Detach the first two partitions/parts on the replicas
     # This part will be fetched from other replicas as it would be missing in the detached/ folder and
     # also attached locally.
@@ -101,6 +91,6 @@ def test_attach_without_fetching(start_cluster):
     # 4. Break the part data on the second node to corrupt the checksums.
     # Replica 3 should download the data from replica 1 as there is no local data.
     # Replica 2 should also download the data from 1 as the checksums won't match.
-    corrupt_part_data_by_path(node_2, path_to_detached_part_1)
+    corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
     node_1.query("ALTER TABLE test ATTACH PARTITION 1")
     check_data([node_1, node_2, node_3], detached_parts=[])
