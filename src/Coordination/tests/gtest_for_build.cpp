@@ -230,35 +230,6 @@ DB::NuKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nura
     return results;
 }
 
-//TEST(CoordinationTest, TestStorageSerialization)
-//{
-//    DB::NuKeeperStorage storage(500);
-//    storage.container["/hello"] = DB::NuKeeperStorage::Node{.data="world"};
-//    storage.container["/hello/somepath"] =  DB::NuKeeperStorage::Node{.data="somedata"};
-//    storage.session_id_counter = 5;
-//    storage.zxid = 156;
-//    storage.ephemerals[3] = {"/hello", "/"};
-//    storage.ephemerals[1] = {"/hello/somepath"};
-//
-//    DB::WriteBufferFromOwnString buffer;
-//    DB::NuKeeperStorageSerializer serializer;
-//    serializer.serialize(storage, buffer);
-//    std::string serialized = buffer.str();
-//    EXPECT_NE(serialized.size(), 0);
-//    DB::ReadBufferFromString read(serialized);
-//    DB::NuKeeperStorage new_storage(500);
-//    serializer.deserialize(new_storage, read);
-//
-//    EXPECT_EQ(new_storage.container.size(), 3);
-//    EXPECT_EQ(new_storage.container["/hello"].data, "world");
-//    EXPECT_EQ(new_storage.container["/hello/somepath"].data, "somedata");
-//    EXPECT_EQ(new_storage.session_id_counter, 5);
-//    EXPECT_EQ(new_storage.zxid, 156);
-//    EXPECT_EQ(new_storage.ephemerals.size(), 2);
-//    EXPECT_EQ(new_storage.ephemerals[3].size(), 2);
-//    EXPECT_EQ(new_storage.ephemerals[1].size(), 1);
-//}
-
 DB::LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {
     DB::WriteBufferFromNuraftBuffer bufwriter;
@@ -922,6 +893,56 @@ TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     map_snp.disableSnapshotMode();
+}
+
+TEST(CoordinationTest, TestStorageSnapshotSimple)
+{
+    using Node = DB::NuKeeperStorage::Node;
+
+    ChangelogDirTest test("./snapshots");
+    DB::NuKeeperSnapshotManager manager("./snapshots");
+
+    DB::NuKeeperStorage storage(500);
+    storage.container.insert("/hello", Node{.data="world", .ephemeral_owner = 1});
+    storage.container.insert("/hello/somepath", Node{.data="somedata", .ephemeral_owner = 3});
+    storage.session_id_counter = 5;
+    storage.zxid = 2;
+    storage.ephemerals[3] = {"/hello"};
+    storage.ephemerals[1] = {"/hello/somepath"};
+    storage.getSessionID(130);
+    storage.getSessionID(130);
+
+    DB::NuKeeperStorageSnapshot snapshot(&storage, 2);
+
+    EXPECT_EQ(snapshot.up_to_log_idx, 2);
+    EXPECT_EQ(snapshot.zxid, 2);
+    EXPECT_EQ(snapshot.session_id, 7);
+    EXPECT_EQ(snapshot.snapshot_container_size, 3);
+    EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
+
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 2);
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin"));
+
+    DB::NuKeeperStorage restored_storage(500);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
+    manager.deserializeSnapshotFromBuffer(&restored_storage, debuf);
+
+    EXPECT_EQ(restored_storage.container.size(), 3);
+    EXPECT_EQ(restored_storage.container.getValue("/").children.size(), 1);
+    EXPECT_EQ(restored_storage.container.getValue("/hello").children.size(), 1);
+    EXPECT_EQ(restored_storage.container.getValue("/hello/somepath").children.size(), 0);
+
+    EXPECT_EQ(restored_storage.container.getValue("/").data, "");
+    EXPECT_EQ(restored_storage.container.getValue("/hello").data, "world");
+    EXPECT_EQ(restored_storage.container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage.session_id_counter, 7);
+    EXPECT_EQ(restored_storage.zxid, 2);
+    EXPECT_EQ(restored_storage.ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage.ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage.ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage.session_and_timeout.size(), 2);
 }
 
 

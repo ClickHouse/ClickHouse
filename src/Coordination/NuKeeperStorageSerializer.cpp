@@ -181,6 +181,7 @@ std::string NuKeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffe
     WriteBufferFromFile plain_buf(new_snapshot_path);
     copyData(reader, plain_buf);
     plain_buf.sync();
+    existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
     return new_snapshot_path;
 }
 
@@ -199,6 +200,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::serializeSnapshotToBuffer(c
     CompressedWriteBuffer compressed_writer(writer);
 
     NuKeeperStorageSnapshot::serialize(snapshot, compressed_writer);
+    compressed_writer.finalize();
     return writer.getBuffer();
 }
 
