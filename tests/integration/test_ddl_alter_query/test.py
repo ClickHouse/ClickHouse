@@ -10,6 +10,7 @@ node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'
 node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -17,14 +18,10 @@ def started_cluster():
 
         for i, node in enumerate([node1, node2]):
             node.query("CREATE DATABASE testdb")
-            node.query(
-                '''CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table1', '{}') ORDER BY id;'''.format(
-                    i))
+            node.query('''CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table1', '{}') ORDER BY id;'''.format(i))
         for i, node in enumerate([node3, node4]):
             node.query("CREATE DATABASE testdb")
-            node.query(
-                '''CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table2', '{}') ORDER BY id;'''.format(
-                    i))
+            node.query('''CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table2', '{}') ORDER BY id;'''.format(i))
         yield cluster
 
     finally:
@@ -37,8 +34,7 @@ def test_alter(started_cluster):
     node2.query("SYSTEM SYNC REPLICA testdb.test_table")
     node4.query("SYSTEM SYNC REPLICA testdb.test_table")
 
-    node1.query("ALTER TABLE testdb.test_table ON CLUSTER test_cluster ADD COLUMN somecolumn UInt8 AFTER val",
-                settings={"replication_alter_partitions_sync": "2"})
+    node1.query("ALTER TABLE testdb.test_table ON CLUSTER test_cluster ADD COLUMN somecolumn UInt8 AFTER val", settings={"replication_alter_partitions_sync": "2"})
 
     node1.query("SYSTEM SYNC REPLICA testdb.test_table")
     node2.query("SYSTEM SYNC REPLICA testdb.test_table")

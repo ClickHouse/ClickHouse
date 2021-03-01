@@ -16,7 +16,7 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-protected:
+private:
     /// We collect processors got after pipeline transformation.
     Processors processors;
 };

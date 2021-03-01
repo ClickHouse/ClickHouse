@@ -1,8 +1,3 @@
----
-toc_priority: 40
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u043c\u0438"
----
-
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
 
 ## empty {#empty}
@@ -29,12 +24,12 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, то возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## char_length, CHAR_LENGTH {#char-length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## character_length, CHARACTER_LENGTH {#character-length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
@@ -75,7 +70,7 @@ toValidUTF8( input_string )
 
 Параметры:
 
--   input_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
+-   input\_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
@@ -94,8 +89,6 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ## repeat {#repeat}
 
 Повторяет строку определенное количество раз и объединяет повторяемые значения в одну строку.
-
-Синоним: `REPEAT`.
 
 **Синтаксис**
 
@@ -275,13 +268,9 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 
 Производит кодирование строки s в base64-представление.
 
-Синоним: `TO_BASE64`.
-
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
-
-Синоним: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -489,160 +478,5 @@ SELECT trimBoth('     Hello, world!     ')
 Возвращает чексумму CRC64 данной строки, используется CRC-64-ECMA многочлен.
 
 Тип результата — UInt64.
-
-## normalizeQuery {#normalized-query}
-
-Заменяет литералы, последовательности литералов и сложные псевдонимы заполнителями.
-
-**Синтаксис** 
-``` sql
-normalizeQuery(x)
-```
-
-**Параметры** 
-
--   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Последовательность символов с заполнителями.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT normalizeQuery('[1, 2, 3, x]') AS query;
-```
-
-Результат:
-
-``` text
-┌─query────┐
-│ [?.., x] │
-└──────────┘
-```
-
-## normalizedQueryHash {#normalized-query-hash}
-
-Возвращает идентичные 64-битные хэш - суммы без значений литералов для аналогичных запросов. Это помогает анализировать журнал запросов.
-
-**Синтаксис** 
-
-``` sql
-normalizedQueryHash(x)
-```
-
-**Параметры** 
-
--   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Хэш-сумма.
-
-Тип: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
-```
-
-Результат:
-
-``` text
-┌─res─┐
-│   1 │
-└─────┘
-```
-
-## encodeXMLComponent {#encode-xml-component}
-
-Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
-
-Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
-
-**Синтаксис** 
-
-``` sql
-encodeXMLComponent(x)
-```
-
-**Параметры** 
-
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, в которой зарезервированные символы экранированы.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT encodeXMLComponent('Hello, "world"!');
-SELECT encodeXMLComponent('<123>');
-SELECT encodeXMLComponent('&clickhouse');
-SELECT encodeXMLComponent('\'foo\'');
-```
-
-Результат:
-
-``` text
-Hello, &quot;world&quot;!
-&lt;123&gt;
-&amp;clickhouse
-&apos;foo&apos;
-```
-
-
-## decodeXMLComponent {#decode-xml-component}
-
-Заменяет символами предопределенные мнемоники XML: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
-Также эта функция заменяет числовые ссылки соответствующими символами юникод. Поддерживаются десятичная (например, `&#10003;`) и шестнадцатеричная (`&#x2713;`) формы.
-
-**Синтаксис**
-
-``` sql
-decodeXMLComponent(x)
-```
-
-**Параметры**
-
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка с произведенными заменами.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT decodeXMLComponent('&apos;foo&apos;');
-SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
-```
-
-Результат:
-
-``` text
-'foo' 
-< Σ >
-```
-
-**Смотрите также**
-
--   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

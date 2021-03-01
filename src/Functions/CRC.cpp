@@ -72,9 +72,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
-
 template <class Impl>
 struct CRCFunctionWrapper
 {
@@ -129,8 +126,6 @@ using FunctionCRC32ZLIB = FunctionCRC<CRC32ZLIBImpl>;
 using FunctionCRC32IEEE = FunctionCRC<CRC32IEEEImpl>;
 // Uses CRC-64-ECMA polynomial
 using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
-
-}
 
 template <class T>
 void registerFunctionCRCImpl(FunctionFactory & factory)

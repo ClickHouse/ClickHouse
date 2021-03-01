@@ -20,8 +20,8 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
-    /// First reference, initialize thread
-    if (data->ref_count.fetch_add(1) == 0)
+    ++data->ref_count;
+    if (data->ref_count == 1)
         mysql_thread_init();
 }
 
@@ -30,10 +30,12 @@ void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
-
-    /// We were the last user of this thread, deinitialize it
-    if (data->ref_count.fetch_sub(1) == 1)
-        mysql_thread_end();
+    if (data->ref_count > 0)
+    {
+        --data->ref_count;
+        if (data->ref_count == 0)
+            mysql_thread_end();
+    }
 }
 
 
@@ -79,9 +81,6 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
-
-        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
-            cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
     }
     else
     {
@@ -100,8 +99,6 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
-
-        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -248,8 +245,7 @@ void Pool::Entry::forceConnected() const
             pool->ssl_key.c_str(),
             pool->connect_timeout,
             pool->rw_timeout,
-            pool->enable_local_infile,
-            pool->opt_reconnect);
+            pool->enable_local_infile);
     }
 }
 
@@ -312,8 +308,7 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             ssl_key.c_str(),
             connect_timeout,
             rw_timeout,
-            enable_local_infile,
-            opt_reconnect);
+            enable_local_infile);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

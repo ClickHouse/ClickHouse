@@ -3,7 +3,6 @@
 #include <list>
 #include <memory>
 #include <mutex>
-#include <atomic>
 
 #include <Poco/Exception.h>
 #include <Poco/Logger.h>
@@ -38,9 +37,7 @@ protected:
     struct Connection
     {
         mysqlxx::Connection conn;
-        /// Ref count modified in constructor/descructor of Entry
-        /// but also read in pool code.
-        std::atomic<int> ref_count = 0;
+        int ref_count = 0;
     };
 
 public:
@@ -181,7 +178,7 @@ public:
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
-          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect)
+          enable_local_infile{other.enable_local_infile}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -237,7 +234,6 @@ private:
     std::string ssl_cert;
     std::string ssl_key;
     bool enable_local_infile;
-    bool opt_reconnect;
 
     /// True if connection was established at least once.
     bool was_successful{false};

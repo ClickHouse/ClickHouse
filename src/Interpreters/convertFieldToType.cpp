@@ -5,7 +5,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -153,14 +152,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
         if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
         if (which_type.isUInt64()) return convertNumericType<UInt64>(src, type);
-        if (which_type.isUInt128()) return convertNumericType<UInt128>(src, type);
-        if (which_type.isUInt256()) return convertNumericType<UInt256>(src, type);
         if (which_type.isInt8()) return convertNumericType<Int8>(src, type);
         if (which_type.isInt16()) return convertNumericType<Int16>(src, type);
         if (which_type.isInt32()) return convertNumericType<Int32>(src, type);
         if (which_type.isInt64()) return convertNumericType<Int64>(src, type);
-        if (which_type.isInt128()) return convertNumericType<Int128>(src, type);
-        if (which_type.isInt256()) return convertNumericType<Int256>(src, type);
         if (which_type.isFloat32()) return convertNumericType<Float32>(src, type);
         if (which_type.isFloat64()) return convertNumericType<Float64>(src, type);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
@@ -271,44 +266,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                  * will throw if it detects incompatibility.
                  */
                 have_unconvertible_element = true;
-            }
-
-            return have_unconvertible_element ? Field(Null()) : Field(res);
-        }
-    }
-    else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
-    {
-        if (src.getType() == Field::Types::Map)
-        {
-            const auto & key_type = *type_map->getKeyType();
-            const auto & value_type = *type_map->getValueType();
-
-            const auto & map = src.get<Map>();
-            size_t map_size = map.size();
-
-            Map res(map_size);
-
-            bool have_unconvertible_element = false;
-
-            for (size_t i = 0; i < map_size; ++i)
-            {
-                const auto & map_entry = map[i].get<Tuple>();
-
-                const auto & key = map_entry[0];
-                const auto & value = map_entry[1];
-
-                Tuple updated_entry(2);
-
-                updated_entry[0] = convertFieldToType(key, key_type);
-
-                if (updated_entry[0].isNull() && !key_type.isNullable())
-                    have_unconvertible_element = true;
-
-                updated_entry[1] = convertFieldToType(value, value_type);
-                if (updated_entry[1].isNull() && !value_type.isNullable())
-                    have_unconvertible_element = true;
-
-                res[i] = updated_entry;
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);

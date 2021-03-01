@@ -23,9 +23,9 @@ TEST(ParserTableOptions, AllSubpatitionOptions)
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["avg_row_length"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
-    EXPECT_EQ(declare_options->changes["character_set"]->as<ASTIdentifier>()->name(), "utf8");
+    EXPECT_EQ(declare_options->changes["character_set"]->as<ASTIdentifier>()->name, "utf8");
     EXPECT_EQ(declare_options->changes["checksum"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
-    EXPECT_EQ(declare_options->changes["collate"]->as<ASTIdentifier>()->name(), "utf8_bin");
+    EXPECT_EQ(declare_options->changes["collate"]->as<ASTIdentifier>()->name, "utf8_bin");
     EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<String>(), "table option comment");
     EXPECT_EQ(declare_options->changes["compression"]->as<ASTLiteral>()->value.safeGet<String>(), "LZ4");
     EXPECT_EQ(declare_options->changes["connection"]->as<ASTLiteral>()->value.safeGet<String>(), "connect_string");
@@ -33,23 +33,23 @@ TEST(ParserTableOptions, AllSubpatitionOptions)
     EXPECT_EQ(declare_options->changes["index_directory"]->as<ASTLiteral>()->value.safeGet<String>(), "index_directory");
     EXPECT_EQ(declare_options->changes["delay_key_write"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
     EXPECT_EQ(declare_options->changes["encryption"]->as<ASTLiteral>()->value.safeGet<String>(), "Y");
-    EXPECT_EQ(declare_options->changes["engine"]->as<ASTIdentifier>()->name(), "INNODB");
-    EXPECT_EQ(declare_options->changes["insert_method"]->as<ASTIdentifier>()->name(), "NO");
+    EXPECT_EQ(declare_options->changes["engine"]->as<ASTIdentifier>()->name, "INNODB");
+    EXPECT_EQ(declare_options->changes["insert_method"]->as<ASTIdentifier>()->name, "NO");
     EXPECT_EQ(declare_options->changes["key_block_size"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
 
     EXPECT_EQ(declare_options->changes["max_rows"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1000);
     EXPECT_EQ(declare_options->changes["min_rows"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
-    EXPECT_EQ(declare_options->changes["pack_keys"]->as<ASTIdentifier>()->name(), "DEFAULT");
+    EXPECT_EQ(declare_options->changes["pack_keys"]->as<ASTIdentifier>()->name, "DEFAULT");
     EXPECT_EQ(declare_options->changes["password"]->as<ASTLiteral>()->value.safeGet<String>(), "password");
-    EXPECT_EQ(declare_options->changes["row_format"]->as<ASTIdentifier>()->name(), "DYNAMIC");
-    EXPECT_EQ(declare_options->changes["stats_auto_recalc"]->as<ASTIdentifier>()->name(), "DEFAULT");
-    EXPECT_EQ(declare_options->changes["stats_persistent"]->as<ASTIdentifier>()->name(), "DEFAULT");
+    EXPECT_EQ(declare_options->changes["row_format"]->as<ASTIdentifier>()->name, "DYNAMIC");
+    EXPECT_EQ(declare_options->changes["stats_auto_recalc"]->as<ASTIdentifier>()->name, "DEFAULT");
+    EXPECT_EQ(declare_options->changes["stats_persistent"]->as<ASTIdentifier>()->name, "DEFAULT");
     EXPECT_EQ(declare_options->changes["stats_sample_pages"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
-    EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name(), "tablespace_name");
+    EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name, "tablespace_name");
 
     ASTPtr arguments = declare_options->changes["union"]->as<ASTFunction>()->arguments;
-    EXPECT_EQ(arguments->children[0]->as<ASTIdentifier>()->name(), "table_01");
-    EXPECT_EQ(arguments->children[1]->as<ASTIdentifier>()->name(), "table_02");
+    EXPECT_EQ(arguments->children[0]->as<ASTIdentifier>()->name, "table_01");
+    EXPECT_EQ(arguments->children[1]->as<ASTIdentifier>()->name, "table_02");
 }
 
 TEST(ParserTableOptions, OptionalTableOptions)
@@ -60,5 +60,5 @@ TEST(ParserTableOptions, OptionalTableOptions)
 
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
-    EXPECT_EQ(declare_options->changes["stats_auto_recalc"]->as<ASTIdentifier>()->name(), "DEFAULT");
+    EXPECT_EQ(declare_options->changes["stats_auto_recalc"]->as<ASTIdentifier>()->name, "DEFAULT");
 }

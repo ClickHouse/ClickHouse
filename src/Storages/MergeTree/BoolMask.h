@@ -9,17 +9,17 @@ struct BoolMask
     BoolMask() {}
     BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
 
-    BoolMask operator &(const BoolMask & m) const
+    BoolMask operator &(const BoolMask & m)
     {
-        return {can_be_true && m.can_be_true, can_be_false || m.can_be_false};
+        return BoolMask(can_be_true && m.can_be_true, can_be_false || m.can_be_false);
     }
-    BoolMask operator |(const BoolMask & m) const
+    BoolMask operator |(const BoolMask & m)
     {
-        return {can_be_true || m.can_be_true, can_be_false && m.can_be_false};
+        return BoolMask(can_be_true || m.can_be_true, can_be_false && m.can_be_false);
     }
-    BoolMask operator !() const
+    BoolMask operator !()
     {
-        return {can_be_false, can_be_true};
+        return BoolMask(can_be_false, can_be_true);
     }
 
     /// If mask is (true, true), then it can no longer change under operation |.

@@ -22,9 +22,6 @@ struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
 
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
-
 struct Settings;
 
 class IVolume;
@@ -136,7 +133,7 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-    void addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const;
+    void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }

@@ -1,3 +1,5 @@
+#include "MutationsInterpreter.h"
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -5,18 +7,11 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/CreatingSetsBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/CheckSortedBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -25,7 +20,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 
 namespace DB
@@ -33,7 +27,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_MUTATION_COMMAND;
@@ -94,7 +87,6 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
             if (finder_data.nondeterministic_function_name)
                 return finder_data.nondeterministic_function_name;
 
-            /// Currently UPDATE and DELETE both always have predicates so we can use fallthrough
             [[fallthrough]];
         }
 
@@ -113,7 +105,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
     return {};
 }
 
-ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, const Context & context)
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
     /// The result can differ from the number of affected rows (e.g. if there is an UPDATE command that
@@ -128,22 +120,19 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     count_func->arguments = std::make_shared<ASTExpressionList>();
     select->select()->children.push_back(count_func);
 
-    ASTs conditions;
-    for (const MutationCommand & command : commands)
+    if (commands.size() == 1)
+        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
+    else
     {
-        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context))
-            conditions.push_back(std::move(condition));
-    }
+        auto coalesced_predicates = std::make_shared<ASTFunction>();
+        coalesced_predicates->name = "or";
+        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
 
-    if (conditions.size() > 1)
-    {
-        auto coalesced_predicates = makeASTFunction("or");
-        coalesced_predicates->arguments->children = std::move(conditions);
+        for (const MutationCommand & command : commands)
+            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
+
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
-    }
-    else if (conditions.size() == 1)
-    {
-        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(conditions.front()));
     }
 
     return select;
@@ -171,11 +160,10 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
     return dependencies;
 }
 
-}
-
+};
 
 bool isStorageTouchedByMutations(
-    const StoragePtr & storage,
+    StoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     Context context_copy)
@@ -183,33 +171,16 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
-    bool all_commands_can_be_skipped = true;
-    auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
     for (const MutationCommand & command : commands)
     {
         if (!command.predicate) /// The command touches all rows.
             return true;
-
-        if (command.partition && !storage_from_merge_tree_data_part)
-            throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
-
-        if (command.partition && storage_from_merge_tree_data_part)
-        {
-            const String partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(command.partition, context_copy);
-            if (partition_id == storage_from_merge_tree_data_part->getPartitionId())
-                all_commands_can_be_skipped = false;
-        }
-        else
-            all_commands_can_be_skipped = false;
     }
-
-    if (all_commands_can_be_skipped)
-        return false;
 
     context_copy.setSetting("max_streams_to_max_threads_ratio", 1);
     context_copy.setSetting("max_threads", 1);
 
-    ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
+    ASTPtr select_query = prepareQueryAffectedAST(commands);
 
     /// Interpreter must be alive, when we use result of execute() method.
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
@@ -226,41 +197,8 @@ bool isStorageTouchedByMutations(
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
+
 }
-
-
-ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
-    const StoragePtr & storage,
-    const Context & context
-)
-{
-    ASTPtr partition_predicate_as_ast_func;
-    if (command.partition)
-    {
-        String partition_id;
-
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
-        if (storage_merge_tree)
-            partition_id = storage_merge_tree->getPartitionIDFromQuery(command.partition, context);
-        else if (storage_from_merge_tree_data_part)
-            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(command.partition, context);
-        else
-            throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
-
-        partition_predicate_as_ast_func = makeASTFunction("equals",
-                    std::make_shared<ASTIdentifier>("_partition_id"),
-                    std::make_shared<ASTLiteral>(partition_id)
-        );
-    }
-
-    if (command.predicate && command.partition)
-        return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
-    else
-        return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
-}
-
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
@@ -406,7 +344,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("isZeroOrNull", getPartitionAndPredicateExpressionForMutationCommand(command));
+            auto negated_predicate = makeASTFunction("isZeroOrNull", command.predicate->clone());
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
@@ -444,7 +382,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
-                        getPartitionAndPredicateExpressionForMutationCommand(command),
+                        command.predicate->clone(),
                         makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
@@ -587,11 +525,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
-                QueryPlan plan;
-                auto source = std::make_shared<NullSource>(first_stage_header);
-                plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
-                auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline->getHeader());
+                auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
+                updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
             }
 
             /// Special step to recalculate affected indices and TTL expressions.
@@ -649,7 +584,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns, storage, metadata_snapshot);
+        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns);
         if (context.hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context.getQueryContext().addScalar(it.first, it.second);
@@ -676,20 +611,19 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
             for (const auto & kv : stage.column_to_updated)
             {
-                actions_chain.getLastStep().actions()->addAlias(
-                        kv.second->getColumnName(), kv.first, /* can_replace = */ true);
+                actions_chain.getLastActions()->add(ExpressionAction::copyColumn(
+                        kv.second->getColumnName(), kv.first, /* can_replace = */ true));
             }
         }
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
         actions_chain.getLastStep().required_output.assign(stage.output_columns.begin(), stage.output_columns.end());
-        actions_chain.getLastActions();
 
         actions_chain.finalize();
 
         /// Propagate information about columns needed as input.
-        for (const auto & column : actions_chain.steps.front()->getRequiredColumns())
+        for (const auto & column : actions_chain.steps.front()->actions()->getRequiredColumnsWithTypes())
             prepared_stages[i - 1].output_columns.insert(column.name);
     }
 
@@ -700,10 +634,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     for (const auto & column_name : prepared_stages[0].output_columns)
         select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
-
-    /// Don't let select list be empty.
-    if (select->select()->children.empty())
-        select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
 
     if (!prepared_stages[0].filters.empty())
     {
@@ -725,7 +655,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -737,32 +667,23 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                in = std::make_shared<FilterBlockInputStream>(in, step->actions(), stage.filter_column_names[i]);
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                in = std::make_shared<ExpressionBlockInputStream>(in, step->actions());
             }
         }
 
-        SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
+        const SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
         if (!subqueries_for_sets.empty())
-        {
-            const Settings & settings = context.getSettingsRef();
-            SizeLimits network_transfer_limits(
-                    settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-            addCreatingSetsStep(plan, std::move(subqueries_for_sets), network_transfer_limits, context);
-        }
+            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets, context);
     }
 
-    auto pipeline = plan.buildQueryPipeline();
-    pipeline->addSimpleTransform([&](const Block & header)
-    {
-        return std::make_shared<MaterializingTransform>(header);
-    });
+    in = std::make_shared<MaterializingBlockInputStream>(in);
 
-    return pipeline;
+    return in;
 }
 
 void MutationsInterpreter::validate()
@@ -784,9 +705,10 @@ void MutationsInterpreter::validate()
         }
     }
 
-    QueryPlan plan;
-    select_interpreter->buildQueryPlan(plan);
-    auto pipeline = addStreamsForLaterStages(stages, plan);
+    /// Do not use getSampleBlock in order to check the whole pipeline.
+    Block first_stage_header = select_interpreter->execute().getInputStream()->getHeader();
+    BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
+    addStreamsForLaterStages(stages, in)->getHeader();
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute()
@@ -794,11 +716,9 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
-    QueryPlan plan;
-    select_interpreter->buildQueryPlan(plan);
+    BlockInputStreamPtr in = select_interpreter->execute().getInputStream();
 
-    auto pipeline = addStreamsForLaterStages(stages, plan);
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
+    auto result_stream = addStreamsForLaterStages(stages, in);
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
@@ -820,10 +740,10 @@ const Block & MutationsInterpreter::getUpdatedHeader() const
 size_t MutationsInterpreter::evaluateCommandsSize()
 {
     for (const MutationCommand & command : commands)
-        if (unlikely(!command.predicate && !command.partition)) /// The command touches all rows.
+        if (unlikely(!command.predicate)) /// The command touches all rows.
             return mutation_ast->size();
 
-    return std::max(prepareQueryAffectedAST(commands, storage, context)->size(), mutation_ast->size());
+    return std::max(prepareQueryAffectedAST(commands)->size(), mutation_ast->size());
 }
 
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
@@ -842,11 +762,6 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     }
 
     return sort_description;
-}
-
-ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const
-{
-    return DB::getPartitionAndPredicateExpressionForMutationCommand(command, storage, context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const

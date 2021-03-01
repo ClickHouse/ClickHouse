@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameLowerUTF8
 {
@@ -16,8 +14,6 @@ struct NameLowerUTF8
 };
 
 using FunctionLowerUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>, NameLowerUTF8>;
-
-}
 
 void registerFunctionLowerUTF8(FunctionFactory & factory)
 {

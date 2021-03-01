@@ -96,8 +96,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
 
             auth_params_json.set("server", authentication.getServerName());
 
-            std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            oss.exceptions(std::ios::failbit);
+            std::ostringstream oss;
             Poco::JSON::Stringifier::stringify(auth_params_json, oss);
             const auto str = oss.str();
 

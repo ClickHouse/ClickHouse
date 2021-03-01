@@ -3,11 +3,7 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include <Common/quoteString.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -128,7 +124,7 @@ TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
-    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
+    return hasAnyMoveTTL() || hasRowsTTL();
 }
 
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
@@ -151,16 +147,6 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression != nullptr;
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
-{
-    return table_ttl.rows_where_ttl;
-}
-
-bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
-{
-    return !table_ttl.rows_where_ttl.empty();
-}
-
 TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
@@ -169,26 +155,6 @@ TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
 bool StorageInMemoryMetadata::hasAnyMoveTTL() const
 {
     return !table_ttl.move_ttl.empty();
-}
-
-TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
-{
-    return table_ttl.recompression_ttl;
-}
-
-bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
-{
-    return !table_ttl.recompression_ttl.empty();
-}
-
-TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
-{
-    return table_ttl.group_by_ttl;
-}
-
-bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
-{
-    return !table_ttl.group_by_ttl.empty();
 }
 
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
@@ -230,9 +196,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
                 updated_ttl_columns.insert(column.name);
         }
     }
-
-    for (const auto & entry : getRecompressionTTLs())
-        add_dependent_columns(entry.expression, required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
@@ -293,7 +256,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 
     std::unordered_map<String, DataTypePtr> columns_map;
 
-    auto all_columns = getColumns().getAllWithSubcolumns();
+    NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
@@ -451,7 +414,7 @@ namespace
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
-        WriteBufferFromOwnString ss;
+        std::stringstream ss;
         for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
         {
             if (it != available_columns.begin())
@@ -482,7 +445,7 @@ namespace
 
 void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
-    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
+    NamesAndTypesList available_columns = getColumns().getAllPhysical();
     available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
 
     const String list_of_columns = listOfColumns(available_columns);

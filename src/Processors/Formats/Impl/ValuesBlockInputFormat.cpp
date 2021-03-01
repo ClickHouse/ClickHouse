@@ -8,14 +8,10 @@
 #include <Formats/FormatFactory.h>
 #include <Common/FieldVisitors.h>
 #include <Core/Block.h>
-#include <common/find_symbols.h>
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
+#include <common/find_symbols.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 
 
 namespace DB
@@ -28,7 +24,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -40,13 +35,12 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(buf);
 }
 
 Chunk ValuesBlockInputFormat::generate()
 {
-    if (total_rows == 0)
-        readPrefix();
-
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
@@ -59,6 +53,8 @@ Chunk ValuesBlockInputFormat::generate()
             if (buf.eof() || *buf.position() == ';')
                 break;
             readRow(columns, rows_in_block);
+            if (params.callback)
+                params.callback();
         }
         catch (Exception & e)
         {
@@ -185,87 +181,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     }
 }
 
-namespace
-{
-    void tryToReplaceNullFieldsInComplexTypesWithDefaultValues(Field & value, const IDataType & data_type)
-    {
-        checkStackSize();
-
-        WhichDataType type(data_type);
-
-        if (type.isTuple() && value.getType() == Field::Types::Tuple)
-        {
-            const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
-
-            Tuple & tuple_value = value.get<Tuple>();
-
-            size_t src_tuple_size = tuple_value.size();
-            size_t dst_tuple_size = type_tuple.getElements().size();
-
-            if (src_tuple_size != dst_tuple_size)
-                throw Exception(fmt::format("Bad size of tuple. Expected size: {}, actual size: {}.",
-                    std::to_string(src_tuple_size), std::to_string(dst_tuple_size)), ErrorCodes::TYPE_MISMATCH);
-
-            for (size_t i = 0; i < src_tuple_size; ++i)
-            {
-                const auto & element_type = *(type_tuple.getElements()[i]);
-
-                if (tuple_value[i].isNull() && !element_type.isNullable())
-                    tuple_value[i] = element_type.getDefault();
-
-                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(tuple_value[i], element_type);
-            }
-        }
-        else if (type.isArray() && value.getType() == Field::Types::Array)
-        {
-            const DataTypeArray & type_aray = static_cast<const DataTypeArray &>(data_type);
-            const auto & element_type = *(type_aray.getNestedType());
-
-            if (element_type.isNullable())
-                return;
-
-            Array & array_value = value.get<Array>();
-            size_t array_value_size = array_value.size();
-
-            for (size_t i = 0; i < array_value_size; ++i)
-            {
-                if (array_value[i].isNull())
-                    array_value[i] = element_type.getDefault();
-
-                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(array_value[i], element_type);
-            }
-        }
-        else if (type.isMap() && value.getType() == Field::Types::Map)
-        {
-            const DataTypeMap & type_map = static_cast<const DataTypeMap &>(data_type);
-
-            const auto & key_type = *type_map.getKeyType();
-            const auto & value_type = *type_map.getValueType();
-
-            auto & map = value.get<Map>();
-            size_t map_size = map.size();
-
-            for (size_t i = 0; i < map_size; ++i)
-            {
-                auto & map_entry = map[i].get<Tuple>();
-
-                auto & entry_key = map_entry[0];
-                auto & entry_value = map_entry[1];
-
-                if (entry_key.isNull() && !key_type.isNullable())
-                    entry_key = key_type.getDefault();
-
-                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_key, key_type);
-
-                if (entry_value.isNull() && !value_type.isNullable())
-                    entry_value = value_type.getDefault();
-
-                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_value, value_type);
-            }
-        }
-    }
-}
-
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -389,13 +304,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     buf.position() = const_cast<char *>(token_iterator->begin);
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
-
-    Field & expression_value = value_raw.first;
-
-    if (format_settings.null_as_default)
-        tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
-
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get());
+    Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !type.isNullable())
@@ -502,23 +411,8 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
     return false;
 }
 
-void ValuesBlockInputFormat::readPrefix()
-{
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
-}
-
 void ValuesBlockInputFormat::readSuffix()
 {
-    if (!buf.eof() && *buf.position() == ';')
-    {
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
-        if (buf.hasUnreadData())
-            throw Exception("Cannot read data after semicolon", ErrorCodes::CANNOT_READ_ALL_DATA);
-        return;
-    }
-
     if (buf.hasUnreadData())
         throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }

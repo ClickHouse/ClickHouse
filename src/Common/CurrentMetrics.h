@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include <atomic>
-#include <common/types.h>
+#include <Core/Types.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.

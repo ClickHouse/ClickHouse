@@ -6,6 +6,7 @@
 #include <Access/AccessControlManager.h>
 
 #include <common/logger_useful.h>
+#include <Common/MemoryTracker.h>
 #include <Common/OpenSSLHelpers.h>
 
 #include <ext/scope_guard.h>
