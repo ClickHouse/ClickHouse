@@ -771,7 +771,7 @@ This is necessary for searching for pageviews in the corresponding session.
 
 ## formatDateTime {#formatdatetime}
 
-Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
+Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
 **Syntax**
 
@@ -830,18 +830,19 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
-
 ## FROM\_UNIXTIME {#fromunixfime}
 
-When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
-type.
+Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
-For example:
+**Example:**
+
+Query:
 
 ```sql
-SELECT FROM_UNIXTIME(423543535)
+SELECT FROM_UNIXTIME(423543535);
 ```
+
+Result:
 
 ```text
 ┌─FROM_UNIXTIME(423543535)─┐
@@ -849,12 +850,12 @@ SELECT FROM_UNIXTIME(423543535)
 └──────────────────────────┘
 ```
 
-When there are two arguments, first is integer or DateTime, second is constant format string, it act in the same way as `formatDateTime` and return `String` type.
+When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
 
 For example:
 
 ```sql
-SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
+SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
 
 ```text
@@ -1006,3 +1007,5 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
