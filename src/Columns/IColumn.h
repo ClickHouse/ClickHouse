@@ -266,7 +266,7 @@ public:
                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                                int direction, int nan_direction_hint) const = 0;
 
-    /// Check if all elements in the column has equal values. Return true if column is empty.
+    /// Check if all elements in the column have equal values. Return true if column is empty.
     virtual bool hasEqualValues() const = 0;
 
     /** Returns a permutation that sorts elements of this column,
