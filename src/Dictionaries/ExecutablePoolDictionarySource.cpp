@@ -64,7 +64,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
         throw Exception("ExecutablePoolDictionarySource cannot have pool of size 0", ErrorCodes::BAD_ARGUMENTS);
 
     for (size_t i = 0; i < pool_size; ++i)
-        process_pool->emplace(ShellCommand::execute(command, false, true));
+        process_pool->emplace(ShellCommand::execute(command));
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other)
@@ -81,7 +81,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     , process_pool(std::make_shared<ProcessPool>(pool_size))
 {
     for (size_t i = 0; i < pool_size; ++i)
-        process_pool->emplace(ShellCommand::execute(command, false, true));
+        process_pool->emplace(ShellCommand::execute(command));
 }
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()

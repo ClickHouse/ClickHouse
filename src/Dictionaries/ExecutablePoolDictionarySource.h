@@ -15,8 +15,14 @@ namespace DB
 
 using ProcessPool = ConcurrentBoundedQueue<std::unique_ptr<ShellCommand>>;
 
-/// Allows loading data from pool of processes
-/// TODO: Add documentation
+/** ExecutablePoolDictionarySource allows loading data from pool of processes.
+  * When client requests ids or keys source get process from ProcessPool
+  * and create stream based on source format from process stdout.
+  * It is important that stream format will expect only rows that were requested.
+  * When stream is finished process is returned back to the ProcessPool.
+  * If there are no processes in pool during request client will be blocked
+  * until some process will be retunred to pool.
+  */
 class ExecutablePoolDictionarySource final : public IDictionarySource
 {
 public:
