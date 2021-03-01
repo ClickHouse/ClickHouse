@@ -340,8 +340,6 @@ public:
                     to_values_col.insertDefault();
                 else
                 {
-                    auto element_field = elem.second[col];
-
                     to_values_col.insert(elem.second[col]);
                 }
             }
