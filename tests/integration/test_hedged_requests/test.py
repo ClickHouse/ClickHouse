@@ -36,7 +36,7 @@ def started_cluster():
         NODES['node'].query('''CREATE TABLE distributed (id UInt32, date Date) ENGINE =
             Distributed('test_cluster', 'default', 'replicated')''')
 
-        NODES['node'].query("INSERT INTO distributed VALUES (1, '2020-01-01')")
+        NODES['node'].query("INSERT INTO distributed select number, toDate(number) from numbers(100);")
 
         yield cluster
 
@@ -61,10 +61,10 @@ def check_query(expected_replica, receive_timeout=300):
     # with hedged requests it will last just around 1-2 second
 
     start = time.time()
-    result = NODES['node'].query("SELECT hostName(), id FROM distributed SETTINGS receive_timeout={}".format(receive_timeout));
+    result = NODES['node'].query("SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1 SETTINGS receive_timeout={}".format(receive_timeout));
     query_time = time.time() - start
 
-    assert TSV(result) == TSV(expected_replica + "\t1")
+    assert TSV(result) == TSV(expected_replica + "\t0")
 
     print("Query time:", query_time)
     assert query_time < 10
@@ -87,6 +87,13 @@ def test_stuck_replica(started_cluster):
     cluster.pause_container("node_1")
     check_query(expected_replica="node_2")
     cluster.unpause_container("node_1")
+
+
+def test_long_query(started_cluster):
+    result = NODES['node'].query("select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;")
+    assert TSV(result) == TSV("node_1\t99")
+
+    NODES['node'].query("INSERT INTO distributed select number, toDate(number) from numbers(100);")
 
 
 def test_send_table_status_sleep(started_cluster):
@@ -292,13 +299,4 @@ def test_receive_timeout2(started_cluster):
     check_settings('node_3', 2, 0)
 
     check_query(expected_replica="node_2", receive_timeout=3)
-
-
-def test_long_query(started_cluster):
-    NODES['node'].query("INSERT INTO distributed select number, toDate(number) from numbers(100);")
-    while TSV(NODES['node'].query("SELECT count() FROM distributed;")) != TSV("101"):
-        time.sleep(0.1)
-
-    result = NODES['node'].query("select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;")
-    assert TSV(result) == TSV("node_1\t99")
 
