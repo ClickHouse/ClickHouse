@@ -47,7 +47,7 @@ HedgedConnections::HedgedConnections(
     }
 
     active_connection_count = connections.size();
-    offsets_with_received_first_data_packet = 0;
+    offsets_with_disabled_changing_replica = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
 }
 
@@ -371,17 +371,22 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
     switch (packet.type)
     {
         case Protocol::Server::Data:
-            if (!offset_states[replica_location.offset].first_packet_of_data_received && packet.block.rows() > 0)
-                processReceivedFirstDataPacket(replica_location);
+            /// If we received the first not empty data packet and still can change replica,
+            /// disable changing replica with this offset.
+            if (offset_states[replica_location.offset].can_change_replica && packet.block.rows() > 0)
+                disableChangingReplica(replica_location);
             replica_with_last_received_packet = replica_location;
             break;
         case Protocol::Server::Progress:
-            /// If we haven't received the first data packet (except header), we have made
-            /// some progress and timeout hasn't expired yet, we restart timeout for changing replica.
-            if (!replica.is_change_replica_timeout_expired && !offset_states[replica_location.offset].first_packet_of_data_received && packet.progress.read_bytes > 0)
+            /// Check if we have made some progress and still can change replica.
+            if (offset_states[replica_location.offset].can_change_replica && packet.progress.read_bytes > 0)
             {
-                /// Restart change replica timeout.
-                replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
+                /// If we are allowed to change replica until the first data packet,
+                /// just restart timeout (if it hasn't expired yet). Otherwise disable changing replica with this offset.
+                if (settings.allow_changeing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
+                    replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
+                else
+                    disableChangingReplica(replica_location);
             }
             replica_with_last_received_packet = replica_location;
             break;
@@ -406,14 +411,13 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
     return packet;
 }
 
-void HedgedConnections::processReceivedFirstDataPacket(const ReplicaLocation & replica_location)
+void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_location)
 {
-    /// When we receive first packet of data from replica, we stop working with replicas, that are
-    /// responsible for the same offset.
+    /// Stop working with replicas, that are responsible for the same offset.
     OffsetState & offset_state = offset_states[replica_location.offset];
     offset_state.replicas[replica_location.index].change_replica_timeout.reset();
-    ++offsets_with_received_first_data_packet;
-    offset_state.first_packet_of_data_received = true;
+    ++offsets_with_disabled_changing_replica;
+    offset_state.can_change_replica = false;
 
     for (size_t i = 0; i != offset_state.replicas.size(); ++i)
     {
@@ -424,8 +428,8 @@ void HedgedConnections::processReceivedFirstDataPacket(const ReplicaLocation & r
         }
     }
 
-    /// If we received data from replicas with all offsets, we need to stop choosing new replicas.
-    if (hedged_connections_factory.hasEventsInProcess() && offsets_with_received_first_data_packet == offset_states.size())
+    /// If we disabled changing replica with all offsets, we need to stop choosing new replicas.
+    if (hedged_connections_factory.hasEventsInProcess() && offsets_with_disabled_changing_replica == offset_states.size())
     {
         if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
             epoll.remove(hedged_connections_factory.getFileDescriptor());
