@@ -441,8 +441,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-        auto fetch_result = cache_storage_ptr->fetchColumnsForKeys(keys, request);
-        result_of_fetch_from_storage = std::move(fetch_result);
+        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
     }
 
     size_t found_keys_size = result_of_fetch_from_storage.found_keys_size;

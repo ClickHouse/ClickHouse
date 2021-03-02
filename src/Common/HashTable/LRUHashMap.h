@@ -156,15 +156,16 @@ public:
         if (size() == max_size)
         {
             /// Erase least recently used element from front of the list
-            Cell & node = lru_list.front();
+            Cell copy_node = lru_list.front();
 
-            const Key & element_to_remove_key = node.getKey();
-            size_t key_hash = node.getHash(*this);
+            const Key & element_to_remove_key = copy_node.getKey();
 
             lru_list.pop_front();
 
-            [[maybe_unused]] bool erased = Base::erase(element_to_remove_key, key_hash, disposer);
+            [[maybe_unused]] bool erased = Base::erase(element_to_remove_key);
             assert(erased);
+
+            disposer(element_to_remove_key, copy_node.getMapped());
         }
 
         [[maybe_unused]] bool inserted;
@@ -228,7 +229,12 @@ public:
             return false;
 
         lru_list.erase(lru_list.iterator_to(*it));
-        return Base::erase(key, key_hash, disposer);
+
+        Cell copy_node = *it;
+        Base::erase(key, key_hash);
+        disposer(copy_node.getKey(), copy_node.getMapped());
+
+        return true;
     }
 
     void ALWAYS_INLINE clear()
@@ -262,6 +268,12 @@ private:
     size_t max_size;
     LRUList lru_list;
     Disposer disposer;
+};
+
+template <typename Key, typename Mapped>
+struct DefaultCellDisposer
+{
+    void operator()(const Key &, const Mapped &) const {}
 };
 
 template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
