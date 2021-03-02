@@ -70,6 +70,19 @@ def check_query(expected_replica, receive_timeout=300):
     assert query_time < 10
 
 
+def check_settings(node_name, sleep_in_send_tables_status, sleep_in_send_data):
+    attempts = 0
+    while attempts < 1000:
+        setting1 = NODES[node_name].http_query("SELECT value FROM system.settings WHERE name='sleep_in_send_tables_status'")
+        setting2 = NODES[node_name].http_query("SELECT value FROM system.settings WHERE name='sleep_in_send_data'")
+        if int(setting1) == sleep_in_send_tables_status and int(setting2) == sleep_in_send_data:
+            return
+        time.sleep(0.1)
+        attempts += 1
+
+    assert attempts < 1000
+
+
 def test_stuck_replica(started_cluster):
     cluster.pause_container("node_1")
     check_query(expected_replica="node_2")
@@ -88,9 +101,13 @@ def test_send_table_status_sleep(started_cluster):
     NODES['node_3'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
+    
+    check_settings('node_1', sleep_time, 0)
+    check_settings('node_2', 0, 0)
+    check_settings('node_3', 0, 0)
 
-    time.sleep(2)
     check_query(expected_replica="node_2")
+
 
 def test_send_table_status_sleep2(started_cluster):
     NODES['node_1'].replace_config(
@@ -104,8 +121,11 @@ def test_send_table_status_sleep2(started_cluster):
     NODES['node_3'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
+    
+    check_settings('node_1', sleep_time, 0)
+    check_settings('node_2', sleep_time, 0)
+    check_settings('node_3', 0, 0)
 
-    time.sleep(2)
     check_query(expected_replica="node_3")
 
 
@@ -122,8 +142,10 @@ def test_send_data(started_cluster):
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
 
-    time.sleep(2)
-    
+    check_settings('node_1', 0, sleep_time)
+    check_settings('node_2', 0, 0)
+    check_settings('node_3', 0, 0)
+
     check_query(expected_replica="node_2")
 
 
@@ -139,8 +161,11 @@ def test_send_data2(started_cluster):
     NODES['node_3'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
+    
+    check_settings('node_1', 0, sleep_time)
+    check_settings('node_2', 0, sleep_time)
+    check_settings('node_3', 0, 0)
 
-    time.sleep(2)
     check_query(expected_replica="node_3")
 
 
@@ -152,8 +177,15 @@ def test_combination1(started_cluster):
     NODES['node_2'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=sleep_time))
+    
+    NODES['node_3'].replace_config(
+        '/etc/clickhouse-server/users.d/users1.xml',
+        config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
 
-    time.sleep(2)
+    check_settings('node_1', sleep_time, 0)
+    check_settings('node_2', 0, sleep_time)
+    check_settings('node_3', 0, 0)
+
     check_query(expected_replica="node_3")
 
 
@@ -170,7 +202,10 @@ def test_combination2(started_cluster):
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
 
-    time.sleep(2)
+    check_settings('node_1', 0, sleep_time)
+    check_settings('node_2', sleep_time, 0)
+    check_settings('node_3', 0, 0)
+    
     check_query(expected_replica="node_3")
 
 
@@ -186,8 +221,11 @@ def test_combination3(started_cluster):
     NODES['node_3'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=sleep_time))
+    
+    check_settings('node_1', 0, sleep_time)
+    check_settings('node_2', 1, 0)
+    check_settings('node_3', 0, sleep_time)
 
-    time.sleep(2)
     check_query(expected_replica="node_2")
 
 
@@ -204,7 +242,10 @@ def test_combination4(started_cluster):
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=2, sleep_in_send_data=0))
 
-    time.sleep(2)
+    check_settings('node_1', 1, sleep_time)
+    check_settings('node_2', 1, 0)
+    check_settings('node_3', 2, 0)
+
     check_query(expected_replica="node_2")
 
 
@@ -222,8 +263,11 @@ def test_receive_timeout1(started_cluster):
     NODES['node_3'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=1))
+    
+    check_settings('node_1', 3, 0)
+    check_settings('node_2', 3, 0)
+    check_settings('node_3', 0, 1)
 
-    time.sleep(2)
     check_query(expected_replica="node_3", receive_timeout=2)
 
 
@@ -243,7 +287,10 @@ def test_receive_timeout2(started_cluster):
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=2, sleep_in_send_data=0))
 
-    time.sleep(2)
+    check_settings('node_1', 0, 4)
+    check_settings('node_2', 2, 0)
+    check_settings('node_3', 2, 0)
+
     check_query(expected_replica="node_2", receive_timeout=3)
 
 
@@ -254,4 +301,4 @@ def test_long_query(started_cluster):
 
     result = NODES['node'].query("select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;")
     assert TSV(result) == TSV("node_1\t99")
- 
+
