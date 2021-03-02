@@ -321,20 +321,36 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                        header, query_info.prewhere_info->prewhere_actions,
-                        query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
-            });
-
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+                    return std::make_shared<ExpressionTransform>(
+                        header,
+                        query_info.prewhere_info->alias_actions);
                 });
             }
+
+            if (query_info.prewhere_info->row_level_filter)
+            {
+                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                            header,
+                            query_info.prewhere_info->row_level_filter,
+                            query_info.prewhere_info->row_level_column_name,
+                            false);
+                });
+            }
+
+            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header,
+                        query_info.prewhere_info->prewhere_actions,
+                        query_info.prewhere_info->prewhere_column_name,
+                        query_info.prewhere_info->remove_prewhere_column);
+            });
         }
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
