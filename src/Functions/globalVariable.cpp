@@ -80,6 +80,7 @@ private:
     std::unordered_map<String, TypeAndValue> global_variable_map
         = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
            {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
+           {"version_comment", {std::make_shared<DataTypeString>(), ""}},
            {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}}};
 };
 
