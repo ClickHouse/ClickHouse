@@ -108,12 +108,14 @@ void NuKeeperStateMachine::create_snapshot(
     std::lock_guard lock(storage_lock);
     NuKeeperStorageSnapshot snapshot(&storage, s.get_last_log_idx());
     latest_snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(snapshot);
+    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
+    latest_snapshot_meta = nuraft::snapshot::deserialize(*snp_buf);
     auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*latest_snapshot_buf, s.get_last_log_idx());
     LOG_DEBUG(log, "Created snapshot {} with path {}", s.get_last_log_idx(), result_path);
 
-    nuraft::ptr<std::exception> except(nullptr);
+    nuraft::ptr<std::exception> exception(nullptr);
     bool ret = true;
-    when_done(ret, except);
+    when_done(ret, exception);
 }
 
 void NuKeeperStateMachine::save_logical_snp_obj(
