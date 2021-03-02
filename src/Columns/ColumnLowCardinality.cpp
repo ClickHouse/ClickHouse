@@ -313,7 +313,9 @@ void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num
 
 bool ColumnLowCardinality::hasEqualValues() const
 {
-    return getDictionary().size() <= 1;
+    if (getDictionary().size() <= 1)
+        return true;
+    return getIndexes().hasEqualValues();
 }
 
 void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const
