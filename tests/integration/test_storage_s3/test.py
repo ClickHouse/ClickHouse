@@ -113,12 +113,16 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-# Test simple put.
+# Test simple put. Also checks that wrong credentials produce an error with every compression method.
 @pytest.mark.parametrize("maybe_auth,positive,compression", [
     ("", True, 'auto'),
     ("'minio','minio123',", True, 'auto'),
     ("'wrongid','wrongkey',", False, 'auto'),
-    ("'wrongid','wrongkey',", False, 'gzip')
+    ("'wrongid','wrongkey',", False, 'gzip'),
+    ("'wrongid','wrongkey',", False, 'deflate'),
+    ("'wrongid','wrongkey',", False, 'brotli'),
+    ("'wrongid','wrongkey',", False, 'xz'),
+    ("'wrongid','wrongkey',", False, 'zstd')
 ])
 def test_put(cluster, maybe_auth, positive, compression):
     # type: (ClickHouseCluster) -> None
