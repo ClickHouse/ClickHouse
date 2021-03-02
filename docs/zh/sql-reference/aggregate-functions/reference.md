@@ -560,45 +560,6 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 所有分位数函数也有相应的函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`。这些函数一次计算所列层次的所有分位数，并返回结果值的数组。
 
 
-## topKWeighted {#topkweighted}
-
-类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每个输入都被记入 `weight` 次频率计算。
-
-**语法**
-
-``` sql
-topKWeighted(N)(x, weight)
-```
-
-**参数**
-
--   `N` — 返回值个数。
-
-**参数**
-
--   `x` – 输入值。
--   `weight` — 权重。 [UInt8](../../sql-reference/data-types/int-uint.md)类型。
-
-**返回值**
-
-返回具有最大近似权重总和的值数组。
-
-**示例**
-
-查询:
-
-``` sql
-SELECT topKWeighted(10)(number, number) FROM numbers(1000)
-```
-
-结果:
-
-``` text
-┌─topKWeighted(10)(number, number)──────────┐
-│ [999,998,997,996,995,994,993,992,991,990] │
-└───────────────────────────────────────────┘
-```
-
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 该函数实现随机线性回归。 它支持自定义参数的学习率、L2正则化系数、微批，并且具有少量更新权重的方法（[Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认）， [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent)， [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum)， [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)）。

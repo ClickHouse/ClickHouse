@@ -4,36 +4,36 @@ toc_priority: 109
 
 # topKWeighted {#topkweighted}
 
-Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
+类似于 `topK`  但需要一个整数类型的附加参数 - `weight`。 每个输入都被记入 `weight` 次频率计算。
 
-**Syntax**
+**语法**
 
 ``` sql
 topKWeighted(N)(x, weight)
 ```
 
-**Parameters**
+**参数**
 
--   `N` — The number of elements to return.
+-   `N` — 返回值个数。
 
-**Arguments**
+**参数**
 
--   `x` – The value.
--   `weight` — The weight. [UInt8](../../../sql-reference/data-types/int-uint.md).
+-   `x` – 输入值。
+-   `weight` — 权重。 [UInt8](../../../sql-reference/data-types/int-uint.md)类型。
 
-**Returned value**
+**返回值**
 
-Returns an array of the values with maximum approximate sum of weights.
+返回具有最大近似权重总和的值数组。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─topKWeighted(10)(number, number)──────────┐
