@@ -1,0 +1,4 @@
+<test>
+    <query>SELECT sumIf(1, 0) FROM numbers(100000000)</query>
+    <query>SELECT sumIf(1, 1) FROM numbers(100000000)</query>
+</test>

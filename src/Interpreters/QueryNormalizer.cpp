@@ -177,14 +177,9 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
             }
         }
 
-        if (func_node->window_partition_by)
+        if (func_node->window_definition)
         {
-            visitChildren(func_node->window_partition_by.get(), data);
-        }
-
-        if (func_node->window_order_by)
-        {
-            visitChildren(func_node->window_order_by.get(), data);
+            visitChildren(func_node->window_definition.get(), data);
         }
     }
     else if (!node->as<ASTSelectQuery>())

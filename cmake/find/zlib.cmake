@@ -35,6 +35,7 @@ if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
     set (ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR}) # for protobuf
     set (ZLIB_FOUND 1) # for poco
     set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
+    set (ZLIB_LIBRARY_NAME ${ZLIB_LIBRARIES}) # for cassandra
     set (ZLIB_NAME "${INTERNAL_ZLIB_NAME}")
 endif ()
 

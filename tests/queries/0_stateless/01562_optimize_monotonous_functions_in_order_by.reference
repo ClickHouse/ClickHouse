@@ -23,7 +23,7 @@ Expression (Projection)
     FinishSorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (MergeTree  with order)
+          ReadFromStorage (MergeTree with order)
 SELECT
     timestamp,
     key
@@ -37,7 +37,7 @@ Expression (Projection)
     FinishSorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (MergeTree  with order)
+          ReadFromStorage (MergeTree with order)
 SELECT
     timestamp,
     key

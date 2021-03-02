@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
@@ -29,7 +28,6 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <Common/DirectorySyncGuard.h>
 #include <Parsers/queryToString.h>
 
 #include <cmath>
@@ -780,9 +778,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         gathering_column_names.clear();
     }
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, new_part_tmp_path);
+        sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
 
     /** Read from all parts, merge and write into a new one.
       * In passing, we calculate expression for sorting.
@@ -1065,7 +1063,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
         }
 
-        tmp_disk->remove(rows_sources_file_path);
+        tmp_disk->removeFile(rows_sources_file_path);
     }
 
     for (const auto & part : parts)
@@ -1182,9 +1180,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     disk->createDirectories(new_part_tmp_path);
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, new_part_tmp_path);
+        sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
@@ -1236,7 +1234,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             if (files_to_skip.count(it->name()))
                 continue;
 
-            String destination = new_part_tmp_path + "/";
+            String destination = new_part_tmp_path;
             String file_name = it->name();
             auto rename_it = std::find_if(files_to_rename.begin(), files_to_rename.end(), [&file_name](const auto & rename_pair) { return rename_pair.first == file_name; });
             if (rename_it != files_to_rename.end())
@@ -1493,7 +1491,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         column.type->enumerateStreams(
             [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
+                ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
             },
             {});
     }
@@ -1511,7 +1509,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                String stream_name = IDataType::getFileNameForStream(command.column_name, substream_path);
+                String stream_name = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
@@ -1532,7 +1530,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
 
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                String stream_from = IDataType::getFileNameForStream(command.column_name, substream_path);
+                String stream_from = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
 
                 String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
 
@@ -1565,7 +1563,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     {
         IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
         {
-            String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
+            String stream_name = IDataType::getFileNameForStream({entry.name, entry.type}, substream_path);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };

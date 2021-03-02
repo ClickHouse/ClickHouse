@@ -3,6 +3,13 @@
 namespace Coordination
 {
 
+
+void write(size_t x, WriteBuffer & out)
+{
+    x = __builtin_bswap64(x);
+    writeBinary(x, out);
+}
+
 void write(int64_t x, WriteBuffer & out)
 {
     x = __builtin_bswap64(x);
@@ -55,6 +62,12 @@ void write(const Stat & stat, WriteBuffer & out)
 void write(const Error & x, WriteBuffer & out)
 {
     write(static_cast<int32_t>(x), out);
+}
+
+void read(size_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+    x = __builtin_bswap64(x);
 }
 
 void read(int64_t & x, ReadBuffer & in)

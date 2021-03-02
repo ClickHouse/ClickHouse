@@ -64,7 +64,7 @@ public:
         for (const auto & name_type : columns)
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        return Nested::flatten(res);
+        return res;
     }
 
     TinyLogSource(
@@ -113,7 +113,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit);
+    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, UInt64 limit, IDataType::SubstreamsCache & cache);
 };
 
 
@@ -132,13 +132,14 @@ Chunk TinyLogSource::generate()
         return {};
     }
 
+    std::unordered_map<String, IDataType::SubstreamsCache> caches;
     for (const auto & name_type : columns)
     {
-        MutableColumnPtr column = name_type.type->createColumn();
-
+        ColumnPtr column;
         try
         {
-            readData(name_type.name, *name_type.type, *column, block_size);
+            column = name_type.type->createColumn();
+            readData(name_type, column, block_size, caches[name_type.getNameInStorage()]);
         }
         catch (Exception & e)
         {
@@ -156,32 +157,36 @@ Chunk TinyLogSource::generate()
         streams.clear();
     }
 
-    auto flatten = Nested::flatten(res);
-    return Chunk(flatten.getColumns(), flatten.rows());
+    return Chunk(res.getColumns(), res.rows());
 }
 
 
-void TinyLogSource::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
+void TinyLogSource::readData(const NameAndTypePair & name_and_type,
+    ColumnPtr & column, UInt64 limit, IDataType::SubstreamsCache & cache)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+    const auto & [name, type] = name_and_type;
     settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        if (cache.count(IDataType::getSubcolumnNameForStream(path)))
+            return nullptr;
 
-        if (!streams.count(stream_name))
+        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+        auto & stream = streams[stream_name];
+        if (!stream)
         {
             String file_path = storage.files[stream_name].data_file_path;
-            streams[stream_name] = std::make_unique<Stream>(
+            stream = std::make_unique<Stream>(
                 storage.disk, file_path, max_read_buffer_size, file_sizes[fileName(file_path)]);
         }
 
-        return &streams[stream_name]->compressed;
+        return &stream->compressed;
     };
 
     if (deserialize_states.count(name) == 0)
-        type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+         type->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
 
-    type.deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name]);
+    type->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name], &cache);
 }
 
 
@@ -262,18 +267,18 @@ private:
 
     using WrittenStreams = std::set<String>;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenStreams & written_streams);
-    void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
+    IDataType::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenStreams & written_streams);
+    void writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams);
 };
 
 
 IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
-    const String & name,
+    const NameAndTypePair & column,
     WrittenStreams & written_streams)
 {
     return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = IDataType::getFileNameForStream(column, path);
 
         if (!written_streams.insert(stream_name).second)
             return nullptr;
@@ -283,7 +288,7 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
             streams[stream_name] = std::make_unique<Stream>(
                 storage.disk,
                 storage.files[stream_name].data_file_path,
-                columns.getCodecOrDefault(name),
+                columns.getCodecOrDefault(column.name),
                 storage.max_compress_block_size);
 
         return &streams[stream_name]->compressed;
@@ -291,15 +296,22 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
 }
 
 
-void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams)
+void TinyLogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
 {
     IDataType::SerializeBinaryBulkSettings settings;
-    settings.getter = createStreamGetter(name, written_streams);
+    const auto & [name, type] = name_and_type;
 
     if (serialize_states.count(name) == 0)
-        type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+    {
+        /// Some stream getters may be called form `serializeBinaryBulkStatePrefix`.
+        /// Use different WrittenStreams set, or we get nullptr for them in `serializeBinaryBulkWithMultipleStreams`
+        WrittenStreams prefix_written_streams;
+        settings.getter = createStreamGetter(name_and_type, prefix_written_streams);
+        type->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+    }
 
-    type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
+    settings.getter = createStreamGetter(name_and_type, written_streams);
+    type->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 }
 
 
@@ -322,7 +334,7 @@ void TinyLogBlockOutputStream::writeSuffix()
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
         {
-            settings.getter = createStreamGetter(column.name, written_streams);
+            settings.getter = createStreamGetter(NameAndTypePair(column.name, column.type), written_streams);
             column.type->serializeBinaryBulkStateSuffix(settings, it->second);
         }
     }
@@ -354,7 +366,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, written_streams);
+        writeData(NameAndTypePair(column.name, column.type), *column.column, written_streams);
     }
 }
 
@@ -400,19 +412,20 @@ StorageTinyLog::StorageTinyLog(
     }
 
     for (const auto & col : storage_metadata.getColumns().getAllPhysical())
-        addFiles(col.name, *col.type);
+        addFiles(col);
 }
 
 
-void StorageTinyLog::addFiles(const String & column_name, const IDataType & type)
+void StorageTinyLog::addFiles(const NameAndTypePair & column)
 {
-    if (files.end() != files.find(column_name))
-        throw Exception("Duplicate column with name " + column_name + " in constructor of StorageTinyLog.",
+    const auto & [name, type] = column;
+    if (files.end() != files.find(name))
+        throw Exception("Duplicate column with name " + name + " in constructor of StorageTinyLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
     IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+        String stream_name = IDataType::getFileNameForStream(column, substream_path);
         if (!files.count(stream_name))
         {
             ColumnData column_data;
@@ -422,7 +435,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
     };
 
     IDataType::SubstreamPath substream_path;
-    type.enumerateStreams(stream_callback, substream_path);
+    type->enumerateStreams(stream_callback, substream_path);
 }
 
 
@@ -463,6 +476,8 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     const Settings & settings = context.getSettingsRef();
@@ -474,7 +489,7 @@ Pipe StorageTinyLog::read(
     /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe(std::make_shared<TinyLogSource>(
         max_block_size,
-        Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)),
+        Nested::convertToSubcolumns(all_columns),
         *this,
         settings.max_read_buffer_size,
         file_checker.getFileSizes()));
@@ -505,7 +520,7 @@ void StorageTinyLog::truncate(
     file_checker = FileChecker{disk, table_path + "sizes.json"};
 
     for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-        addFiles(column.name, *column.type);
+        addFiles(column);
 }
 
 

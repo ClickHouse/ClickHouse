@@ -738,13 +738,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
-        if (node.window_partition_by)
+        if (node.window_definition)
         {
-            visit(node.window_partition_by, data);
-        }
-        if (node.window_order_by)
-        {
-            visit(node.window_order_by, data);
+            visit(node.window_definition, data);
         }
 
         // Also manually add columns for arguments of the window function itself.

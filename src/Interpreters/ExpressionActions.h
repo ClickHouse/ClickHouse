@@ -62,7 +62,7 @@ public:
 
     using Actions = std::vector<Action>;
 
-    /// This map helps to find input position bu it's name.
+    /// This map helps to find input position by it's name.
     /// Key is a view to input::result_name.
     /// Result is a list because it is allowed for inputs to have same names.
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
@@ -79,6 +79,7 @@ private:
     Block sample_block;
 
 public:
+    ExpressionActions() = delete;
     ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_);
     ExpressionActions(const ExpressionActions &) = default;
@@ -114,8 +115,6 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
-    ExpressionActions() = default;
-
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();

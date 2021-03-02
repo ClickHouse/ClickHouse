@@ -50,8 +50,9 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code)
     ErrorCodes::increment(code);
 }
 
-Exception::Exception(const std::string & msg, int code)
+Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
+    , remote(remote_)
 {
     handle_error_code(msg, code);
 }
@@ -118,6 +119,13 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
+    /// Under high memory pressure, any new allocation will definitelly lead
+    /// to MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// And in this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
+    MemoryTracker::LockExceptionInThread lock_memory_tracker;
+
     try
     {
         if (start_of_message.empty())

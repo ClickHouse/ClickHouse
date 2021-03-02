@@ -12,7 +12,6 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
-#include <IO/ConcatReadBuffer.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -106,7 +105,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(),
+            throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
@@ -167,7 +166,7 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
-    auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(context.getInitialQueryId(), settings.lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
@@ -290,7 +289,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
-                if (settings.min_insert_block_size_rows)
+                if (settings.min_insert_block_size_rows && table->prefersLargeBlocks())
                     new_settings.max_block_size = settings.min_insert_block_size_rows;
 
                 Context new_context = context;
@@ -342,20 +341,22 @@ BlockIO InterpreterInsertQuery::execute()
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), metadata_snapshot->getColumns(), context);
+                out, query_sample_block, metadata_snapshot->getColumns(), context);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
 
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-            if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
+            if (!(settings.insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
             {
+                bool table_prefers_large_blocks = table->prefersLargeBlocks();
+
                 out = std::make_shared<SquashingBlockOutputStream>(
                     out,
                     out->getHeader(),
-                    context.getSettingsRef().min_insert_block_size_rows,
-                    context.getSettingsRef().min_insert_block_size_bytes);
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0);
             }
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);

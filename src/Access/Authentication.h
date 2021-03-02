@@ -6,6 +6,8 @@
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <set>
+#include <vector>
 
 
 namespace DB
@@ -19,6 +21,10 @@ namespace ErrorCodes
 }
 
 class ExternalAuthenticators;
+struct LDAPSearchParams;
+using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
+using LDAPSearchResults = std::set<String>;
+using LDAPSearchResultsList = std::vector<LDAPSearchResults>;
 
 /// Authentication type and encrypted password for checking when an user logins.
 class Authentication

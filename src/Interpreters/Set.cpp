@@ -140,7 +140,16 @@ void Set::setHeader(const Block & header)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
+    {
+        /// We convert nullable columns to non nullable we also need to update nullable types
+        for (size_t i = 0; i < set_elements_types.size(); ++i)
+        {
+            data_types[i] = removeNullable(data_types[i]);
+            set_elements_types[i] = removeNullable(set_elements_types[i]);
+        }
+
         extractNestedColumnsAndNullMap(key_columns, null_map);
+    }
 
     if (fill_set_elements)
     {
@@ -182,7 +191,7 @@ bool Set::insertFromBlock(const Block & block)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
-         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;

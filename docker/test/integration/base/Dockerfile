@@ -18,7 +18,8 @@ RUN apt-get update \
         curl \
         tar \
         krb5-user \
-        iproute2
+        iproute2 \
+        lsof
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -30,3 +31,4 @@ RUN curl 'https://cdn.mysql.com//Downloads/Connector-ODBC/8.0/mysql-connector-od
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
