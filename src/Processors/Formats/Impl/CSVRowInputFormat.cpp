@@ -145,6 +145,16 @@ static void skipRow(ReadBuffer & in, const FormatSettings::CSV & settings, size_
     }
 }
 
+void CSVRowInputFormat::setupAllColumnsByTableSchema()
+{
+    const auto & header = getPort().getHeader();
+    column_mapping->read_columns.assign(header.columns(), true);
+    column_mapping->column_indexes_for_input_fields.resize(header.columns());
+
+    for (size_t i = 0; i < column_mapping->column_indexes_for_input_fields.size(); ++i)
+        column_mapping->column_indexes_for_input_fields[i] = i;
+}
+
 
 void CSVRowInputFormat::readPrefix()
 {
@@ -193,16 +203,8 @@ void CSVRowInputFormat::readPrefix()
         else
             skipRow(in, format_settings.csv, num_columns);
     }
-
-    /// The default: map each column of the file to the column of the table with
-    /// the same index.
-    column_mapping->read_columns.assign(header.columns(), true);
-    column_mapping->column_indexes_for_input_fields.resize(header.columns());
-
-    for (size_t i = 0; i < column_mapping->column_indexes_for_input_fields.size(); ++i)
-    {
-        column_mapping->column_indexes_for_input_fields[i] = i;
-    }
+    else if (!column_mapping->is_set)
+        setupAllColumnsByTableSchema();
 }
 
 

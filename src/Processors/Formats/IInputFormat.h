@@ -10,7 +10,8 @@ namespace DB
 /// Used to pass info from header between different InputFormats in ParallelParsing
 struct ColumnMapping
 {
-    /// Non-atomic because only read access in possible
+    /// Non-atomic because there is strict `happens-before` between read and write access
+    /// See InputFormatParallelParsing
     bool is_set;
     /// Maps indexes of columns in the input file to indexes of table columns
     using OptionalIndexes = std::vector<std::optional<size_t>>;
