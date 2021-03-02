@@ -69,7 +69,7 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    /// A helper method for recovering from "Lost connection to MySQL server during query" errors
+    /// A helper method for recovering from "Lost connection to MySQL server during query" errors.
     BlockInputStreamPtr retriedCreateMySqlBIStream(const std::string & query_str, const size_t max_tries);
 
     Poco::Logger * log;
