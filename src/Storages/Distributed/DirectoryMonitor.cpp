@@ -435,7 +435,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles() const
+std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
 {
     std::map<UInt64, std::string> files;
     size_t new_bytes_count = 0;
@@ -765,7 +765,7 @@ bool StorageDistributedDirectoryMonitor::addAndSchedule(size_t file_size, size_t
     return task_handle->scheduleAfter(ms, false);
 }
 
-StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus() const
+StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus()
 {
     std::lock_guard metrics_lock(metrics_mutex);
 
@@ -879,7 +879,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 }
 
-void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
+void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path)
 {
     const auto last_path_separator_pos = file_path.rfind('/');
     const auto & base_path = file_path.substr(0, last_path_separator_pos + 1);
@@ -906,7 +906,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 
     LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
-void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_path) const
+void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_path)
 {
     Poco::File file(file_path);
 
@@ -922,7 +922,7 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
     file.remove();
 }
 
-bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
+bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
     /// mark file as broken if necessary
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
