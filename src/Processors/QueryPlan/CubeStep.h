@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <DataStreams/SizeLimits.h>
+#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -18,6 +19,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    const Aggregator::Params & getParams() const;
 private:
     AggregatingTransformParamsPtr params;
 };
