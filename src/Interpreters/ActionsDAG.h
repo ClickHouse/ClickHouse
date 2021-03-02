@@ -55,9 +55,13 @@ public:
         FUNCTION,
     };
 
+    struct Node;
+    using NodeRawPtrs = std::vector<Node *>;
+    using NodeRawConstPtrs = std::vector<const Node *>;
+
     struct Node
     {
-        std::vector<Node *> children;
+        NodeRawConstPtrs children;
 
         ActionType type;
 
@@ -90,94 +94,95 @@ public:
     ///
     /// Index is a list of nodes + [map: name -> list::iterator].
     /// List is ordered, may contain nodes with same names, or one node several times.
-    class Index
-    {
-    private:
-        std::list<Node *> list;
-        /// Map key is a string_view to Node::result_name for node from value.
-        /// Map always point to existing node, so key always valid (nodes live longer then index).
-        std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
+    // class Index
+    // {
+    // private:
+    //     std::list<Node *> list;
+    //     /// Map key is a string_view to Node::result_name for node from value.
+    //     /// Map always point to existing node, so key always valid (nodes live longer then index).
+    //     std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
 
-    public:
-        auto size() const { return list.size(); }
-        bool contains(std::string_view key) const { return map.count(key) != 0; }
+    // public:
+    //     auto size() const { return list.size(); }
+    //     bool contains(std::string_view key) const { return map.count(key) != 0; }
 
-        std::list<Node *>::iterator begin() { return list.begin(); }
-        std::list<Node *>::iterator end() { return list.end(); }
-        std::list<Node *>::const_iterator begin() const { return list.begin(); }
-        std::list<Node *>::const_iterator end() const { return list.end(); }
-        std::list<Node *>::const_reverse_iterator rbegin() const { return list.rbegin(); }
-        std::list<Node *>::const_reverse_iterator rend() const { return list.rend(); }
-        std::list<Node *>::const_iterator find(std::string_view key) const
-        {
-            auto it = map.find(key);
-            if (it == map.end())
-                return list.end();
+    //     std::list<Node *>::iterator begin() { return list.begin(); }
+    //     std::list<Node *>::iterator end() { return list.end(); }
+    //     std::list<Node *>::const_iterator begin() const { return list.begin(); }
+    //     std::list<Node *>::const_iterator end() const { return list.end(); }
+    //     std::list<Node *>::const_reverse_iterator rbegin() const { return list.rbegin(); }
+    //     std::list<Node *>::const_reverse_iterator rend() const { return list.rend(); }
+    //     std::list<Node *>::const_iterator find(std::string_view key) const
+    //     {
+    //         auto it = map.find(key);
+    //         if (it == map.end())
+    //             return list.end();
 
-            return it->second;
-        }
+    //         return it->second;
+    //     }
 
-        /// Insert method doesn't check if map already have node with the same name.
-        /// If node with the same name exists, it is removed from map, but not list.
-        /// It is expected and used for project(), when result may have several columns with the same name.
-        void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
-        void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
+    //     /// Insert method doesn't check if map already have node with the same name.
+    //     /// If node with the same name exists, it is removed from map, but not list.
+    //     /// It is expected and used for project(), when result may have several columns with the same name.
+    //     void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
+    //     void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
 
-        /// If node with same name exists in index, replace it. Otherwise insert new node to index.
-        void replace(Node * node)
-        {
-            if (auto handle = map.extract(node->result_name))
-            {
-                handle.key() = node->result_name; /// Change string_view
-                *handle.mapped() = node;
-                map.insert(std::move(handle));
-            }
-            else
-                insert(node);
-        }
+    //     /// If node with same name exists in index, replace it. Otherwise insert new node to index.
+    //     void replace(Node * node)
+    //     {
+    //         if (auto handle = map.extract(node->result_name))
+    //         {
+    //             handle.key() = node->result_name; /// Change string_view
+    //             *handle.mapped() = node;
+    //             map.insert(std::move(handle));
+    //         }
+    //         else
+    //             insert(node);
+    //     }
 
-        void remove(std::list<Node *>::iterator it)
-        {
-            auto map_it = map.find((*it)->result_name);
-            if (map_it != map.end() && map_it->second == it)
-                map.erase(map_it);
+    //     void remove(std::list<Node *>::iterator it)
+    //     {
+    //         auto map_it = map.find((*it)->result_name);
+    //         if (map_it != map.end() && map_it->second == it)
+    //             map.erase(map_it);
 
-            list.erase(it);
-        }
+    //         list.erase(it);
+    //     }
 
-        void swap(Index & other)
-        {
-            list.swap(other.list);
-            map.swap(other.map);
-        }
-    };
+    //     void swap(Index & other)
+    //     {
+    //         list.swap(other.list);
+    //         map.swap(other.map);
+    //     }
+    // };
 
     /// NOTE: std::list is an implementation detail.
     /// It allows to add and remove new nodes inplace without reallocation.
     /// Raw pointers to nodes remain valid.
     using Nodes = std::list<Node>;
-    using Inputs = std::vector<Node *>;
+    //using Inputs = std::vector<Node *>;
 
-    struct ActionsSettings
-    {
-        size_t max_temporary_columns = 0;
-        size_t max_temporary_non_const_columns = 0;
-        size_t min_count_to_compile_expression = 0;
-        bool compile_expressions = false;
-        bool project_input = false;
-        bool projected_output = false;
-    };
+    // struct ActionsSettings
+    // {
+    //     size_t max_temporary_columns = 0;
+    //     size_t max_temporary_non_const_columns = 0;
+    //     size_t min_count_to_compile_expression = 0;
+    //     bool compile_expressions = false;
+    //     bool project_input = false;
+    //     bool projected_output = false;
+    // };
 
 private:
     Nodes nodes;
-    Index index;
-    Inputs inputs;
+    NodeRawConstPtrs index;
+    NodeRawConstPtrs inputs;
 
-    ActionsSettings settings;
+    bool project_input = false;
+    bool projected_output = false;
 
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> compilation_cache;
-#endif
+// #if USE_EMBEDDED_COMPILER
+//     std::shared_ptr<CompiledExpressionCache> compilation_cache;
+// #endif
 
 public:
     ActionsDAG() = default;
@@ -188,8 +193,8 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
-    const Index & getIndex() const { return index; }
-    const Inputs & getInputs() const { return inputs; }
+    const NodeRawConstPtrs & getIndex() const { return index; }
+    const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     ColumnsWithTypeAndName getResultColumns() const;
@@ -199,17 +204,15 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
-    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
-    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
-    const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
-    const Node & addArrayJoin(const std::string & source_name, std::string result_name);
+    const Node & addInput(std::string name, DataTypePtr type);
+    const Node & addInput(ColumnWithTypeAndName column);
+    const Node & addColumn(ColumnWithTypeAndName column /*, bool materialize = false*/);
+    const Node & addAlias(const Node & child, std::string alias);
+    const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
-            const Names & argument_names,
-            std::string result_name,
-            const Context & context,
-            bool can_replace = false);
+            NodeRawConstPtrs children,
+            std::string result_name);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -223,14 +226,14 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
-    void projectInput() { settings.project_input = true; }
+    void projectInput() { project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
 
-    const ActionsSettings & getSettings() const { return settings; }
+    //const ActionsSettings & getSettings() const { return settings; }
 
     void compileExpressions();
 
@@ -289,31 +292,30 @@ public:
     ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs);
 
 private:
-    Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
-    Node & getNode(const std::string & name);
+    Node & addNode(Node node);
+    // Node & getNode(const std::string & name);
 
-    Node & addAlias(Node & child, std::string alias, bool can_replace);
-    Node & addFunction(
-            const FunctionOverloadResolverPtr & function,
-            Inputs children,
-            std::string result_name,
-            bool can_replace,
-            bool add_to_index = true);
+//     Node & addAlias(Node & child, std::string alias, bool can_replace);
+//     Node & addFunction(
+//             const FunctionOverloadResolverPtr & function,
+//             Inputs children,
+//             std::string result_name,
+//             bool can_replace,
+//             bool add_to_index = true);
 
-    ActionsDAGPtr cloneEmpty() const
-    {
-        auto actions = std::make_shared<ActionsDAG>();
-        actions->settings = settings;
+//     ActionsDAGPtr cloneEmpty() const
+//     {
+//         auto actions = std::make_shared<ActionsDAG>();
+// //         actions->settings = settings;
 
-#if USE_EMBEDDED_COMPILER
-        actions->compilation_cache = compilation_cache;
-#endif
-        return actions;
-    }
+// // #if USE_EMBEDDED_COMPILER
+// //         actions->compilation_cache = compilation_cache;
+// // #endif
+//         return actions;
+//     }
 
-    void removeUnusedActions(const std::vector<Node *> & required_nodes);
     void removeUnusedActions(bool allow_remove_inputs = true);
-    void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
+    void addAliases(const NamesWithAliases & aliases, bool project);
 
     void compileFunctions();
 
