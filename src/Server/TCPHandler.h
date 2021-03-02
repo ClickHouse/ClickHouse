@@ -10,6 +10,7 @@
 #include <IO/Progress.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/Context.h>
 #include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
@@ -67,6 +68,9 @@ struct QueryState
     /// Temporary tables read
     bool temporary_tables_read = false;
 
+    /// A state got uuids to exclude from a query
+    bool part_uuids = false;
+
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
     /// temporary place for incoming data block for input()
@@ -109,16 +113,9 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_)
-        : Poco::Net::TCPServerConnection(socket_)
-        , server(server_)
-        , parse_proxy_protocol(parse_proxy_protocol_)
-        , log(&Poco::Logger::get("TCPHandler"))
-        , connection_context(server.context())
-        , query_context(server.context())
-    {
-        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
-    }
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_,
+        std::string server_display_name_);
+    ~TCPHandler() override;
 
     void run() override;
 
@@ -172,6 +169,7 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
+    void receiveIgnoredPartUUIDs();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
@@ -200,6 +198,7 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
+    void sendPartUUIDs();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

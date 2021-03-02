@@ -12,16 +12,20 @@ Alias: `<alias name>`. (Optional)
 
 More text (Optional).
 
-**Parameters** (Optional)
+**Arguments** (Optional)
 
 -   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
 -   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
 
+**Parameters** (Optional, only for parametric aggregate functions)
+
+-   `z` — Description. [Type name](relative/path/to/type/dscr.md#type).
+
 **Returned value(s)**
 
--   Returned values list.
+-   Returned values list. 
 
-Type: [Type](relative/path/to/type/dscr.md#type).
+Type: [Type name](relative/path/to/type/dscr.md#type).
 
 **Example**
 

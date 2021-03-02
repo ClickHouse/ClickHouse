@@ -24,7 +24,6 @@
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
-#include <Processors/Transforms/AddingConstColumnTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 
@@ -364,9 +363,13 @@ Pipe StorageMerge::createSources(
             column.name = "_table";
             column.type = std::make_shared<DataTypeString>();
             column.column = column.type->createColumnConst(0, Field(table_name));
+
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto adding_column_actions = std::make_shared<ExpressionActions>(std::move(adding_column_dag));
+
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
-                return std::make_shared<AddingConstColumnTransform>(stream_header, column);
+                return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions);
             });
         }
 

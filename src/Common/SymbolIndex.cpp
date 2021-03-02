@@ -60,11 +60,11 @@ Otherwise you will get only exported symbols from program headers.
 #endif
 
 #define __msan_unpoison_string(X) // NOLINT
-#if defined(__has_feature)
-#   if __has_feature(memory_sanitizer)
-#       undef __msan_unpoison_string
-#       include <sanitizer/msan_interface.h>
-#   endif
+#if defined(ch_has_feature)
+#    if ch_has_feature(memory_sanitizer)
+#        undef __msan_unpoison_string
+#        include <sanitizer/msan_interface.h>
+#    endif
 #endif
 
 
@@ -324,6 +324,27 @@ void collectSymbolsFromELF(dl_phdr_info * info,
         object_name = local_debug_info_path;
     else if (std::filesystem::exists(debug_info_path))
         object_name = debug_info_path;
+    else if (build_id.size() >= 2)
+    {
+        // Check if there is a .debug file in .build-id folder. For example:
+        // /usr/lib/debug/.build-id/e4/0526a12e9a8f3819a18694f6b798f10c624d5c.debug
+        String build_id_hex;
+        build_id_hex.resize(build_id.size() * 2);
+
+        char * pos = build_id_hex.data();
+        for (auto c : build_id)
+        {
+            writeHexByteLowercase(c, pos);
+            pos += 2;
+        }
+
+        std::filesystem::path build_id_debug_info_path(
+            fmt::format("/usr/lib/debug/.build-id/{}/{}.debug", build_id_hex.substr(0, 2), build_id_hex.substr(2)));
+        if (std::filesystem::exists(build_id_debug_info_path))
+            object_name = build_id_debug_info_path;
+        else
+            object_name = canonical_path;
+    }
     else
         object_name = canonical_path;
 

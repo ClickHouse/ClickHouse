@@ -16,6 +16,7 @@ def regression(self, local, clickhouse_binary_path, parallel=None, stress=None):
 
     Feature(test=load("ldap.authentication.regression", "regression"))(**args)
     Feature(test=load("ldap.external_user_directory.regression", "regression"))(**args)
+    Feature(test=load("ldap.role_mapping.regression", "regression"))(**args)
 
 if main():
     regression()

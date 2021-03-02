@@ -22,7 +22,8 @@
 #include <filesystem>
 #include <city.h>
 #include <fcntl.h>
-
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace ProfileEvents
 {
@@ -445,7 +446,7 @@ void SSDCachePartition::flush()
 
 template <typename Out, typename GetDefault>
 void SSDCachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-    ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
+    ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & default_value_extractor,
     std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
@@ -456,7 +457,7 @@ void SSDCachePartition::getValue(const size_t attribute_index, const PaddedPODAr
         if (metadata.expiresAt() > now)
         {
             if (metadata.isDefault())
-                out[index] = get_default(index);
+                out[index] = default_value_extractor[index];
             else
             {
                 ignoreFromBufferToAttributeIndex(attribute_index, buf);
@@ -939,14 +940,14 @@ SSDCacheStorage::~SSDCacheStorage()
 template <typename Out, typename GetDefault>
 void SSDCacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
       ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-      GetDefault & get_default, std::chrono::system_clock::time_point now) const
+      GetDefault & default_value_extractor, std::chrono::system_clock::time_point now) const
 {
     std::vector<bool> found(ids.size(), false);
 
     {
         std::shared_lock lock(rw_lock);
         for (const auto & partition : partitions)
-            partition->getValue<Out>(attribute_index, ids, out, found, get_default, now);
+            partition->getValue<Out>(attribute_index, ids, out, found, default_value_extractor, now);
     }
 
     for (size_t i = 0; i < ids.size(); ++i)
@@ -1327,102 +1328,62 @@ SSDCacheDictionary::SSDCacheDictionary(
     createAttributes();
 }
 
-#define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
-        getItemsNumberImpl<TYPE, TYPE>(index, ids, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
-    }
+ColumnPtr SSDCacheDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_values_column) const
+{
+    ColumnPtr result;
 
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    PaddedPODArray<Key> backup_storage;
+    const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+    auto keys_size = ids.size();
 
-#define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>( \
-            index, \
-            ids, \
-            out, \
-            [&](const size_t row) { return def[row]; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    const auto index = getAttributeIndex(attribute_name);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-#define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>( \
-            index, \
-            ids, \
-            out, \
-            [&](const size_t) { return def; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+        const auto & null_value = std::get<AttributeType>(null_values[index]);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            getItemsStringImpl(index, ids, column.get(), default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+            getItemsNumberImpl<AttributeType, AttributeType>(index, ids, out, default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
+
+    return result;
+}
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDCacheDictionary::getItemsNumberImpl(
-        const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
+        const size_t attribute_index,
+        const PaddedPODArray<Key> & ids,
+        ResultArrayType<OutputType> & out,
+        DefaultGetter & default_value_extractor) const
 {
     const auto now = std::chrono::system_clock::now();
 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
-    storage.getValue<OutputType>(attribute_index, ids, out, not_found_ids, get_default, now);
+    storage.getValue<OutputType>(attribute_index, ids, out, not_found_ids, default_value_extractor, now);
     if (not_found_ids.empty())
         return;
 
@@ -1440,42 +1401,17 @@ void SSDCacheDictionary::getItemsNumberImpl(
             [&](const size_t id)
             {
                 for (const size_t row : not_found_ids[id])
-                    out[row] = get_default(row);
+                    out[row] = default_value_extractor[row];
             },
             getLifetime());
 }
 
-void SSDCacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    const auto null_value = StringRef{std::get<String>(null_values[index])};
-
-    getItemsStringImpl(index, ids, out, [&](const size_t) { return null_value; });
-}
-
-void SSDCacheDictionary::getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, ids, out, [&](const size_t row) { return def->getDataAt(row); });
-}
-
-void SSDCacheDictionary::getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, ids, out, [&](const size_t) { return StringRef{def}; });
-}
-
 template <typename DefaultGetter>
-void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
-        ColumnString * out, DefaultGetter && get_default) const
+void SSDCacheDictionary::getItemsStringImpl(
+    const size_t attribute_index,
+    const PaddedPODArray<Key> & ids,
+    ColumnString * out,
+    DefaultGetter & default_value_extractor) const
 {
     const auto now = std::chrono::system_clock::now();
 
@@ -1494,7 +1430,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         {
             if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
             {
-                auto to_insert = get_default(row);
+                auto to_insert = default_value_extractor[row];
                 out->insertData(to_insert.data, to_insert.size);
                 ++default_index;
             }
@@ -1525,7 +1461,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         const auto & id = ids[row];
         if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
         {
-            auto to_insert = get_default(row);
+            auto to_insert = default_value_extractor[row];
             out->insertData(to_insert.data, to_insert.size);
             ++default_index;
         }
@@ -1539,20 +1475,30 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         }
         else
         {
-            auto to_insert = get_default(row);
+            auto to_insert = default_value_extractor[row];
             out->insertData(to_insert.data, to_insert.size);
         }
     }
 }
 
-void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr SSDCacheDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
+
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = false;
+
     const auto now = std::chrono::system_clock::now();
 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
     storage.has(ids, out, not_found_ids, now);
     if (not_found_ids.empty())
-        return;
+        return result;
 
     std::vector<Key> required_ids(not_found_ids.size());
     std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](const auto & pair) { return pair.first; });
@@ -1571,11 +1517,13 @@ void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UIn
                     out[row] = false;
             },
             getLifetime());
+
+    return result;
 }
 
 BlockInputStreamPtr SSDCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<SSDCacheDictionary, Key>;
+    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, storage.getCachedIds(), column_names);
 }
 

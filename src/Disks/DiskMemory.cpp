@@ -314,11 +314,6 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path*/)
-{
-    throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
 {
     std::lock_guard lock(mutex);
@@ -434,21 +429,6 @@ void DiskMemory::createFile(const String &)
 void DiskMemory::setReadOnly(const String &)
 {
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-int DiskMemory::open(const String & /*path*/, int /*flags*/) const
-{
-    throw Exception("Method open is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::close(int /*fd*/) const
-{
-    throw Exception("Method close is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::sync(int /*fd*/) const
-{
-    throw Exception("Method sync is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DiskMemory::truncateFile(const String & path, size_t size)

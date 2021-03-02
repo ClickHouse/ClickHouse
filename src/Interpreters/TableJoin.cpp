@@ -230,8 +230,16 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const
 {
     for (auto & col : columns)
+    {
         if (leftBecomeNullable(col.type))
-            col.type = makeNullable(col.type);
+        {
+            /// No need to nullify constants
+            if (!(col.column && isColumnConst(*col.column)))
+            {
+                col.type = makeNullable(col.type);
+            }
+        }
+    }
 
     for (const auto & col : columns_added_by_join)
     {

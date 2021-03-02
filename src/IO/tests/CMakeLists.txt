@@ -25,9 +25,6 @@ target_link_libraries (var_uint PRIVATE clickhouse_common_io)
 add_executable (read_escaped_string read_escaped_string.cpp)
 target_link_libraries (read_escaped_string PRIVATE clickhouse_common_io)
 
-add_executable (async_write async_write.cpp)
-target_link_libraries (async_write PRIVATE dbms)
-
 add_executable (parse_int_perf parse_int_perf.cpp)
 target_link_libraries (parse_int_perf PRIVATE clickhouse_common_io)
 

@@ -61,3 +61,8 @@ SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))
     AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
+
+DROP TABLE t_arr;
+DROP TABLE t_nul;
+DROP TABLE t_tup;
+DROP TABLE t_map;

@@ -145,6 +145,11 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
+void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    throw Exception("Table engine " + getName() + " doesn't support mutations", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 void IStorage::checkAlterPartitionIsPossible(
     const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
@@ -203,14 +208,14 @@ std::string PrewhereDAGInfo::dump() const
     return ss.str();
 }
 
-std::string FilterInfo::dump() const
+std::string FilterDAGInfo::dump() const
 {
     WriteBufferFromOwnString ss;
-    ss << "FilterInfo for column '" << column_name <<"', do_remove_column "
+    ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-    if (actions_dag)
+    if (actions)
     {
-        ss << "actions_dag " << actions_dag->dumpDAG() << "\n";
+        ss << "actions " << actions->dumpDAG() << "\n";
     }
 
     return ss.str();

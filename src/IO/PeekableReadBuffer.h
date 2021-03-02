@@ -38,11 +38,6 @@ public:
             peeked_size = 0;
         }
         checkpoint.emplace(pos);
-
-        // FIXME: we are checking checkpoint existence in few places (rollbackToCheckpoint/dropCheckpoint)
-        // by simple if(checkpoint) but checkpoint can be nullptr after
-        // setCheckpoint called on empty (non initialized/eof) buffer
-        // and we can't just use simple if(checkpoint)
     }
 
     /// Forget checkpoint and all data between checkpoint and position
@@ -63,7 +58,7 @@ public:
 
     /// Sets position at checkpoint.
     /// All pointers (such as this->buffer().end()) may be invalidated
-    void rollbackToCheckpoint();
+    void rollbackToCheckpoint(bool drop = false);
 
     /// If checkpoint and current position are in different buffers, appends data from sub-buffer to own memory,
     /// so data between checkpoint and position will be in continuous memory.

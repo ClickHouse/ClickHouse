@@ -505,7 +505,7 @@ bool MergeJoin::hasTotals() const
 void MergeJoin::joinTotals(Block & block) const
 {
     std::shared_lock lock(rwlock);
-    JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
+    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -939,7 +939,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
+            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 

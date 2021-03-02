@@ -37,7 +37,10 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
 [SETTINGS name=value, ...]
 ```
 
@@ -71,7 +74,7 @@ ORDER BY expr
     
     Выражение должно возвращать столбец `Date` или `DateTime`. Пример: `TTL date + INTERVAL 1 DAY`.   
 
-    Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` указывает действие, которое будет выполнено с частью, удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`). Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
+    Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` указывает действие, которое будет выполнено с частью: удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`), или агрегирование данных в устаревших строках. Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
     
     Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
 
@@ -91,6 +94,7 @@ ORDER BY expr
 	-   `max_parts_in_total` — максимальное количество кусков во всех партициях.
 	-   `max_compress_block_size` — максимальный размер блоков несжатых данных перед сжатием для записи в таблицу. Вы также можете задать этот параметр в глобальных настройках (смотрите [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
 	-   `min_compress_block_size` — минимальный размер блоков несжатых данных, необходимых для сжатия при записи следующей засечки. Вы также можете задать этот параметр в глобальных настройках (смотрите [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
+    -   `max_partitions_to_read` — Ограничивает максимальное число партиций для чтения в одном запросе. Также возможно указать настройку [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) в глобальных настройках.
 
 **Пример задания секций**
 
@@ -443,16 +447,28 @@ ALTER TABLE example_table
 Для таблицы можно задать одно выражение для устаревания данных, а также несколько выражений, по срабатывании которых данные переместятся на [некоторый диск или том](#table_engine-mergetree-multiple-volumes). Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
 
 ``` sql
-TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] 
 ```
 
 За каждым TTL выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату TTL выражения:
 
 -   `DELETE` - удалить данные (действие по умолчанию);
 -   `TO DISK 'aaa'` - переместить данные на диск `aaa`;
--   `TO VOLUME 'bbb'` - переместить данные на том `bbb`.
+-   `TO VOLUME 'bbb'` - переместить данные на том `bbb`;
+-   `GROUP BY` -  агрегировать данные.
 
-Примеры:
+В секции `WHERE` можно задать условие удаления или агрегирования устаревших строк (для перемещения условие `WHERE` не применимо).
+
+Колонки, по которым агрегируются данные в `GROUP BY`, должны являться префиксом первичного ключа таблицы. 
+
+Если колонка не является частью выражения `GROUP BY` и не задается напрямую в секции `SET`, в результирующих строках она будет содержать случайное значение, взятое из одной из сгруппированных строк (как будто к ней применяется агрегирующая функция `any`).
+
+**Примеры**
+
+Создание таблицы с TTL: 
 
 ``` sql
 CREATE TABLE example_table
@@ -468,11 +484,41 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Изменение TTL
+Изменение TTL:
 
 ``` sql
 ALTER TABLE example_table
     MODIFY TTL d + INTERVAL 1 DAY;
+```
+
+Создание таблицы, в которой строки устаревают через месяц. Устаревшие строки удаляются, если дата выпадает на понедельник:
+
+``` sql
+CREATE TABLE table_with_where
+(
+    d DateTime, 
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
+```
+
+Создание таблицы, где устаревшие строки агрегируются. В результирующих строках колонка `x` содержит максимальное значение по сгруппированным строкам, `y` — минимальное значение, а `d` — случайное значение из одной из сгуппированных строк.
+
+``` sql
+CREATE TABLE table_for_aggregation
+(
+    d DateTime, 
+    k1 Int, 
+    k2 Int, 
+    x Int, 
+    y Int
+)
+ENGINE = MergeTree
+ORDER BY k1, k2
+TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
 **Удаление данных**
@@ -666,4 +712,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/mergetree/) <!--hide-->

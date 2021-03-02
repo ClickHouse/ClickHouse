@@ -17,7 +17,7 @@ SELECT if(cond, then, else)
 
 If the condition `cond` evaluates to a non-zero value, returns the result of the expression `then`, and the result of the expression `else`, if present, is skipped. If the `cond` is zero or `NULL`, then the result of the `then` expression is skipped and the result of the `else` expression, if present, is returned.
 
-**Parameters**
+**Arguments**
 
 -   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
 -   `then` - The expression to return if condition is met.
@@ -117,7 +117,7 @@ Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_c
 
 Syntax: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
-**Parameters:**
+**Arguments:**
 
 -   `cond_N` — The condition for the function to return `then_N`.
 -   `then_N` — The result of the function when executed.

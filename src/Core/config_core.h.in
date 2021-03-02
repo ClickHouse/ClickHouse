@@ -13,3 +13,4 @@
 #cmakedefine01 USE_LDAP
 #cmakedefine01 USE_ROCKSDB
 #cmakedefine01 USE_LIBPQXX
+#cmakedefine01 USE_NURAFT
