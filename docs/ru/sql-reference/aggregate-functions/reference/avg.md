@@ -47,9 +47,7 @@ SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5);
 CREATE table test (t UInt8) ENGINE = Memory;
 ```
 
-Получите среднее арифметическое:
-
-Запрос:
+Выполните запрос:
 
 ``` sql
 SELECT avg(t) FROM test;
@@ -63,4 +61,4 @@ SELECT avg(t) FROM test;
 └────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
