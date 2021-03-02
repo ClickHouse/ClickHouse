@@ -36,10 +36,15 @@ void write(bool x, WriteBuffer & out)
     writeBinary(x, out);
 }
 
+void write(const char * s, size_t size, WriteBuffer & out)
+{
+    write(int32_t(size), out);
+    out.write(s, size);
+}
+
 void write(const std::string & s, WriteBuffer & out)
 {
-    write(int32_t(s.size()), out);
-    out.write(s.data(), s.size());
+    write(s.data(), s.size(), out);
 }
 
 void write(const ACL & acl, WriteBuffer & out)

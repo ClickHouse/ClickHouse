@@ -62,12 +62,30 @@ namespace
         Coordination::read(node.stat, in);
         Coordination::read(node.seq_num, in);
     }
+
+    void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
+    {
+        auto buffer = snapshot_meta->serialize();
+        Coordination::write(reinterpret_cast<const char *>(buffer->data_begin()), buffer->size(), out);
+    }
+
+    SnapshotMetadataPtr deserializeSnapshotMetadata(ReadBuffer & in)
+    {
+        /// FIXME (alesap)
+        std::string data;
+        Coordination::read(data, in);
+        auto buffer = nuraft::buffer::alloc(data.size());
+        buffer->put_raw(reinterpret_cast<const nuraft::byte *>(data.c_str()), data.size());
+        buffer->pos(0);
+        return SnapshotMetadata::deserialize(*buffer);
+    }
 }
 
 
 void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot, WriteBuffer & out)
 {
     Coordination::write(static_cast<uint8_t>(snapshot.version), out);
+    serializeSnapshotMetadata(snapshot.snapshot_meta, out);
     Coordination::write(snapshot.zxid, out);
     Coordination::write(snapshot.session_id, out);
     Coordination::write(snapshot.snapshot_container_size, out);
@@ -89,13 +107,14 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
     }
 }
 
-void NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & storage, ReadBuffer & in)
+SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & storage, ReadBuffer & in)
 {
     uint8_t version;
     Coordination::read(version, in);
     if (static_cast<SnapshotVersion>(version) > SnapshotVersion::V0)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
+    SnapshotMetadataPtr result = deserializeSnapshotMetadata(in);
     int64_t session_id, zxid;
     Coordination::read(zxid, in);
     Coordination::read(session_id, in);
@@ -137,11 +156,25 @@ void NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & storage, ReadBuffer 
         storage.addSessionID(active_session_id, timeout);
         current_session_size++;
     }
+
+    return result;
 }
 
 NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, size_t up_to_log_idx_)
     : storage(storage_)
-    , up_to_log_idx(up_to_log_idx_)
+    , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
+    , zxid(storage->getZXID())
+    , session_id(storage->session_id_counter)
+{
+    storage->enableSnapshotMode();
+    snapshot_container_size = storage->container.snapshotSize();
+    begin = storage->getSnapshotIteratorBegin();
+    session_and_timeout = storage->getActiveSessions();
+}
+
+NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_)
+    : storage(storage_)
+    , snapshot_meta(snapshot_meta_)
     , zxid(storage->getZXID())
     , session_id(storage->session_id_counter)
 {
@@ -191,6 +224,16 @@ std::string NuKeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffe
     return new_snapshot_path;
 }
 
+nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk() const
+{
+    if (!existing_snapshots.empty())
+    {
+        auto last_log_id = existing_snapshots.rbegin()->first;
+        return deserializeSnapshotBufferFromDisk(last_log_id);
+    }
+    return nullptr;
+}
+
 nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const
 {
     const std::string & snapshot_path = existing_snapshots.at(up_to_log_idx);
@@ -210,23 +253,21 @@ nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::serializeSnapshotToBuffer(c
     return writer.getBuffer();
 }
 
-
-void NuKeeperSnapshotManager::deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer)
+SnapshotMetadataPtr NuKeeperSnapshotManager::deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer)
 {
     ReadBufferFromNuraftBuffer reader(buffer);
     CompressedReadBuffer compressed_reader(reader);
-    NuKeeperStorageSnapshot::deserialize(*storage, compressed_reader);
+    return NuKeeperStorageSnapshot::deserialize(*storage, compressed_reader);
 }
 
-size_t NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * storage) const
+SnapshotMetadataPtr NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * storage) const
 {
     if (existing_snapshots.empty())
-        return 0 ;
+        return nullptr;
 
     auto log_id = existing_snapshots.rbegin()->first;
     auto buffer = deserializeSnapshotBufferFromDisk(log_id);
-    deserializeSnapshotFromBuffer(storage, buffer);
-    return log_id;
+    return deserializeSnapshotFromBuffer(storage, buffer);
 }
 
 void NuKeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()

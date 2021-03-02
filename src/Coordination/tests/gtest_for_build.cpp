@@ -918,7 +918,7 @@ TEST(CoordinationTest, TestStorageSnapshotSimple)
 
     DB::NuKeeperStorageSnapshot snapshot(&storage, 2);
 
-    EXPECT_EQ(snapshot.up_to_log_idx, 2);
+    EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.zxid, 2);
     EXPECT_EQ(snapshot.session_id, 7);
     EXPECT_EQ(snapshot.snapshot_container_size, 3);
@@ -963,7 +963,7 @@ TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     }
 
     DB::NuKeeperStorageSnapshot snapshot(&storage, 50);
-    EXPECT_EQ(snapshot.up_to_log_idx, 50);
+    EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
     EXPECT_EQ(snapshot.snapshot_container_size, 51);
 
     for (size_t i = 50; i < 100; ++i)

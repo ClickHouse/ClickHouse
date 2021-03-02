@@ -20,6 +20,7 @@ void write(int32_t x, WriteBuffer & out);
 
 void write(OpNum x, WriteBuffer & out);
 void write(bool x, WriteBuffer & out);
+void write(const char * s, size_t size, WriteBuffer & out);
 void write(const std::string & s, WriteBuffer & out);
 void write(const ACL & acl, WriteBuffer & out);
 void write(const Stat & stat, WriteBuffer & out);

@@ -42,7 +42,17 @@ NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, co
 void NuKeeperStateMachine::init()
 {
     LOG_DEBUG(log, "Trying to load state machine");
-    last_committed_idx = snapshot_manager.restoreFromLatestSnapshot(&storage);
+    latest_snapshot_buf = snapshot_manager.deserializeLatestSnapshotBufferFromDisk();
+    if (latest_snapshot_buf)
+    {
+        latest_snapshot_meta = snapshot_manager.deserializeSnapshotFromBuffer(&storage, latest_snapshot_buf);
+        last_committed_idx = latest_snapshot_meta->get_last_log_idx();
+    }
+    else
+    {
+        latest_snapshot_meta = nullptr;
+        last_committed_idx = 0;
+    }
     LOG_DEBUG(log, "Loaded snapshot with last commited log index {}", last_committed_idx);
 }
 
