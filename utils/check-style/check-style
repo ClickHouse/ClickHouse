@@ -72,6 +72,10 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
 # FIXME: for now only clickhouse-test
 pylint --rcfile=$ROOT_PATH/.pylintrc --score=n $ROOT_PATH/tests/clickhouse-test
 
+find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
+    grep -vP $EXCLUDE_DIRS |
+    xargs yamllint --config-file=$ROOT_PATH/.yamllint
+
 # Machine translation to Russian is strictly prohibited
 find $ROOT_PATH/docs/ru -name '*.md' |
     grep -vP $EXCLUDE_DIRS |

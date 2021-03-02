@@ -516,6 +516,25 @@ struct ToDateTime64TransformSigned
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
+template <typename FromDataType, typename FromType>
+struct ToDateTime64TransformFloat
+{
+    static constexpr auto name = "toDateTime64";
+
+    const UInt32 scale = 1;
+
+    ToDateTime64TransformFloat(UInt32 scale_ = 0)
+        : scale(scale_)
+    {}
+
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    {
+        if (from < 0)
+            return 0;
+        from = std::min<FromType>(from, FromType(0xFFFFFFFF));
+        return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
+    }
+};
 
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
@@ -528,9 +547,9 @@ template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDateTime64, N
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformSigned<Float32>> {};
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat32, Float32>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformSigned<Float64>> {};
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat64, Float64>> {};
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
  */
@@ -1313,7 +1332,7 @@ public:
             else if constexpr (std::is_same_v<Name, NameToDecimal256>)
                 return createDecimalMaxPrecision<Decimal256>(scale);
 
-            throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         else
         {
@@ -1337,7 +1356,7 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected branch in code of conversion function: it is a bug.", ErrorCodes::LOGICAL_ERROR);
             else
                 return std::make_shared<ToDataType>();
         }
@@ -2567,7 +2586,7 @@ private:
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
@@ -2578,7 +2597,7 @@ private:
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
                 ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
                 offsets[i] = column_array.getOffsetsPtr();
             }
 
