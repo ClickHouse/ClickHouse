@@ -43,7 +43,9 @@ def revoke_privileges(self, privilege, on, allow_column, allow_introspection, no
     revoke_privilege(privilege=privilege, on=on, allow_column=allow_column, allow_introspection=allow_introspection, node=node)
 
 @TestOutline(Scenario)
-@Requirements([RQ_SRS_006_RBAC_Revoke_Privilege_Any("1.0") , RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns("1.0")])
+@Requirements(
+    RQ_SRS_006_RBAC_Revoke_Privilege_PrivilegeColumns("1.0"),
+)
 def revoke_privilege(self, privilege, on, allow_column, allow_introspection, node="clickhouse1"):
     node = self.context.cluster.node(node)
     for on_ in on:
