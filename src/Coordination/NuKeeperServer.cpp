@@ -36,7 +36,7 @@ void NuKeeperServer::startup()
 
     state_machine->init();
 
-    state_manager->loadLogStore(state_machine->last_commit_index());
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1);
     bool single_server = state_manager->getTotalServers() == 1;
 
     nuraft::raft_params params;
