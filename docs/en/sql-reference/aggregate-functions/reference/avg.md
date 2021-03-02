@@ -23,8 +23,8 @@ avg(x)
 
 **Returned value**
 
-- `NaN` if the supplied parameter is empty.
-- Mean otherwise.
+-   `NaN` if the supplied parameter is empty.
+-   Mean otherwise.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 
@@ -33,7 +33,7 @@ avg(x)
 Query:
 
 ``` sql
-SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5)
+SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5);
 ```
 
 Result:
