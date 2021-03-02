@@ -54,7 +54,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Parsers/formatAST.h>
 
 namespace DB
@@ -320,7 +320,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
     auto io = interpreter_subquery->execute();
-    PullingPipelineExecutor executor(io.pipeline);
+    PullingAsyncPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
     set->setHeader(executor.getHeader());
@@ -328,6 +328,9 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     Block block;
     while (executor.pull(block))
     {
+        if (block.rows() == 0)
+            continue;
+
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
             return;
@@ -739,7 +742,7 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 {
     if (auto * table = analyzed_join->joined_storage.get())
         if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoin(analyzed_join);
+            return storage_join->getJoinLocked(analyzed_join);
     return {};
 }
 
