@@ -24,4 +24,4 @@ services:
             - "${CLICKHOUSE_TESTS_DIR}/_instances/kerberos/krb5kdc/log/kadmin.log:/usr/local/var/krb5kdc/kadmin.log"
             - "${CLICKHOUSE_TESTS_DIR}/_instances/kerberos/var/log:/var/log"
         security_opt:
-           - label:disable
+            - label:disable
