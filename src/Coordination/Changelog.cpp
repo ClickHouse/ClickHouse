@@ -192,6 +192,7 @@ public:
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Previous log entry {}, next log entry {}, seems like some entries skipped", previous_index, record.header.index);
 
                 previous_index = record.header.index;
+                std::cerr << "PREVIOUS INDEX:" << previous_index << std::endl;
 
                 Checksum checksum = computeRecordChecksum(record);
                 if (checksum != record_checksum)
@@ -294,6 +295,7 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_index)
     if (!started && start_index != 1)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Required to read data from {}, but we don't have any active changelogs", from_log_index);
 
+    std::cerr << "START INDEX:" << start_index << std::endl;
     if (incomplete_log_index != 0)
     {
         /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
@@ -454,6 +456,8 @@ LogEntryPtr Changelog::getLastEntry() const
     static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(size_t)));
 
     size_t next_index = getNextEntryIndex() - 1;
+    std::cerr << "NEXT INDEX:" << next_index << std::endl;
+    std::cerr << "START INDEX:" << start_index << std::endl;
     auto entry = logs.find(next_index);
     if (entry == logs.end())
         return fake_entry;
