@@ -123,6 +123,7 @@ private:
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read) const;
 
@@ -131,6 +132,7 @@ private:
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         const Context & query_context) const;
