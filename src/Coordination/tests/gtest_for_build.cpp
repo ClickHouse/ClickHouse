@@ -1049,17 +1049,25 @@ TEST(CoordinationTest, TestStorageSnapshotMode)
         {
             EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
         }
-        EXPECT_EQ(storage.container.size(), 51);
+        for (size_t i = 0; i < 50; ++i)
+        {
+            if (i % 2 == 0)
+                storage.container.erase("/hello_" + std::to_string(i));
+        }
+        EXPECT_EQ(storage.container.size(), 26);
         EXPECT_EQ(storage.container.snapshotSize(), 101);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
-    EXPECT_EQ(storage.container.size(), 51);
-    EXPECT_EQ(storage.container.snapshotSize(), 51);
+    EXPECT_EQ(storage.container.size(), 26);
+    EXPECT_EQ(storage.container.snapshotSize(), 26);
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+        if (i % 2 != 0)
+            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+        else
+            EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
 
     DB::NuKeeperStorage restored_storage(500);
