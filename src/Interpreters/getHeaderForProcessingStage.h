@@ -13,8 +13,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct SelectQueryInfo;
 class Context;
 class ASTSelectQuery;
+class IdentifierMembershipCollector;
 
-bool removeJoin(ASTSelectQuery & select);
+bool removeJoin(ASTSelectQuery & select, const IdentifierMembershipCollector & membership_collector);
 
 Block getHeaderForProcessingStage(
         const IStorage & storage,

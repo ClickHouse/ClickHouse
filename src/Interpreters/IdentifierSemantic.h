@@ -2,8 +2,15 @@
 
 #include <optional>
 
-#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/Aliases.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/getTableExpressions.h>
+
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
@@ -62,6 +69,45 @@ struct IdentifierSemantic
 private:
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table);
+};
+
+/// Collect all identifies from AST recursively
+class IdentifiersCollector
+{
+public:
+    using ASTIdentPtr = const ASTIdentifier *;
+    using ASTIdentifiers = std::vector<ASTIdentPtr>;
+    struct Data
+    {
+        ASTIdentifiers idents;
+    };
+
+    static void visit(const ASTPtr & node, Data & data);
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &);
+    static ASTIdentifiers collect(const ASTPtr & node);
+};
+
+/// Collect identifier table membership considering aliases
+class IdentifierMembershipCollector
+{
+public:
+    IdentifierMembershipCollector(const ASTSelectQuery & select, const Context & context);
+
+    std::optional<size_t> getIdentsMembership(const ASTPtr ast) const
+    {
+        return IdentifierMembershipCollector::getIdentsMembership(ast, tables, aliases);
+    }
+
+    /// Collect common table membership for identifiers in expression
+    /// If membership cannot be established or there are several identifies from different tables, return empty optional
+    static std::optional<size_t>
+    getIdentsMembership(const ASTPtr ast, const std::vector<TableWithColumnNamesAndTypes> & tables, const Aliases & aliases);
+
+private:
+    std::vector<TableWithColumnNamesAndTypes> tables;
+    Aliases aliases;
+
+    static std::optional<size_t> getIdentMembership(const ASTIdentifier & ident, const std::vector<TableWithColumnNamesAndTypes> & tables);
 };
 
 }
