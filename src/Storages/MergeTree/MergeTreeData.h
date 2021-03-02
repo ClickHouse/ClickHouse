@@ -517,7 +517,7 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
