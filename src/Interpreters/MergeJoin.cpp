@@ -487,9 +487,15 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
 void MergeJoin::setTotals(const Block & totals_block)
 {
-    std::unique_lock lock(rwlock);
+    if (!totals_block)
+        return;
+
+    if (has_totals.exchange(2))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set totals for MergeJoin second time");
 
     totals = totals_block;
+    has_totals.store(1, std::memory_order_release);
+
     mergeRightBlocks();
 
     if (is_right || is_full)
@@ -498,14 +504,14 @@ void MergeJoin::setTotals(const Block & totals_block)
 
 bool MergeJoin::hasTotals() const
 {
-    std::shared_lock lock(rwlock);
-    return totals;
+    return has_totals.load(std::memory_order_acquire) == 1;
 }
 
 void MergeJoin::joinTotals(Block & block) const
 {
-    std::shared_lock lock(rwlock);
-    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
+    Block empty_totals;
+    const Block & cur_totals = hasTotals() ? totals : empty_totals;
+    JoinCommon::joinTotals(cur_totals, right_columns_to_add, *table_join, block);
 }
 
 void MergeJoin::mergeRightBlocks()

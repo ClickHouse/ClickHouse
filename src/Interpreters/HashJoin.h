@@ -374,6 +374,7 @@ private:
 
     Poco::Logger * log;
 
+    std::atomic_int has_totals{0};
     Block totals;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
