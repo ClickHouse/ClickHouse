@@ -44,6 +44,7 @@ private:
 
     void addInputColumn(const String & column_name);
 
+    void setupAllColumnsByTableSchema();
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override
