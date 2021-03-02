@@ -29,6 +29,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class Context;
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -38,7 +39,6 @@ class ExpressionActions
 {
 public:
     using Node = ActionsDAG::Node;
-    using Index = ActionsDAG::Index;
 
     struct Argument
     {
@@ -78,10 +78,12 @@ private:
     ColumnNumbers result_positions;
     Block sample_block;
 
+    size_t max_temporary_non_const_columns = 0;
+
 public:
     ExpressionActions() = delete;
     ~ExpressionActions();
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_);
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const Context & context);
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 
@@ -184,7 +186,7 @@ struct ExpressionActionsChain
 
         void finalize(const Names & required_output_) override
         {
-            if (!actions_dag->getSettings().projected_output)
+            if (!actions_dag->projectedOutput())
                 actions_dag->removeUnusedActions(required_output_);
         }
 
