@@ -46,19 +46,6 @@ MemCpy:	mov	$.Lmemcpytab.size,%ecx
 	cmovb	%rdx,%rcx
 	jmp	*memcpytab(,%rcx,8)
 .Lanchorpoint:
-.L32r:	cmp	$1024,%rdx
-	jae	.Lerms
-.L32:	vmovdqu	-32(%rsi,%rdx),%ymm4
-	mov	$32,%rcx
-0:	add	$32,%rcx
-	vmovdqu	-64(%rsi,%rcx),%ymm3
-	vmovdqu	%ymm3,-64(%rdi,%rcx)
-	cmp	%rcx,%rdx
-	ja	0b
-	vmovdqu	%ymm4,-32(%rdi,%rdx)
-	vxorps	%ymm4,%ymm4,%ymm4
-	vxorps	%ymm3,%ymm3,%ymm3
-	jmp	.L0
 .L16r:	cmp	$1024,%rdx
 	jae	.Lerms
 .L16:	movdqu	-16(%rsi,%rdx),%xmm4
@@ -146,6 +133,6 @@ memcpytab:
 	.quad	.L16
 	.endr
 	.equ	.Lmemcpytab.size,(.-memcpytab)/8
-	.quad	.L32r # AVX + ERMS
+	.quad	.L16r # SSE + ERMS + NTS
 	.type	memcpytab,@object
 	.previous
