@@ -34,6 +34,8 @@ NuKeeperServer::NuKeeperServer(
 void NuKeeperServer::startup()
 {
 
+    state_machine->init();
+
     state_manager->loadLogStore(state_machine->last_commit_index());
     bool single_server = state_manager->getTotalServers() == 1;
 

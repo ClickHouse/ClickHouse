@@ -7,6 +7,9 @@
 namespace DB
 {
 
+using SnapshotMetadata = nuraft::snapshot;
+using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
+
 enum SnapshotVersion : uint8_t
 {
     V0 = 0,
@@ -16,16 +19,18 @@ struct NuKeeperStorageSnapshot
 {
 public:
     NuKeeperStorageSnapshot(NuKeeperStorage * storage_, size_t up_to_log_idx_);
+
+    NuKeeperStorageSnapshot(NuKeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_);
     ~NuKeeperStorageSnapshot();
 
     static void serialize(const NuKeeperStorageSnapshot & snapshot, WriteBuffer & out);
 
-    static void deserialize(NuKeeperStorage & storage, ReadBuffer & in);
+    static SnapshotMetadataPtr deserialize(NuKeeperStorage & storage, ReadBuffer & in);
 
     NuKeeperStorage * storage;
 
     SnapshotVersion version = SnapshotVersion::V0;
-    size_t up_to_log_idx;
+    SnapshotMetadataPtr snapshot_meta;
     int64_t zxid;
     int64_t session_id;
     size_t snapshot_container_size;
@@ -38,13 +43,15 @@ class NuKeeperSnapshotManager
 public:
     NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_);
 
-    size_t restoreFromLatestSnapshot(NuKeeperStorage * storage) const;
+    SnapshotMetadataPtr restoreFromLatestSnapshot(NuKeeperStorage * storage) const;
 
     static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const NuKeeperStorageSnapshot & snapshot);
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx);
 
-    static void deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer);
+    static SnapshotMetadataPtr deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer);
+
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const;
+    nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk() const;
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
