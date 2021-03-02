@@ -21,7 +21,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
     extern const int ILLEGAL_COLUMN;
@@ -201,7 +200,7 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 
     if (custom_desc_->streams)
         custom_streams = std::move(custom_desc_->streams);
-    
+
     if (custom_desc_->serialization)
         custom_serialization = std::move(custom_desc_->serialization);
 }
@@ -210,7 +209,7 @@ SerializationPtr IDataType::getDefaultSerialization() const
 {
     if (custom_serialization)
         return custom_serialization;
-    
+
     return doGetDefaultSerialization();
 }
 
@@ -231,7 +230,7 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
 {
-    ISerialization::Settings settings = 
+    ISerialization::Settings settings =
     {
         .num_rows = info.getNumberOfRows(),
         .num_non_default_rows = info.getNumberOfNonDefaultValues(column_name),
@@ -249,7 +248,7 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
         .num_non_default_rows = column.getNumberOfNonDefaultValues(),
         .min_ratio_for_dense_serialization = 10
     };
-    
+
     return getSerialization(settings);
 }
 
@@ -259,7 +258,7 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
     //     return getSparseSerialization();
 
     UNUSED(settings);
-    
+
     return getDefaultSerialization();
 }
 
@@ -269,7 +268,7 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
     auto base_serialization = column.type->getSerialization(column.name, callback);
     if (column.isSubcolumn())
         return column.getTypeInStorage()->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization);
-    
+
     return base_serialization;
 }
 
@@ -281,7 +280,7 @@ SerializationPtr IDataType::getSerialization(const String & column_name, const S
 
     UNUSED(column_name);
     UNUSED(callback);
-    
+
     return getDefaultSerialization();
 }
 
@@ -290,7 +289,7 @@ DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath &
     auto type = tryGetSubcolumnType(ISerialization::getSubcolumnNameForStream(substream_path));
     if (type)
         return type;
-    
+
     return shared_from_this();
 }
 

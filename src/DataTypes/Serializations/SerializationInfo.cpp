@@ -65,7 +65,7 @@ void SerializationInfo::fromJSON(const String & json_str)
 
     if (object->has(KEY_NUMBER_OF_ROWS))
         number_of_rows = object->getValue<size_t>(KEY_NUMBER_OF_ROWS);
-    
+
     if (object->has(KEY_NUMBER_OF_NON_DEFAULT_VALUES))
     {
         auto array = object->getArray(KEY_NUMBER_OF_NON_DEFAULT_VALUES);
@@ -73,7 +73,7 @@ void SerializationInfo::fromJSON(const String & json_str)
         {
             auto elem_object = elem.extract<Poco::JSON::Object::Ptr>();
             if (!elem_object->has(KEY_NUMBER) || !elem_object->has(KEY_NAME))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Missed field 'name' or 'number' in SerializationInfo of columns");
 
             auto name = elem_object->getValue<String>(KEY_NAME);
@@ -88,7 +88,7 @@ String SerializationInfo::toJSON() const
     Poco::JSON::Object info;
     info.set(KEY_VERSION, version);
     info.set(KEY_NUMBER_OF_ROWS, number_of_rows);
-    
+
     Poco::JSON::Array column_infos;
     for (const auto & [name, num] : non_default_values)
     {

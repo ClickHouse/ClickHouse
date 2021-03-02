@@ -6,42 +6,30 @@ namespace DB
 
 void SerializationWrapper::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    if (nested)
-		nested->enumerateStreams(callback, path);
-	else
-		throwNoSerialization();
+    nested->enumerateStreams(callback, path);
 }
 
 void SerializationWrapper::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (nested)
-		nested->serializeBinaryBulkStatePrefix(settings, state);
-	else
-		throwNoSerialization();
+    nested->serializeBinaryBulkStatePrefix(settings, state);
 }
 
 void SerializationWrapper::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (nested)
-		nested->serializeBinaryBulkStateSuffix(settings, state);
-	else
-		throwNoSerialization();
+    nested->serializeBinaryBulkStateSuffix(settings, state);
 }
 
 void SerializationWrapper::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
-    if (nested)
-		nested->deserializeBinaryBulkStatePrefix(settings, state);
-	else
-		throwNoSerialization();
+    nested->deserializeBinaryBulkStatePrefix(settings, state);
 }
-    
+
 void SerializationWrapper::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
@@ -49,10 +37,10 @@ void SerializationWrapper::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (nested)
-		nested->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
-	else
-		throwNoSerialization();
+
+    nested->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+
+
 }
 
 void SerializationWrapper::deserializeBinaryBulkWithMultipleStreams(
@@ -62,162 +50,105 @@ void SerializationWrapper::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (nested)
-		nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
-	else
-		throwNoSerialization();
+
+    nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+
+
 }
 
 void SerializationWrapper::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    if (nested)
-		nested->serializeBinaryBulk(column, ostr, offset, limit);
-	else
-		throwNoSerialization();
+    nested->serializeBinaryBulk(column, ostr, offset, limit);
 }
 
 void SerializationWrapper::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
-    if (nested)
-		nested->deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
-	else
-		throwNoSerialization();
+    nested->deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
 }
 
 void SerializationWrapper::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    if (nested)
-		nested->serializeBinary(field, ostr);
-	else
-		throwNoSerialization();
+    nested->serializeBinary(field, ostr);
 }
 
 void SerializationWrapper::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    if (nested)
-		nested->deserializeBinary(field, istr);
-	else
-		throwNoSerialization();
+    nested->deserializeBinary(field, istr);
 }
 
 void SerializationWrapper::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    if (nested)
-		nested->serializeBinary(column, row_num, ostr);
-	else
-		throwNoSerialization();
+    nested->serializeBinary(column, row_num, ostr);
 }
 
 void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    if (nested)
-		nested->deserializeBinary(column, istr);
-	else
-		throwNoSerialization();
+    nested->deserializeBinary(column, istr);
 }
 
 void SerializationWrapper::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    if (nested)
-		nested->serializeProtobuf(column, row_num, protobuf, value_index);
-	else
-		throwNoSerialization();
+    nested->serializeProtobuf(column, row_num, protobuf, value_index);
 }
 
 void SerializationWrapper::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
-    if (nested)
-		nested->deserializeProtobuf(column, protobuf, allow_add_row, row_added);
-	else
-		throwNoSerialization();
+    nested->deserializeProtobuf(column, protobuf, allow_add_row, row_added);
 }
 
 void SerializationWrapper::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->serializeTextEscaped(column, row_num, ostr, settings);
-	else
-		throwNoSerialization();
+    nested->serializeTextEscaped(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->deserializeTextEscaped(column, istr, settings);
-	else
-		throwNoSerialization();
+    nested->deserializeTextEscaped(column, istr, settings);
 }
-    
+
 void SerializationWrapper::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->serializeTextQuoted(column, row_num, ostr, settings);
-	else
-		throwNoSerialization();
+    nested->serializeTextQuoted(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->deserializeTextQuoted(column, istr, settings);
-	else
-		throwNoSerialization();
+    nested->deserializeTextQuoted(column, istr, settings);
 }
-    
+
 void SerializationWrapper::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->serializeTextCSV(column, row_num, ostr, settings);
-	else
-		throwNoSerialization();
+    nested->serializeTextCSV(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->deserializeTextCSV(column, istr, settings);
-	else
-		throwNoSerialization();
+    nested->deserializeTextCSV(column, istr, settings);
 }
-    
+
 void SerializationWrapper::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->serializeText(column, row_num, ostr, settings);
-	else
-		throwNoSerialization();
+    nested->serializeText(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->deserializeWholeText(column, istr, settings);
-	else
-		throwNoSerialization();
+    nested->deserializeWholeText(column, istr, settings);
 }
 
 void SerializationWrapper::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->serializeTextJSON(column, row_num, ostr, settings);
-	else
-		throwNoSerialization();
+    nested->serializeTextJSON(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->deserializeTextJSON(column, istr, settings);
-	else
-		throwNoSerialization();
+    nested->deserializeTextJSON(column, istr, settings);
 }
 
 void SerializationWrapper::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (nested)
-		nested->serializeTextXML(column, row_num, ostr, settings);
-	else
-		throwNoSerialization();
+    nested->serializeTextXML(column, row_num, ostr, settings);
 }
 
 }

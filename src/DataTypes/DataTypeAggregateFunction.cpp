@@ -106,7 +106,6 @@ SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 }
 
 
-
 static DataTypePtr create(const ASTPtr & arguments)
 {
     String function_name;

@@ -12,6 +12,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int LOGICAL_ERROR;
+}
+
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const Array & a = get<const Array &>(field);
@@ -308,7 +315,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     if (!nested_column->empty() && nested_column->size() != last_offset)
         throw ParsingException("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
             ErrorCodes::CANNOT_READ_ALL_DATA);
-    
+
     column = std::move(mutable_column);
 }
 

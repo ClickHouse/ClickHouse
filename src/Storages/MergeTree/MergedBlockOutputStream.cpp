@@ -80,7 +80,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (new_part->isStoredOnDisk())
         finalizePartOnDisk(new_part, part_columns, checksums, sync);
-    
+
     // std::cerr << "serialization_info: rows: " << serialization_info.getNumberOfRows() << "\n";
     // for (const auto & col : columns_list)
     //     std::cerr << "name: " << col.name << "non-default: " << serialization_info.getNumberOfNonDefaultValues(col.name) << "\n";

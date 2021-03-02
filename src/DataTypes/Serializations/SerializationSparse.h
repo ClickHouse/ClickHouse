@@ -23,7 +23,7 @@ public:
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const override;
-      
+
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,

@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
 void SerializationNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);

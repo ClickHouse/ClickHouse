@@ -12,12 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-
 class IDataTypeEnum : public IDataType
 {
 public:

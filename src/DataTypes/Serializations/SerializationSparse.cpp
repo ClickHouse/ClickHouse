@@ -125,7 +125,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
     if (auto * stream = settings.getter(settings.path))
         deserializeOffsetsPositionIndependent(offsets_data, *stream);
-    
+
     settings.path.back() = Substream::SparseElements;
 
     ColumnPtr values = column->cloneEmpty();
@@ -138,7 +138,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     for (size_t i = 0; i < size; ++i)
     {
         size_t offsets_diff = static_cast<ssize_t>(offsets_data[i]) - prev_offset;
-    
+
         if (offsets_diff > 1)
             mutable_column->insertManyDefaults(offsets_diff - 1);
 

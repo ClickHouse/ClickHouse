@@ -6,20 +6,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class SerializationWrapper : public ISerialization
 {
 protected:
     SerializationPtr nested;
-
-    [[noreturn]] void throwNoSerialization() const
-    {
-        throw Exception("Serialization is not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
 
 public:
     SerializationWrapper(const SerializationPtr & nested_) : nested(nested_) {}
@@ -37,7 +27,7 @@ public:
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const override;
-      
+
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
@@ -66,13 +56,13 @@ public:
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-      
+
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-      
+
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-      
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 

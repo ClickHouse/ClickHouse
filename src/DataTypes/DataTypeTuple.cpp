@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_DATA_PASSED;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -267,7 +266,7 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
         auto next_type = elems[pos]->tryGetSubcolumnType(next_subcolumn);
         return next_type ? createOneElementTuple(next_type, names[pos]) : nullptr;
     };
-    
+
     return getSubcolumnEntity(subcolumn_name, on_success, on_continue);
 }
 
@@ -278,7 +277,7 @@ ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColu
     {
         return elems[pos]->getSubcolumn(next_subcolumn, extractElementColumn(column, pos));
     };
-    
+
     if (auto subcolumn = getSubcolumnEntity(subcolumn_name, on_success, on_continue))
         return subcolumn;
 
@@ -288,7 +287,7 @@ ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColu
 SerializationPtr DataTypeTuple::getSubcolumnSerialization(
     const String & subcolumn_name, const SerializationPtr & base_serializaiton) const
 {
-    auto on_success = [&](size_t pos) 
+    auto on_success = [&](size_t pos)
     {
         return std::make_shared<SerializationTupleElement>(base_serializaiton, names[pos]);
     };
@@ -301,7 +300,7 @@ SerializationPtr DataTypeTuple::getSubcolumnSerialization(
 
     if (auto serialization = getSubcolumnEntity(subcolumn_name, on_success, on_continue))
         return serialization;
-    
+
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 

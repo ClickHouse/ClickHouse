@@ -25,8 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }

@@ -63,7 +63,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     Field min_val;
     Field max_val;
 
-    
+
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;

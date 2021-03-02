@@ -13,7 +13,7 @@ public:
 
     SerializationDecimal(UInt32 precision_, UInt32 scale_)
         : SerializationDecimalBase<T>(precision_, scale_) {}
-    
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

@@ -90,7 +90,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     auto cached_column = getFromSubstreamsCache(cache, settings.path);
-    if (cached_column)  
+    if (cached_column)
     {
         column = cached_column;
     }

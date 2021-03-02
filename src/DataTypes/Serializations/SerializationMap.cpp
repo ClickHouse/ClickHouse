@@ -25,7 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_READ_MAP_FROM_TEXT;
 }
 

@@ -79,5 +79,5 @@ private:
     // template <typename Creator>
     // static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
-    
+
 }

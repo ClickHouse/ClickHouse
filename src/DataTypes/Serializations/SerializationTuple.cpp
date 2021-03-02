@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int LOGICAL_ERROR;
 }
 
 

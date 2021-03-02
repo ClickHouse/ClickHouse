@@ -1074,7 +1074,7 @@ void IMergeTreeDataPart::remove() const
     #endif
             for (const auto & [file, _] : checksums.files)
                 volume->getDisk()->removeFile(to + "/" + file);
-   
+
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif

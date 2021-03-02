@@ -536,7 +536,7 @@ size_t ColumnString::getNumberOfNonDefaultValues() const
     size_t res = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
         res += (offsets[i] - offsets[i - 1] > 1);
-        
+
     return res;
 }
 

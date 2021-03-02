@@ -18,16 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
-}
-
-
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const String & s = get<const String &>(field);

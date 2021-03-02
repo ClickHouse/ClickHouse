@@ -1193,7 +1193,7 @@ size_t ColumnArray::getNumberOfNonDefaultValues() const
     size_t res = 0;
     for (size_t i = 0; i < offsets_data.size(); ++i)
         res += (offsets_data[i] != offsets_data[i - 1]);
-        
+
     return res;
 }
 

@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
-    extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -68,7 +67,7 @@ std::string DataTypeEnum<Type>::generateName(const Values & values)
 }
 
 template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const Values & values_) 
+DataTypeEnum<Type>::DataTypeEnum(const Values & values_)
     : EnumValues<Type>(values_)
     , type_name(generateName(this->getValues()))
 {

@@ -38,9 +38,32 @@ SRCS(
     DataTypeUUID.cpp
     DataTypesDecimal.cpp
     DataTypesNumber.cpp
+    EnumValues.cpp
     FieldToDataType.cpp
     IDataType.cpp
     NestedUtils.cpp
+    Serializations/ISerialization.cpp
+    Serializations/SerializationAggregateFunction.cpp
+    Serializations/SerializationArray.cpp
+    Serializations/SerializationDate.cpp
+    Serializations/SerializationDateTime.cpp
+    Serializations/SerializationDateTime64.cpp
+    Serializations/SerializationDecimal.cpp
+    Serializations/SerializationDecimalBase.cpp
+    Serializations/SerializationEnum.cpp
+    Serializations/SerializationFixedString.cpp
+    Serializations/SerializationInfo.cpp
+    Serializations/SerializationLowCardinality.cpp
+    Serializations/SerializationMap.cpp
+    Serializations/SerializationNothing.cpp
+    Serializations/SerializationNullable.cpp
+    Serializations/SerializationNumber.cpp
+    Serializations/SerializationSparse.cpp
+    Serializations/SerializationString.cpp
+    Serializations/SerializationTuple.cpp
+    Serializations/SerializationTupleElement.cpp
+    Serializations/SerializationUUID.cpp
+    Serializations/SerializationWrapper.cpp
     convertMySQLDataType.cpp
     getLeastSupertype.cpp
     getMostSubtype.cpp
