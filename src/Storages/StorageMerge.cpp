@@ -1,31 +1,34 @@
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <Storages/StorageMerge.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/AlterCommands.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <Databases/IDatabase.h>
-#include <ext/range.h>
 #include <algorithm>
+#include <ext/range.h>
+
+#include <Columns/ColumnString.h>
+#include <Common/checkStackSize.h>
+#include <Common/typeid_cast.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
+#include <DataTypes/DataTypeString.h>
+#include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/getHeaderForProcessingStage.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/VirtualColumnUtils.h>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -43,9 +46,12 @@ namespace ErrorCodes
 namespace
 {
 
-void modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result)
+TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result, const Context & context)
 {
-    if (removeJoin(select))
+    IdentifierMembershipCollector membership_collector{select, context};
+
+    TreeRewriterResult new_rewriter_result = rewriter_result;
+    if (removeJoin(select, membership_collector))
     {
         /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
         select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
@@ -62,7 +68,17 @@ void modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_r
         select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
         select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+
+        new_rewriter_result.aggregates.clear();
+        for (const auto & agg : rewriter_result.aggregates)
+        {
+            auto table_no = membership_collector.getIdentsMembership(std::make_shared<ASTFunction>(*agg));
+            if (!table_no.has_value() || *table_no < 1)
+                new_rewriter_result.aggregates.push_back(agg);
+        }
     }
+
+    return new_rewriter_result;
 }
 
 }
@@ -159,7 +175,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
     /// (see modifySelect()/removeJoin())
     ///
     /// And for this we need to return FetchColumns.
-    if (removeJoin(modified_select))
+    if (removeJoin(modified_select, IdentifierMembershipCollector{modified_select, context}))
         return QueryProcessingStage::FetchColumns;
 
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
@@ -303,8 +319,9 @@ Pipe StorageMerge::createSources(
     modified_query_info.query = query_info.query->clone();
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
-    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    modifySelect(modified_select, *query_info.syntax_analyzer_result);
+    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();\
+    auto new_analyzer_res = modifySelect(modified_select, *query_info.syntax_analyzer_result, *modified_context);
+    modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
