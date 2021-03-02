@@ -82,6 +82,7 @@
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
+#    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
 #endif
 
@@ -480,16 +481,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
-                " to the reference checksum stored in the binary ({1})."
-                " It may indicate one of the following:"
-                " - the file {2} was changed just after startup;"
-                " - the file {2} is damaged on disk due to faulty hardware;"
-                " - the loaded executable is damaged in memory due to faulty hardware;"
-                " - the file {2} was intentionally modified;"
-                " - logical error in code."
-                , calculated_binary_hash, stored_binary_hash, executable_path);
+            /// If program is run under debugger, ptrace will fail.
+            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            {
+                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                LOG_WARNING(log, "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                    " to the reference checksum stored in the binary ({1})."
+                    " It may indicate one of the following:"
+                    " - the file {2} was changed just after startup;"
+                    " - the file {2} is damaged on disk due to faulty hardware;"
+                    " - the loaded executable is damaged in memory due to faulty hardware;"
+                    " - the file {2} was intentionally modified;"
+                    " - logical error in code."
+                    , calculated_binary_hash, stored_binary_hash, executable_path);
+            }
         }
     }
     else

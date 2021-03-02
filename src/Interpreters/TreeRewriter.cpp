@@ -715,18 +715,17 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            String hint_name{};
+            std::vector<String> hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
-                if (!hints.empty())
-                    hint_name = hint_name + " '" + toString(hints) + "'";
+                hint_name.insert(hint_name.end(), hints.begin(), hints.end());
             }
 
             if (!hint_name.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << hint_name;
+                ss << toString(hint_name);
             }
         }
         else

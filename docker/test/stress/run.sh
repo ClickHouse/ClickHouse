@@ -81,6 +81,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
 ./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" && echo "OK" > /test_output/script_exit_code.txt || echo "FAIL" > /test_output/script_exit_code.txt
 
 stop
+# TODO remove me when persistent snapshots will be ready
+rm -fr /var/lib/clickhouse/coordination ||:
 start
 
 clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt
