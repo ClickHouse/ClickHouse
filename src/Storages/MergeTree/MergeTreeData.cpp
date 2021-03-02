@@ -1812,11 +1812,6 @@ void MergeTreeData::changeSettings(
     }
 }
 
-PartitionCommandsResultInfo MergeTreeData::freezeAll(const String & with_name, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableLockHolder &)
-{
-    return freezePartitionsByMatcher([] (const DataPartPtr &) { return true; }, metadata_snapshot, with_name, context);
-}
-
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
 {
     old_and_new_names.push_back({old_name, new_name});
@@ -2653,44 +2648,6 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     }
 }
 
-
-PartitionCommandsResultInfo MergeTreeData::freezePartition(const ASTPtr & partition_ast, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder &)
-{
-    std::optional<String> prefix;
-    String partition_id;
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
-            prefix = partition_lit->value.getType() == Field::Types::UInt64
-                ? toString(partition_lit->value.get<UInt64>())
-                : partition_lit->value.safeGet<String>();
-        else
-            partition_id = getPartitionIDFromQuery(partition_ast, context);
-    }
-    else
-        partition_id = getPartitionIDFromQuery(partition_ast, context);
-
-    if (prefix)
-        LOG_DEBUG(log, "Freezing parts with prefix {}", *prefix);
-    else
-        LOG_DEBUG(log, "Freezing parts with partition ID {}", partition_id);
-
-
-    return freezePartitionsByMatcher(
-        [&prefix, &partition_id](const DataPartPtr & part)
-        {
-            if (prefix)
-                return startsWith(part->info.partition_id, *prefix);
-            else
-                return part->info.partition_id == partition_id;
-        },
-        metadata_snapshot,
-        with_name,
-        context);
-}
-
 void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
 {
     for (const auto & command : commands)
@@ -2921,10 +2878,17 @@ Pipe MergeTreeData::alterPartition(
             }
             break;
 
-            case PartitionCommand::UNFREEZE_PARTITIONS:
+            case PartitionCommand::UNFREEZE_PARTITION:
             {
                 auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                current_command_results = unfreeze(command.with_name, query_context, lock);
+                current_command_results = unfreezePartition(command.partition, command.with_name, query_context, lock);
+            }
+            break;
+
+            case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = unfreezeAll(command.with_name, query_context, lock);
             }
 
             break;
@@ -3682,6 +3646,48 @@ MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() con
     return res;
 }
 
+MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, const Context & context)
+{
+    bool prefixed = false;
+    String id;
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
+        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
+        {
+            id = partition_lit->value.getType() == Field::Types::UInt64
+                 ? toString(partition_lit->value.get<UInt64>())
+                 : partition_lit->value.safeGet<String>();
+            prefixed = true;
+        }
+        else
+            id = getPartitionIDFromQuery(partition_ast, context);
+    }
+    else
+        id = getPartitionIDFromQuery(partition_ast, context);
+
+    LOG_DEBUG(log, "(Un)Freezing parts with {} {}", prefixed ? "prefix" : "partition ID", id);
+
+    return [prefixed, id](const String & partition_id)
+    {
+        if (prefixed)
+            return startsWith(partition_id, id);
+        else
+            return id == partition_id;
+    };
+}
+
+PartitionCommandsResultInfo MergeTreeData::freezePartition(const ASTPtr & partition_ast, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder &)
+{
+    return freezePartitionsByMatcher(getPartitionMatcher(partition_ast, context), metadata_snapshot, with_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::freezeAll(const String & with_name, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableLockHolder &)
+{
+    return freezePartitionsByMatcher([] (const String &) { return true; }, metadata_snapshot, with_name, context);
+}
+
 PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
@@ -3705,7 +3711,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     size_t parts_processed = 0;
     for (const auto & part : data_parts)
     {
-        if (!matcher(part))
+        if (!matcher(part->info.partition_id))
             continue;
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
@@ -3735,16 +3741,62 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     return result;
 }
 
-PartitionCommandsResultInfo MergeTreeData::unfreeze(const String & backup_name, const Context & context, TableLockHolder &) const
+PartitionCommandsResultInfo MergeTreeData::unfreezePartition(
+    const ASTPtr & partition,
+    const String & backup_name,
+    const Context & context,
+    TableLockHolder &)
 {
-    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-    String backup_path = "shadow/" + backup_name + "/" + relative_data_path;
+    return unfreezePartitionsByMatcher(getPartitionMatcher(partition, context), backup_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::unfreezeAll(
+    const String & backup_name,
+    const Context & context,
+    TableLockHolder &)
+{
+    return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context & context)
+{
+    auto backup_path = std::filesystem::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     PartitionCommandsResultInfo result;
 
     for (const auto & disk : getStoragePolicy()->getDisks())
-        if (disk->exists(backup_path))
-            disk->removeRecursive(backup_path);
+    {
+        if (!disk->exists(backup_path))
+            continue;
+
+        for (auto it = disk->iterateDirectory(backup_path); it->isValid(); it->next())
+        {
+            const auto & partition_directory = it->name();
+
+            /// Partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
+            auto found = partition_directory.find('_');
+            if (found == std::string::npos)
+                continue;
+            auto partition_id = partition_directory.substr(0, found);
+
+            if (!matcher(partition_id))
+                continue;
+
+            disk->removeRecursive(it->path());
+
+            result.push_back(PartitionCommandResultInfo{
+                .partition_id = partition_id,
+                .part_name = partition_directory,
+                .backup_path = disk->getPath() + backup_path.generic_string(),
+                .part_backup_path = disk->getPath() + it->path(),
+                .backup_name = backup_name,
+            });
+
+            LOG_DEBUG(log, "Unfreezed part by path {}", disk->getPath() + it->path());
+        }
+    }
+
+    LOG_DEBUG(log, "Unfreezed {} parts", result.size());
 
     return result;
 }

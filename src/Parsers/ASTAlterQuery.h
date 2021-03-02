@@ -54,7 +54,8 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,
-        UNFREEZE,
+        UNFREEZE_PARTITION,
+        UNFREEZE_ALL,
 
         DELETE,
         UPDATE,

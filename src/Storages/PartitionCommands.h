@@ -27,7 +27,8 @@ struct PartitionCommand
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
-        UNFREEZE_PARTITIONS,
+        UNFREEZE_ALL_PARTITIONS,
+        UNFREEZE_PARTITION,
         REPLACE_PARTITION,
     };
 
