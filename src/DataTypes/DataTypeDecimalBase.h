@@ -95,14 +95,6 @@ public:
     bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
-    // void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    // void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    // void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-
-    // void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    // void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    // void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-
     /// Decimal specific
 
     UInt32 getPrecision() const { return precision; }
