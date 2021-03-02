@@ -117,9 +117,8 @@
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
-    <!--
-    <interserver_http_host>example.yandex.ru</interserver_http_host>
-    -->
+
+    <interserver_http_host>localhost</interserver_http_host>
 
     <!-- You can specify credentials for authenthication between replicas.
          This is required when interserver_https_port is accessible from untrusted networks,
@@ -140,7 +139,7 @@
          - users without password have readonly access.
          See also: https://www.shodan.io/search?query=clickhouse
       -->
-    <!-- <listen_host>::</listen_host> -->
+    <listen_host>::</listen_host>
 
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->

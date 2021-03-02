@@ -122,30 +122,6 @@ namespace
         offset_values.resize(i);
     }
 
-    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
-    {
-        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
-
-        if (column_offsets.empty())
-            return column_sizes;
-
-        const auto & offsets_data = column_offsets.getData();
-        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
-
-        sizes_data.resize(offsets_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
-        {
-            auto current_offset = offsets_data[i];
-            sizes_data[i] = current_offset - prev_offset;
-            prev_offset =  current_offset;
-        }
-
-        return column_sizes;
-    }
-
     ColumnPtr arraySizesToOffsets(const IColumn & column)
     {
         const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
@@ -168,6 +144,30 @@ namespace
 
         return column_offsets;
     }
+}
+
+ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+{
+    const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+    MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
+
+    if (column_offsets.empty())
+        return column_sizes;
+
+    const auto & offsets_data = column_offsets.getData();
+    auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+
+    sizes_data.resize(offsets_data.size());
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+    {
+        auto current_offset = offsets_data[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset =  current_offset;
+    }
+
+    return column_sizes;
 }
 
 
@@ -265,7 +265,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    std::cerr << "column: "  << column->dumpStructure() << "\n";
+    // std::cerr << "column: "  << column->dumpStructure() << "\n";
 
     auto mutable_column = column->assumeMutable();
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);

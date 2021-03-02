@@ -1,14 +1,25 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class SerializationWrapper : public ISerialization
 {
 protected:
     SerializationPtr nested;
+
+    [[noreturn]] void throwNoSerialization() const
+    {
+        throw Exception("Serialization is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
 public:
     SerializationWrapper(const SerializationPtr & nested_) : nested(nested_) {}

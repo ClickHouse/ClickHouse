@@ -63,12 +63,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
     {
         String file_name = part_path + "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
         auto file = openForReading(disk_, file_name);
-        const DataTypePtr & data_type = data.minmax_idx_column_types[i];
+        auto serialization = data.minmax_idx_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        data_type->deserializeBinary(min_val, *file);
+        serialization->deserializeBinary(min_val, *file);
         Field max_val;
-        data_type->deserializeBinary(max_val, *file);
+        serialization->deserializeBinary(max_val, *file);
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -95,12 +95,12 @@ void IMergeTreeDataPart::MinMaxIndex::store(
     for (size_t i = 0; i < column_names.size(); ++i)
     {
         String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
-        const DataTypePtr & data_type = data_types.at(i);
+        auto serialization = data_types.at(i)->getDefaultSerialization();
 
         auto out = disk_->writeFile(part_path + file_name);
         HashingWriteBuffer out_hashing(*out);
-        data_type->serializeBinary(hyperrectangle[i].left, out_hashing);
-        data_type->serializeBinary(hyperrectangle[i].right, out_hashing);
+        serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
+        serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -588,7 +588,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                primary_key.data_types[j]->deserializeBinary(*loaded_index[j], *index_file);
+                primary_key.data_types[j]->getDefaultSerialization()->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -680,7 +680,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             String path_to_data_file;
-            part_column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            part_column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 if (path_to_data_file.empty())
                 {
@@ -1074,6 +1074,7 @@ void IMergeTreeDataPart::remove() const
     #endif
             for (const auto & [file, _] : checksums.files)
                 volume->getDisk()->removeFile(to + "/" + file);
+   
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
@@ -1092,7 +1093,7 @@ void IMergeTreeDataPart::remove() const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            volume->getDisk()->removeRecursive(to + "/");
+            // volume->getDisk()->removeRecursive(to + "/");
         }
     }
 }

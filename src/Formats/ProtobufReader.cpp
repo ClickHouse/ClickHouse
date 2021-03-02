@@ -3,6 +3,7 @@
 #if USE_PROTOBUF
 #    include <optional>
 #    include <AggregateFunctions/IAggregateFunction.h>
+#    include <DataTypes/Serializations/SerializationDecimal.h>
 #    include <DataTypes/DataTypesDecimal.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <IO/ReadHelpers.h>
@@ -723,7 +724,7 @@ private:
         if (!readTempString())
             return false;
         ReadBufferFromString buf(temp_string);
-        DataTypeDecimal<Decimal<T>>::readText(decimal, buf, precision, scale);
+        SerializationDecimal<Decimal<T>>::readText(decimal, buf, precision, scale);
         return true;
     }
 

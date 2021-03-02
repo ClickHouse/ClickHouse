@@ -39,7 +39,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+    IDataType::SubstreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
     {
         String stream_name = IDataType::getFileNameForStream(column, substream_path);
 
@@ -63,7 +63,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    IDataType::SubstreamPath stream_path;
+    ISerialization::SubstreamPath stream_path;
     column.type->enumerateStreams(callback, stream_path);
 }
 
@@ -106,20 +106,21 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 /// Write single granule of one column (rows between 2 marks)
 void writeColumnSingleGranule(
     const ColumnWithTypeAndName & column,
-    IDataType::OutputStreamGetter stream_getter,
+    ISerialization::OutputStreamGetter stream_getter,
     size_t from_row,
     size_t number_of_rows)
 {
-    IDataType::SerializeBinaryBulkStatePtr state;
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    ISerialization::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = stream_getter;
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 
-    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
-    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
-    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    auto serialization = column.type->getDefaultSerialization();
+    serialization->serializeBinaryBulkStatePrefix(serialize_settings, state);
+    serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
+    serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
 }
@@ -181,7 +182,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             /// So we flush each stream (using next()) before using new one, because otherwise we will override
             /// data in result file.
             CompressedStreamPtr prev_stream;
-            auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
+            auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = IDataType::getFileNameForStream(*name_and_type, substream_path);
 

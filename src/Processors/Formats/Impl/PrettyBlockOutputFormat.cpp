@@ -59,7 +59,7 @@ void PrettyBlockOutputFormat::calculateWidths(
         {
             {
                 WriteBufferFromString out_serialize(serialized_value);
-                elem.type->serializeAsText(*column, j, out_serialize, format_settings);
+                elem.type->getDefaultSerialization()->serializeText(*column, j, out_serialize, format_settings);
             }
 
             /// Avoid calculating width of too long strings by limiting the size in bytes.
@@ -318,7 +318,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     String serialized_value = " ";
     {
         WriteBufferFromString out_serialize(serialized_value, WriteBufferFromString::AppendModeTag());
-        type.serializeAsText(column, row_num, out_serialize, format_settings);
+        type.getDefaultSerialization()->serializeText(column, row_num, out_serialize, format_settings);
     }
 
     if (value_width > format_settings.pretty.max_value_width)

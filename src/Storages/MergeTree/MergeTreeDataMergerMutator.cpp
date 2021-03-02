@@ -1491,7 +1491,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     for (const NameAndTypePair & column : source_part->getColumns())
     {
         column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
                 ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
             },
@@ -1509,7 +1509,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
-            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            IDataType::SubstreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
                 String stream_name = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
                 /// Delete files if they are no longer shared with another column.
@@ -1520,7 +1520,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
                 }
             };
 
-            IDataType::SubstreamPath stream_path;
+            ISerialization::SubstreamPath stream_path;
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
                 column->type->enumerateStreams(callback, stream_path);
@@ -1530,7 +1530,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
             String escaped_name_from = escapeForFileName(command.column_name);
             String escaped_name_to = escapeForFileName(command.rename_to);
 
-            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            IDataType::SubstreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
                 String stream_from = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
 
@@ -1542,7 +1542,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
                     rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
                 }
             };
-            IDataType::SubstreamPath stream_path;
+            ISerialization::SubstreamPath stream_path;
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
                 column->type->enumerateStreams(callback, stream_path);
@@ -1563,14 +1563,14 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     /// Skip updated files
     for (const auto & entry : updated_header)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+        IDataType::SubstreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
         {
             String stream_name = IDataType::getFileNameForStream({entry.name, entry.type}, substream_path);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };
 
-        IDataType::SubstreamPath stream_path;
+        ISerialization::SubstreamPath stream_path;
         entry.type->enumerateStreams(callback, stream_path);
     }
     for (const auto & index : indices_to_recalc)

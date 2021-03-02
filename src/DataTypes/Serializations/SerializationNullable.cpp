@@ -145,7 +145,7 @@ void SerializationNullable::serializeBinary(const IColumn & column, size_t row_n
 /// We need to insert both to nested column and to null byte map, or, in case of exception, to not insert at all.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, typename std::enable_if_t<std::is_same_v<ReturnType, void>, ReturnType>* = nullptr>
 static ReturnType safeDeserialize(
-    IColumn & column,
+    IColumn & column, const ISerialization &,
     CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
@@ -173,11 +173,13 @@ static ReturnType safeDeserialize(
 /// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, typename std::enable_if_t<std::is_same_v<ReturnType, bool>, ReturnType>* = nullptr>
 static ReturnType safeDeserialize(
-        IColumn & column,
+        IColumn & column, const ISerialization & nested,
         CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
     assert(!dynamic_cast<ColumnNullable *>(&column));
     assert(!dynamic_cast<const SerializationNullable *>(&nested));
+    UNUSED(nested);
+
     bool insert_default = check_for_null();
     if (insert_default)
         column.insertDefault();
@@ -189,7 +191,7 @@ static ReturnType safeDeserialize(
 
 void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    safeDeserialize(column,
+    safeDeserialize(column, *nested,
         [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
         [this, &istr] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr); });
 }
@@ -223,7 +225,7 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
     /// This is not null, surely.
     if (*istr.position() != '\\')
     {
-        return safeDeserialize<ReturnType>(column,
+        return safeDeserialize<ReturnType>(column, *nested,
             [] { return false; },
             [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextEscaped(nested_column, istr, settings); });
     }
@@ -235,7 +237,7 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
         if (istr.eof())
             throw ParsingException("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
 
-        return safeDeserialize<ReturnType>(column,
+        return safeDeserialize<ReturnType>(column, *nested,
             [&istr]
             {
                 if (*istr.position() == 'N')
@@ -290,7 +292,7 @@ template<typename ReturnType>
 ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                    const SerializationPtr & nested)
 {
-    return safeDeserialize<ReturnType>(column,
+    return safeDeserialize<ReturnType>(column, *nested,
         [&istr]
         {
             return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr);
@@ -308,7 +310,7 @@ template <typename ReturnType>
 ReturnType SerializationNullable::deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                   const SerializationPtr & nested)
 {
-    return safeDeserialize<ReturnType>(column,
+    return safeDeserialize<ReturnType>(column, *nested,
         [&istr]
         {
             return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr)
@@ -402,7 +404,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         }
     };
 
-    return safeDeserialize<ReturnType>(column, check_for_null, deserialize_nested);
+    return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
 }
 
 void SerializationNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -445,7 +447,7 @@ template<typename ReturnType>
 ReturnType SerializationNullable::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                     const SerializationPtr & nested)
 {
-    return safeDeserialize<ReturnType>(column,
+    return safeDeserialize<ReturnType>(column, *nested,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("null", istr); },
         [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr, settings); });
 }

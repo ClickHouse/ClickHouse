@@ -7,7 +7,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -224,14 +224,16 @@ bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr &
 {
     const bool at_delimiter = !is_last_file_column && !in.eof() && *in.position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (in.eof() || *in.position() == '\n');
+    auto serialization = type->getDefaultSerialization();
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
         column.insertDefault();
         return false;
     }
     else if (format_settings.null_as_default && !type->isNullable())
-        return DataTypeNullable::deserializeTextEscaped(column, in, format_settings, type);
-    type->deserializeAsTextEscaped(column, in, format_settings);
+        return SerializationNullable::deserializeTextEscapedImpl(column, in, format_settings, serialization);
+
+    serialization->deserializeTextEscaped(column, in, format_settings);
     return true;
 }
 

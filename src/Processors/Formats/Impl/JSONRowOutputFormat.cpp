@@ -77,15 +77,16 @@ void JSONRowOutputFormat::writeField(const IColumn & column, const IDataType & t
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
 
+    auto serialization = type.getDefaultSerialization();
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization->serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, *ostr, settings);
+        serialization->serializeTextJSON(column, row_num, *ostr, settings);
 
     ++field_number;
 }
@@ -96,15 +97,16 @@ void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const IDataTy
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
 
+    auto serialization = type.getDefaultSerialization();
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization->serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, *ostr, settings);
+        serialization->serializeTextJSON(column, row_num, *ostr, settings);
 
     ++field_number;
 }

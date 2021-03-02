@@ -11,7 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <common/find_symbols.h>
 #include <Parsers/ASTLiteral.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 
 namespace DB
@@ -155,10 +155,12 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         bool read = true;
         const auto & type = types[column_idx];
+        auto serialization = type->getDefaultSerialization();
         if (format_settings.null_as_default && !type->isNullable())
-            read = DataTypeNullable::deserializeTextQuoted(column, buf, format_settings, type);
+            read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
         else
-            type->deserializeAsTextQuoted(column, buf, format_settings);
+            serialization->deserializeTextQuoted(column, buf, format_settings);
+
         rollback_on_exception = true;
 
         skipWhitespaceIfAny(buf);
@@ -220,7 +222,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
-            header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+            header.getByPosition(column_idx).type->getDefaultSerialization()->deserializeTextQuoted(column, buf, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(buf);
             if (checkDelimiterAfterValue(column_idx))

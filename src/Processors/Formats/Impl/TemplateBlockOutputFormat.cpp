@@ -112,25 +112,26 @@ void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
 
 void TemplateBlockOutputFormat::serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat col_format)
 {
+    auto serialization = type.getDefaultSerialization();
     switch (col_format)
     {
         case ColumnFormat::Escaped:
-            type.serializeAsTextEscaped(column, row_num, out, settings);
+            serialization->serializeTextEscaped(column, row_num, out, settings);
             break;
         case ColumnFormat::Quoted:
-            type.serializeAsTextQuoted(column, row_num, out, settings);
+            serialization->serializeTextQuoted(column, row_num, out, settings);
             break;
         case ColumnFormat::Csv:
-            type.serializeAsTextCSV(column, row_num, out, settings);
+            serialization->serializeTextCSV(column, row_num, out, settings);
             break;
         case ColumnFormat::Json:
-            type.serializeAsTextJSON(column, row_num, out, settings);
+            serialization->serializeTextJSON(column, row_num, out, settings);
             break;
         case ColumnFormat::Xml:
-            type.serializeAsTextXML(column, row_num, out, settings);
+            serialization->serializeTextXML(column, row_num, out, settings);
             break;
         case ColumnFormat::Raw:
-            type.serializeAsText(column, row_num, out, settings);
+            serialization->serializeText(column, row_num, out, settings);
             break;
         default:
             __builtin_unreachable();

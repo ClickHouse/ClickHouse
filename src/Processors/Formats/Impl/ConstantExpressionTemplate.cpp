@@ -449,7 +449,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
                 return false;
         }
         else
-            type->deserializeAsTextQuoted(*columns[cur_column], istr, format_settings);
+            type->getDefaultSerialization()->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }

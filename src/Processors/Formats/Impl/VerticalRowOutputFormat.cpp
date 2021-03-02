@@ -65,7 +65,7 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const IDataType
 
 void VerticalRowOutputFormat::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
 {
-    type.serializeAsText(column, row_num, out, format_settings);
+    type.getDefaultSerialization()->serializeText(column, row_num, out, format_settings);
 }
 
 

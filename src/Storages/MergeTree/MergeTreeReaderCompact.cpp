@@ -200,16 +200,16 @@ void MergeTreeReaderCompact::readData(
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
-    auto buffer_getter = [&](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
+    auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
-        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != IDataType::Substream::ArraySizes))
+        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
             return nullptr;
 
         return data_buffer;
     };
 
-    IDataType::DeserializeBinaryBulkStatePtr state;
-    IDataType::DeserializeBinaryBulkSettings deserialize_settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = buffer_getter;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
 
@@ -218,14 +218,14 @@ void MergeTreeReaderCompact::readData(
         auto type_in_storage = name_and_type.getTypeInStorage();
         ColumnPtr temp_column = type_in_storage->createColumn();
 
-        type_in_storage->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        type_in_storage->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
+        type_in_storage->getDefaultSerialization()->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type_in_storage->getDefaultSerialization()->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
         column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
     }
     else
     {
-        type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        type->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+        type->getDefaultSerialization()->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type->getDefaultSerialization()->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
     }
 
     /// The buffer is left in inconsistent state after reading single offsets

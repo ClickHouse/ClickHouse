@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
 #include <DataTypes/DataTypeCustom.h>
 
 

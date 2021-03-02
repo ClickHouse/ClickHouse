@@ -25,7 +25,7 @@ ResultSetRow::ResultSetRow(const DataTypes & data_types, const Columns & columns
         else
         {
             WriteBufferFromOwnString ostr;
-            data_types[i]->serializeAsText(*columns[i], row_num, ostr, FormatSettings());
+            data_types[i]->getDefaultSerialization()->serializeText(*columns[i], row_num, ostr, FormatSettings());
             payload_size += getLengthEncodedStringSize(ostr.str());
             serialized.push_back(std::move(ostr.str()));
         }

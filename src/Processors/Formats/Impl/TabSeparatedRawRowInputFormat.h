@@ -50,7 +50,7 @@ public:
 
         ReadBufferFromString cell(tmp);
 
-        type->deserializeAsWholeText(column, cell, format_settings);
+        type->getDefaultSerialization()->deserializeWholeText(column, cell, format_settings);
 
         return true;
     }

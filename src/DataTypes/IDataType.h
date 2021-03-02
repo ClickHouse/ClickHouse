@@ -85,196 +85,196 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
-    struct Substream
-    {
-        enum Type
-        {
-            ArrayElements,
-            ArraySizes,
+    // struct Substream
+    // {
+    //     enum Type
+    //     {
+    //         ArrayElements,
+    //         ArraySizes,
 
-            NullableElements,
-            NullMap,
+    //         NullableElements,
+    //         NullMap,
 
-            TupleElement,
+    //         TupleElement,
 
-            DictionaryKeys,
-            DictionaryIndexes,
-        };
-        Type type;
+    //         DictionaryKeys,
+    //         DictionaryIndexes,
+    //     };
+    //     Type type;
 
-        /// Index of tuple element, starting at 1 or name.
-        String tuple_element_name;
+    //     /// Index of tuple element, starting at 1 or name.
+    //     String tuple_element_name;
 
-        /// Do we need to escape a dot in filenames for tuple elements.
-        bool escape_tuple_delimiter = true;
+    //     /// Do we need to escape a dot in filenames for tuple elements.
+    //     bool escape_tuple_delimiter = true;
 
-        Substream(Type type_) : type(type_) {}
+    //     Substream(Type type_) : type(type_) {}
 
-        String toString() const;
-    };
+    //     String toString() const;
+    // };
 
-    struct SubstreamPath : public std::vector<Substream>
-    {
-        String toString() const;
-    };
+    // struct SubstreamPath : public std::vector<Substream>
+    // {
+    //     String toString() const;
+    // };
 
     /// Cache for common substreams of one type, but possible different its subcolumns.
     /// E.g. sizes of arrays of Nested data type.
-    using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
+    // using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
 
-    using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
+    // using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+    // void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
+    // void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
+    // void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
     virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
     Names getSubcolumnNames() const;
 
-    using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
-    using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
+    // using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
+    // using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
 
-    struct SerializeBinaryBulkState
-    {
-        virtual ~SerializeBinaryBulkState() = default;
-    };
-    struct DeserializeBinaryBulkState
-    {
-        virtual ~DeserializeBinaryBulkState() = default;
-    };
+    // struct SerializeBinaryBulkState
+    // {
+    //     virtual ~SerializeBinaryBulkState() = default;
+    // };
+    // struct DeserializeBinaryBulkState
+    // {
+    //     virtual ~DeserializeBinaryBulkState() = default;
+    // };
 
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+    // using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    // using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
 
-    struct SerializeBinaryBulkSettings
-    {
-        OutputStreamGetter getter;
-        SubstreamPath path;
+    // struct SerializeBinaryBulkSettings
+    // {
+    //     OutputStreamGetter getter;
+    //     SubstreamPath path;
 
-        size_t low_cardinality_max_dictionary_size = 0;
-        bool low_cardinality_use_single_dictionary_for_part = true;
+    //     size_t low_cardinality_max_dictionary_size = 0;
+    //     bool low_cardinality_use_single_dictionary_for_part = true;
 
-        bool position_independent_encoding = true;
-    };
+    //     bool position_independent_encoding = true;
+    // };
 
-    struct DeserializeBinaryBulkSettings
-    {
-        InputStreamGetter getter;
-        SubstreamPath path;
+    // struct DeserializeBinaryBulkSettings
+    // {
+    //     InputStreamGetter getter;
+    //     SubstreamPath path;
 
-        /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
-        bool continuous_reading = true;
+    //     /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
+    //     bool continuous_reading = true;
 
-        bool position_independent_encoding = true;
-        /// If not zero, may be used to avoid reallocations while reading column of String type.
-        double avg_value_size_hint = 0;
-    };
+    //     bool position_independent_encoding = true;
+    //     /// If not zero, may be used to avoid reallocations while reading column of String type.
+    //     double avg_value_size_hint = 0;
+    // };
 
-    /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
-    void serializeBinaryBulkStatePrefix(
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
+    // /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    // void serializeBinaryBulkStatePrefix(
+    //     SerializeBinaryBulkSettings & settings,
+    //     SerializeBinaryBulkStatePtr & state) const;
 
-    /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
-    void serializeBinaryBulkStateSuffix(
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
+    // /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
+    // void serializeBinaryBulkStateSuffix(
+    //     SerializeBinaryBulkSettings & settings,
+    //     SerializeBinaryBulkStatePtr & state) const;
 
-    /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
-    void deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const;
+    // /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
+    // void deserializeBinaryBulkStatePrefix(
+    //     DeserializeBinaryBulkSettings & settings,
+    //     DeserializeBinaryBulkStatePtr & state) const;
 
-    /** 'offset' and 'limit' are used to specify range.
-      * limit = 0 - means no limit.
-      * offset must be not greater than size of column.
-      * offset + limit could be greater than size of column
-      *  - in that case, column is serialized till the end.
-      */
-    void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
+    // /** 'offset' and 'limit' are used to specify range.
+    //   * limit = 0 - means no limit.
+    //   * offset must be not greater than size of column.
+    //   * offset + limit could be greater than size of column
+    //   *  - in that case, column is serialized till the end.
+    //   */
+    // void serializeBinaryBulkWithMultipleStreams(
+    //     const IColumn & column,
+    //     size_t offset,
+    //     size_t limit,
+    //     SerializeBinaryBulkSettings & settings,
+    //     SerializeBinaryBulkStatePtr & state) const;
 
-    /// Read no more than limit values and append them into column.
-    void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache = nullptr) const;
+    // /// Read no more than limit values and append them into column.
+    // void deserializeBinaryBulkWithMultipleStreams(
+    //     ColumnPtr & column,
+    //     size_t limit,
+    //     DeserializeBinaryBulkSettings & settings,
+    //     DeserializeBinaryBulkStatePtr & state,
+    //     SubstreamsCache * cache = nullptr) const;
 
-    /** Override these methods for data types that require just single stream (most of data types).
-      */
-    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
+    // /** Override these methods for data types that require just single stream (most of data types).
+    //   */
+    // virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
+    // virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
 
-    /** Serialization/deserialization of individual values.
-      *
-      * These are helper methods for implementation of various formats to input/output for user (like CSV, JSON, etc.).
-      * There is no one-to-one correspondence between formats and these methods.
-      * For example, TabSeparated and Pretty formats could use same helper method serializeTextEscaped.
-      *
-      * For complex data types (like arrays) binary serde for individual values may differ from bulk serde.
-      * For example, if you serialize single array, it will be represented as its size and elements in single contiguous stream,
-      *  but if you bulk serialize column with arrays, then sizes and elements will be written to separate streams.
-      */
+    // /** Serialization/deserialization of individual values.
+    //   *
+    //   * These are helper methods for implementation of various formats to input/output for user (like CSV, JSON, etc.).
+    //   * There is no one-to-one correspondence between formats and these methods.
+    //   * For example, TabSeparated and Pretty formats could use same helper method serializeTextEscaped.
+    //   *
+    //   * For complex data types (like arrays) binary serde for individual values may differ from bulk serde.
+    //   * For example, if you serialize single array, it will be represented as its size and elements in single contiguous stream,
+    //   *  but if you bulk serialize column with arrays, then sizes and elements will be written to separate streams.
+    //   */
 
-    /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+    // /// There is two variants for binary serde. First variant work with Field.
+    // virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
+    // virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
 
-    /// Other variants takes a column, to avoid creating temporary Field object.
-    /// Column must be non-constant.
+    // /// Other variants takes a column, to avoid creating temporary Field object.
+    // /// Column must be non-constant.
 
-    /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-    /// Deserialize one value and insert into a column.
-    /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
+    // /// Serialize one value of a column at specified row number.
+    // virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    // /// Deserialize one value and insert into a column.
+    // /// If method will throw an exception, then column will be in same state as before call to method.
+    // virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
-    /** Serialize to a protobuf. */
-    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
-    virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
+    // /** Serialize to a protobuf. */
+    // virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
+    // virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
 
-    /** Text serialization with escaping but without quoting.
-      */
-    void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    // /** Text serialization with escaping but without quoting.
+    //   */
+    // void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    // void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    /** Text serialization as a literal that may be inserted into a query.
-      */
-    void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    // /** Text serialization as a literal that may be inserted into a query.
+    //   */
+    // void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    // void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    /** Text serialization for the CSV format.
-      */
-    void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    // /** Text serialization for the CSV format.
+    //   */
+    // void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    // void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    /** Text serialization for displaying on a terminal or saving into a text file, and the like.
-      * Without escaping or quoting.
-      */
-    void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    // /** Text serialization for displaying on a terminal or saving into a text file, and the like.
+    //   * Without escaping or quoting.
+    //   */
+    // void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
-      */
-    void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    // /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
+    //   */
+    // void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    /** Text serialization intended for using in JSON format.
-      */
-    void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    // /** Text serialization intended for using in JSON format.
+    //   */
+    // void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    // void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    /** Text serialization for putting into the XML format.
-      */
-    void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+    // /** Text serialization for putting into the XML format.
+    //   */
+    // void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
@@ -297,65 +297,69 @@ public:
     void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(serialization, callback, path); }
     void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback) const { enumerateStreams(serialization, callback, {}); }
 
+    void enumerateStreams(const SubstreamCallback & callback, ISerialization::SubstreamPath & path) const { enumerateStreams(getDefaultSerialization(), callback, path); }
+    void enumerateStreams(const SubstreamCallback & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(getDefaultSerialization(), callback, path); }
+    void enumerateStreams(const SubstreamCallback & callback) const { enumerateStreams(getDefaultSerialization(), callback, {}); }
+
 protected:
     virtual String doGetName() const;
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
-    virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
-    {
-        callback(path, *this);
-    }
+    // virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+    // {
+    //     callback(path, *this);
+    // }
 
-    virtual void serializeBinaryBulkStatePrefixImpl(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
+    // virtual void serializeBinaryBulkStatePrefixImpl(
+    //     SerializeBinaryBulkSettings & /*settings*/,
+    //     SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    virtual void serializeBinaryBulkStateSuffixImpl(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
+    // virtual void serializeBinaryBulkStateSuffixImpl(
+    //     SerializeBinaryBulkSettings & /*settings*/,
+    //     SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    virtual void deserializeBinaryBulkStatePrefixImpl(
-        DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+    // virtual void deserializeBinaryBulkStatePrefixImpl(
+    //     DeserializeBinaryBulkSettings & /*settings*/,
+    //     DeserializeBinaryBulkStatePtr & /*state*/) const {}
 
-    virtual void serializeBinaryBulkWithMultipleStreamsImpl(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (WriteBuffer * stream = settings.getter(settings.path))
-            serializeBinaryBulk(column, *stream, offset, limit);
-    }
+    // virtual void serializeBinaryBulkWithMultipleStreamsImpl(
+    //     const IColumn & column,
+    //     size_t offset,
+    //     size_t limit,
+    //     SerializeBinaryBulkSettings & settings,
+    //     SerializeBinaryBulkStatePtr & /*state*/) const
+    // {
+    //     if (WriteBuffer * stream = settings.getter(settings.path))
+    //         serializeBinaryBulk(column, *stream, offset, limit);
+    // }
 
-    virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
-        IColumn & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache) const;
+    // virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
+    //     IColumn & column,
+    //     size_t limit,
+    //     DeserializeBinaryBulkSettings & settings,
+    //     DeserializeBinaryBulkStatePtr & state,
+    //     SubstreamsCache * cache) const;
 
     /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
 
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-    {
-        serializeText(column, row_num, ostr, settings);
-    }
+    // virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    // virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    // virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    // virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    // virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    // virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    // virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    // virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    // virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    // virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    // virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+    // {
+    //     serializeText(column, row_num, ostr, settings);
+    // }
 
 public:
-    static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
-    static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    // static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
+    // static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     /** Create empty column for corresponding type.
       */
@@ -514,13 +518,13 @@ public:
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
-    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getFileNameForStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & path);
+    static String getSubcolumnNameForStream(const ISerialization::SubstreamPath & path);
 
     /// Substream path supports special compression methods like codec Delta.
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
     /// generic compression codecs like LZ4.
-    static bool isSpecialCompressionAllowed(const SubstreamPath & path);
+    static bool isSpecialCompressionAllowed(const ISerialization::SubstreamPath & path);
 
 protected:
     friend class DataTypeFactory;

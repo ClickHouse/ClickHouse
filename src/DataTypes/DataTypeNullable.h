@@ -18,45 +18,45 @@ public:
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+//     void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void serializeBinaryBulkStatePrefixImpl(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
+//     void serializeBinaryBulkStatePrefixImpl(
+//             SerializeBinaryBulkSettings & settings,
+//             SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffixImpl(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
+//     void serializeBinaryBulkStateSuffixImpl(
+//             SerializeBinaryBulkSettings & settings,
+//             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefixImpl(
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
+//     void deserializeBinaryBulkStatePrefixImpl(
+//             DeserializeBinaryBulkSettings & settings,
+//             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreamsImpl(
-            const IColumn & column,
-            size_t offset,
-            size_t limit,
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
+//     void serializeBinaryBulkWithMultipleStreamsImpl(
+//             const IColumn & column,
+//             size_t offset,
+//             size_t limit,
+//             SerializeBinaryBulkSettings & settings,
+//             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
-            IColumn & column,
-            size_t limit,
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsCache * cache) const override;
+//     void deserializeBinaryBulkWithMultipleStreamsImpl(
+//             IColumn & column,
+//             size_t limit,
+//             DeserializeBinaryBulkSettings & settings,
+//             DeserializeBinaryBulkStatePtr & state,
+//             SubstreamsCache * cache) const override;
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+//     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+//     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+//     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+//     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+//     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+//     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+//     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+//     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+//     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+//     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     /** It is questionable, how NULL values could be represented in CSV. There are three variants:
       * 1. \N
@@ -66,15 +66,15 @@ public:
       * (see also input_format_defaults_for_omitted_fields and input_format_csv_unquoted_null_literal_as_null settings)
       * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
       */
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+//     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+//     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+//     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+//     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+//     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+//     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+//     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -105,16 +105,16 @@ public:
 
     /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     /// If ReturnType is void, deserialize Nullable(T)
-    template <typename ReturnType = bool>
-    static ReturnType deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
-    template <typename ReturnType = bool>
-    static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
-    template <typename ReturnType = bool>
-    static ReturnType deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
-    template <typename ReturnType = bool>
-    static ReturnType deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
-    template <typename ReturnType = bool>
-    static ReturnType deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
+//     template <typename ReturnType = bool>
+//     static ReturnType deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+//     template <typename ReturnType = bool>
+//     static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+//     template <typename ReturnType = bool>
+//     static ReturnType deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
+//     template <typename ReturnType = bool>
+//     static ReturnType deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+//     template <typename ReturnType = bool>
+//     static ReturnType deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
 
 private:
     SerializationPtr doGetDefaultSerialization() const override;

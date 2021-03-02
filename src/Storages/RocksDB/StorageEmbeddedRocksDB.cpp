@@ -200,7 +200,7 @@ public:
 
         for (size_t i = processed_keys; i < std::min(keys.size(), processed_keys + max_block_size); ++i)
         {
-            key_column.type->serializeBinary(keys[i], wbs[i]);
+            key_column.type->getDefaultSerialization()->serializeBinary(keys[i], wbs[i]);
             auto str_ref = wbs[i].stringRef();
             slices_keys.emplace_back(str_ref.data, str_ref.size);
         }
@@ -216,7 +216,7 @@ public:
                 size_t idx = 0;
                 for (const auto & elem : sample_block)
                 {
-                    elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+                    elem.type->getDefaultSerialization()->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
                     ++idx;
                 }
             }

@@ -33,15 +33,16 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataT
     writeString(fields[field_number], out);
     writeChar(':', out);
 
+    auto serialization = type.getDefaultSerialization();
     if (settings.json.serialize_as_strings)
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization->serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), out, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, out, settings);
+        serialization->serializeTextJSON(column, row_num, out, settings);
 
     ++field_number;
 }

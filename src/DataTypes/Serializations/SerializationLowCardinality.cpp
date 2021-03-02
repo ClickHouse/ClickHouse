@@ -628,7 +628,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     {
         auto indexes_type = low_cardinality_state->index_type.getDataType();
         MutableColumnPtr indexes_column = indexes_type->createColumn();
-        indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
+        indexes_type->getDefaultSerialization()->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
 
         auto & global_dictionary = low_cardinality_state->global_dictionary;
         const auto & additional_keys = low_cardinality_state->additional_keys;

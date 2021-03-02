@@ -74,4 +74,6 @@ public:
             bool & row_added) const override;
 };
 
+ColumnPtr arrayOffsetsToSizes(const IColumn & column);
+
 }

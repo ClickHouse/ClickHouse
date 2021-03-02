@@ -31,7 +31,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     for (const NameAndTypePair & column : columns)
     {
         column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_path */)
+            [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_path */)
             {
                 ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
             },
@@ -46,7 +46,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (!column_with_type)
            continue;
 
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_path */)
+        IDataType::SubstreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_path */)
         {
             String stream_name = IDataType::getFileNameForStream(*column_with_type, substream_path);
             /// Delete files if they are no longer shared with another column.
@@ -57,7 +57,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        IDataType::SubstreamPath stream_path;
+        ISerialization::SubstreamPath stream_path;
         column_with_type->type->enumerateStreams(callback, stream_path);
     }
 

@@ -64,4 +64,10 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
     x.resize(initial_size + size / sizeof(FieldType));
 }
 
+template class SerializationDecimalBase<Decimal32>;
+template class SerializationDecimalBase<Decimal64>;
+template class SerializationDecimalBase<Decimal128>;
+template class SerializationDecimalBase<Decimal256>;
+template class SerializationDecimalBase<DateTime64>;
+
 }

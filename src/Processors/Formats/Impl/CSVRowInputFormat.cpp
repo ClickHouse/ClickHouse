@@ -4,7 +4,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 
 
@@ -373,6 +373,8 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     const bool at_last_column_line_end = is_last_file_column
                                          && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
+    auto serialization = type->getDefaultSerialization();
+
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
     if (format_settings.csv.empty_as_default
@@ -390,12 +392,12 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     else if (format_settings.null_as_default && !type->isNullable())
     {
         /// If value is null but type is not nullable then use default value instead.
-        return DataTypeNullable::deserializeTextCSV(column, in, format_settings, type);
+        return SerializationNullable::deserializeTextCSVImpl(column, in, format_settings, serialization);
     }
     else
     {
         /// Read the column normally.
-        type->deserializeAsTextCSV(column, in, format_settings);
+        serialization->deserializeTextCSV(column, in, format_settings);
         return true;
     }
 }

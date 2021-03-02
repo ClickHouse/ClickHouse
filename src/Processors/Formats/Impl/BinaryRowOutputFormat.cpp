@@ -43,7 +43,7 @@ void BinaryRowOutputFormat::writePrefix()
 
 void BinaryRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeBinary(column, row_num, out);
+    type.getDefaultSerialization()->serializeBinary(column, row_num, out);
 }
 
 

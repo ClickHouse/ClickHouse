@@ -61,10 +61,10 @@ static const IColumn & extractNestedColumn(const IColumn & column)
     return assert_cast<const ColumnMap &>(column).getNestedColumn();
 }
 
-static IColumn & extractNestedColumn(IColumn & column)
-{
-    return assert_cast<ColumnMap &>(column).getNestedColumn();
-}
+// static IColumn & extractNestedColumn(IColumn & column)
+// {
+//     return assert_cast<ColumnMap &>(column).getNestedColumn();
+// }
 
 DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
 {
@@ -76,276 +76,276 @@ ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn
     return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
 }
 
-void DataTypeMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
-{
-    const auto & map = get<const Map &>(field);
-    writeVarUInt(map.size(), ostr);
-    for (const auto & elem : map)
-    {
-        const auto & tuple = elem.safeGet<const Tuple>();
-        assert(tuple.size() == 2);
-        key_type->serializeBinary(tuple[0], ostr);
-        value_type->serializeBinary(tuple[1], ostr);
-    }
-}
+// void DataTypeMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
+// {
+//     const auto & map = get<const Map &>(field);
+//     writeVarUInt(map.size(), ostr);
+//     for (const auto & elem : map)
+//     {
+//         const auto & tuple = elem.safeGet<const Tuple>();
+//         assert(tuple.size() == 2);
+//         key_type->serializeBinary(tuple[0], ostr);
+//         value_type->serializeBinary(tuple[1], ostr);
+//     }
+// }
 
-void DataTypeMap::deserializeBinary(Field & field, ReadBuffer & istr) const
-{
-    size_t size;
-    readVarUInt(size, istr);
-    field = Map(size);
-    for (auto & elem : field.get<Map &>())
-    {
-        Tuple tuple(2);
-        key_type->deserializeBinary(tuple[0], istr);
-        value_type->deserializeBinary(tuple[1], istr);
-        elem = std::move(tuple);
-    }
-}
+// void DataTypeMap::deserializeBinary(Field & field, ReadBuffer & istr) const
+// {
+//     size_t size;
+//     readVarUInt(size, istr);
+//     field = Map(size);
+//     for (auto & elem : field.get<Map &>())
+//     {
+//         Tuple tuple(2);
+//         key_type->deserializeBinary(tuple[0], istr);
+//         value_type->deserializeBinary(tuple[1], istr);
+//         elem = std::move(tuple);
+//     }
+// }
 
-void DataTypeMap::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    nested->serializeBinary(extractNestedColumn(column), row_num, ostr);
-}
+// void DataTypeMap::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+// {
+//     nested->serializeBinary(extractNestedColumn(column), row_num, ostr);
+// }
 
-void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
-{
-    nested->deserializeBinary(extractNestedColumn(column), istr);
-}
-
-
-template <typename Writer>
-void DataTypeMap::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const
-{
-    const auto & column_map = assert_cast<const ColumnMap &>(column);
-
-    const auto & nested_array = column_map.getNestedColumn();
-    const auto & nested_tuple = column_map.getNestedData();
-    const auto & offsets = nested_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    writeChar('{', ostr);
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        if (i != offset)
-            writeChar(',', ostr);
-        writer(key_type, nested_tuple.getColumn(0), i);
-        writeChar(':', ostr);
-        writer(value_type, nested_tuple.getColumn(1), i);
-    }
-    writeChar('}', ostr);
-}
-
-template <typename Reader>
-void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && reader) const
-{
-    auto & column_map = assert_cast<ColumnMap &>(column);
-
-    auto & nested_array = column_map.getNestedColumn();
-    auto & nested_tuple = column_map.getNestedData();
-    auto & offsets = nested_array.getOffsets();
-
-    auto & key_column = nested_tuple.getColumn(0);
-    auto & value_column = nested_tuple.getColumn(1);
-
-    size_t size = 0;
-    assertChar('{', istr);
-
-    try
-    {
-        bool first = true;
-        while (!istr.eof() && *istr.position() != '}')
-        {
-            if (!first)
-            {
-                if (*istr.position() == ',')
-                    ++istr.position();
-                else
-                    throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
-            }
-
-            first = false;
-
-            skipWhitespaceIfAny(istr);
-
-            if (*istr.position() == '}')
-                break;
-
-            if (need_safe_get_int_key)
-            {
-                ReadBuffer::Position tmp = istr.position();
-                while (*tmp != ':' && *tmp != '}')
-                    ++tmp;
-                *tmp = ' ';
-                reader(key_type, key_column);
-            }
-            else
-            {
-                reader(key_type, key_column);
-                skipWhitespaceIfAny(istr);
-                assertChar(':', istr);
-            }
-
-            ++size;
-            skipWhitespaceIfAny(istr);
-            reader(value_type, value_column);
-
-            skipWhitespaceIfAny(istr);
-        }
-
-        offsets.push_back(offsets.back() + size);
-        assertChar('}', istr);
-    }
-    catch (...)
-    {
-        throw;
-    }
-}
-
-void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeTextImpl(column, row_num, ostr,
-        [&](const DataTypePtr & subcolumn_type, const IColumn & subcolumn, size_t pos)
-        {
-            subcolumn_type->serializeAsTextQuoted(subcolumn, pos, ostr, settings);
-        });
-}
-
-void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
-    bool need_safe_get_int_key = isInteger(key_type);
-
-    deserializeTextImpl(column, istr, need_safe_get_int_key,
-        [&](const DataTypePtr & subcolumn_type, IColumn & subcolumn)
-        {
-            subcolumn_type->deserializeAsTextQuoted(subcolumn, istr, settings);
-        });
-}
+// void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+// {
+//     nested->deserializeBinary(extractNestedColumn(column), istr);
+// }
 
 
-void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeTextImpl(column, row_num, ostr,
-        [&](const DataTypePtr & subcolumn_type, const IColumn & subcolumn, size_t pos)
-        {
-            subcolumn_type->serializeAsTextJSON(subcolumn, pos, ostr, settings);
-        });
-}
+// template <typename Writer>
+// void DataTypeMap::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const
+// {
+//     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
-void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
-    bool need_safe_get_int_key = isInteger(key_type);
+//     const auto & nested_array = column_map.getNestedColumn();
+//     const auto & nested_tuple = column_map.getNestedData();
+//     const auto & offsets = nested_array.getOffsets();
 
-    deserializeTextImpl(column, istr, need_safe_get_int_key,
-        [&](const DataTypePtr & subcolumn_type, IColumn & subcolumn)
-        {
-            subcolumn_type->deserializeAsTextJSON(subcolumn, istr, settings);
-        });
-}
+//     size_t offset = offsets[row_num - 1];
+//     size_t next_offset = offsets[row_num];
 
-void DataTypeMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    const auto & column_map = assert_cast<const ColumnMap &>(column);
-    const auto & offsets = column_map.getNestedColumn().getOffsets();
+//     writeChar('{', ostr);
+//     for (size_t i = offset; i < next_offset; ++i)
+//     {
+//         if (i != offset)
+//             writeChar(',', ostr);
+//         writer(key_type, nested_tuple.getColumn(0), i);
+//         writeChar(':', ostr);
+//         writer(value_type, nested_tuple.getColumn(1), i);
+//     }
+//     writeChar('}', ostr);
+// }
 
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
+// template <typename Reader>
+// void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && reader) const
+// {
+//     auto & column_map = assert_cast<ColumnMap &>(column);
 
-    const auto & nested_data = column_map.getNestedData();
+//     auto & nested_array = column_map.getNestedColumn();
+//     auto & nested_tuple = column_map.getNestedData();
+//     auto & offsets = nested_array.getOffsets();
 
-    writeCString("<map>", ostr);
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        writeCString("<elem>", ostr);
-        writeCString("<key>", ostr);
-        key_type->serializeAsTextXML(nested_data.getColumn(0), i, ostr, settings);
-        writeCString("</key>", ostr);
+//     auto & key_column = nested_tuple.getColumn(0);
+//     auto & value_column = nested_tuple.getColumn(1);
 
-        writeCString("<value>", ostr);
-        value_type->serializeAsTextXML(nested_data.getColumn(1), i, ostr, settings);
-        writeCString("</value>", ostr);
-        writeCString("</elem>", ostr);
-    }
-    writeCString("</map>", ostr);
-}
+//     size_t size = 0;
+//     assertChar('{', istr);
 
-void DataTypeMap::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    WriteBufferFromOwnString wb;
-    serializeText(column, row_num, wb, settings);
-    writeCSV(wb.str(), ostr);
-}
+//     try
+//     {
+//         bool first = true;
+//         while (!istr.eof() && *istr.position() != '}')
+//         {
+//             if (!first)
+//             {
+//                 if (*istr.position() == ',')
+//                     ++istr.position();
+//                 else
+//                     throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
+//             }
 
-void DataTypeMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String s;
-    readCSV(s, istr, settings.csv);
-    ReadBufferFromString rb(s);
-    deserializeText(column, rb, settings);
-}
+//             first = false;
+
+//             skipWhitespaceIfAny(istr);
+
+//             if (*istr.position() == '}')
+//                 break;
+
+//             if (need_safe_get_int_key)
+//             {
+//                 ReadBuffer::Position tmp = istr.position();
+//                 while (*tmp != ':' && *tmp != '}')
+//                     ++tmp;
+//                 *tmp = ' ';
+//                 reader(key_type, key_column);
+//             }
+//             else
+//             {
+//                 reader(key_type, key_column);
+//                 skipWhitespaceIfAny(istr);
+//                 assertChar(':', istr);
+//             }
+
+//             ++size;
+//             skipWhitespaceIfAny(istr);
+//             reader(value_type, value_column);
+
+//             skipWhitespaceIfAny(istr);
+//         }
+
+//         offsets.push_back(offsets.back() + size);
+//         assertChar('}', istr);
+//     }
+//     catch (...)
+//     {
+//         throw;
+//     }
+// }
+
+// void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+// {
+//     serializeTextImpl(column, row_num, ostr,
+//         [&](const DataTypePtr & subcolumn_type, const IColumn & subcolumn, size_t pos)
+//         {
+//             subcolumn_type->serializeAsTextQuoted(subcolumn, pos, ostr, settings);
+//         });
+// }
+
+// void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+// {
+//     // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
+//     bool need_safe_get_int_key = isInteger(key_type);
+
+//     deserializeTextImpl(column, istr, need_safe_get_int_key,
+//         [&](const DataTypePtr & subcolumn_type, IColumn & subcolumn)
+//         {
+//             subcolumn_type->deserializeAsTextQuoted(subcolumn, istr, settings);
+//         });
+// }
 
 
-void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
-{
-    nested->enumerateStreams(callback, path);
-}
+// void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+// {
+//     serializeTextImpl(column, row_num, ostr,
+//         [&](const DataTypePtr & subcolumn_type, const IColumn & subcolumn, size_t pos)
+//         {
+//             subcolumn_type->serializeAsTextJSON(subcolumn, pos, ostr, settings);
+//         });
+// }
 
-void DataTypeMap::serializeBinaryBulkStatePrefixImpl(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
-{
-    nested->serializeBinaryBulkStatePrefix(settings, state);
-}
+// void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+// {
+//     // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
+//     bool need_safe_get_int_key = isInteger(key_type);
 
-void DataTypeMap::serializeBinaryBulkStateSuffixImpl(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
-{
-    nested->serializeBinaryBulkStateSuffix(settings, state);
-}
+//     deserializeTextImpl(column, istr, need_safe_get_int_key,
+//         [&](const DataTypePtr & subcolumn_type, IColumn & subcolumn)
+//         {
+//             subcolumn_type->deserializeAsTextJSON(subcolumn, istr, settings);
+//         });
+// }
 
-void DataTypeMap::deserializeBinaryBulkStatePrefixImpl(
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
-{
-    nested->deserializeBinaryBulkStatePrefix(settings, state);
-}
+// void DataTypeMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+// {
+//     const auto & column_map = assert_cast<const ColumnMap &>(column);
+//     const auto & offsets = column_map.getNestedColumn().getOffsets();
+
+//     size_t offset = offsets[row_num - 1];
+//     size_t next_offset = offsets[row_num];
+
+//     const auto & nested_data = column_map.getNestedData();
+
+//     writeCString("<map>", ostr);
+//     for (size_t i = offset; i < next_offset; ++i)
+//     {
+//         writeCString("<elem>", ostr);
+//         writeCString("<key>", ostr);
+//         key_type->serializeAsTextXML(nested_data.getColumn(0), i, ostr, settings);
+//         writeCString("</key>", ostr);
+
+//         writeCString("<value>", ostr);
+//         value_type->serializeAsTextXML(nested_data.getColumn(1), i, ostr, settings);
+//         writeCString("</value>", ostr);
+//         writeCString("</elem>", ostr);
+//     }
+//     writeCString("</map>", ostr);
+// }
+
+// void DataTypeMap::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+// {
+//     WriteBufferFromOwnString wb;
+//     serializeText(column, row_num, wb, settings);
+//     writeCSV(wb.str(), ostr);
+// }
+
+// void DataTypeMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+// {
+//     String s;
+//     readCSV(s, istr, settings.csv);
+//     ReadBufferFromString rb(s);
+//     deserializeText(column, rb, settings);
+// }
 
 
-void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
-    const IColumn & column,
-    size_t offset,
-    size_t limit,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
-{
-    nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
-}
+// void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+// {
+//     nested->enumerateStreams(callback, path);
+// }
 
-void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
-    IColumn & column,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
-{
-    auto & column_map = assert_cast<ColumnMap &>(column);
-    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
-}
+// void DataTypeMap::serializeBinaryBulkStatePrefixImpl(
+//     SerializeBinaryBulkSettings & settings,
+//     SerializeBinaryBulkStatePtr & state) const
+// {
+//     nested->serializeBinaryBulkStatePrefix(settings, state);
+// }
 
-void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
-}
+// void DataTypeMap::serializeBinaryBulkStateSuffixImpl(
+//     SerializeBinaryBulkSettings & settings,
+//     SerializeBinaryBulkStatePtr & state) const
+// {
+//     nested->serializeBinaryBulkStateSuffix(settings, state);
+// }
 
-void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
-}
+// void DataTypeMap::deserializeBinaryBulkStatePrefixImpl(
+//     DeserializeBinaryBulkSettings & settings,
+//     DeserializeBinaryBulkStatePtr & state) const
+// {
+//     nested->deserializeBinaryBulkStatePrefix(settings, state);
+// }
+
+
+// void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
+//     const IColumn & column,
+//     size_t offset,
+//     size_t limit,
+//     SerializeBinaryBulkSettings & settings,
+//     SerializeBinaryBulkStatePtr & state) const
+// {
+//     nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
+// }
+
+// void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
+//     IColumn & column,
+//     size_t limit,
+//     DeserializeBinaryBulkSettings & settings,
+//     DeserializeBinaryBulkStatePtr & state,
+//     SubstreamsCache * cache) const
+// {
+//     auto & column_map = assert_cast<ColumnMap &>(column);
+//     nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
+// }
+
+// void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+// {
+//     nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
+// }
+
+// void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+// {
+//     nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
+// }
 
 MutableColumnPtr DataTypeMap::createColumn() const
 {

@@ -4,7 +4,7 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -196,34 +196,35 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn 
     bool parse_as_nullable = settings.null_as_default && !type->isNullable();
     try
     {
+        auto serialization = type->getDefaultSerialization();
         switch (col_format)
         {
             case ColumnFormat::Escaped:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextEscaped(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextEscapedImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextEscaped(column, buf, settings);
+                    serialization->deserializeTextEscaped(column, buf, settings);
                 break;
             case ColumnFormat::Quoted:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextQuoted(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextQuotedImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextQuoted(column, buf, settings);
+                    serialization->deserializeTextQuoted(column, buf, settings);
                 break;
             case ColumnFormat::Csv:
                 /// Will read unquoted string until settings.csv.delimiter
                 settings.csv.delimiter = row_format.delimiters[file_column + 1].empty() ? default_csv_delimiter :
                                                                                           row_format.delimiters[file_column + 1].front();
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextCSV(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextCSVImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextCSV(column, buf, settings);
+                    serialization->deserializeTextCSV(column, buf, settings);
                 break;
             case ColumnFormat::Json:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextJSON(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextJSONImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextJSON(column, buf, settings);
+                    serialization->deserializeTextJSON(column, buf, settings);
                 break;
             default:
                 __builtin_unreachable();

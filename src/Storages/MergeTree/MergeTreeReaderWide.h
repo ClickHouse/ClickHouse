@@ -45,7 +45,7 @@ private:
     void readData(
         const NameAndTypePair & name_and_type, ColumnPtr & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        IDataType::SubstreamsCache & cache);
+        ISerialization::SubstreamsCache & cache);
 };
 
 }

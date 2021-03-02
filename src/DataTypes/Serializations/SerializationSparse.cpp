@@ -33,7 +33,7 @@ void deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets, ReadBuffe
         readIntBinary(current_size, istr);
         current_offset += current_size;
         offsets.push_back(current_offset);
-        std::cerr << "current_offset: " << current_offset << "\n";
+        // std::cerr << "current_offset: " << current_offset << "\n";
     }
 }
 
@@ -54,8 +54,8 @@ void SerializationSparse::enumerateStreams(const StreamCallback & callback, Subs
 }
 
 void SerializationSparse::serializeBinaryBulkStatePrefix(
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
     nested->serializeBinaryBulkStatePrefix(settings, state);

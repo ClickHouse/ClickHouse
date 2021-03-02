@@ -96,7 +96,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (column_streams.count(stream_name))
             return;
 
-        std::cerr << "adding stream_name: " << stream_name << "\n";
+        // std::cerr << "adding stream_name: " << stream_name << "\n";
 
         CompressionCodecPtr compression_codec;
         /// If we can use special codec then just get it
@@ -135,7 +135,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (is_offsets && offset_columns.count(stream_name))
             return nullptr;
 
-        std::cerr << "getting stream_name: " << stream_name << "\n";
+        // std::cerr << "getting stream_name: " << stream_name << "\n";
 
         return &column_streams.at(stream_name)->compressed;
     };
@@ -439,7 +439,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         {
             auto column = type.createColumn();
 
-            type.deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
+            type.getDefaultSerialization()->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have {} rows in bin stream, last mark #{} index granularity size {}, last rows {}", column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);
@@ -459,7 +459,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
         auto column = type.createColumn();
 
-        type.deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
+        type.getDefaultSerialization()->deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
 
         if (bin_in.eof())
         {
@@ -498,7 +498,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     {
         auto column = type.createColumn();
 
-        type.deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
+        type.getDefaultSerialization()->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have {} rows in bin stream, last mark #{} index granularity size {}, last rows {}", column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);

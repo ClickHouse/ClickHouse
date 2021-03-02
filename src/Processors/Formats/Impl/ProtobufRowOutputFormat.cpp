@@ -47,7 +47,7 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
     std::fill(value_indices.begin(), value_indices.end(), 0);
     size_t column_index;
     while (writer.writeField(column_index))
-        data_types[column_index]->serializeProtobuf(
+        data_types[column_index]->getDefaultSerialization()->serializeProtobuf(
                 *columns[column_index], row_num, writer, value_indices[column_index]);
     writer.endMessage();
 }

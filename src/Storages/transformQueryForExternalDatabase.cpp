@@ -63,7 +63,7 @@ public:
                 const IColumn & inner_column = assert_cast<const ColumnConst &>(*result.column).getDataColumn();
 
                 WriteBufferFromOwnString out;
-                result.type->serializeAsText(inner_column, 0, out, FormatSettings());
+                result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
                 node = std::make_shared<ASTLiteral>(out.str());
             }
         }

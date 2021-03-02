@@ -72,7 +72,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         /// If append is true, then the value will be equal to nullptr and will be used only to
         /// check that the offsets column has been already read.
         OffsetColumns offset_columns;
-        std::unordered_map<String, IDataType::SubstreamsCache> caches;
+        std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
@@ -137,13 +137,14 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    std::cerr << "full_name: " << name_and_type.name << ", custom_ser: " << !!name_and_type.type->getCustomSerialization() << "\n";
-    std::cerr << "name: " << name_and_type.getNameInStorage() << ", subname: " << name_and_type.getSubcolumnName() << "\n";
+    // std::cerr << "full_name: " << name_and_type.name << ", custom_ser: " << !!name_and_type.type->getCustomSerialization() << "\n";
+    // std::cerr << "name: " << name_and_type.getNameInStorage() << ", subname: " << name_and_type.getSubcolumnName() << "\n";
+
     auto serialization = IDataType::getSerialization(name_and_type,
         [&](const String & stream_name)
         {
-            std::cerr << "stream_name: " << stream_name
-                << "has: " << data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION) << "\n";
+            // std::cerr << "stream_name: " << stream_name
+                // << "has: " << data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION) << "\n";
             return data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION) != 0;
         });
 
@@ -156,8 +157,8 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
 
         bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
 
-        std::cerr << "path: " << substream_path.toString() << "\n";
-        std::cerr << "adding stream: " << stream_name << ", exists: " << data_file_exists << "\n";
+        // std::cerr << "path: " << substream_path.toString() << "\n";
+        // std::cerr << "adding stream: " << stream_name << ", exists: " << data_file_exists << "\n";
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -182,10 +183,10 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    IDataType::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache & cache)
 {
-    std::cerr << "reading data for: " << name_and_type.name << "\n";
-    std::cerr << "reading data column: " << column->dumpStructure() << "\n";
+    // std::cerr << "reading data for: " << name_and_type.name << "\n";
+    // std::cerr << "reading data column: " << column->dumpStructure() << "\n";
 
     auto get_stream_getter = [&](bool stream_for_prefix) -> ISerialization::InputStreamGetter
     {
@@ -222,7 +223,7 @@ void MergeTreeReaderWide::readData(
     const auto & name = name_and_type.name;
     auto serialization = serializations[name];
 
-    std::cerr << "name: " << name << "\n";
+    // std::cerr << "name: " << name << "\n";
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
     {

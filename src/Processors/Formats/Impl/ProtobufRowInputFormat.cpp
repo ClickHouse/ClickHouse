@@ -37,7 +37,7 @@ bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
         do
         {
             bool row_added;
-            data_types[column_index]->deserializeProtobuf(*columns[column_index], reader, allow_add_row, row_added);
+            data_types[column_index]->getDefaultSerialization()->deserializeProtobuf(*columns[column_index], reader, allow_add_row, row_added);
             if (row_added)
             {
                 read_columns[column_index] = true;

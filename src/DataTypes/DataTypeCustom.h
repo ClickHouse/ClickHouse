@@ -75,34 +75,34 @@ public:
     virtual ~IDataTypeCustomStreams() = default;
 
     virtual void enumerateStreams(
-        const IDataType::StreamCallback & callback,
-        IDataType::SubstreamPath & path) const = 0;
+        const IDataType::SubstreamCallback & callback,
+        ISerialization::SubstreamPath & path) const = 0;
 
     virtual void serializeBinaryBulkStatePrefix(
-        IDataType::SerializeBinaryBulkSettings & settings,
-        IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
+        ISerialization::SerializeBinaryBulkSettings & settings,
+        ISerialization::SerializeBinaryBulkStatePtr & state) const = 0;
 
     virtual void serializeBinaryBulkStateSuffix(
-        IDataType::SerializeBinaryBulkSettings & settings,
-        IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
+        ISerialization::SerializeBinaryBulkSettings & settings,
+        ISerialization::SerializeBinaryBulkStatePtr & state) const = 0;
 
     virtual void deserializeBinaryBulkStatePrefix(
-        IDataType::DeserializeBinaryBulkSettings & settings,
-        IDataType::DeserializeBinaryBulkStatePtr & state) const = 0;
+        ISerialization::DeserializeBinaryBulkSettings & settings,
+        ISerialization::DeserializeBinaryBulkStatePtr & state) const = 0;
 
     virtual void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
         size_t limit,
-        IDataType::SerializeBinaryBulkSettings & settings,
-        IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
+        ISerialization::SerializeBinaryBulkSettings & settings,
+        ISerialization::SerializeBinaryBulkStatePtr & state) const = 0;
 
     virtual void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
         size_t limit,
-        IDataType::DeserializeBinaryBulkSettings & settings,
-        IDataType::DeserializeBinaryBulkStatePtr & state,
-        IDataType::SubstreamsCache * cache) const = 0;
+        ISerialization::DeserializeBinaryBulkSettings & settings,
+        ISerialization::DeserializeBinaryBulkStatePtr & state,
+        ISerialization::SubstreamsCache * cache) const = 0;
 };
 
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;

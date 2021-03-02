@@ -51,7 +51,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                data_types[j]->serializeAsText(*columns[j], i, ostr, format_settings);
+                data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }

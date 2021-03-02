@@ -24,15 +24,16 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
 
 void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
+    auto serialization = type.getDefaultSerialization();
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization->serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), out, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, out, settings);
+        serialization->serializeTextJSON(column, row_num, out, settings);
 }
 
 
