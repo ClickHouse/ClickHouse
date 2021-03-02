@@ -148,7 +148,6 @@ NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, siz
     storage->enableSnapshotMode();
     snapshot_container_size = storage->container.snapshotSize();
     begin = storage->getSnapshotIteratorBegin();
-    end = storage->getSnapshotIteratorEnd();
     session_and_timeout = storage->getActiveSessions();
 }
 

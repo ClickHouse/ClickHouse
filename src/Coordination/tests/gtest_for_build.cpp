@@ -898,7 +898,7 @@ TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
 void addNode(DB::NuKeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
 {
     using Node = DB::NuKeeperStorage::Node;
-    storage.container.insert(path, Node{.data=data, .ephemeral_owner = ephemeral_owner});
+    storage.container.insertOrReplace(path, Node{.data=data, .ephemeral_owner = ephemeral_owner});
 }
 
 TEST(CoordinationTest, TestStorageSnapshotSimple)
@@ -1024,6 +1024,48 @@ TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_EQ(restored_storage.container.size(), 251);
 
     for (size_t i = 0; i < 250; ++i)
+    {
+        EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+    }
+}
+
+TEST(CoordinationTest, TestStorageSnapshotMode)
+{
+    ChangelogDirTest test("./snapshots");
+    DB::NuKeeperSnapshotManager manager("./snapshots", 3);
+    DB::NuKeeperStorage storage(500);
+    for (size_t i = 0; i < 50; ++i)
+    {
+        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
+    }
+
+    {
+        DB::NuKeeperStorageSnapshot snapshot(&storage, 50);
+        for (size_t i = 0; i < 50; ++i)
+        {
+            addNode(storage, "/hello_" + std::to_string(i), "wlrd_" + std::to_string(i));
+        }
+        for (size_t i = 0; i < 50; ++i)
+        {
+            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+        }
+        EXPECT_EQ(storage.container.size(), 51);
+        EXPECT_EQ(storage.container.snapshotSize(), 101);
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        manager.serializeSnapshotBufferToDisk(*buf, 50);
+    }
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
+    EXPECT_EQ(storage.container.size(), 51);
+    EXPECT_EQ(storage.container.snapshotSize(), 51);
+    for (size_t i = 0; i < 50; ++i)
+    {
+        EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+    }
+
+    DB::NuKeeperStorage restored_storage(500);
+    manager.restoreFromLatestSnapshot(&restored_storage);
+
+    for (size_t i = 0; i < 50; ++i)
     {
         EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
     }

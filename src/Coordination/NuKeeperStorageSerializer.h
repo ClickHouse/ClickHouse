@@ -30,7 +30,6 @@ public:
     int64_t session_id;
     size_t snapshot_container_size;
     NuKeeperStorage::Container::const_iterator begin;
-    NuKeeperStorage::Container::const_iterator end;
     SessionAndTimeout session_and_timeout;
 };
 

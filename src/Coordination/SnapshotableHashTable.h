@@ -68,7 +68,8 @@ public:
                 ListElem elem{key, value, true};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
-                map[new_list_itr->key] = new_list_itr;
+                map.erase(it);
+                map.emplace(new_list_itr->key, new_list_itr);
             }
             else
             {
@@ -115,7 +116,8 @@ public:
 
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
-            map[itr->key] = itr;
+            map.erase(it);
+            map.emplace(itr->key, itr);
             return itr;
         }
         else
