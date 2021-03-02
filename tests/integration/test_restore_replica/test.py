@@ -68,10 +68,8 @@ def test_restore_replica(start_cluster):
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
     # 2. Delete metadata for the root zk path (emulating a Zookeeper error)
-    zk.delete("/clickhouse/tables/test/1/test_table", recursive=True)
-    assert zk.exists("/clickhouse/tables/test/1/test_table") is None
-
-    node_1.query("SYSTEM RESTART REPLICA test")
+    zk.delete("/clickhouse/tables/test/", recursive=True)
+    assert zk.exists("/clickhouse/tables/test/") is None
 
     # 3. Assert there is an exception as the metadata is missing
     node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
