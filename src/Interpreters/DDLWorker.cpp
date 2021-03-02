@@ -305,20 +305,26 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
     std::sort(all_nodes.begin(), all_nodes.end());
 }
 
-void DDLWorker::scheduleTasks()
+void DDLWorker::scheduleTasks(bool reinitialized)
 {
     LOG_DEBUG(log, "Scheduling tasks");
     auto zookeeper = tryGetZooKeeper();
 
-    for (auto & task : current_tasks)
+    /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
+    /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
+    if (reinitialized)
     {
-        /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
-        /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
-        bool task_still_exists = zookeeper->exists(task->entry_path);
-        bool status_written = zookeeper->exists(task->getFinishedNodePath());
-        if (task->was_executed && !status_written && task_still_exists)
+        for (auto & task : current_tasks)
         {
-            processTask(*task, zookeeper);
+            if (task->was_executed)
+            {
+                bool task_still_exists = zookeeper->exists(task->entry_path);
+                bool status_written = zookeeper->exists(task->getFinishedNodePath());
+                if (!status_written && task_still_exists)
+                {
+                    processTask(*task, zookeeper);
+                }
+            }
         }
     }
 
@@ -332,19 +338,23 @@ void DDLWorker::scheduleTasks()
     else if (max_tasks_in_queue < queue_nodes.size())
         cleanup_event->set();
 
-    bool server_startup = current_tasks.empty();
+    /// Detect queue start, using:
+    /// - skipped tasks
+    /// - in memory tasks (that are currently active)
     auto begin_node = queue_nodes.begin();
-
-    if (!server_startup)
+    UInt64 last_task_id = 0;
+    if (!current_tasks.empty())
     {
-        /// We will recheck status of last executed tasks. It's useful if main thread was just restarted.
-        auto & min_task = *std::min_element(current_tasks.begin(), current_tasks.end());
-        String min_entry_name = last_skipped_entry_name ? std::min(min_task->entry_name, *last_skipped_entry_name) : min_task->entry_name;
-        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_entry_name);
-        current_tasks.clear();
+        auto & last_task = current_tasks.back();
+        last_task_id = DDLTaskBase::getLogEntryNumber(last_task->entry_name);
+        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_task->entry_name);
     }
-
-    assert(current_tasks.empty());
+    if (last_skipped_entry_name)
+    {
+        UInt64 last_skipped_entry_id = DDLTaskBase::getLogEntryNumber(*last_skipped_entry_name);
+        if (last_skipped_entry_id > last_task_id)
+            begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), *last_skipped_entry_name);
+    }
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
@@ -365,7 +375,7 @@ void DDLWorker::scheduleTasks()
 
         if (worker_pool)
         {
-            worker_pool->scheduleOrThrowOnError([this, &saved_task, &zookeeper]()
+            worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
                 processTask(saved_task, zookeeper);
@@ -930,11 +940,11 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 }
 
 
-void DDLWorker::initializeMainThread()
+bool DDLWorker::initializeMainThread()
 {
     assert(!initialized);
     setThreadName("DDLWorker");
-    LOG_DEBUG(log, "Started DDLWorker thread");
+    LOG_DEBUG(log, "Initializing DDLWorker thread");
 
     while (!stop_flag)
     {
@@ -943,7 +953,7 @@ void DDLWorker::initializeMainThread()
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initialized = true;
-            return;
+            return true;
         }
         catch (const Coordination::Exception & e)
         {
@@ -964,6 +974,8 @@ void DDLWorker::initializeMainThread()
         /// Avoid busy loop when ZooKeeper is not available.
         sleepForSeconds(5);
     }
+
+    return false;
 }
 
 void DDLWorker::runMainThread()
@@ -989,15 +1001,19 @@ void DDLWorker::runMainThread()
     {
         try
         {
+            bool reinitialized = !initialized;
+
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required
             if (!initialized)
             {
-                initializeMainThread();
+                /// Stopped
+                if (!initializeMainThread())
+                    break;
                 LOG_DEBUG(log, "Initialized DDLWorker thread");
             }
 
             cleanup_event->set();
-            scheduleTasks();
+            scheduleTasks(reinitialized);
 
             LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
@@ -1007,6 +1023,9 @@ void DDLWorker::runMainThread()
             if (Coordination::isHardwareError(e.code))
             {
                 initialized = false;
+                /// Wait for pending async tasks
+                if (1 < pool_size)
+                    worker_pool = std::make_unique<ThreadPool>(pool_size);
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else
