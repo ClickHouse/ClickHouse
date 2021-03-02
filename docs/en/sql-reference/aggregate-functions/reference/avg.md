@@ -14,19 +14,12 @@ avg(x)
 
 **Arguments**
 
--   `x` — Values.
-
-`x` must be
-[Integer](../../../sql-reference/data-types/int-uint.md),
-[floating-point](../../../sql-reference/data-types/float.md), or 
-[Decimal](../../../sql-reference/data-types/decimal.md).
+-   `x` — input values, must be [Integer](../../../sql-reference/data-types/int-uint.md), [floating-point](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
--   `NaN` if the supplied parameter is empty.
--   Mean otherwise.
-
-**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
+-   The arithmetic mean, always as [Float64](../../../sql-reference/data-types/float.md).
+-   `NaN` if the input parameter `x` is empty.
 
 **Example**
 
@@ -46,11 +39,20 @@ Result:
 
 **Example**
 
+Create a temp table:
+
 Query:
 
 ``` sql
 CREATE table test (t UInt8) ENGINE = Memory;
-SELECT avg(t) FROM test
+```
+
+Get the arithmetic mean: 
+
+Query:
+
+```
+SELECT avg(t) FROM test;
 ```
 
 Result:
@@ -60,3 +62,5 @@ Result:
 │    nan │
 └────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
