@@ -64,7 +64,9 @@ public:
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
-    /// Check if the format is column-oriented
+    /// Check if the format is column-oriented. Maybe it's more appropriate to put one flag in this class's private fields
+    /// to identify this format type. We can set it in new formats' register code which will be automatically set at initialization.
+    /// This will avoid updating this function frequently.
     bool isColumnOriented() const;
 
 protected:
