@@ -33,6 +33,7 @@ public:
         Connection * connection = nullptr;
         PacketReceiverPtr packet_receiver;
         TimerDescriptor change_replica_timeout;
+        bool is_change_replica_timeout_expired = false;
     };
 
     struct OffsetState

@@ -318,6 +318,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
         {
             ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
             offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
+            offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
             offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(location.offset);
             startNewReplica();
@@ -370,12 +371,21 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
     switch (packet.type)
     {
         case Protocol::Server::Data:
-            if (!offset_states[replica_location.offset].first_packet_of_data_received)
+            if (!offset_states[replica_location.offset].first_packet_of_data_received && packet.block.rows() > 0)
                 processReceivedFirstDataPacket(replica_location);
             replica_with_last_received_packet = replica_location;
             break;
-        case Protocol::Server::PartUUIDs:
         case Protocol::Server::Progress:
+            /// If we haven't received the first data packet (except header), we have made
+            /// some progress and timeout hasn't expired yet, we restart timeout for changing replica.
+            if (!replica.is_change_replica_timeout_expired && !offset_states[replica_location.offset].first_packet_of_data_received && packet.progress.read_bytes > 0)
+            {
+                /// Restart change replica timeout.
+                replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
+            }
+            replica_with_last_received_packet = replica_location;
+            break;
+        case Protocol::Server::PartUUIDs:
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:

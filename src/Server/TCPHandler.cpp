@@ -1415,7 +1415,7 @@ void TCPHandler::sendData(const Block & block)
 
     /// For testing hedged requests
     const Settings & settings = query_context->getSettingsRef();
-    if (settings.sleep_in_send_data)
+    if (block.rows() > 0 && settings.sleep_in_send_data)
     {
         out->next();
         std::chrono::seconds sec(settings.sleep_in_send_data);
