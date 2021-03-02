@@ -246,3 +246,12 @@ def test_receive_timeout2(started_cluster):
     time.sleep(2)
     check_query(expected_replica="node_2", receive_timeout=3)
 
+
+def test_long_query(started_cluster):
+    NODES['node'].query("INSERT INTO distributed select number, toDate(number) from numbers(100);")
+    while TSV(NODES['node'].query("SELECT count() FROM distributed;")) != TSV("101"):
+        time.sleep(0.1)
+
+    result = NODES['node'].query("select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;")
+    assert TSV(result) == TSV("node_1\t99")
+ 
