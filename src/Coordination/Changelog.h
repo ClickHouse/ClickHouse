@@ -80,7 +80,9 @@ public:
 
     size_t getNextEntryIndex() const
     {
-        return start_index + logs.size();
+        if (!logs.empty() || start_index == 1)
+            return start_index + logs.size();
+        return start_index + 1;
     }
 
     size_t getStartIndex() const

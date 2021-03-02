@@ -132,16 +132,18 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
         NuKeeperStorage::Node node;
         readNode(node, in);
         storage.container.insertOrReplace(path, node);
-        if (path != "/")
-        {
-            auto parent_path = parentPath(path);
-            storage.container.updateValue(parent_path, [&path] (NuKeeperStorage::Node & value) { value.children.insert(path); });
-        }
-
         if (node.ephemeral_owner != 0)
             storage.ephemerals[node.ephemeral_owner].insert(path);
 
         current_size++;
+    }
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key != "/")
+        {
+            auto parent_path = parentPath(itr.key);
+            storage.container.updateValue(parent_path, [&path = itr.key] (NuKeeperStorage::Node & value) { value.children.insert(path); });
+        }
     }
 
     size_t active_sessions_size;
