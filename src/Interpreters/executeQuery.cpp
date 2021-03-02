@@ -473,14 +473,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings.enable_global_with_statement)
         {
             ApplyWithGlobalVisitor().visit(ast);
-            query = serializeAST(*ast);
         }
 
         /// Normalize SelectWithUnionQuery
         NormalizeSelectWithUnionQueryVisitor::Data data{context.getSettingsRef().union_default_mode};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-
-        query = serializeAST(*ast);
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
