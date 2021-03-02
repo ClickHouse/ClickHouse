@@ -692,11 +692,15 @@ public:
 
     bool is_custom_partitioned = false;
 
+    /// Used only for old syntax tables. Never changes after init.
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
+    /// Get partition key expression on required columns
     ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key) const;
+    /// Get column names required for partition key
     Names getMinMaxColumnsNames(const KeyDescription & partition_key) const;
+    /// Get column types required for partition key
     DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key) const;
 
     ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
