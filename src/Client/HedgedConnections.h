@@ -14,10 +14,11 @@
 namespace DB
 {
 
-/** To receive data from multiple replicas (connections) from one shard asynchronously,
+/** To receive data from multiple replicas (connections) from one shard asynchronously.
   * The principe of Hedged Connections is used to reduce tail latency:
-  * (if we don't receive data from replica for a long time, we try to get new replica
-  * and send query to it, without cancelling working with previous replica). This class
+  * if we don't receive data from replica and there is no progress in query execution
+  * for a long time, we try to get new replica and send query to it,
+  * without cancelling working with previous replica. This class
   * supports all functionality that MultipleConnections has.
   */
 class HedgedConnections : public IConnections
@@ -40,11 +41,11 @@ public:
     {
         /// Replicas with the same offset.
         std::vector<ReplicaState> replicas;
-        /// An amount of active replicas, when first_packet_of_data_received is true,
-        /// active_connection_count is always <= 1 (because we stop working with
-        /// other replicas when we receive first data packet from one of them)
+        /// An amount of active replicas. When can_change_replica is false,
+        /// active_connection_count is always <= 1 (because we stopped working with
+        /// other replicas with the same offset)
         size_t active_connection_count = 0;
-        bool first_packet_of_data_received = false;
+        bool can_change_replica = true;
 
         /// This flag is true when this offset is in queue for
         /// new replicas. It's needed to process receive timeout
@@ -102,8 +103,9 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
 private:
-    /// If we don't receive data from replica for receive_data_timeout, we are trying
-    /// to get new replica and send query to it. Beside sending query, there are some
+    /// If we don't receive data from replica and there is no progress in query
+    /// execution for receive_data_timeout, we are trying to get new
+    /// replica and send query to it. Beside sending query, there are some
     /// additional actions like sendScalarsData or sendExternalTablesData and we need
     /// to perform these actions in the same order on the new replica. So, we will
     /// save actions with replicas in pipeline to perform them on the new replicas.
@@ -123,7 +125,7 @@ private:
 
     bool resumePacketReceiver(const ReplicaLocation & replica_location);
 
-    void processReceivedFirstDataPacket(const ReplicaLocation & replica_location);
+    void disableChangingReplica(const ReplicaLocation & replica_location);
 
     void startNewReplica();
 
@@ -156,10 +158,10 @@ private:
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count;
 
-    /// We count offsets which received first packet of data,
-    /// it's needed to cancel choosing new replicas when all offsets
-    /// received their first packet of data.
-    size_t offsets_with_received_first_data_packet;
+    /// We count offsets in which we can't change replica anymore,
+    /// it's needed to cancel choosing new replicas when we
+    /// disabled replica changing in all offsets.
+    size_t offsets_with_disabled_changing_replica;
 
     Pipeline pipeline_for_new_replicas;
 
