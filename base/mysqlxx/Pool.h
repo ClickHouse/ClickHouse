@@ -6,6 +6,8 @@
 #include <atomic>
 
 #include <Poco/Exception.h>
+#include <Poco/Logger.h>
+
 #include <mysqlxx/Connection.h>
 
 
@@ -167,13 +169,13 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
          bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT)
-    : default_connections(default_connections_), max_connections(max_connections_),
-    db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
+    : logger(Poco::Logger::get("mysqlxx::Pool")), default_connections(default_connections_),
+    max_connections(max_connections_), db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
     connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
     opt_reconnect(opt_reconnect_) {}
 
     Pool(const Pool & other)
-        : default_connections{other.default_connections},
+        : logger(other.logger), default_connections{other.default_connections},
           max_connections{other.max_connections},
           db{other.db}, server{other.server},
           user{other.user}, password{other.password},
@@ -203,6 +205,8 @@ public:
     void removeConnection(Connection * connection);
 
 protected:
+    Poco::Logger & logger;
+
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;
     /// Maximum possible number of connections
