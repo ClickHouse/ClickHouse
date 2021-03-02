@@ -3678,17 +3678,30 @@ MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & parti
     };
 }
 
-PartitionCommandsResultInfo MergeTreeData::freezePartition(const ASTPtr & partition_ast, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder &)
+PartitionCommandsResultInfo MergeTreeData::freezePartition(
+    const ASTPtr & partition_ast,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & with_name,
+    const Context & context,
+    TableLockHolder &)
 {
     return freezePartitionsByMatcher(getPartitionMatcher(partition_ast, context), metadata_snapshot, with_name, context);
 }
 
-PartitionCommandsResultInfo MergeTreeData::freezeAll(const String & with_name, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableLockHolder &)
+PartitionCommandsResultInfo MergeTreeData::freezeAll(
+    const String & with_name,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Context & context,
+    TableLockHolder &)
 {
     return freezePartitionsByMatcher([] (const String &) { return true; }, metadata_snapshot, with_name, context);
 }
 
-PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context)
+PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
+    MatcherFn matcher,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & with_name,
+    const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String default_shadow_path = clickhouse_path + "shadow/";
@@ -3758,9 +3771,11 @@ PartitionCommandsResultInfo MergeTreeData::unfreezeAll(
     return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, context);
 }
 
-PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context & context)
+PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context &)
 {
     auto backup_path = std::filesystem::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
+
+    LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 
     PartitionCommandsResultInfo result;
 
@@ -3782,17 +3797,19 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
             if (!matcher(partition_id))
                 continue;
 
-            disk->removeRecursive(it->path());
+            auto path = it->path();
+
+            disk->removeRecursive(path);
 
             result.push_back(PartitionCommandResultInfo{
                 .partition_id = partition_id,
                 .part_name = partition_directory,
                 .backup_path = disk->getPath() + backup_path.generic_string(),
-                .part_backup_path = disk->getPath() + it->path(),
+                .part_backup_path = disk->getPath() + path,
                 .backup_name = backup_name,
             });
 
-            LOG_DEBUG(log, "Unfreezed part by path {}", disk->getPath() + it->path());
+            LOG_DEBUG(log, "Unfreezed part by path {}", disk->getPath() + path);
         }
     }
 

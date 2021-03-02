@@ -342,17 +342,19 @@ def test_freeze_unfreeze(cluster):
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
-    assert len(
-        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
-
     node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup1'")
-    assert len(
-        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 4096)))
+    node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup2'")
 
     node.query("TRUNCATE TABLE s3_test")
     assert len(
-        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
-    node.query("ALTER TABLE s3_test UNFREEZE 'backup1'")
+    # Unfreeze single partition from backup1.
+    node.query("ALTER TABLE s3_test UNFREEZE PARTITION '2020-01-03' WITH NAME 'backup1'")
+    # Unfreeze all partitions from backup2.
+    node.query("ALTER TABLE s3_test UNFREEZE WITH NAME 'backup2'")
+
+    # Data should be removed from S3.
     assert len(
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
