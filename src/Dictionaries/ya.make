@@ -9,6 +9,7 @@ PEERDIR(
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
+    contrib/libs/abseil-cpp
 )
 
 IF (USE_ODBC)
