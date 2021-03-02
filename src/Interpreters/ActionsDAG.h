@@ -26,7 +26,6 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class Context;
 class CompiledExpressionCache;
 
 /// Directed acyclic graph of expressions.
@@ -227,6 +226,7 @@ public:
     bool removeUnusedResult(const std::string & column_name);
 
     void projectInput() { project_input = true; }
+    bool projectedOutput() const { return projected_output; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;
@@ -235,7 +235,7 @@ public:
 
     //const ActionsSettings & getSettings() const { return settings; }
 
-    void compileExpressions();
+    void compileExpressions(std::shared_ptr<CompiledExpressionCache> cache);
 
     ActionsDAGPtr clone() const;
 
@@ -317,9 +317,9 @@ private:
     void removeUnusedActions(bool allow_remove_inputs = true);
     void addAliases(const NamesWithAliases & aliases, bool project);
 
-    void compileFunctions();
+    void compileFunctions(std::shared_ptr<CompiledExpressionCache> cache);
 
-    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction);
+    ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction);
 };
 
 

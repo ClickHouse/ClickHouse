@@ -44,15 +44,18 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Context & context)
 {
     actions_dag = actions_dag_->clone();
 
-    actions_dag->compileExpressions();
+    const auto & settings = context.getSettingsRef();
+
+    if (settings.compile_expressions)
+        actions_dag->compileExpressions(context.getCompiledExpressionCache());
 
     linearizeActions();
 
-    const auto & settings = actions_dag->getSettings();
+    max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
