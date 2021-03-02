@@ -311,7 +311,7 @@ public:
         Graphite::Params graphite_params;
 
         /// Check that needed columns are present and have correct types.
-        void check(const StorageInMemoryMetadata & metadata) const;
+        void check(const StorageInMemoryaetadata & setadata) const;
 
         String getModeName() const;
     };
@@ -330,7 +330,7 @@ public:
     ///     Primary key must be a prefix of the sorting key;
     ///     If it is nullptr, then it will be determined from order_by_ast.
     ///
-    /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
+    /// require_part_detadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,

@@ -12,7 +12,7 @@ def fill_nodes(nodes):
         '''
             CREATE TABLE test(n UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
-            ORDER BY n PARTITION BY n % 1000;
+            ORDER BY n PARTITION BY n % 10;
         '''.format(replica=node.name))
 
 cluster = ClickHouseCluster(__file__)

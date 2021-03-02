@@ -42,10 +42,12 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Poco/DirectoryIterator.h>
 
 #include <csignal>
 #include <algorithm>
 #include <memory>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -443,7 +445,6 @@ void InterpreterSystemQuery::restoreReplica()
         zookeeper->tryGetChildren(replica_zk_path, replicas_present);
 
         if (!replicas_present.empty())
-            // TODO Add the ZKPATH option to restore the table metadata on a certain replica,
             throw Exception(
                 "The metadata for " + replica_zk_path + " is present at some of the replicas -- nothing to restore,"
                 " try creating a new replica with the CREATE TABLE query",
@@ -497,9 +498,36 @@ void InterpreterSystemQuery::restoreReplica()
         LOG_DEBUG(log, "Stopped replica fetches for " + db_name + "." + old_table_name);
     }
 
-    /// 3. Move all the old table parts to the detached/ folder of the new table and execute ALTER ... ATTACH that will
-    /// automatically attach the data and add the info to the ZooKeeper.
+    /// 3. Move all old table parts to the detached/ folder of the new table and execute ALTER ... ATTACH that will
+    /// automatically attach data and add info to ZooKeeper.
     /// TODO
+    {
+        // const auto new_table = DatabaseCatalog::instance().getTable({db_name, new_table_name}, context);
+        // const Strings& new_tables_data_paths = new_table->getDataPaths();
+
+        // Strings parts_names; // old table's parts that we moved to the new table's detached/ folder
+
+        // auto target_it = new_tables_data_paths.cbegin();
+        // const auto target_end = new_tables_data_paths.cend();
+
+        // auto f = [&](const Poco::Path& part_dir_path, auto& target_iter)
+        // {
+        //     if (target_iter == target_end)
+        //         throw Exception("Unable to move part data to the target table directory -- no free space",
+        //             ErrorCodes::SYSTEM_ERROR);
+
+        //     Poco::File part_dir {part_dir_path};
+        //     size_t space_left = new_table->getStoragePolicy()->
+        // };
+
+        // const Poco::DirectoryIterator end;
+
+        // for (const String& old_table_data_path : table->getDataPaths())
+        //     for (Poco::DirectoryIterator it{old_table_data_path}; it != end; ++it)
+        //         if (const auto& part_path = it.path().parent();
+        //             it->isDirectory() && part_path.getFileName() != "detached")
+        //             f(part_path, target_it);
+    }
 
     /// 3. Move parts to a new table that will register them in zookeeper.
     {
