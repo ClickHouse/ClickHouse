@@ -1892,7 +1892,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
+    const PartitionIdToMaxBlock * max_block_numbers_to_read)
 {
     auto prev_parts = parts;
     parts.clear();
