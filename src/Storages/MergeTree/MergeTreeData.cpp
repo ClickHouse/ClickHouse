@@ -423,7 +423,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 }
 
-ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key) const
+ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key)
 {
     NamesAndTypesList partition_key_columns;
     if (!partition_key.column_names.empty())
@@ -432,14 +432,14 @@ ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partiti
     return std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(partition_key_columns));
 }
 
-Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key) const
+Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key)
 {
     if (!partition_key.column_names.empty())
         return partition_key.expression->getRequiredColumns();
     return {};
 }
 
-DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_key) const
+DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_key)
 {
     if (!partition_key.column_names.empty())
         return partition_key.expression->getRequiredColumnsWithTypes().getTypes();
