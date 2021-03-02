@@ -111,6 +111,11 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "01413_alter_update_supertype",
+        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        "00836_indices_alter_replicated_zookeeper",
+        "00652_mutations_alter_update",
+        "01715_tuple_insert_null_as_default",
         "00825_protobuf_format_map",
         "00152_insert_different_granularity",
         "01715_background_checker_blather_zookeeper",
@@ -255,7 +260,8 @@
         "00121_drop_column_zookeeper",
         "00116_storage_set",
         "00083_create_merge_tree_zookeeper",
-        "00062_replicated_merge_tree_alter_zookeeper"
+        "00062_replicated_merge_tree_alter_zookeeper",
+        "01720_constraints_complex_types"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -276,13 +282,16 @@
         "00746_sql_fuzzy",
         "00763_create_query_as_table_engine_bug",
         "00765_sql_compatibility_aliases",
-        "00825_protobuf_format_input",
-        "00825_protobuf_format_nested_optional",
         "00825_protobuf_format_array_3dim",
-        "00825_protobuf_format_map",
         "00825_protobuf_format_array_of_arrays",
-        "00825_protobuf_format_table_default",
         "00825_protobuf_format_enum_mapping",
+        "00825_protobuf_format_map",
+        "00825_protobuf_format_nested_in_nested",
+        "00825_protobuf_format_nested_optional",
+        "00825_protobuf_format_no_length_delimiter",
+        "00825_protobuf_format_persons",
+        "00825_protobuf_format_squares",
+        "00825_protobuf_format_table_default",
         "00826_cross_to_inner_join",
         "00834_not_between",
         "00909_kill_not_initialized_query",
@@ -520,6 +529,7 @@
         "00626_replace_partition_from_table",
         "00626_replace_partition_from_table_zookeeper",
         "00633_materialized_view_and_too_many_parts_zookeeper",
+        "00643_cast_zookeeper",
         "00652_mergetree_mutations",
         "00652_replicated_mutations_zookeeper",
         "00682_empty_parts_merge",
@@ -733,10 +743,11 @@
         "01602_show_create_view",
         "01603_rename_overwrite_bug",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
-        "01676_dictget_in_default_expression",
-        "01715_background_checker_blather_zookeeper",
-        "01700_system_zookeeper_path_in",
+        "01656_test_query_log_factories_info",
         "01669_columns_declaration_serde",
+        "01676_dictget_in_default_expression",
+        "01700_system_zookeeper_path_in",
+        "01715_background_checker_blather_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -745,6 +756,7 @@
         "memory_leak",
         "memory_limit",
         "polygon_dicts", // they use an explicitly specified database
-        "01658_read_file_to_stringcolumn"
+        "01658_read_file_to_stringcolumn",
+        "01721_engine_file_truncate_on_insert" // It's ok to execute in parallel but not several instances of the same test.
     ]
 }

@@ -703,12 +703,6 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 template <typename ReturnType = void>
 inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    /** Read 10 characters, that could represent unix timestamp.
-      * Only unix timestamp of 5-10 characters is supported.
-      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
-      */
-
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
 
@@ -778,6 +772,18 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
+    }
+    else if (scale && (whole >= 1000000000LL * scale))
+    {
+        /// Unix timestamp with subsecond precision, already scaled to integer.
+        /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
+
+        for (size_t i = 0; i < scale; ++i)
+        {
+            components.fractional *= 10;
+            components.fractional += components.whole % 10;
+            components.whole /= 10;
+        }
     }
 
     datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);

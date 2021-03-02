@@ -152,6 +152,9 @@ public:
         }
     };
 
+    /// NOTE: std::list is an implementation detail.
+    /// It allows to add and remove new nodes inplace without reallocation.
+    /// Raw pointers to nodes remain valid.
     using Nodes = std::list<Node>;
     using Inputs = std::vector<Node *>;
 
@@ -278,6 +281,13 @@ public:
     /// Index of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
 
+    /// Create actions which may calculate part of filter using only available_inputs.
+    /// If nothing may be calculated, returns nullptr.
+    /// Otherwise, return actions which inputs are from available_inputs.
+    /// Returned actions add single column which may be used for filter.
+    /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
+    ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs);
+
 private:
     Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
     Node & getNode(const std::string & name);
@@ -302,10 +312,12 @@ private:
     }
 
     void removeUnusedActions(const std::vector<Node *> & required_nodes);
-    void removeUnusedActions();
+    void removeUnusedActions(bool allow_remove_inputs = true);
     void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
 
     void compileFunctions();
+
+    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction);
 };
 
 
