@@ -18,6 +18,31 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// TODO: Remove DictionaryDefaultValueExtractor
+class DefaultValueProvider final
+{
+public:
+    explicit DefaultValueProvider(Field default_value_, ColumnPtr default_values_column_ = nullptr)
+        : default_value(std::move(default_value_))
+        , default_values_column(default_values_column_)
+    {
+    }
+
+    inline bool isConstant() const { return default_values_column == nullptr; }
+
+    Field getDefaultValue(size_t row) const
+    {
+        if (default_values_column)
+            return (*default_values_column)[row];
+
+        return default_value;
+    }
+
+private:
+    Field default_value;
+    ColumnPtr default_values_column;
+};
+
 /** Support class for dictionary storages.
 
     The main idea is that during fetch we create all columns, but fill only columns that client requested.
@@ -31,26 +56,34 @@ namespace ErrorCodes
 class DictionaryStorageFetchRequest
 {
 public:
-    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch)
+    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch, Columns attributes_default_values_columns)
         : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
         , attributes_to_fetch_filter(structure.attributes.size(), false)
     {
+        assert(attributes_default_values_columns.size() == attributes_names_to_fetch.size());
+
         if (attributes_to_fetch_names_set.size() != attributes_names_to_fetch.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Attribute names to fetch should be unique");
 
         size_t attributes_size = structure.attributes.size();
         dictionary_attributes_types.reserve(attributes_size);
+        attributes_default_value_providers.reserve(attributes_to_fetch_names_set.size());
 
+        size_t default_values_column_index = 0;
         for (size_t i = 0; i < attributes_size; ++i)
         {
-            const auto & name = structure.attributes[i].name;
-            const auto & type = structure.attributes[i].type;
+            const auto & dictionary_attribute = structure.attributes[i];
+            const auto & name = dictionary_attribute.name;
+            const auto & type = dictionary_attribute.type;
             dictionary_attributes_types.emplace_back(type);
 
             if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
             {
                 attributes_to_fetch_filter[i] = true;
+                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[default_values_column_index]);
             }
+            else
+                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value);
         }
     }
 
@@ -79,10 +112,26 @@ public:
         return dictionary_attributes_types[attribute_index];
     }
 
+    const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
+    {
+        return attributes_default_value_providers[attribute_index];
+    }
+
     /// Create columns for each of dictionary attributes
     MutableColumns makeAttributesResultColumns() const
     {
         MutableColumns result;
+        result.reserve(dictionary_attributes_types.size());
+
+        for (const auto & type : dictionary_attributes_types)
+            result.emplace_back(type->createColumn());
+
+        return result;
+    }
+
+    Columns makeAttributesResultColumnsNonMutable() const
+    {
+        Columns result;
         result.reserve(dictionary_attributes_types.size());
 
         for (const auto & type : dictionary_attributes_types)
@@ -106,8 +155,26 @@ public:
 private:
     std::unordered_set<String> attributes_to_fetch_names_set;
     std::vector<bool> attributes_to_fetch_filter;
+    std::vector<DefaultValueProvider> attributes_default_value_providers;
     DataTypes dictionary_attributes_types;
 };
+
+static inline void insertDefaultValuesIntoColumns(
+    MutableColumns & columns,
+    const DictionaryStorageFetchRequest & fetch_request,
+    size_t row_index)
+{
+    size_t columns_size = columns.size();
+
+    for (size_t column_index = 0; column_index < columns_size; ++column_index)
+    {
+        const auto & column = columns[column_index];
+        const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(column_index);
+
+        if (fetch_request.shouldFillResultColumnWithIndex(column_index))
+            column->insert(default_value_provider.getDefaultValue(row_index));
+    }
+}
 
 /// Deserialize column value and insert it in columns.
 /// Skip unnecessary columns that were not requested from deserialization.
@@ -166,28 +233,6 @@ public:
         else
             throw Exception{"Unsupported attribute type.", ErrorCodes::TYPE_MISMATCH};
     }
-};
-
-/// TODO: Remove DictionaryDefaultValueExtractor
-class DefaultValueProvider final
-{
-public:
-    explicit DefaultValueProvider(Field default_value_, ColumnPtr default_values_column_ = nullptr)
-        : default_value(std::move(default_value_))
-        , default_values_column(default_values_column_)
-    {
-    }
-
-    Field getDefaultValue(size_t row) const
-    {
-        if (default_values_column)
-            return (*default_values_column)[row];
-
-        return default_value;
-    }
-private:
-    Field default_value;
-    ColumnPtr default_values_column;
 };
 
 /**

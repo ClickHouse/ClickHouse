@@ -784,21 +784,6 @@ private:
     size_t current_blocks_size = 0;
 };
 
-template <typename CacheDictionaryStorage>
-class ArenaCellKeyDisposer
-{
-public:
-    CacheDictionaryStorage & storage;
-
-    template <typename Key, typename Value>
-    void operator()(const Key & key, const Value &) const
-    {
-        /// In case of complex key we keep it in arena
-        if constexpr (std::is_same_v<Key, StringRef>)
-            storage.complex_key_arena.free(const_cast<char *>(key.data), key.size);
-    }
-};
-
 template <DictionaryKeyType dictionary_key_type>
 class SSDCacheDictionaryStorage final : public ICacheDictionaryStorage
 {
@@ -811,7 +796,7 @@ public:
         , file_buffer(configuration_.file_path, configuration.block_size, configuration.file_blocks_size)
         , read_from_file_buffer(configuration_.block_size * configuration_.read_buffer_blocks_size, 4096)
         , rnd_engine(randomSeed())
-        , index(configuration.max_stored_keys, false, ArenaCellKeyDisposer<SSDCacheDictionaryStorage<dictionary_key_type>> { *this })
+        , index(configuration.max_stored_keys, false, { complex_key_arena })
     {
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
@@ -846,6 +831,14 @@ public:
             throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
+    {
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+            insertDefaultKeysImpl(keys);
+        else
+            throw Exception("Method insertDefaultKeysImpl is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
@@ -874,6 +867,14 @@ public:
             throw Exception("Method insertColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+        void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
+    {
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+            insertDefaultKeysImpl(keys);
+        else
+            throw Exception("Method insertDefaultKeysImpl is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
@@ -900,11 +901,22 @@ private:
 
     struct Cell
     {
+        enum CellState
+        {
+            in_memory,
+            on_disk,
+            default_value
+        };
+
         TimePoint deadline;
 
         SSDCacheIndex index;
         size_t in_memory_partition_index;
-        bool in_memory;
+        CellState state;
+
+        inline bool isInMemory() const { return state == in_memory; }
+        inline bool isOnDisk() const { return state == on_disk; }
+        inline bool isDefaultValue() const { return state == default_value; }
     };
 
     struct KeyToBlockOffset
@@ -970,23 +982,38 @@ private:
                 result.expired_keys_size += cell_is_expired;
                 result.found_keys_size += !cell_is_expired;
 
-                if (cell.in_memory)
+                switch (cell.state)
                 {
-                    result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
-                    ++fetched_columns_index;
-
-                    const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
-                    char * serialized_columns_place = partition.getPlace(cell.index);
-                    deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, serialized_columns_place);
-                }
-                else
-                {
-                    block_to_keys_map[cell.index.block_index].emplace_back(key_index, cell.index.offset_in_block, cell_is_expired);
-
-                    if (!unique_blocks_to_request.contains(cell.index.block_index))
+                    case Cell::in_memory:
                     {
-                        blocks_to_request.emplace_back(cell.index.block_index);
-                        unique_blocks_to_request.insert(cell.index.block_index);
+                        result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+                        ++fetched_columns_index;
+
+                        const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
+                        char * serialized_columns_place = partition.getPlace(cell.index);
+                        deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, serialized_columns_place);
+                        break;
+                    }
+                    case Cell::on_disk:
+                    {
+                        block_to_keys_map[cell.index.block_index].emplace_back(key_index, cell.index.offset_in_block, cell_is_expired);
+
+                        if (!unique_blocks_to_request.contains(cell.index.block_index))
+                        {
+                            blocks_to_request.emplace_back(cell.index.block_index);
+                            unique_blocks_to_request.insert(cell.index.block_index);
+                        }
+                        break;
+                    }
+                    case Cell::default_value:
+                    {
+                        result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+                        result.key_index_to_state[key_index].setDefault();
+                        ++fetched_columns_index;
+                        ++result.default_keys_size;
+
+                        insertDefaultValuesIntoColumns(result.fetched_columns, fetch_request, key_index);
+                        break;
                     }
                 }
             }
@@ -1068,13 +1095,50 @@ private:
         }
     }
 
+    void insertDefaultKeysImpl(const PaddedPODArray<KeyType> & keys)
+    {
+        const auto now = std::chrono::system_clock::now();
+
+        for (auto key : keys)
+        {
+            /// We cannot reuse place that is already allocated in file or memory cache so we erase key from index
+            index.erase(key);
+
+            Cell cell;
+
+            setCellDeadline(cell, now);
+            cell.in_memory_partition_index = 0;
+            cell.state = Cell::default_value;
+            cell.index = {0, 0};
+
+            if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+            {
+                /// Copy complex key into arena and put in cache
+                size_t key_size = key.size;
+                char * place_for_key = complex_key_arena.alloc(key_size);
+                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
+                KeyType updated_key{place_for_key, key_size};
+                key = updated_key;
+            }
+
+            index.insert(key, cell);
+        }
+    }
+
     PaddedPODArray<KeyType> getCachedKeysImpl() const
     {
         PaddedPODArray<KeyType> result;
         result.reserve(index.size());
 
         for (auto & node : index)
+        {
+            auto & cell = node.getMapped();
+
+            if (cell.state == Cell::default_value)
+                continue;
+
             result.emplace_back(node.getKey());
+        }
 
         return result;
     }
@@ -1095,7 +1159,7 @@ private:
 
             if (write_into_memory_buffer_result)
             {
-                cell.in_memory = true;
+                cell.state = Cell::in_memory;
                 cell.index = cache_index;
                 cell.in_memory_partition_index = current_partition_index;
 
@@ -1126,7 +1190,7 @@ private:
                             size_t old_key_block = old_key_cell.index.block_index;
 
                             /// Check if key in index is key from old partition blocks
-                            if (old_key_cell.in_memory == false &&
+                            if (old_key_cell.isOnDisk() &&
                                 old_key_block >= block_index_in_file_before_write && old_key_block <= file_read_end_block_index)
                                 index.erase(old_key);
                         }
@@ -1145,8 +1209,13 @@ private:
 
                     absl::flat_hash_set<KeyType, DefaultHash<KeyType>> updated_keys;
 
-                    for (auto key_to_update : keys_to_update)
+                    Int64 keys_to_update_size = static_cast<Int64>(keys_to_update.size());
+
+                    /// Start from last to first because there can be multiple keys in same partition.
+                    /// The valid key is the latest.
+                    for (Int64 i = keys_to_update_size - 1; i >= 0; --i)
                     {
+                        auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
                         /// If lru cache does not contain old keys or there were duplicated keys in memory buffer partition
@@ -1157,7 +1226,7 @@ private:
 
                         Cell & cell_to_update = it->getMapped();
 
-                        cell_to_update.in_memory = false;
+                        cell_to_update.state = Cell::on_disk;
                         cell_to_update.index.block_index += block_index_in_file_before_write;
                     }
 
@@ -1168,7 +1237,7 @@ private:
                     write_into_memory_buffer_result = current_memory_buffer_partition.writeKey(ssd_cache_key, cache_index);
                     assert(write_into_memory_buffer_result);
 
-                    cell.in_memory = true;
+                    cell.state = Cell::in_memory;
                     cell.index = cache_index;
                     cell.in_memory_partition_index = current_partition_index;
 
@@ -1209,7 +1278,10 @@ private:
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
+        {
             cell.deadline = std::chrono::system_clock::from_time_t(0);
+            return;
+        }
 
         size_t min_sec_lifetime = configuration.lifetime.min_sec;
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
@@ -1231,8 +1303,22 @@ private:
 
     pcg64 rnd_engine;
 
-    using SimpleKeyLRUHashMap = LRUHashMap<UInt64, Cell, ArenaCellKeyDisposer<SSDCacheDictionaryStorage<dictionary_key_type>>>;
-    using ComplexKeyLRUHashMap = LRUHashMapWithSavedHash<StringRef, Cell, ArenaCellKeyDisposer<SSDCacheDictionaryStorage<dictionary_key_type>>>;
+    class ArenaCellKeyDisposer
+    {
+    public:
+        ArenaWithFreeLists & arena;
+
+        template <typename Key, typename Value>
+        void operator()(const Key & key, const Value &) const
+        {
+            /// In case of complex key we keep it in arena
+            if constexpr (std::is_same_v<Key, StringRef>)
+                arena.free(const_cast<char *>(key.data), key.size);
+        }
+    };
+
+    using SimpleKeyLRUHashMap = LRUHashMap<UInt64, Cell, ArenaCellKeyDisposer>;
+    using ComplexKeyLRUHashMap = LRUHashMapWithSavedHash<StringRef, Cell, ArenaCellKeyDisposer>;
 
     using CacheLRUHashMap = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::simple,

@@ -41,39 +41,22 @@ class CacheDictionaryUpdateUnit
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
 
-    /// Constructor for simple keys update request
-    explicit CacheDictionaryUpdateUnit(
-        PaddedPODArray<UInt64> && requested_simple_keys_,
-        const DictionaryStorageFetchRequest & request_)
-        : requested_simple_keys(std::move(requested_simple_keys_))
-        , request(request_)
-        , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_simple_keys_.size())
-    {
-        fetched_columns_during_update = request.makeAttributesResultColumns();
-    }
-
     /// Constructor for complex keys update request
     explicit CacheDictionaryUpdateUnit(
-        const Columns & requested_complex_key_columns_,
-        const std::vector<size_t> && requested_complex_key_rows_,
-        const DictionaryStorageFetchRequest & request_)
-        : requested_complex_key_columns(requested_complex_key_columns_)
-        , requested_complex_key_rows(std::move(requested_complex_key_rows_))
+        const Columns & key_columns_,
+        const PaddedPODArray<KeyState> & key_index_to_state_from_storage_,
+        const DictionaryStorageFetchRequest & request_,
+        size_t keys_to_update_size)
+        : key_columns(key_columns_)
+        , key_index_to_state(key_index_to_state_from_storage_.begin(), key_index_to_state_from_storage_.end())
         , request(request_)
-        , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_complex_key_rows.size())
-    {
-        fetched_columns_during_update = request.makeAttributesResultColumns();
-    }
-
-    explicit CacheDictionaryUpdateUnit()
-        : alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, 0)
+        , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, keys_to_update_size)
     {}
 
-    const PaddedPODArray<UInt64> requested_simple_keys;
+    CacheDictionaryUpdateUnit(): alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, 0) {}
 
-    const Columns requested_complex_key_columns;
-    const std::vector<size_t> requested_complex_key_rows;
-
+    const Columns key_columns;
+    const PaddedPODArray<KeyState> key_index_to_state;
     const DictionaryStorageFetchRequest request;
 
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;

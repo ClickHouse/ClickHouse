@@ -10,11 +10,11 @@ namespace DB
 
 struct KeyState
 {
-    enum State
+    enum State: uint8_t
     {
-        found,
-        expired,
-        not_found
+        not_found = 2,
+        expired = 4,
+        found = 8,
     };
 
     KeyState(State state_, size_t fetched_column_index_)
@@ -29,9 +29,15 @@ struct KeyState
     inline bool isFound() const { return state == State::found; }
     inline bool isExpired() const { return state == State::expired; }
     inline bool isNotFound() const { return state == State::not_found; }
+    inline bool isDefault() const { return is_default; }
+    inline void setDefault() { is_default = true; }
+    /// Valid only if keyState in found or expired state
+    inline size_t getFetchedColumnIndex() const { return fetched_column_index; }
 
+private:
     State state = not_found;
     size_t fetched_column_index = 0;
+    bool is_default = false;
 };
 
 /// Result of fetch from CacheDictionaryStorage
@@ -48,6 +54,8 @@ struct KeysStorageFetchResult
     size_t found_keys_size = 0;
 
     size_t not_found_keys_size = 0;
+
+    size_t default_keys_size = 0;
 
 };
 
@@ -77,6 +85,9 @@ public:
     /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) = 0;
 
+    /// Insert default keys
+    virtual void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) = 0;
+
     /// Return cached simple keys
     virtual PaddedPODArray<UInt64> getCachedSimpleKeys() const = 0;
 
@@ -90,6 +101,9 @@ public:
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) = 0;
+
+    /// Insert default keys
+    virtual void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) = 0;
 
     /// Return cached simple keys
     virtual PaddedPODArray<StringRef> getCachedComplexKeys() const = 0;

@@ -50,7 +50,7 @@ public:
     explicit CacheDictionaryStorage(CacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
         , rnd_engine(randomSeed())
-        , cache(configuration.max_size_in_cells, false, { *this })
+        , cache(configuration.max_size_in_cells, false, { arena })
     {
     }
 
@@ -86,6 +86,14 @@ public:
             throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
+    {
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+            insertDefaultKeysImpl(keys);
+        else
+            throw Exception("Method insertDefaultKeysImpl is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
@@ -114,6 +122,14 @@ public:
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception("Method insertColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
+    {
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+            insertDefaultKeysImpl(keys);
+        else
+            throw Exception("Method insertDefaultKeysImpl is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
@@ -181,8 +197,17 @@ private:
 
                 ++fetched_columns_index;
 
-                const char * place_for_serialized_columns = cell.place_for_serialized_columns;
-                deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, place_for_serialized_columns);
+                if (cell.isDefault())
+                {
+                    result.key_index_to_state[key_index].setDefault();
+                    ++result.default_keys_size;
+                    insertDefaultValuesIntoColumns(result.fetched_columns, fetch_request, key_index);
+                }
+                else
+                {
+                    const char * place_for_serialized_columns = cell.place_for_serialized_columns;
+                    deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, place_for_serialized_columns);
+                }
             }
             else
             {
@@ -228,7 +253,8 @@ private:
                 /// Cell exists need to free previous serialized place and update deadline
                 auto & cell = it->getMapped();
 
-                arena.free(cell.place_for_serialized_columns, cell.allocated_size_for_columns);
+                if (cell.place_for_serialized_columns)
+                    arena.free(cell.place_for_serialized_columns, cell.allocated_size_for_columns);
 
                 setCellDeadline(cell, now);
                 cell.allocated_size_for_columns = allocated_size_for_columns;
@@ -243,20 +269,43 @@ private:
                 cell.allocated_size_for_columns = allocated_size_for_columns;
                 cell.place_for_serialized_columns = place_for_serialized_columns;
 
-                if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-                {
-                    /// Copy complex key into arena and put in cache
-                    size_t key_size = key.size;
-                    char * place_for_key = arena.alloc(key_size);
-                    memcpy(reinterpret_cast<void*>(place_for_key), reinterpret_cast<const void*>(key.data), key_size);
-                    KeyType updated_key { place_for_key, key_size };
-                    key = updated_key;
-                }
-
-                cache.insert(key, cell);
+                insertCellInCache(key, cell);
             }
 
             temporary_values_pool.rollback(allocated_size_for_columns);
+        }
+    }
+
+    void insertDefaultKeysImpl(const PaddedPODArray<KeyType> & keys)
+    {
+        const auto now = std::chrono::system_clock::now();
+
+        for (auto key : keys)
+        {
+            auto * it = cache.find(key);
+
+            if (it)
+            {
+                auto & cell = it->getMapped();
+
+                setCellDeadline(cell, now);
+
+                if (cell.place_for_serialized_columns)
+                    arena.free(cell.place_for_serialized_columns, cell.allocated_size_for_columns);
+
+                cell.allocated_size_for_columns = 0;
+                cell.place_for_serialized_columns = nullptr;
+            }
+            else
+            {
+                Cell cell;
+
+                setCellDeadline(cell, now);
+                cell.allocated_size_for_columns = 0;
+                cell.place_for_serialized_columns = nullptr;
+
+                insertCellInCache(key, cell);
+            }
         }
     }
 
@@ -266,7 +315,14 @@ private:
         result.reserve(cache.size());
 
         for (auto & node : cache)
+        {
+            auto & cell = node.getMapped();
+
+            if (cell.isDefault())
+                continue;
+
             result.emplace_back(node.getKey());
+        }
 
         return result;
     }
@@ -278,7 +334,29 @@ private:
         TimePoint deadline;
         size_t allocated_size_for_columns;
         char * place_for_serialized_columns;
+
+        inline bool isDefault() const { return place_for_serialized_columns == nullptr; }
+        inline bool setDefault()
+        {
+            place_for_serialized_columns = nullptr;
+            allocated_size_for_columns = 0;
+        }
     };
+
+    void insertCellInCache(KeyType & key, const Cell & cell)
+    {
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        {
+            /// Copy complex key into arena and put in cache
+            size_t key_size = key.size;
+            char * place_for_key = arena.alloc(key_size);
+            memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
+            KeyType updated_key{place_for_key, key_size};
+            key = updated_key;
+        }
+
+        cache.insert(key, cell);
+    }
 
     inline static bool cellHasDeadline(const Cell & cell)
     {
@@ -288,7 +366,10 @@ private:
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
+        {
             cell.deadline = std::chrono::system_clock::from_time_t(0);
+            return;
+        }
 
         size_t min_sec_lifetime = configuration.lifetime.min_sec;
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
@@ -309,7 +390,7 @@ private:
     class ArenaCellDisposer
     {
     public:
-        CacheDictionaryStorage<dictionary_key_type> & storage;
+        ArenaWithFreeLists & arena;
 
         template <typename Key, typename Value>
         void operator()(const Key & key, const Value & value) const
@@ -317,10 +398,11 @@ private:
             /// In case of complex key we keep it in arena
             if constexpr (std::is_same_v<Key, StringRef>)
             {
-                storage.arena.free(const_cast<char *>(key.data), key.size);
+                arena.free(const_cast<char *>(key.data), key.size);
             }
 
-            storage.arena.free(value.place_for_serialized_columns, value.allocated_size_for_columns);
+            if (value.place_for_serialized_columns)
+                arena.free(value.place_for_serialized_columns, value.allocated_size_for_columns);
         }
     };
 
