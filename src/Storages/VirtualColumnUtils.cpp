@@ -41,6 +41,10 @@ bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
             if (!isValidFunction(function->arguments->children[0], columns))
                 return false;
         }
+        else if (function->name == "ignore")
+        {
+            return false;
+        }
         else
         {
             if (function->arguments)
