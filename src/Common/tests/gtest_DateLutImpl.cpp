@@ -11,7 +11,7 @@
     #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #endif
 
-// All timezones present at build time and embedded into CH binary.
+// All timezones present at build time and embedded into ClickHouse binary.
 extern const char * auto_time_zones[];
 
 namespace
