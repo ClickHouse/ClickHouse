@@ -80,8 +80,9 @@ void NuKeeperServer::shutdown()
 {
     state_machine->shutdownStorage();
     state_manager->flushLogStore();
-    if (!launcher.shutdown(coordination_settings->shutdown_timeout.totalSeconds()))
-        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", 5);
+    auto timeout = coordination_settings->shutdown_timeout.totalSeconds();
+    if (!launcher.shutdown(timeout))
+        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", timeout);
 }
 
 namespace

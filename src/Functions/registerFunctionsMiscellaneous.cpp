@@ -69,6 +69,7 @@ void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
+void registerFunctionConnectionID(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -138,6 +139,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTcpPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
+    registerFunctionConnectionID(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

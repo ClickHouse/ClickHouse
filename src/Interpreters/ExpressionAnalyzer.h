@@ -216,7 +216,7 @@ struct ExpressionAnalysisResult
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereDAGInfoPtr prewhere_info;
-    FilterInfoPtr filter_info;
+    FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -231,7 +231,7 @@ struct ExpressionAnalysisResult
         bool first_stage,
         bool second_stage,
         bool only_types,
-        const FilterInfoPtr & filter_info,
+        const FilterDAGInfoPtr & filter_info,
         const Block & source_header);
 
     /// Filter for row-level security.
