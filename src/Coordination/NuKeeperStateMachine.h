@@ -62,8 +62,8 @@ public:
 
 private:
 
-    SnapshotMetadataPtr latest_snapshot_meta;
-    nuraft::ptr<nuraft::buffer> latest_snapshot_buf;
+    SnapshotMetadataPtr latest_snapshot_meta = nullptr;
+    nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
 

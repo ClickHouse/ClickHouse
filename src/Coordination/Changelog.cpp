@@ -174,7 +174,6 @@ public:
                 readIntBinary(record.header.term, read_buf);
                 readIntBinary(record.header.value_type, read_buf);
                 readIntBinary(record.header.blob_size, read_buf);
-                std::cerr << "RECORD INDEX:" << record.header.index << std::endl;
 
                 if (record.header.version > CURRENT_CHANGELOG_VERSION)
                     throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported changelog version {} on path {}", record.header.version, filepath);
@@ -207,10 +206,8 @@ public:
 
                 result.entries_read += 1;
 
-                std::cerr << "START:" << start_log_index << " RECORD: " << record.header.index << std::endl;
                 if (record.header.index < start_log_index)
                 {
-                    std::cerr << "SKIPPING:" << record.header.index << std::endl;
                     continue;
                 }
 
@@ -299,13 +296,10 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_index)
     if (!started && start_index != 1)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Required to read data from {}, but we don't have any active changelogs", from_log_index);
 
-    std::cerr << "START INDEX:" << start_index << std::endl;
-    std::cerr << "LOGS SIZE:" << logs.size() << std::endl;
-    for (const auto & [key, value] : logs)
-    {
-        std::cerr << "KEY:" << key << std::endl;
-    }
-    std::cerr << "NEXT" << getNextEntryIndex() << std::endl;
+    /// Nothing was read. Our start index is smaller than required
+    if (logs.empty() && start_index != 1)
+        start_index--;
+
     if (incomplete_log_index != 0)
     {
         /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
@@ -466,9 +460,6 @@ LogEntryPtr Changelog::getLastEntry() const
     static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(size_t)));
 
     size_t next_index = getNextEntryIndex() - 1;
-    std::cerr << "NEXT INDEX:" << next_index << std::endl;
-    std::cerr << "START INDEX:" << start_index << std::endl;
-    std::cerr << "LOGS SIZE:" << logs.size() << std::endl;
     auto entry = logs.find(next_index);
     if (entry == logs.end())
         return fake_entry;
