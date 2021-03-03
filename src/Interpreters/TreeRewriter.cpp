@@ -188,7 +188,7 @@ struct CustomizeFuseAggregateFunctionsData
 
     std::map<String, UInt8> fuse_info;
 
-    inline UInt8 BitCount(UInt8 n) const
+    static inline UInt8 bitCount(UInt8 n)
     {
         UInt8 c = 0;
         for (c = 0; n; n >>= 1)
@@ -204,14 +204,14 @@ struct CustomizeFuseAggregateFunctionsData
             if (!ident)
                 return;
             auto column = fuse_info.find(ident->name());
-            if (column != fuse_info.end() && BitCount(column->second) > 1)
+            if (column != fuse_info.end() && bitCount(column->second) > 1)
             {
                 auto func_base = makeASTFunction("sumCount", func.arguments->children.at(0)->clone());
                 auto exp_list = std::make_shared<ASTExpressionList>();
 
                 if (func.name == "sum" || func.name == "count")
                 {
-                    // Rewrite "sum" to sumCount().1, rewrite "count" to sumCount().2
+                    /// Rewrite "sum" to sumCount().1, rewrite "count" to sumCount().2
                     UInt8 idx = (func.name == "sum" ? 1 : 2);
                     func.name = "tupleElement";
                     exp_list->children.push_back(func_base);
@@ -219,7 +219,7 @@ struct CustomizeFuseAggregateFunctionsData
                 }
                 else
                 {
-                    // Rewrite "avg" to sumCount().1 / sumCount().2
+                    /// Rewrite "avg" to sumCount().1 / sumCount().2
                     auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
                     auto new_arg2 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2)));
                     func.name = "divide";

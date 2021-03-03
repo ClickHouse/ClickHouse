@@ -16,7 +16,7 @@ namespace
 {
 
 template <typename T>
-struct SumSimple
+struct SumCountType
 {
     /// @note It uses slow Decimal128 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
     using ResultType = std::conditional_t<IsDecimalNumber<T>,
@@ -27,8 +27,7 @@ struct SumSimple
 };
 
 
-
-template <typename T> using AggregateFunctionSumCountSimple = typename SumSimple<T>::Function;
+template <typename T> using AggregateFunctionSumCountFunc = typename SumCountType<T>::Function;
 
 template <template <typename> class Function>
 AggregateFunctionPtr createAggregateFunctionSumCount(const std::string & name, const DataTypes & argument_types, const Array & parameters)
@@ -53,7 +52,7 @@ AggregateFunctionPtr createAggregateFunctionSumCount(const std::string & name, c
 
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumCount", createAggregateFunctionSumCount<AggregateFunctionSumCountSimple>);
+    factory.registerFunction("sumCount", createAggregateFunctionSumCount<AggregateFunctionSumCountFunc>);
 }
 
 }
