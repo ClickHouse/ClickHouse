@@ -6,7 +6,7 @@ toc_priority: 11
 
 # Как импортировать JSON в ClickHouse? {#how-to-import-json-into-clickhouse}
 
-ClickHouse поддерживает широкий спектр [входных и выходных форматов данных](../../interfaces/formats.md). Среди них есть множество вариаций JSON, но чаще всего для импорта данных используют [JSONeachRow](../../interfaces/formats.md#jsoneachrow): один JSON-объект в строке, каждый объект с новой строки.
+ClickHouse поддерживает широкий спектр [входных и выходных форматов данных](../../interfaces/formats.md). Среди них есть множество вариаций JSON, но чаще всего для импорта данных используют [JSONEachRow](../../interfaces/formats.md#jsoneachrow): один JSON-объект в строке, каждый объект с новой строки.
 
 ## Примеры {#examples}
 
@@ -30,4 +30,4 @@ $ echo '{"foo":"bar"}'  | clickhouse-client ---query="INSERT INTO test FORMAT JS
 -   `input_format_import_nested_json` позволяет импортировать вложенные JSON-объекты в столбцы типа [Nested](../../sql-reference/data-types/nested-data-structures/nested.md).
 
 !!! note "Примечание"
-    В HTTP-интерфейсе настройки применяются как параметры `GET`, в `CLI` interface — как дополнительные аргументы командной строки, начинающиеся с `--`.
+    В HTTP-интерфейсе настройки передаются через параметры `GET` запроса, в `CLI` interface — как дополнительные аргументы командной строки, начинающиеся с `--`.
