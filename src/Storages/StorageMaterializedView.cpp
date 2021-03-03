@@ -127,7 +127,7 @@ Pipe StorageMaterializedView::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 void StorageMaterializedView::read(
@@ -296,8 +296,9 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
+    const auto & settings = context.getSettingsRef();
     if (settings.allow_experimental_alter_materialized_view_structure)
     {
         for (const auto & command : commands)

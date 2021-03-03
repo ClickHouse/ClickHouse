@@ -1779,7 +1779,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     Block block;
     while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
-        minmax_idx.update(block, data.minmax_idx_columns);
+        minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
         out.write(block);
 
         merge_entry->rows_written += block.rows();
