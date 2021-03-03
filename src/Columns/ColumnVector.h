@@ -205,6 +205,11 @@ public:
                                                     compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return this->template hasEqualValuesImpl<Self>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
