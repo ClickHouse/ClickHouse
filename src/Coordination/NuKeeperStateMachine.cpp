@@ -3,10 +3,15 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Coordination/NuKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperSnapshotManager.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 {
