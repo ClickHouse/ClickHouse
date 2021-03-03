@@ -52,6 +52,7 @@ namespace
 
     void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
     {
+        /// FIXME why we store them in network order?
         Coordination::write(node.data, out);
         Coordination::write(node.acls, out);
         Coordination::write(node.is_sequental, out);
@@ -61,6 +62,7 @@ namespace
 
     void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
     {
+        /// FIXME why we store them in network order?
         Coordination::read(node.data, in);
         Coordination::read(node.acls, in);
         Coordination::read(node.is_sequental, in);
