@@ -336,7 +336,7 @@ private:
         char * place_for_serialized_columns;
 
         inline bool isDefault() const { return place_for_serialized_columns == nullptr; }
-        inline bool setDefault()
+        inline void setDefault()
         {
             place_for_serialized_columns = nullptr;
             allocated_size_for_columns = 0;

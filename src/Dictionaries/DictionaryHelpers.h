@@ -81,6 +81,7 @@ public:
             {
                 attributes_to_fetch_filter[i] = true;
                 attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[default_values_column_index]);
+                ++default_values_column_index;
             }
             else
                 attributes_default_value_providers.emplace_back(dictionary_attribute.null_value);
@@ -172,7 +173,11 @@ static inline void insertDefaultValuesIntoColumns(
         const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(column_index);
 
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
+        {
+            std::cerr << "insertDefaultValuesIntoColumns" << default_value_provider.getDefaultValue(row_index).dump() << std::endl;
+
             column->insert(default_value_provider.getDefaultValue(row_index));
+        }
     }
 }
 
