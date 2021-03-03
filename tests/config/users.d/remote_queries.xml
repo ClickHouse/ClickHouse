@@ -1,0 +1,9 @@
+<yandex>
+    <profiles>
+        <default>
+            <!-- Avoid "Connection failed at try №1" messages. -->
+            <connect_timeout_with_failover_ms>2000</connect_timeout_with_failover_ms>
+            <connect_timeout_with_failover_secure_ms>3000</connect_timeout_with_failover_secure_ms>
+        </default>
+    </profiles>
+</yandex>
