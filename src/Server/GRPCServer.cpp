@@ -652,6 +652,7 @@ namespace
 
         /// Create context.
         query_context.emplace(iserver.context());
+        query_scope.emplace(*query_context);
 
         /// Authentication.
         query_context->setUser(user, password, user_address);
@@ -668,8 +669,6 @@ namespace
             query_context = session->context;
             query_context->setSessionContext(session->context);
         }
-
-        query_scope.emplace(*query_context);
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
@@ -1614,10 +1613,7 @@ private:
 
 
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
-    : iserver(iserver_)
-    , address_to_listen(address_to_listen_)
-    , log(&Poco::Logger::get("GRPCServer"))
-    , runner(std::make_unique<Runner>(*this))
+    : iserver(iserver_), address_to_listen(address_to_listen_), log(&Poco::Logger::get("GRPCServer"))
 {}
 
 GRPCServer::~GRPCServer()
@@ -1648,6 +1644,7 @@ void GRPCServer::start()
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
+    runner = std::make_unique<Runner>(*this);
     runner->start();
 }
 

@@ -329,7 +329,7 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
-Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_, bool is_subquery)
+Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_)
 {
     auto & cache = context_.getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
@@ -339,11 +339,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
         return cache[key];
     }
 
-    if (is_subquery)
-        return cache[key]
-            = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-    else
-        return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
+    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
 

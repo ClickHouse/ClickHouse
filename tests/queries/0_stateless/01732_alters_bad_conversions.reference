@@ -1,4 +1,0 @@
-CREATE TABLE default.bad_conversions\n(\n    `a` UInt32\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
-0
-CREATE TABLE default.bad_conversions_2\n(\n    `e` Enum8(\'foo\' = 1, \'bar\' = 2)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
-0

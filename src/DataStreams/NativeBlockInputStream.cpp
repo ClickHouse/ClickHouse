@@ -71,7 +71,7 @@ void NativeBlockInputStream::resetParser()
     is_killed.store(false);
 }
 
-void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
+void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
     IDataType::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -82,8 +82,8 @@ void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column
     type.deserializeBinaryBulkStatePrefix(settings, state);
     type.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
 
-    if (column->size() != rows)
-        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",
+    if (column.size() != rows)
+        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: " + toString(rows) + ".",
             ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
@@ -158,11 +158,11 @@ Block NativeBlockInputStream::readImpl()
         }
 
         /// Data
-        ColumnPtr read_column = column.type->createColumn();
+        MutableColumnPtr read_column = column.type->createColumn();
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, read_column, istr, rows, avg_value_size_hint);
+            readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
 

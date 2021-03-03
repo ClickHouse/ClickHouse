@@ -1,5 +1,4 @@
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -229,21 +228,7 @@ void ColumnMap::protect()
 
 void ColumnMap::getExtremes(Field & min, Field & max) const
 {
-    Field nested_min;
-    Field nested_max;
-
-    nested->getExtremes(nested_min, nested_max);
-
-    /// Convert result Array fields to Map fields because client expect min and max field to have type Map
-
-    Array nested_min_value = nested_min.get<Array>();
-    Array nested_max_value = nested_max.get<Array>();
-
-    Map map_min_value(nested_min_value.begin(), nested_min_value.end());
-    Map map_max_value(nested_max_value.begin(), nested_max_value.end());
-
-    min = std::move(map_min_value);
-    max = std::move(map_max_value);
+    nested->getExtremes(min, max);
 }
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
@@ -256,15 +241,6 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
     return false;
-}
-
-ColumnPtr ColumnMap::compress() const
-{
-    auto compressed = nested->compress();
-    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
-    {
-        return ColumnMap::create(compressed->decompress());
-    });
 }
 
 }

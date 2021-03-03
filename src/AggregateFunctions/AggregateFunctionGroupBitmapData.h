@@ -32,7 +32,6 @@ template <typename T, UInt8 small_set_size>
 class RoaringBitmapWithSmallSet : private boost::noncopyable
 {
 private:
-    using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
     using ValueBuffer = std::vector<T>;
     using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
@@ -364,7 +363,6 @@ public:
     /**
      * Check whether the argument is the subset of this set.
      * Empty set is a subset of any other set (consistent with hasAll).
-     * It's used in subset and currently only support comparing same type
      */
     UInt8 rb_is_subset(const RoaringBitmapWithSmallSet & r1) const
     {
@@ -421,7 +419,7 @@ public:
         if (isSmall())
             return small.find(x) != small.end();
         else
-            return rb->contains(static_cast<Value>(x));
+            return rb->contains(x);
     }
 
     /**
@@ -488,7 +486,6 @@ public:
 
     /**
      * Return new set with specified range (not include the range_end)
-     * It's used in subset and currently only support UInt32
      */
     UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const
     {
@@ -528,7 +525,6 @@ public:
 
     /**
      * Return new set of the smallest `limit` values in set which is no less than `range_start`.
-     * It's used in subset and currently only support UInt32
      */
     UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
     {
@@ -582,10 +578,10 @@ public:
         {
             if (small.empty())
                 return 0;
-            auto min_val = std::numeric_limits<UnsignedT>::max();
+            auto min_val = std::numeric_limits<std::make_unsigned_t<T>>::max();
             for (const auto & x : small)
             {
-                UnsignedT val = x.getValue();
+                auto val = x.getValue();
                 if (val < min_val)
                     min_val = val;
             }
@@ -601,10 +597,10 @@ public:
         {
             if (small.empty())
                 return 0;
-            UnsignedT max_val = 0;
+            auto max_val = std::numeric_limits<std::make_unsigned_t<T>>::min();
             for (const auto & x : small)
             {
-                UnsignedT val = x.getValue();
+                auto val = x.getValue();
                 if (val > max_val)
                     max_val = val;
             }
@@ -615,10 +611,9 @@ public:
     }
 
     /**
-     * Replace value.
-     * It's used in transform and currently can only support UInt32
+     * Replace value
      */
-    void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num)
+    void rb_replace(const UInt32 * from_vals, const UInt32 * to_vals, size_t num)
     {
         if (isSmall())
             toLarge();
@@ -627,9 +622,9 @@ public:
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-            bool changed = rb->removeChecked(static_cast<Value>(from_vals[i]));
+            bool changed = rb->removeChecked(from_vals[i]);
             if (changed)
-                rb->add(static_cast<Value>(to_vals[i]));
+                rb->add(to_vals[i]);
         }
     }
 };

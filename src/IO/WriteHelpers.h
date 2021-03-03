@@ -471,10 +471,6 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
-inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
-{
-    writeEscapedString(ref.data(), ref.size(), buf);
-}
 
 template <char quote_character>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
@@ -504,29 +500,15 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(s, buf);
 }
 
+
 inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
-{
-    writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
-}
-
-inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
-{
-    writeAnyQuotedString<'"'>(s, buf);
-}
-
 inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
-}
-
-inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
-{
-    writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
 
 /// Outputs a string in backquotes.
@@ -709,7 +691,7 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 template<typename DecimalType>
 inline void writeDecimalTypeFractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
 {
-    static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DecimalType>;
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DecimalType>();
 
     char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
     static_assert(sizeof(data) >= MaxScale);
@@ -831,19 +813,19 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
 inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DateTime64>;
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
     scale = scale > MaxScale ? MaxScale : scale;
 
-    auto components = DecimalUtils::split(datetime64, scale);
-    const auto & values = date_lut.getValues(components.whole);
+    auto c = DecimalUtils::split(datetime64, scale);
+    const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
-            date_lut.toHour(components.whole), date_lut.toMinute(components.whole), date_lut.toSecond(components.whole)), buf);
+            date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
 
     if (scale > 0)
     {
         buf.write(fractional_time_delimiter);
-        writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
+        writeDecimalTypeFractionalText<DateTime64>(c.fractional, scale, buf);
     }
 }
 
@@ -887,16 +869,16 @@ inline void writeDateTimeTextISO(DateTime64 datetime64, UInt32 scale, WriteBuffe
 
 inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf)
 {
-    static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DateTime64>;
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
     scale = scale > MaxScale ? MaxScale : scale;
 
-    auto components = DecimalUtils::split(datetime64, scale);
-    writeIntText(components.whole, buf);
+    auto c = DecimalUtils::split(datetime64, scale);
+    writeIntText(c.whole, buf);
 
-    if (scale > 0) //-V547
+    if (scale > 0)
     {
         buf.write('.');
-        writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
+        writeDecimalTypeFractionalText<DateTime64>(c.fractional, scale, buf);
     }
 }
 
@@ -907,10 +889,8 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -1009,10 +989,6 @@ writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
-
-inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
-
 inline void writeQuoted(const LocalDate & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
@@ -1054,10 +1030,6 @@ inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
-
-inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
-
-inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const LocalDate & x, WriteBuffer & buf)
 {

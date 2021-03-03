@@ -156,8 +156,6 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-    ColumnPtr compress() const override;
-
     void reserve(size_t size) override
     {
         chars.reserve(n * size);
@@ -185,5 +183,6 @@ public:
 
     size_t getN() const { return n; }
 };
+
 
 }

@@ -29,9 +29,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
-
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
@@ -95,11 +92,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUUIDOrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrZero>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrNull>();
     factory.registerFunction<FunctionParseDateTime32BestEffort>();
     factory.registerFunction<FunctionParseDateTime32BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime32BestEffortOrNull>();

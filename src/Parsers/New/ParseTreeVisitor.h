@@ -136,8 +136,7 @@ public:
     antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext * ctx) override;
 
     // ExistsQuery
-    antlrcpp::Any visitExistsTableStmt(ClickHouseParser::ExistsTableStmtContext * ctx) override;
-    antlrcpp::Any visitExistsDatabaseStmt(ClickHouseParser::ExistsDatabaseStmtContext * ctx) override;
+    antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext * ctx) override;
 
     // ExplainQuery
     antlrcpp::Any visitExplainStmt(ClickHouseParser::ExplainStmtContext * ctx) override;

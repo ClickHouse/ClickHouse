@@ -6,8 +6,6 @@
 #    include <IO/BrotliWriteBuffer.h>
 #    include <brotli/encode.h>
 
-#include <Common/MemoryTracker.h>
-
 namespace DB
 {
 
@@ -49,9 +47,14 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
 
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    finish();
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void BrotliWriteBuffer::nextImpl()
@@ -86,7 +89,7 @@ void BrotliWriteBuffer::nextImpl()
             throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
-    while (in_available > 0);
+    while (in_available > 0 || out_capacity == 0);
 }
 
 void BrotliWriteBuffer::finish()

@@ -66,7 +66,6 @@ struct Packet
     std::vector<String> multistring_message;
     Progress progress;
     BlockStreamProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -158,8 +157,6 @@ public:
     void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
-    /// Send parts' uuids to excluded them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.

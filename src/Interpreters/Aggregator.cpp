@@ -1,4 +1,7 @@
+#include <iomanip>
+#include <thread>
 #include <future>
+#include <Poco/Version.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -6,19 +9,25 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <common/demangle.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionResample.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/Operators.h>
 
 
@@ -558,7 +567,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     /// Generic case.
 
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+    PODArray<AggregateDataPtr> places(rows);
 
     /// For all rows.
     for (size_t i = 0; i < rows; ++i)
@@ -589,9 +598,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+            inst->batch_that->addBatchArray(rows, places.data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
         else
-            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+            inst->batch_that->addBatch(rows, places.data(), inst->state_offset, inst->batch_arguments, aggregates_pool);
     }
 }
 
@@ -2307,7 +2316,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 }
 
 
-void Aggregator::setCancellationHook(const CancellationHook & cancellation_hook)
+void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {
     isCancelled = cancellation_hook;
 }
