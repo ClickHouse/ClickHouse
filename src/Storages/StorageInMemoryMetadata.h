@@ -87,7 +87,7 @@ struct StorageInMemoryMetadata
     const ColumnsDescription & getColumns() const;
 
     /// Returns combined set of columns from give column Names
-    const ColumnsDescription getColumnsForNames(
+    ColumnsDescription getColumnsForNames(
             const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
 
 

@@ -106,7 +106,7 @@ const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
     return columns;
 }
 
-const ColumnsDescription StorageInMemoryMetadata::getColumnsForNames(
+ColumnsDescription StorageInMemoryMetadata::getColumnsForNames(
         const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
     ColumnsDescription res;
