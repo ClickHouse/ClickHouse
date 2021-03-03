@@ -14,8 +14,8 @@ The search is case-sensitive by default in all these functions. There are separa
 
 Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
-Function position now supports position(needle in haystack) synax for SQL compatibility.
-Enhanced function position to support SQL compatibility syntax: position(needle in haystack), which is same as position(haystack, needle).
+!!! note 
+    Now it supports position(needle in haystack) syntax for SQL-compatibility, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly same as POSITION(haystack, needle). 
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
