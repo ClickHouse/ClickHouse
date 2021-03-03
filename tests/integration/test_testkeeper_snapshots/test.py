@@ -74,8 +74,10 @@ def test_state_after_restart(started_cluster):
             if i % 7 == 0:
                 assert node_zk2.exists("/test_state_after_restart/node" + str(i)) is None
             else:
-                assert len(node_zk2.get("/test_state_after_restart/node" + str(i))[0]) == 123
-                assert node_zk2.get("/test_state_after_restart/node" + str(i))[0] == strs[i]
+                data, stat = node_zk2.get("/test_state_after_restart/node" + str(i))
+                assert len(data) == 123
+                assert data == strs[i]
+                assert stat.owner_session_id == 0
 
         assert list(sorted(existing_children)) == list(sorted(node_zk2.get_children("/test_state_after_restart")))
     finally:
@@ -97,15 +99,19 @@ def test_ephemeral_after_restart(started_cluster):
         node_zk2 = None
         node_zk = get_connection_zk("node")
 
+        session_id = node_zk._session_id
         node_zk.create("/test_ephemeral_after_restart", b"somevalue")
         strs = []
         for i in range(100):
             strs.append(random_string(123).encode())
             node_zk.create("/test_ephemeral_after_restart/node" + str(i), strs[i], ephemeral=True)
 
+        existing_children = []
         for i in range(100):
             if i % 7 == 0:
                 node_zk.delete("/test_ephemeral_after_restart/node" + str(i))
+            else:
+                existing_children.append("node" + str(i))
 
         node.restart_clickhouse(kill=True)
 
@@ -116,8 +122,11 @@ def test_ephemeral_after_restart(started_cluster):
             if i % 7 == 0:
                 assert node_zk2.exists("/test_ephemeral_after_restart/node" + str(i)) is None
             else:
-                assert len(node_zk2.get("/test_ephemeral_after_restart/node" + str(i))[0]) == 123
-                assert node_zk2.get("/test_ephemeral_after_restart/node" + str(i))[0] == strs[i]
+                data, stat = node_zk2.get("/test_ephemeral_after_restart/node" + str(i))
+                assert len(data) == 123
+                assert data == strs[i]
+                assert stat.owner_session_id == session_id
+        assert list(sorted(existing_children)) == list(sorted(node_zk2.get_children("/test_state_after_restart")))
     finally:
         try:
             if node_zk is not None:
