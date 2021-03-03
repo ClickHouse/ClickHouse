@@ -36,7 +36,14 @@ void NuKeeperServer::startup()
 
     state_machine->init();
 
-    state_manager->loadLogStore(state_machine->last_commit_index() + 1);
+    size_t new_logs_start = state_machine->last_commit_index() + 1;
+    if (new_logs_start < coordination_settings->reserved_log_items)
+        new_logs_start = 0;
+    else
+        new_logs_start -= coordination_settings->reserved_log_items;
+
+    state_manager->loadLogStore(new_logs_start);
+
     bool single_server = state_manager->getTotalServers() == 1;
 
     nuraft::raft_params params;
@@ -176,8 +183,11 @@ bool NuKeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
-    /// Only initial record
-    bool empty_store = state_manager->getLogStore()->size() == 1;
+    size_t last_commited = state_machine->last_commit_index();
+    size_t next_index = state_manager->getLogStore()->next_slot();
+    bool commited_store = false;
+    if (next_index < last_commited || next_index - last_commited <= 1)
+        commited_store = true;
 
     auto set_initialized = [this] ()
     {
@@ -190,7 +200,7 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
     {
         case nuraft::cb_func::BecomeLeader:
         {
-            if (empty_store) /// We become leader and store is empty, ready to serve requests
+            if (commited_store) /// We become leader and store is empty, ready to serve requests
                 set_initialized();
             return nuraft::cb_func::ReturnCode::Ok;
         }

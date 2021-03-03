@@ -77,7 +77,7 @@ def test_state_after_restart(started_cluster):
                 data, stat = node_zk2.get("/test_state_after_restart/node" + str(i))
                 assert len(data) == 123
                 assert data == strs[i]
-                assert stat.owner_session_id == 0
+                assert stat.ephemeralOwner == 0
 
         assert list(sorted(existing_children)) == list(sorted(node_zk2.get_children("/test_state_after_restart")))
     finally:
@@ -125,8 +125,8 @@ def test_ephemeral_after_restart(started_cluster):
                 data, stat = node_zk2.get("/test_ephemeral_after_restart/node" + str(i))
                 assert len(data) == 123
                 assert data == strs[i]
-                assert stat.owner_session_id == session_id
-        assert list(sorted(existing_children)) == list(sorted(node_zk2.get_children("/test_state_after_restart")))
+                assert stat.ephemeralOwner == session_id
+        assert list(sorted(existing_children)) == list(sorted(node_zk2.get_children("/test_ephemeral_after_restart")))
     finally:
         try:
             if node_zk is not None:
