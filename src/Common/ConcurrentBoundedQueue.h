@@ -54,7 +54,9 @@ private:
 
 public:
     explicit ConcurrentBoundedQueue(size_t max_fill)
-        : fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
+        : fill_count(0, max_fill)
+        , empty_count(max_fill, max_fill)
+    {}
 
     void push(const T & x)
     {
@@ -117,6 +119,24 @@ public:
         return false;
     }
 
+    /// This function is necessary if your type of element cannot be contructed without argument evaluation.
+    /// For example std::unique_ptr or std::shared_ptr.
+    /// tryEmplace cannot be used in that case because constructor for temporary object will be called.
+    template <typename FactoryFunc>
+    bool tryEmplaceFactoryFunc(FactoryFunc && func, UInt64 milliseconds)
+    {
+        if (empty_count.tryWait(milliseconds))
+        {
+            {
+                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+                queue.emplace(std::forward<FactoryFunc>(func)());
+            }
+            fill_count.set();
+            return true;
+        }
+        return false;
+    }
+
     bool tryPop(T & x, UInt64 milliseconds = 0)
     {
         if (fill_count.tryWait(milliseconds))
@@ -130,6 +150,20 @@ public:
             return true;
         }
         return false;
+    }
+
+    template <typename FactoryFunc>
+    void popOrEmplaceIfNotFull(T & x, FactoryFunc && func)
+    {
+        UInt64 wait_milliseconds = 0;
+
+        while (true)
+        {
+            if (tryPop(x, wait_milliseconds))
+                return;
+
+            tryEmplaceFactoryFunc(std::forward<FactoryFunc>(func), wait_milliseconds);
+        }
     }
 
     size_t size()

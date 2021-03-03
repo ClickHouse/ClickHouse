@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int BAD_ARGUMENTS;
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
@@ -41,9 +40,11 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , format{config.getString(config_prefix + ".format")}
     , pool_size(config.getUInt64(config_prefix + ".size"))
+    , command_termination_timeout(config.getUInt64(config_prefix + ".command_termination_timeout", 10))
     , sample_block{sample_block_}
     , context(context_)
-    , process_pool(std::make_shared<ProcessPool>(pool_size))
+    /// If pool size == 0 then there is no size restrictions. Poco max size of semaphore is integer type.
+    , process_pool(std::make_shared<ProcessPool>(pool_size == 0 ? std::numeric_limits<int>::max() : pool_size))
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
@@ -59,12 +60,6 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
             sample_block.erase(key_column_position_in_block);
         }
     }
-
-    if (pool_size == 0)
-        throw Exception("ExecutablePoolDictionarySource cannot have pool of size 0", ErrorCodes::BAD_ARGUMENTS);
-
-    for (size_t i = 0; i < pool_size; ++i)
-        process_pool->emplace(ShellCommand::execute(command));
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other)
@@ -76,12 +71,11 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     , update_field{other.update_field}
     , format{other.format}
     , pool_size{other.pool_size}
+    , command_termination_timeout{other.command_termination_timeout}
     , sample_block{other.sample_block}
     , context(other.context)
-    , process_pool(std::make_shared<ProcessPool>(pool_size))
+    , process_pool(std::make_shared<ProcessPool>(pool_size == 0 ? std::numeric_limits<size_t>::max() : pool_size))
 {
-    for (size_t i = 0; i < pool_size; ++i)
-        process_pool->emplace(ShellCommand::execute(command));
 }
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()
@@ -103,17 +97,30 @@ namespace
     {
     public:
         PoolBlockInputStreamWithBackgroundThread(
-            std::shared_ptr<ProcessPool> processes_pool_,
-            BlockInputStreamPtr && stream_,
+            std::shared_ptr<ProcessPool> process_pool_,
             std::unique_ptr<ShellCommand> && command_,
+            BlockInputStreamPtr && stream_,
             size_t read_rows_,
+            Poco::Logger * log_,
             std::function<void(WriteBufferFromFile &)> && send_data_)
-            : processes_pool(processes_pool_)
-            , stream(std::move(stream_))
+            : process_pool(process_pool_)
             , command(std::move(command_))
+            , stream(std::move(stream_))
             , rows_to_read(read_rows_)
+            , log(log_)
             , send_data(std::move(send_data_))
-            , thread([this] { send_data(command->in); })
+            , thread([this]
+            {
+                try
+                {
+                    send_data(command->in);
+                }
+                catch (const std::exception & ex)
+                {
+                    LOG_ERROR(log, "Error during write into process input stream: ({})", ex.what());
+                    error_during_write = true;
+                }
+            })
         {}
 
         ~PoolBlockInputStreamWithBackgroundThread() override
@@ -122,7 +129,7 @@ namespace
                 thread.join();
 
             if (command)
-                processes_pool->emplace(std::move(command));
+                process_pool->emplace(std::move(command));
         }
 
         Block getHeader() const override
@@ -133,40 +140,61 @@ namespace
     private:
         Block readImpl() override
         {
+            if (error_during_write)
+            {
+                command = nullptr;
+                return Block();
+            }
+
             if (current_read_rows == rows_to_read)
                 return Block();
 
-            auto block = stream->read();
-            current_read_rows += block.rows();
+            Block block;
+
+            try
+            {
+                block = stream->read();
+                current_read_rows += block.rows();
+            }
+            catch (const std::exception & ex)
+            {
+                LOG_ERROR(log, "Error during read from process output stream: ({})", ex.what());
+                command = nullptr;
+            }
 
             return block;
         }
 
         void readPrefix() override
         {
+            if (error_during_write)
+                return;
+
             stream->readPrefix();
         }
 
         void readSuffix() override
         {
-            stream->readSuffix();
+            if (error_during_write)
+                command = nullptr;
+            else
+                stream->readSuffix();
 
             if (thread.joinable())
                 thread.join();
-
-            processes_pool->emplace(std::move(command));
-            command = nullptr;
         }
 
         String getName() const override { return "PoolWithBackgroundThread"; }
 
-        std::shared_ptr<ProcessPool> processes_pool;
-        BlockInputStreamPtr stream;
+        std::shared_ptr<ProcessPool> process_pool;
         std::unique_ptr<ShellCommand> command;
+        BlockInputStreamPtr stream;
         size_t rows_to_read;
+        Poco::Logger * log;
         std::function<void(WriteBufferFromFile &)> send_data;
         ThreadFromGlobalPool thread;
         size_t current_read_rows = 0;
+        std::atomic<bool> error_during_write = false;
     };
 
 }
@@ -190,13 +218,20 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key
 BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     std::unique_ptr<ShellCommand> process;
-    process_pool->pop(process);
+
+    process_pool->popOrEmplaceIfNotFull(process, [=, this]()
+    {
+        bool terminate_in_destructor = true;
+        ShellCommandDestructorStrategy strategy { terminate_in_destructor, command_termination_timeout };
+        auto shell_command = ShellCommand::execute(command, false, strategy);
+        return shell_command;
+    });
 
     size_t rows_to_read = block.rows();
     auto read_stream = context.getInputFormat(format, process->out, sample_block, rows_to_read);
 
     auto stream = std::make_unique<PoolBlockInputStreamWithBackgroundThread>(
-        process_pool, std::move(read_stream), std::move(process), rows_to_read,
+        process_pool, std::move(process), std::move(read_stream), rows_to_read, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
             auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());

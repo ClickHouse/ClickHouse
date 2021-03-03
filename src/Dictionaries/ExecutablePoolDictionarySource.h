@@ -69,6 +69,7 @@ private:
     const std::string update_field;
     const std::string format;
     const size_t pool_size;
+    const size_t command_termination_timeout;
 
     Block sample_block;
     Context context;
