@@ -7,7 +7,7 @@ append_path(sys.path, "..")
 
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
-from map_type.requirements import QA_SRS018_ClickHouse_Map_Data_Type 
+from map_type.requirements import SRS018_ClickHouse_Map_Data_Type 
 
 xfails = {
     "tests/table map with key integer/Int:":
@@ -39,7 +39,7 @@ xflags = {
 @XFlags(xflags)
 @Name("map type")
 @Specifications(
-    QA_SRS018_ClickHouse_Map_Data_Type
+    SRS018_ClickHouse_Map_Data_Type
 )
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """Map type regression.
