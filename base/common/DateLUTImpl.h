@@ -49,16 +49,19 @@ public:
     // has to be a separate type to support overloading
     // TODO: make sure that any arithmetic on LUTIndex actually results in valid LUTIndex.
     STRONG_TYPEDEF(UInt32, LUTIndex)
+
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
     {
         return LUTIndex{(index.toUnderType() + v) & date_lut_mask};
     }
+
     template <typename T>
     friend inline LUTIndex operator+(const T v, const LUTIndex & index)
     {
         return LUTIndex{(v + index.toUnderType()) & date_lut_mask};
     }
+
     friend inline LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
     {
         return LUTIndex{(index.toUnderType() + v.toUnderType()) & date_lut_mask};
@@ -69,11 +72,13 @@ public:
     {
         return LUTIndex{(index.toUnderType() - v) & date_lut_mask};
     }
+
     template <typename T>
     friend inline LUTIndex operator-(const T v, const LUTIndex & index)
     {
         return LUTIndex{(v - index.toUnderType()) & date_lut_mask};
     }
+
     friend inline LUTIndex operator-(const LUTIndex & index, const LUTIndex & v)
     {
         return LUTIndex{(index.toUnderType() - v.toUnderType()) & date_lut_mask};
@@ -84,6 +89,7 @@ public:
     {
         return LUTIndex{(index.toUnderType() * v) & date_lut_mask};
     }
+
     template <typename T>
     friend inline LUTIndex operator*(const T v, const LUTIndex & index)
     {
@@ -95,6 +101,7 @@ public:
     {
         return LUTIndex{(index.toUnderType() / v) & date_lut_mask};
     }
+
     template <typename T>
     friend inline LUTIndex operator/(const T v, const LUTIndex & index)
     {
