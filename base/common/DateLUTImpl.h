@@ -166,6 +166,7 @@ private:
 
     /// UTC offset at beginning of the Unix epoch. The same as unix timestamp of 1970-01-01 00:00:00 local time.
     time_t offset_at_start_of_epoch;
+    /// UTC offset at the beginning of the first supported year.
     time_t offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_everytime;
     time_t time_offset_epoch;
