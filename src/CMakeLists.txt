@@ -458,6 +458,8 @@ endif()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
+include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
