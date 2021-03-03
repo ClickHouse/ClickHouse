@@ -136,18 +136,20 @@ public:
         /// Since most of the modern timezones have a DST change aligned to 15 minutes, to save as much space as possible inside Value,
         /// we are dividing any offset change related value by this factor before setting it to Value,
         /// hence it has to be explicitly multiplied back by this factor before being used.
-        static const UInt16 OffsetChangeFactor = 900;
+        static constexpr UInt16 OffsetChangeFactor = 900;
     };
 
     static_assert(sizeof(Values) == 16);
 
 private:
 
-    // Mask is all-ones to allow efficient protection against overflow.
-    static const UInt32 date_lut_mask = 0x1ffff;
+    /// Mask is all-ones to allow efficient protection against overflow.
+    static constexpr UInt32 date_lut_mask = 0x1ffff;
     static_assert(date_lut_mask == DATE_LUT_SIZE - 1);
 
-    const UInt32 daynum_offset_epoch = 16436; // offset to epoch in days (ExtendedDayNum) of the first day in LUT.
+    /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
+    static constexpr UInt32 daynum_offset_epoch = 16436;
+    static_assert(daynum_offset_epoch == (DATE_LUT_MIN_YEAR - 1970) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
 
     /// Lookup table is indexed by LUTIndex.
     /// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
