@@ -44,14 +44,12 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Context & context)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Settings & settings)
 {
     actions_dag = actions_dag_->clone();
 
-    const auto & settings = context.getSettingsRef();
-
     if (settings.compile_expressions)
-        actions_dag->compileExpressions(context.getCompiledExpressionCache());
+        actions_dag->compileExpressions(settings.min_count_to_compile_expression);
 
     linearizeActions();
 
@@ -209,8 +207,9 @@ void ExpressionActions::linearizeActions()
         auto pos = required_columns.size();
         actions[cur.position].arguments.front().pos = pos;
         required_columns.push_back({input->result_name, input->result_type});
-        input_positions[input->result_name].emplace_back(pos);
     }
+
+    input_positions = actions_dag->buildNameToNodeMapping(inputs);
 }
 
 
@@ -261,7 +260,6 @@ std::string ExpressionActions::Action::toString() const
 
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
-    auto max_temporary_non_const_columns = actions_dag->getSettings().max_temporary_non_const_columns;
     if (max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
@@ -463,7 +461,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    if (actions_dag->getSettings().project_input)
+    if (actions_dag->projectedInput())
     {
         block.clear();
     }
@@ -557,7 +555,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << actions_dag->getSettings().project_input << "\noutput positions:";
+    ss << "\nproject input: " << actions_dag->projectedInput() << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";

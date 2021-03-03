@@ -529,10 +529,84 @@ ActionsDAGPtr ActionsDAG::clone() const
     return actions;
 }
 
-void ActionsDAG::compileExpressions(std::shared_ptr<CompiledExpressionCache> cache)
+void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression)
 {
-    compileFunctions(cache);
+    compileFunctions(min_count_to_compile_expression);
     removeUnusedActions();
+}
+
+void ActionsDAG::transformHeader(Block & block)
+{
+    auto inputs_mapping = buildNameToNodeMapping(inputs);
+    auto inputs_pos = getInputsPositions(block, inputs_mapping);
+
+    ColumnsWithTypeAndName result;
+    result.reserve(index.size());
+    for (const auto * node : result)
+    {
+        
+    }
+}
+
+ActionsDAG::NameToNodeMap ActionsDAG::buildNameToNodeMapping(const NodeRawConstPtrs & nodes)
+{
+    NameToNodeMap map;
+    for (size_t i = 0, size = nodes.size(); i < size; ++i)
+    {
+        const auto * node = nodes[i];
+        map[node->result_name].emplace_back(i);
+    }
+
+    return map;
+}
+
+static std::vector<ssize_t> ActionsDAG::getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping)
+{
+    std::vector<ssize_t> inputs_pos(inputs.size(), -1);
+
+    for (size_t pos = 0; pos < block.columns(); ++pos)
+    {
+        const auto & col = block.getByPosition(pos);
+        auto it = inputs_mapping.find(col.name);
+        if (it != inputs_mapping.end())
+        {
+            for (auto input_pos : it->second)
+            {
+                if (inputs_pos[input_pos] < 0)
+                {
+                    inputs_pos[input_pos] = pos;
+                    break;
+                }
+            }
+        }
+    }
+
+    return inputs_pos;
+}
+
+void ActionsDAG::transformBlock(Block & block, std::vector<ssize_t> inputs_pos, ColumnsWithTypeAndName result_columns)
+{
+    if (project_input))
+    {
+        block.clear();
+    }
+    else
+    {
+        std::sort(inputs_pos.rbegin(), inputs_pos.rend());
+        for (auto input : execution_context.inputs_pos)
+            if (input >= 0)
+                block.erase(input);
+    }
+
+    Block res;
+
+    for (auto & col : result_columns)
+        res.insert(std::move(col));
+
+    for (const auto & item : block)
+        res.insert(std::move(item));
+
+    block.swap(res);
 }
 
 std::string ActionsDAG::dumpDAG() const

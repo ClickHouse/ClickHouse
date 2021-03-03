@@ -371,7 +371,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
 
         auto max_threads = context->getSettingsRef().max_threads;
-        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, *context, max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 

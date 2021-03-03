@@ -60,7 +60,8 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << description << '\n';
 }
 
-CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
+CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_, const Context & context_)
+    : context(context_)
 {
     if (input_streams_.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -88,7 +89,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header);
+        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, context);
         processors = collector.detachProcessors();
     }
     else
@@ -146,7 +147,7 @@ void addCreatingSetsStep(
         return;
     }
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
+    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams), context);
     creating_sets->setStepDescription("Create sets before main query execution");
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }

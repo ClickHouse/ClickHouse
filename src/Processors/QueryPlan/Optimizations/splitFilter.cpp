@@ -14,6 +14,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         return 0;
 
     const auto & expr = filter_step->getExpression();
+    const auto & context = filter_step->getContext();
 
     /// Do not split if there are function like runningDifference.
     if (expr->hasStatefulFunctions())
@@ -38,9 +39,10 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
             filter_node.children.at(0)->step->getOutputStream(),
             std::move(split.first),
             filter_step->getFilterColumnName(),
-            remove_filter);
+            remove_filter,
+            context);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
+    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second), context);
 
     filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(description);

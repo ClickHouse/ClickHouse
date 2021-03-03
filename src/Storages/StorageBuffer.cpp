@@ -254,7 +254,8 @@ void StorageBuffer::read(
 
                     auto adding_missed = std::make_unique<ExpressionStep>(
                             query_plan.getCurrentDataStream(),
-                            std::move(actions));
+                            std::move(actions),
+                            context);
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
@@ -264,7 +265,7 @@ void StorageBuffer::read(
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag, context);
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -371,7 +372,7 @@ void StorageBuffer::read(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header, context);
     union_step->setStepDescription("Unite sources from Buffer table");
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
