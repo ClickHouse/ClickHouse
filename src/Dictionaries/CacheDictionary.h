@@ -158,12 +158,6 @@ private:
         const PaddedPODArray<KeyType> & keys,
         const Columns & default_values_columns) const;
 
-    CacheDictionaryUpdateUnitPtr<dictionary_key_type> makeUpdateUnit(
-        const Columns & key_columns,
-        const PaddedPODArray<KeyType> & keys,
-        const KeysStorageFetchResult<KeyType> & fetch_result,
-        const DictionaryStorageFetchRequest & fetch_request) const;
-
     static MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
@@ -176,8 +170,7 @@ private:
         const MutableColumns & fetched_columns_from_storage,
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        const std::vector<DefaultValueProvider> & default_value_providers);
+        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index);
 
     void setupHierarchicalAttribute();
 
