@@ -955,6 +955,7 @@ class ClickHouseCluster:
 
     def shutdown(self, kill=True):
         sanitizer_assert_instance = None
+        fatal_log = None
         if self.up_called:
             with open(self.docker_logs_path, "w+") as f:
                 try:
@@ -966,6 +967,15 @@ class ClickHouseCluster:
                     if SANITIZER_SIGN in line:
                         sanitizer_assert_instance = line.split('|')[0].strip()
                         break
+
+            for instance in list(self.instances.values()):
+                if instance.contains_in_log(SANITIZER_SIGN):
+                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN)
+                    logging.ERROR(f"Sanitizer in instance {instance.name} fatal log {fatal_log}")
+
+                if instance.contains_in_log("Fatal"):
+                    fatal_log = instance.grep_in_log("Fatal")
+                    logging.ERROR(f"Crash in instance {instance.name} fatal log {fatal_log}")
 
             if kill:
                 try:
@@ -1001,6 +1011,7 @@ class ClickHouseCluster:
         if sanitizer_assert_instance is not None:
             raise Exception(
                 "Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
+
 
     def pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ['pause', instance_name])
@@ -1286,6 +1297,11 @@ class ClickHouseInstance:
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
+
+    def grep_in_log(self, substring):
+        result = self.exec_in_container(
+            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
+        return result
 
     def file_exists(self, path):
         return self.exec_in_container(
