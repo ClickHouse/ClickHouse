@@ -85,7 +85,7 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked

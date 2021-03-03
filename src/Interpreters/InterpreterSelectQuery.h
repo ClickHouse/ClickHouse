@@ -89,6 +89,8 @@ public:
 
     static void addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
+    Names getRequiredColumns() { return required_columns; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -108,12 +110,7 @@ private:
 
     /// Different stages of query execution.
 
-    void executeFetchColumns(
-        QueryProcessingStage::Enum processing_stage,
-        QueryPlan & query_plan,
-        const PrewhereDAGInfoPtr & prewhere_info,
-        const NameSet & columns_to_remove_after_prewhere);
-
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
@@ -136,8 +133,7 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
-    String generateFilterActions(
-            ActionsDAGPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
+    String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
     enum class Modificator
     {
@@ -162,7 +158,8 @@ private:
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
-    FilterInfoPtr filter_info;
+    ASTPtr row_policy_filter;
+    FilterDAGInfoPtr filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 

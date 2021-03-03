@@ -13,6 +13,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import shlex
 
 import cassandra.cluster
 import psycopg2
@@ -783,7 +784,7 @@ class ClickHouseCluster:
         raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
-        sr_client = CachedSchemaRegistryClient('http://localhost:{}'.format(self.schema_registry_port))
+        sr_client = CachedSchemaRegistryClient({"url":'http://localhost:{}'.format(self.schema_registry_port)})
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -1083,6 +1084,8 @@ services:
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
+            - IPC_LOCK
+            - SYS_NICE
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -1302,6 +1305,22 @@ class ClickHouseInstance:
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return result
+
+    def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
+        start_time = time.time()
+        result = self.exec_in_container(
+            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Em {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
+
+        # if repetitions>1 grep will return success even if not enough lines were collected,
+        if repetitions>1 and len(result.splitlines()) < repetitions:
+            logging.debug("wait_for_log_line: those lines were found during {} seconds:".format(timeout))
+            logging.debug(result)
+            raise Exception("wait_for_log_line: Not enough repetitions: {} found, while {} expected".format(len(result.splitlines()), repetitions))
+
+        wait_duration = time.time() - start_time
+
+        logging.debug('{} log line matching "{}" appeared in a {} seconds'.format(repetitions, regexp, wait_duration))
+        return wait_duratio
 
     def file_exists(self, path):
         return self.exec_in_container(
