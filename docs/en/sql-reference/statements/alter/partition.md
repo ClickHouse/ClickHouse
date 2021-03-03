@@ -61,7 +61,8 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-Note: the command does NOT throw an exception on an invalid `partition_expr`.
+Note: the command does NOT throw an exception if the specified part does not exist, 
+e.g. `ALTER TABLE mt DROP PART 'i_do_not_exist'` will succeed.
 
 ## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
@@ -72,7 +73,8 @@ ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 Removes the specified part or all parts of the specified partition from `detached`.
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-Note: the command does NOT throw an exception on an invalid `partition_expr`.
+Note: the command does NOT throw an exception if the specified part does not exist, 
+e.g. `ALTER TABLE mt DROP DETACHED PART[ITION] 'i_do_not_exist'` will succeed.
 
 ## ATTACH PARTITION\|PART {#alter_attach-partition}
 
@@ -89,13 +91,15 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
+If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
-If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, 
-it attaches the data without fetching it from other replicas.
-If there is no part with the correct checksums, the data is downloaded from the replica-initiator.
+If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own 
+`detached` folder, it attaches the data without fetching it from other replicas.
+If there is no part with the correct checksums, the data is downloaded from any replica having the part.
 
-So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
+You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the 
+table on all replicas.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 

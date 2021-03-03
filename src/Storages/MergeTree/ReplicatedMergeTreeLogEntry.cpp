@@ -54,7 +54,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
         case ATTACH_PART:
             out << "attach\n" << new_part_name << "\n"
-                << "part_checksum: " << part_checksum << "\n";
+                << "part_checksum: " << part_checksum;
             break;
 
         case MERGE_PARTS:
@@ -189,7 +189,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     else if (type_str == "attach")
     {
         type = ATTACH_PART;
-        in >> new_part_name >> "\npart_checksum: " >> part_checksum >> "\n";
+        in >> new_part_name >> "\npart_checksum: " >> part_checksum;
     }
     else if (type_str == "merge")
     {

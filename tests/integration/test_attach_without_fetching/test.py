@@ -83,15 +83,16 @@ def test_attach_without_fetching(start_cluster):
     fill_node(node_3)
 
     # 3. Attach the first part and check if it has been fetched correctly.
-    # Replica 3 should download the data from replica 2 as there is no local data.
     # Replica 1 should attach the local data from detached/.
+    # Replica 3 should download the data from replica 1 as there is no local data and other connections are broken.
     with PartitionManager() as pm:
-        # The non-initiator replica downloads the data from initiator only.
-        # If something goes wrong and replica 1 wants to download data from replica 2, the test will fail.
+        # If something goes wrong and replica 1 wants to fetch data, the test will fail.
         pm.partition_instances(node_1, node_2)
+        pm.partition_instances(node_3, node_2)
+
         node_2.query("ALTER TABLE test ATTACH PART '0_0_0_0'")
 
-    check_data([node_1, node_2, node_3], detached_parts=[1])
+        check_data([node_1, node_2, node_3], detached_parts=[1])
 
     # 4. Break the part data on the second node to corrupt the checksums.
     # Replica 3 should download the data from replica 1 as there is no local data.
