@@ -1620,6 +1620,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     }
 }
 
+
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
+}
+
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
 {
     const auto settings = getSettings();

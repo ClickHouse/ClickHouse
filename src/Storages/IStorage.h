@@ -344,6 +344,11 @@ public:
       */
     virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const;
 
+    /**
+      * Checks that mutation commands can be applied to storage.
+      */
+    virtual void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const;
+
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
       */
