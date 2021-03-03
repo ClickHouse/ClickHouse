@@ -898,7 +898,7 @@ TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
 void addNode(DB::NuKeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
 {
     using Node = DB::NuKeeperStorage::Node;
-    storage.container.insertOrReplace(path, Node{.data=data, .ephemeral_owner = ephemeral_owner});
+    storage.container.insertOrReplace(path, Node{.data=data, .stat.ephemeralOwner = ephemeral_owner});
 }
 
 TEST(CoordinationTest, TestStorageSnapshotSimple)
