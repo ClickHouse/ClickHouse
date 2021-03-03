@@ -25,6 +25,7 @@ public:
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
+    bool supportsSettings() const override { return getNested()->supportsSettings(); }
     bool noPushingToViews() const override { return getNested()->noPushingToViews(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
 
@@ -121,10 +122,9 @@ public:
             const ASTPtr & partition,
             bool final,
             bool deduplicate,
-            const Names & deduplicate_by_columns,
             const Context & context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
     }
 
     void mutate(const MutationCommands & commands, const Context & context) override { getNested()->mutate(commands, context); }

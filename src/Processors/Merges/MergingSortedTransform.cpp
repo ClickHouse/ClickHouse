@@ -1,6 +1,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBuffer.h>
+#include <DataStreams/materializeBlock.h>
 
 #include <common/logger_useful.h>
 

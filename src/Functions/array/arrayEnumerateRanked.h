@@ -304,10 +304,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const size_t depth_to_look = arrays_depths.max_array_depth;
     const auto & offsets = *offsets_by_depth[depth_to_look - 1];
 
-    using Container = ClearableHashMapWithStackMemory<UInt128, UInt32,
+    using Map = ClearableHashMapWithStackMemory<UInt128, UInt32,
         UInt128TrivialHash, INITIAL_SIZE_DEGREE>;
 
-    Container indices;
+    Map indices;
 
     std::vector<size_t> indices_by_depth(depth_to_look);
     std::vector<size_t> current_offset_n_by_depth(depth_to_look);

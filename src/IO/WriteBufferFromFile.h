@@ -50,6 +50,11 @@ public:
     /// Close file before destruction of object.
     void close();
 
+    void finalize() override
+    {
+        close();
+    }
+
     std::string getFileName() const override
     {
         return file_name;

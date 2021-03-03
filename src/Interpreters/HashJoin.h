@@ -22,7 +22,6 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 
-#include <Core/Block.h>
 
 namespace DB
 {
@@ -134,6 +133,9 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
+    bool empty() const { return data->type == Type::EMPTY; }
+    bool overDictionary() const { return data->type == Type::DICT; }
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -169,7 +171,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
 
-    bool alwaysReturnsEmptySet() const final;
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty && !overDictionary(); }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
@@ -306,6 +308,10 @@ public:
 
     struct RightTableData
     {
+        /// Protect state for concurrent use in insertFromBlock and joinBlock.
+        /// @note that these methods could be called simultaneously only while use of StorageJoin.
+        mutable std::shared_mutex rwlock;
+
         Type type = Type::EMPTY;
         bool empty = true;
 
@@ -317,13 +323,6 @@ public:
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
     };
-
-    /// We keep correspondence between used_flags and hash table internal buffer.
-    /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(std::shared_mutex & rwlock)
-    {
-        storage_join_lock = std::shared_lock<std::shared_mutex>(rwlock);
-    }
 
     void reuseJoinedData(const HashJoin & join);
 
@@ -356,8 +355,6 @@ private:
     /// Flags that indicate that particular row already used in join.
     /// Flag is stored for every record in hash map.
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
-    /// Changes in hash table broke correspondence,
-    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
     Sizes key_sizes;
 
@@ -376,10 +373,6 @@ private:
 
     Block totals;
 
-    /// Should be set via setLock to protect hash table from modification from StorageJoin
-    /// If set HashJoin instance is not available for modification (addJoinedBlock)
-    std::shared_lock<std::shared_mutex> storage_join_lock;
-
     void init(Type type_);
 
     const Block & savedBlockSample() const { return data->sample_block; }
@@ -397,10 +390,10 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    template <typename Maps>
+    ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
-    bool empty() const;
-    bool overDictionary() const;
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 };
 
 }

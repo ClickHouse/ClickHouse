@@ -12,7 +12,6 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 
@@ -326,16 +325,6 @@ struct ODBCBridgeMixin
         {
             cmd_args.push_back("--err-log-path");
             cmd_args.push_back(config.getString("logger." + configPrefix() + "_errlog"));
-        }
-        if (config.has("logger." + configPrefix() + "_stdout"))
-        {
-            cmd_args.push_back("--stdout-path");
-            cmd_args.push_back(config.getString("logger." + configPrefix() + "_stdout"));
-        }
-        if (config.has("logger." + configPrefix() + "_stderr"))
-        {
-            cmd_args.push_back("--stderr-path");
-            cmd_args.push_back(config.getString("logger." + configPrefix() + "_stderr"));
         }
         if (config.has("logger." + configPrefix() + "_level"))
         {

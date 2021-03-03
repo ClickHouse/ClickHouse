@@ -28,18 +28,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/** Stores another column with unique values
-  * and also an index that allows to find position by value.
-  *
-  * This column is not used on it's own but only as implementation detail of ColumnLowCardinality.
-  */
 template <typename ColumnType>
 class ColumnUnique final : public COWHelper<IColumnUnique, ColumnUnique<ColumnType>>
 {
     friend class COWHelper<IColumnUnique, ColumnUnique<ColumnType>>;
 
 private:
-    ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
+    explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
     explicit ColumnUnique(const IDataType & type);
     ColumnUnique(const ColumnUnique & other);
 
@@ -93,10 +88,6 @@ public:
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
     size_t byteSize() const override { return column_holder->byteSize(); }
-    size_t byteSizeAt(size_t n) const override
-    {
-        return getNestedColumn()->byteSizeAt(n);
-    }
     void protect() override { column_holder->protect(); }
     size_t allocatedBytes() const override
     {

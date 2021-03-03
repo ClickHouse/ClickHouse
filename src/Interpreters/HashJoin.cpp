@@ -411,21 +411,6 @@ void HashJoin::init(Type type_)
     joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { map.create(data->type); });
 }
 
-bool HashJoin::overDictionary() const
-{
-    return data->type == Type::DICT;
-}
-
-bool HashJoin::empty() const
-{
-    return data->type == Type::EMPTY;
-}
-
-bool HashJoin::alwaysReturnsEmptySet() const
-{
-    return isInnerOrRight(getKind()) && data->empty && !overDictionary();
-}
-
 size_t HashJoin::getTotalRowCount() const
 {
     size_t res = 0;
@@ -639,9 +624,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     size_t total_bytes = 0;
 
     {
-        if (storage_join_lock.mutex())
-            throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
-                                ErrorCodes::LOGICAL_ERROR);
+        std::unique_lock lock(data->rwlock);
 
         data->blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &data->blocks.back();
@@ -734,7 +717,7 @@ public:
         if constexpr (has_defaults)
             applyLazyDefaults();
 
-        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+        for (size_t j = 0; j < right_indexes.size(); ++j)
             columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
     }
 
@@ -747,7 +730,7 @@ public:
     {
         if (lazy_defaults_count)
         {
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            for (size_t j = 0; j < right_indexes.size(); ++j)
                 JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
             lazy_defaults_count = 0;
         }
@@ -1205,8 +1188,11 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     block = block.cloneWithColumns(std::move(dst_columns));
 }
 
+
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
 {
+    std::shared_lock lock(data->rwlock);
+
     size_t num_keys = data_types.size();
     if (right_table_keys.columns() != num_keys)
         throw Exception(
@@ -1218,8 +1204,8 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     {
         const auto & left_type_origin = data_types[i];
         const auto & [c2, right_type_origin, right_name] = right_table_keys.safeGetByPosition(i);
-        auto left_type = removeNullable(recursiveRemoveLowCardinality(left_type_origin));
-        auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
+        auto left_type = removeNullable(left_type_origin);
+        auto right_type = removeNullable(right_type_origin);
         if (!left_type->equals(*right_type))
             throw Exception(
                 "Type mismatch in joinGet key " + toString(i) + ": found type " + left_type->getName() + ", while the needed type is "
@@ -1236,16 +1222,11 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     return elem.type;
 }
 
-/// TODO: return multiple columns as named tuple
-/// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
-ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
-{
-    bool is_valid = (strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny)
-        && kind == ASTTableJoin::Kind::Left;
-    if (!is_valid)
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
-    /// Assemble the key block with correct names.
+template <typename Maps>
+ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
+{
+    // Assemble the key block with correct names.
     Block keys;
     for (size_t i = 0; i < block.columns(); ++i)
     {
@@ -1254,15 +1235,32 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         keys.insert(std::move(key));
     }
 
-    static_assert(!MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>::flagged,
-                  "joinGet are not protected from hash table changes between block processing");
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
-        keys, key_names_right, block_with_columns_to_add, std::get<MapsOne>(data->maps));
+        keys, key_names_right, block_with_columns_to_add, maps_);
     return keys.getByPosition(keys.columns() - 1);
 }
 
+
+// TODO: return multiple columns as named tuple
+// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
+ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
+{
+    std::shared_lock lock(data->rwlock);
+
+    if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
+        kind == ASTTableJoin::Kind::Left)
+    {
+        return joinGetImpl(block, block_with_columns_to_add, std::get<MapsOne>(data->maps));
+    }
+    else
+        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+}
+
+
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    std::shared_lock lock(data->rwlock);
+
     const Names & key_names_left = table_join->keyNamesLeft();
     JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
@@ -1311,7 +1309,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
 }
 
 

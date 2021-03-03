@@ -3,7 +3,6 @@
 #include <vector>
 
 #include <IO/WriteBuffer.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -16,7 +15,7 @@ namespace ErrorCodes
 
 /** Writes data to existing std::vector or similar type. When not enough space, it doubles vector size.
   *
-  * In destructor, vector is cut to the size of written data.
+  * In destructor, vector is cutted to the size of written data.
   * You can call 'finalize' to resize earlier.
   *
   * The vector should live until this object is destroyed or until the 'finish' method is called.
@@ -86,17 +85,20 @@ public:
 
     void restart()
     {
-        if (vector.empty())
-            vector.resize(initial_size);
         set(reinterpret_cast<Position>(vector.data()), vector.size());
         is_finished = false;
     }
 
     ~WriteBufferFromVector() override
     {
-        /// FIXME move final flush into the caller
-        MemoryTracker::LockExceptionInThread lock;
-        finalize();
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 };
 

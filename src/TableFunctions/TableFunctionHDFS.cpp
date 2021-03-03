@@ -2,7 +2,7 @@
 #include "registerTableFunctions.h"
 
 #if USE_HDFS
-#include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/StorageHDFS.h>
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>

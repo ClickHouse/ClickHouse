@@ -6,9 +6,7 @@ namespace DB
 {
 
 class FunctionFactory;
-#if USE_HYPERSCAN
-void registerFunctionHtmlOrXmlCoarseParse(FunctionFactory &);
-#endif
+
 void registerFunctionRepeat(FunctionFactory &);
 void registerFunctionEmpty(FunctionFactory &);
 void registerFunctionNotEmpty(FunctionFactory &);
@@ -34,10 +32,6 @@ void registerFunctionTrim(FunctionFactory &);
 void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 void registerFunctionNormalizeQuery(FunctionFactory &);
 void registerFunctionNormalizedQueryHash(FunctionFactory &);
-void registerFunctionCountMatches(FunctionFactory &);
-void registerFunctionEncodeXMLComponent(FunctionFactory & factory);
-void registerFunctionDecodeXMLComponent(FunctionFactory & factory);
-
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
@@ -47,9 +41,6 @@ void registerFunctionTryBase64Decode(FunctionFactory &);
 
 void registerFunctionsString(FunctionFactory & factory)
 {
-#if USE_HYPERSCAN
-    registerFunctionHtmlOrXmlCoarseParse(factory);
-#endif
     registerFunctionRepeat(factory);
     registerFunctionEmpty(factory);
     registerFunctionNotEmpty(factory);
@@ -75,9 +66,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionRegexpQuoteMeta(factory);
     registerFunctionNormalizeQuery(factory);
     registerFunctionNormalizedQueryHash(factory);
-    registerFunctionCountMatches(factory);
-    registerFunctionEncodeXMLComponent(factory);
-    registerFunctionDecodeXMLComponent(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

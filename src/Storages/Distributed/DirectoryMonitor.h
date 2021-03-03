@@ -14,9 +14,6 @@ namespace CurrentMetrics { class Increment; }
 namespace DB
 {
 
-class IDisk;
-using DiskPtr = std::shared_ptr<IDisk>;
-
 class StorageDistributed;
 class ActionBlocker;
 class BackgroundSchedulePool;
@@ -28,18 +25,13 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_,
-        const DiskPtr & disk_,
-        const std::string & relative_path_,
-        ConnectionPoolPtr pool_,
-        ActionBlocker & monitor_blocker_,
-        BackgroundSchedulePool & bg_pool);
+        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool);
 
     ~StorageDistributedDirectoryMonitor();
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
-    void updatePath(const std::string & new_relative_path);
+    void updatePath(const std::string & new_path);
 
     void flushAllData();
 
@@ -70,6 +62,7 @@ private:
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
+    static bool isFileBrokenErrorCode(int code);
     void markAsBroken(const std::string & file_path) const;
     bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
 
@@ -77,13 +70,9 @@ private:
 
     StorageDistributed & storage;
     const ConnectionPoolPtr pool;
-
-    DiskPtr disk;
-    std::string relative_path;
     std::string path;
 
     const bool should_batch_inserts = false;
-    const bool dir_fsync = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
@@ -109,6 +98,9 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
+
+    /// Read insert query and insert settings for backward compatible.
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };
