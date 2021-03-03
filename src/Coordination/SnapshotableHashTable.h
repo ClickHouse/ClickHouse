@@ -26,7 +26,7 @@ private:
 
     List list;
     IndexMap map;
-    bool snapshot_mode;
+    bool snapshot_mode{false};
 
 public:
 
@@ -113,10 +113,9 @@ public:
             auto list_itr = it->second;
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
-
+            map.erase(it);
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
-            map.erase(it);
             map.emplace(itr->key, itr);
             return itr;
         }
