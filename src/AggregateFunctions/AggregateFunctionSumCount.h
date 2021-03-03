@@ -89,7 +89,7 @@ struct AggregateFunctionSumCountData
             ++ptr;
         }
         Impl::add(sum, local_sum);
-        count += tmp_count; 
+        count += tmp_count;
     }
 
     template <typename Value>
@@ -189,14 +189,10 @@ public:
     {
         DataTypes types;
         if constexpr (IsDecimalNumber<T>)
-        {
             types.emplace_back(std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale));
-        }
         else
-        {
             types.emplace_back(std::make_shared<ResultDataType>());
-        }
- 
+
         types.emplace_back(std::make_shared<DataTypeUInt64>());
 
         return std::make_shared<DataTypeTuple>(types);
