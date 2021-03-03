@@ -206,7 +206,6 @@ void StorageMemory::drop()
     total_size_rows.store(0, std::memory_order_relaxed);
 }
 
-
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
