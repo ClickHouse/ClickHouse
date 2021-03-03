@@ -72,13 +72,13 @@ void NuKeeperStateMachine::init()
     if (has_snapshots)
     {
         if (loaded)
-            LOG_DEBUG(log, "Loaded snapshot with last commited log index {}", last_committed_idx);
+            LOG_DEBUG(log, "Loaded snapshot with last committed log index {}", last_committed_idx);
         else
-            LOG_WARNING(log, "All snapshots broken, last commited log index {}", last_committed_idx);
+            LOG_WARNING(log, "All snapshots broken, last committed log index {}", last_committed_idx);
     }
     else
     {
-        LOG_DEBUG(log, "No existing snapshots, last commited log index {}", last_committed_idx);
+        LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
     }
 }
 
