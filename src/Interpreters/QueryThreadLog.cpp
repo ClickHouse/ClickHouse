@@ -40,7 +40,6 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),        "master_thread_id"},
         {std::make_shared<DataTypeString>(),        "current_database"},
         {std::make_shared<DataTypeString>(),        "query"},
-        {std::make_shared<DataTypeUInt64>(),        "normalized_query_hash"},
 
         {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
         {std::make_shared<DataTypeString>(),        "user"},
@@ -61,8 +60,6 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),        "client_version_patch"},
         {std::make_shared<DataTypeUInt8>(),         "http_method"},
         {std::make_shared<DataTypeString>(),        "http_user_agent"},
-        {std::make_shared<DataTypeString>(),        "http_referer"},
-        {std::make_shared<DataTypeString>(),        "forwarded_for"},
         {std::make_shared<DataTypeString>(),        "quota_key"},
 
         {std::make_shared<DataTypeUInt32>(),        "revision"},
@@ -97,7 +94,6 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
-    columns[i++]->insert(normalized_query_hash);
 
     QueryLogElement::appendClientInfo(client_info, columns, i);
 

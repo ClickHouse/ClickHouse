@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnCompressed.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -496,11 +495,6 @@ size_t ColumnNullable::byteSize() const
     return getNestedColumn().byteSize() + getNullMapColumn().byteSize();
 }
 
-size_t ColumnNullable::byteSizeAt(size_t n) const
-{
-    return sizeof(getNullMapData()[0]) + getNestedColumn().byteSizeAt(n);
-}
-
 size_t ColumnNullable::allocatedBytes() const
 {
     return getNestedColumn().allocatedBytes() + getNullMapColumn().allocatedBytes();
@@ -510,20 +504,6 @@ void ColumnNullable::protect()
 {
     getNestedColumn().protect();
     getNullMapColumn().protect();
-}
-
-ColumnPtr ColumnNullable::compress() const
-{
-    ColumnPtr nested_compressed = nested_column->compress();
-    ColumnPtr null_map_compressed = null_map->compress();
-
-    size_t byte_size = nested_column->byteSize() + null_map->byteSize();
-
-    return ColumnCompressed::create(size(), byte_size,
-        [nested_column = std::move(nested_column), null_map = std::move(null_map)]
-        {
-            return ColumnNullable::create(nested_column->decompress(), null_map->decompress());
-        });
 }
 
 

@@ -5,14 +5,13 @@ toc_title: USER
 
 # CREATE USER {#create-user-statement}
 
-Creates [user accounts](../../../operations/access-rights.md#user-account-management).
+Creates a [user account](../../../operations/access-rights.md#user-account-management).
 
 Syntax:
 
 ``` sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
-        [, name2 [ON CLUSTER cluster_name2] ...]
-    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH|LDAP_SERVER}] BY {'password'|'hash'}]
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
@@ -30,7 +29,6 @@ There are multiple ways of user identification:
 -   `IDENTIFIED WITH sha256_hash BY 'hash'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
--   `IDENTIFIED WITH ldap_server BY 'server'`
 
 ## User Host {#user-host}
 
@@ -71,7 +69,7 @@ CREATE USER john DEFAULT ROLE role1, role2
 Create the user account `john` and make all his future roles default:
 
 ``` sql
-CREATE USER user DEFAULT ROLE ALL
+ALTER USER user DEFAULT ROLE ALL
 ```
 
 When some role is assigned to `john` in the future, it will become default automatically.
@@ -79,5 +77,5 @@ When some role is assigned to `john` in the future, it will become default autom
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
 ``` sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```

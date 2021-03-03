@@ -4,6 +4,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -100,6 +102,5 @@ template class DataTypeDecimalBase<Decimal32>;
 template class DataTypeDecimalBase<Decimal64>;
 template class DataTypeDecimalBase<Decimal128>;
 template class DataTypeDecimalBase<Decimal256>;
-template class DataTypeDecimalBase<DateTime64>;
 
 }

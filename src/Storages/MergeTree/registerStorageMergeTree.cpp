@@ -234,6 +234,25 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 }
 
 
+static void randomizePartTypeSettings(const std::unique_ptr<MergeTreeSettings> & storage_settings)
+{
+    static constexpr auto MAX_THRESHOLD_FOR_ROWS = 100000;
+    static constexpr auto MAX_THRESHOLD_FOR_BYTES = 1024 * 1024 * 10;
+
+    /// Create all parts in wide format with probability 1/3.
+    if (thread_local_rng() % 3 == 0)
+    {
+        storage_settings->min_rows_for_wide_part = 0;
+        storage_settings->min_bytes_for_wide_part = 0;
+    }
+    else
+    {
+        storage_settings->min_rows_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_ROWS}(thread_local_rng);
+        storage_settings->min_bytes_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_BYTES}(thread_local_rng);
+    }
+}
+
+
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     /** [Replicated][|Summing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
@@ -450,21 +469,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             arg_cnt += 2;
         }
         else
-            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool is_replicated_database = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
-        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+        bool allow_uuid_macro = is_on_cluster || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
         if (!args.attach)
         {
-            if (is_replicated_database && !is_extended_storage_def)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
-
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
@@ -721,18 +735,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
         ++arg_num;
-
-        if (args.storage_def->ttl_table && !args.attach)
-            throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
+    /// Allow to randomize part type for tests to cover more cases.
+    /// But if settings were set explicitly restrict it.
+    if (storage_settings->randomize_part_type
+        && !storage_settings->min_rows_for_wide_part.changed
+        && !storage_settings->min_bytes_for_wide_part.changed)
     {
-        for (size_t i = 0; i < data_types.size(); ++i)
-            if (isFloat(data_types[i]))
-                throw Exception(
-                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
+        randomizePartTypeSettings(storage_settings);
+        LOG_INFO(&Poco::Logger::get(args.table_id.getNameForLogs() + " (registerStorageMergeTree)"),
+            "Applied setting 'randomize_part_type'. "
+            "Setting 'min_rows_for_wide_part' changed to {}. "
+            "Setting 'min_bytes_for_wide_part' changed to {}.",
+            storage_settings->min_rows_for_wide_part, storage_settings->min_bytes_for_wide_part);
     }
 
     if (arg_num != arg_cnt)
@@ -773,7 +789,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_skipping_indices = true,
         .supports_sort_order = true,
         .supports_ttl = true,
-        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("MergeTree", create, features);

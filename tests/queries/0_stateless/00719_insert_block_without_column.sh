@@ -3,7 +3,6 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 [ -e "${CLICKHOUSE_TMP}"/test_squashing_block_without_column.out ] && rm "${CLICKHOUSE_TMP}"/test_squashing_block_without_column.out

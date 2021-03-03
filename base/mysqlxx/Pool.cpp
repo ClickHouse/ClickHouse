@@ -78,9 +78,6 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
-
-        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
-            cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
     }
     else
     {
@@ -99,8 +96,6 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
-
-        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -253,7 +248,7 @@ bool Pool::Entry::tryForceConnected() const
         if (prev_connection_id != current_connection_id)
         {
             auto & logger = Poco::Util::Application::instance().logger();
-            logger.information("Reconnected to mysql server. Connection id changed: %lu -> %lu",
+            logger.information("Connection to mysql server has been reestablished. Connection id changed: %d -> %d",
                                 prev_connection_id, current_connection_id);
         }
         return true;

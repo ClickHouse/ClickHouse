@@ -41,13 +41,13 @@ struct MaterializeMetadata
 
     void fetchMasterVariablesValue(const mysqlxx::PoolWithFailover::Entry & connection);
 
-    bool checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection) const;
+    bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const;
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
     MaterializeMetadata(
         mysqlxx::PoolWithFailover::Entry & connection, const String & path
-        , const String & database, bool & opened_transaction);
+        , const String & database, bool & opened_transaction, const String & mysql_version);
 };
 
 }
