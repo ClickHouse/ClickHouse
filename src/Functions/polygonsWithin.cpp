@@ -1,23 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-
-#include <common/logger_useful.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
-
-#include <memory>
-#include <utility>
+#include <Functions/mercatorConverters.h>
 
 namespace DB
 {
@@ -27,12 +10,29 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+struct WithinCartesian
+{
+    static inline const char * name = "polygonsWithinCartesian";
+    using Point = CartesianPoint;
+};
 
-template <typename Point>
+struct WithinSpherical
+{
+    static inline const char * name = "polygonsWithinSpherical";
+    using Point = SphericalPoint;
+};
+
+struct WithinMercator
+{
+    static inline const char * name = "polygonsWithinMercator";
+    using Point = CartesianPoint;
+};
+
+template <typename Holder>
 class FunctionPolygonsWithin : public IFunction
 {
 public:
-    static inline const char * name;
+    static inline const char * name = Holder::name;
 
     explicit FunctionPolygonsWithin() = default;
 
@@ -63,6 +63,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        using Point = typename Holder::Point;
         auto res_column = ColumnUInt8::create();
         auto & res_data = res_column->getData();
         res_data.reserve(input_rows_count);
@@ -88,6 +89,12 @@ public:
                     boost::geometry::correct(first[i]);
                     boost::geometry::correct(second[i]);
 
+                    if constexpr (std::is_same_v<Holder, WithinMercator>)
+                    {
+                        mercatorForward(first[i]);
+                        mercatorForward(second[i]);
+                    }
+
                     res_data.emplace_back(boost::geometry::within(first[i], second[i]));
                 }
             }
@@ -102,18 +109,11 @@ public:
     }
 };
 
-
-template <>
-const char * FunctionPolygonsWithin<CartesianPoint>::name = "polygonsWithinCartesian";
-
-template <>
-const char * FunctionPolygonsWithin<SphericalPoint>::name = "polygonsWithinSpherical";
-
-
 void registerFunctionPolygonsWithin(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonsWithin<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsWithin<SphericalPoint>>();
+    factory.registerFunction<FunctionPolygonsWithin<WithinCartesian>>();
+    factory.registerFunction<FunctionPolygonsWithin<WithinSpherical>>();
+    factory.registerFunction<FunctionPolygonsWithin<WithinMercator>>();
 }
 
 }
