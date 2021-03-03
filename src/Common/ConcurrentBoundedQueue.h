@@ -6,38 +6,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <common/types.h>
-
-
-namespace detail
-{
-    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable_v<T>>
-    struct MoveOrCopyIfThrow;
-
-    template <typename T>
-    struct MoveOrCopyIfThrow<T, true>
-    {
-        void operator()(T && src, T & dst) const
-        {
-            dst = std::forward<T>(src);
-        }
-    };
-
-    template <typename T>
-    struct MoveOrCopyIfThrow<T, false>
-    {
-        void operator()(T && src, T & dst) const
-        {
-            dst = src;
-        }
-    };
-
-    template <typename T>
-    void moveOrCopyIfThrow(T && src, T & dst)
-    {
-        MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
-    }
-}
+#include <Common/MoveOrCopyIfThrow.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty.
@@ -119,24 +88,6 @@ public:
         return false;
     }
 
-    /// This function is necessary if your type of element cannot be contructed without argument evaluation.
-    /// For example std::unique_ptr or std::shared_ptr.
-    /// tryEmplace cannot be used in that case because constructor for temporary object will be called.
-    template <typename FactoryFunc>
-    bool tryEmplaceFactoryFunc(FactoryFunc && func, UInt64 milliseconds)
-    {
-        if (empty_count.tryWait(milliseconds))
-        {
-            {
-                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-                queue.emplace(std::forward<FactoryFunc>(func)());
-            }
-            fill_count.set();
-            return true;
-        }
-        return false;
-    }
-
     bool tryPop(T & x, UInt64 milliseconds = 0)
     {
         if (fill_count.tryWait(milliseconds))
@@ -150,20 +101,6 @@ public:
             return true;
         }
         return false;
-    }
-
-    template <typename FactoryFunc>
-    void popOrEmplaceIfNotFull(T & x, FactoryFunc && func)
-    {
-        UInt64 wait_milliseconds = 0;
-
-        while (true)
-        {
-            if (tryPop(x, wait_milliseconds))
-                return;
-
-            tryEmplaceFactoryFunc(std::forward<FactoryFunc>(func), wait_milliseconds);
-        }
     }
 
     size_t size()

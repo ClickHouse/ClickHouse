@@ -2,15 +2,18 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+#include <unistd.h>
+#include <time.h>
+#include <csignal>
+
+#include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
-#include <common/logger_useful.h>
-#include <common/errnoToString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <unistd.h>
-#include <csignal>
+
 
 namespace
 {
@@ -86,6 +89,7 @@ bool ShellCommand::shouldTerminateProcess()
     {
         LOG_TRACE(getLogger(), "Wait for shell command pid ({}) before termination with timeout ({})", pid, wait_before_signal_seconds);
 
+        struct timespec interval{.tv_sec = 1, .tv_nsec = 0};
         try
         {
             in.close();
@@ -101,7 +105,7 @@ bool ShellCommand::shouldTerminateProcess()
                 if (waitpid_res == 0)
                 {
                     --wait_before_signal_seconds;
-                    sleep(1);
+                    nanosleep(&interval, nullptr);
 
                     continue;
                 }
@@ -115,7 +119,6 @@ bool ShellCommand::shouldTerminateProcess()
         }
         catch (...)
         {
-            tryLogCurrentException(getLogger());
             return true;
         }
     }
