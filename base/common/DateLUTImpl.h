@@ -37,7 +37,8 @@ using YearWeek = std::pair<UInt16, UInt8>;
   */
 class DateLUTImpl
 {
-public:
+private:
+    friend class DateLUT;
     explicit DateLUTImpl(const std::string & time_zone);
 
     DateLUTImpl(const DateLUTImpl &) = delete;
