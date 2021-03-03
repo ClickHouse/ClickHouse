@@ -339,7 +339,7 @@ int main(int argc, char *argv[])
 
     try
     {
-        std::cerr << "REMOVING\n";
+        std::cerr << "Removing\n";
         zk.tryRemoveRecursive("/data");
         std::cerr << "Creating\n";
         zk.createIfNotExists("/data", "");
