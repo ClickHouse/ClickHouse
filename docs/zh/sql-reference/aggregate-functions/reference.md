@@ -53,55 +53,6 @@ skewSamp(expr)
 SELECT skewSamp(value) FROM series_with_value_column
 ```
 
-
-## uniqCombined {#agg_function-uniqcombined}
-
-计算不同参数值的近似数量。
-
-``` sql
-uniqCombined(HLL_precision)(x[, ...])
-```
-
-该 `uniqCombined` 函数是计算不同数值数量的不错选择。
-
-**参数**
-
-该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
-
-`HLL_precision` 是以2为底的单元格数的对数 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). 可选，您可以将该函数用作 `uniqCombined(x[, ...])`. 默认值 `HLL_precision` 是17，这是有效的96KiB的空间（2^17个单元，每个6比特）。
-
-**返回值**
-
--   一个[UInt64](../../sql-reference/data-types/int-uint.md)类型的数字。
-
-**实现细节**
-
-功能:
-
--   计算散列（64位散列 `String` 否则32位）对于聚合中的所有参数，然后在计算中使用它。
-
--   使用三种算法的组合：数组、哈希表和包含错误修正表的HyperLogLog。
-
-        少量的不同的值，使用数组。 值再多一些，使用哈希表。对于大量的数据来说，使用HyperLogLog，HyperLogLog占用一个固定的内存空间。
-
--   确定性地提供结果（它不依赖于查询处理顺序）。
-
-!!! note "注"
-    因为它使用32位散列非-`String` 类型，结果将有非常高的误差基数显着大于 `UINT_MAX` （错误将在几百亿不同值之后迅速提高），因此在这种情况下，您应该使用 [uniqCombined64](#agg_function-uniqcombined64)
-
-相比于 [uniq](#agg_function-uniq) 功能，该 `uniqCombined`:
-
--   消耗少几倍的内存。
--   计算精度高出几倍。
--   通常具有略低的性能。 在某些情况下, `uniqCombined` 可以表现得比 `uniq` 好，例如，使用通过网络传输大量聚合状态的分布式查询。
-
-**另请参阅**
-
--   [uniq](#agg_function-uniq)
--   [uniqCombined64](#agg_function-uniqcombined64)
--   [uniqHLL12](#agg_function-uniqhll12)
--   [uniqExact](#agg_function-uniqexact)
-
 ## uniqCombined64 {#agg_function-uniqcombined64}
 
 和 [uniqCombined](#agg_function-uniqcombined)，但对所有数据类型使用64位哈希。
