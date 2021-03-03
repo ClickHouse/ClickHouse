@@ -179,10 +179,11 @@ private:
         const UInt32 guess = ((t / 86400) + daynum_offset_epoch) & date_lut_mask;
 
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
-        if ((guess == daynum_offset_epoch || t >= lut[guess].date) && t < lut[UInt32(guess + 1)].date)
+        if (t >= lut[guess].date && t < lut[UInt32(guess + 1)].date)
             return LUTIndex{guess};
 
-        /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
+        /// Time zones that have offset 0 from UTC do daylight saving time change (if any)
+        /// towards increasing UTC offset (example: British Standard Time).
         if (t >= lut[UInt32(guess + 1)].date)
             return LUTIndex(guess + 1);
 
