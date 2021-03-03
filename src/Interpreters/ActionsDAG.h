@@ -213,6 +213,8 @@ public:
             NodeRawConstPtrs children,
             std::string result_name);
 
+    NodeRawConstPtrs & getIndex() { return index; }
+
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
     /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
@@ -226,6 +228,7 @@ public:
     bool removeUnusedResult(const std::string & column_name);
 
     void projectInput() { project_input = true; }
+    bool projectedInput() const { return project_input; }
     bool projectedOutput() const { return projected_output; }
     void removeUnusedActions(const Names & required_names);
 
@@ -233,9 +236,17 @@ public:
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
 
-    //const ActionsSettings & getSettings() const { return settings; }
+    void transformHeader(Block & block);
 
-    void compileExpressions(std::shared_ptr<CompiledExpressionCache> cache);
+    /// This map helps to find input position by it's name.
+    /// Key is a view to input::result_name.
+    /// Result is a list because it is allowed for inputs to have same names.
+    using NameToNodeMap = std::unordered_map<std::string_view, std::list<size_t>>;
+    static NameToNodeMap buildNameToNodeMapping(const NodeRawConstPtrs & nodes);
+    static std::vector<ssize_t> getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping);
+    void transformHeader(Block & block, ColumnsWithTypeAndName result_columns) const;
+
+    void compileExpressions(size_t min_count_to_compile_expression);
 
     ActionsDAGPtr clone() const;
 
@@ -317,7 +328,7 @@ private:
     void removeUnusedActions(bool allow_remove_inputs = true);
     void addAliases(const NamesWithAliases & aliases, bool project);
 
-    void compileFunctions(std::shared_ptr<CompiledExpressionCache> cache);
+    void compileFunctions(size_t min_count_to_compile_expression);
 
     ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction);
 };

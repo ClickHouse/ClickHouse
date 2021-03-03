@@ -81,6 +81,15 @@ private:
     size_t max_temporary_non_const_columns = 0;
 
 public:
+    struct Settings
+    {
+        bool compile_expressions = false;
+        size_t min_count_to_compile_expression = 0;
+
+        size_t max_temporary_columns = 0;
+        size_t max_temporary_non_const_columns = 0;
+    }
+
     ExpressionActions() = delete;
     ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_, const Context & context);

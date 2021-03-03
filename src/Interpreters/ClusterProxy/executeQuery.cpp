@@ -157,7 +157,7 @@ void executeQuery(
         input_streams.emplace_back(plan->getCurrentDataStream());
 
     auto header = input_streams.front().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), header, context);
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 

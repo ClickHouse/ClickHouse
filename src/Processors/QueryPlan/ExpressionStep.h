@@ -19,7 +19,7 @@ class ExpressionStep : public ITransformingStep
 public:
     using Transform = ExpressionTransform;
 
-    explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
+    explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_, const Context & context_);
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
@@ -29,9 +29,11 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const ActionsDAGPtr & getExpression() const { return actions_dag; }
+    const Context & getContext() const { return context; }
 
 private:
     ActionsDAGPtr actions_dag;
+    const Context & context;
 };
 
 /// TODO: add separate step for join.

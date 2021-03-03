@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace
@@ -676,8 +677,18 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
             for (const auto & kv : stage.column_to_updated)
             {
-                actions_chain.getLastStep().actions()->addAlias(
-                        kv.second->getColumnName(), kv.first, /* can_replace = */ true);
+                auto & actions = actions_chain.getLastStep().actions();
+                auto & index = actions->getIndex();
+                auto column_name = kv.second->getColumnName();
+                auto it = index.begin();
+                for (; it != index.end(); ++it)
+                    if ((*it)->result_name == column_name)
+                        break;
+
+                if (it == index.end())
+                    throw Exception("Unknown identifier: '" + column_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+
+                index.push_back(&actions->addAlias(**it, kv.first));
             }
         }
 
@@ -737,12 +748,12 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false, context));
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions(), context));
             }
         }
 

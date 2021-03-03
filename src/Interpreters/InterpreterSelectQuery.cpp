@@ -536,7 +536,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
                 ActionsDAG::MatchColumnsMode::Name,
                 true);
 
-        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag, *context);
         query_plan.addStep(std::move(converting));
     }
 }
@@ -593,7 +593,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            ExpressionActions(analysis_result.prewhere_info->prewhere_actions).execute(header);
+            ExpressionActions(analysis_result.prewhere_info->prewhere_actions, *context).execute(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
@@ -849,7 +849,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     query_plan.getCurrentDataStream(),
                     expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name,
-                    expressions.prewhere_info->remove_prewhere_column);
+                    expressions.prewhere_info->remove_prewhere_column,
+                    *context);
 
             prewhere_step->setStepDescription("PREWHERE");
             query_plan.addStep(std::move(prewhere_step));
@@ -987,7 +988,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             {
                 QueryPlanStepPtr array_join_step = std::make_unique<ArrayJoinStep>(
                         query_plan.getCurrentDataStream(),
-                        expressions.array_join);
+                        expressions.array_join,
+                        *context);
 
                 array_join_step->setStepDescription("ARRAY JOIN");
                 query_plan.addStep(std::move(array_join_step));
@@ -1594,13 +1596,13 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (prewhere_info)
         {
             query_info.prewhere_info = std::make_shared<PrewhereInfo>(
-                    std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions),
+                    std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, *context),
                     prewhere_info->prewhere_column_name);
 
             if (prewhere_info->alias_actions)
-                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
+                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions, *context);
             if (prewhere_info->remove_columns_actions)
-                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
+                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions, *context);
 
             query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
             query_info.prewhere_info->need_filter = prewhere_info->need_filter;
@@ -1698,7 +1700,8 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
             query_plan.getCurrentDataStream(),
             expression,
             getSelectQuery().where()->getColumnName(),
-            remove_filter);
+            remove_filter,
+            *context);
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
@@ -1707,7 +1710,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
-    auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
+    auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression, *context);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
@@ -1806,7 +1809,7 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
 {
     auto having_step = std::make_unique<FilterStep>(
             query_plan.getCurrentDataStream(),
-            expression, getSelectQuery().having()->getColumnName(), false);
+            expression, getSelectQuery().having()->getColumnName(), false, *context);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
@@ -1819,7 +1822,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPlan & query_plan, bool
 
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
             query_plan.getCurrentDataStream(),
-            overflow_row, expression,
+            overflow_row, expression, *context,
             has_having ? getSelectQuery().having()->getColumnName() : "",
             settings.totals_mode, settings.totals_auto_threshold, final);
 

@@ -100,6 +100,19 @@ public:
     using Base::Base;
 };
 
+class CompiledExpressionCacheFactory
+{
+private:
+    std::unique_ptr<CompiledExpressionCache> cache;
+    size_t cache_size;
+
+public:
+    static CompiledExpressionCacheFactory & getInstance();
+
+    void init(size_t cache_size);
+    CompiledExpressionCache * tryGetCache();
+};
+
 }
 
 #endif

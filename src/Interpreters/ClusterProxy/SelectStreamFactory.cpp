@@ -93,7 +93,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
             ActionsDAG::MatchColumnsMode::Name,
             true);
 
-    auto converting = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_actions_dag);
+    auto converting = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_actions_dag, context);
     converting->setStepDescription("Convert block structure for query from local replica");
     query_plan->addStep(std::move(converting));
 

@@ -34,7 +34,7 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(DataStreams input_streams_);
+    explicit CreatingSetsStep(DataStreams input_streams_, const Context & context_);
 
     String getName() const override { return "CreatingSets"; }
 
@@ -44,6 +44,7 @@ public:
 
 private:
     Processors processors;
+    const Context & context;
 };
 
 void addCreatingSetsStep(

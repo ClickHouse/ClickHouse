@@ -238,8 +238,10 @@ void ExpressionAnalyzer::analyzeAggregation()
 
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto & index = temp_actions->getIndex();
-
-                    auto it = index.find(column_name);
+                    auto it = index.begin();
+                    for (; it != index.end(); ++it)
+                        if ((*it)->result_name == column_name)
+                            break;
                     if (it == index.end())
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
@@ -394,7 +396,14 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
                 getRootActions(left_in_operand, true, temp_actions);
 
-                if (temp_actions->getIndex().contains(left_in_operand->getColumnName()))
+                const auto & index = temp_actions->getIndex();
+                auto it = index.begin();
+                auto column_name = left_in_operand->getColumnName();
+                for (; it != index.end(); ++it)
+                    if ((*it)->result_name == column_name)
+                        break;
+
+                if (it != index.end())
                     makeExplicitSet(func, *temp_actions, true, context,
                         settings.size_limits_for_set, prepared_sets);
             }
@@ -440,7 +449,8 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
-        if (node->arguments) getRootActionsNoMakeSet(node->arguments, true, actions);
+        if (node->arguments)
+            getRootActionsNoMakeSet(node->arguments, true, actions);
 
         aggregate.column_name = node->getColumnName();
 
@@ -452,8 +462,10 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const std::string & name = arguments[i]->getColumnName();
-
-            auto it = index.find(name);
+            auto it = index.begin();
+            for (; it != index.end(); ++it)
+                if ((*it)->result_name == name)
+                    break;
             if (it == index.end())
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
@@ -602,7 +614,11 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         {
             const std::string & name = arguments[i]->getColumnName();
 
-            auto it = index.find(name);
+            auto it = index.begin();
+            for (; it != index.end(); ++it)
+                if ((*it)->result_name == name)
+                    break;
+
             if (it == index.end())
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
@@ -684,7 +700,18 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAGPtr 
     {
         /// Assign new names to columns, if needed.
         if (result_source.first != result_source.second)
-            actions->addAlias(result_source.second, result_source.first);
+        {
+            const auto & index = actions->getIndex();
+            auto it = index.begin();
+            for (; it != index.end(); ++it)
+                if ((*it)->result_name == result_source.second)
+                    break;
+
+            if (it == index.end())
+                throw Exception("Unknown identifier: '" + result_source.second + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+
+            actions->addAlias(**it, result_source.first);
+        }
 
         /// Make ARRAY JOIN (replace arrays with their insides) for the columns in these new names.
         result_columns.insert(result_source.first);
@@ -865,7 +892,11 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     step.can_remove_required_output.push_back(true);
 
     const auto & index = step.actions()->getIndex();
-    auto it = index.find(prewhere_column_name);
+    auto it = index.begin();
+    for (; it != index.end(); ++it)
+        if ((*it)->result_name == prewhere_column_name)
+            break;
+
     if (it == index.end())
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", prewhere_column_name);
 
@@ -879,7 +910,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
         tmp_actions_dag->removeUnusedActions({prewhere_column_name});
-        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag);
+        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag, context);
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
 
@@ -970,7 +1001,11 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     step.can_remove_required_output = {true};
 
     const auto & index = step.actions()->getIndex();
-    auto it = index.find(where_column_name);
+    auto it = index.begin();
+    for (; it != index.end(); ++it)
+        if ((*it)->result_name == where_column_name)
+            break;
+
     if (it == index.end())
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", where_column_name);
 
@@ -1005,7 +1040,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag));
+            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, context));
         }
     }
 
@@ -1163,7 +1198,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag));
+            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, context));
         }
     }
 
@@ -1315,7 +1350,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
-    return std::make_shared<ExpressionActions>(getActionsDAG(add_aliases, project_result));
+    return std::make_shared<ExpressionActions>(getActionsDAG(add_aliases, project_result), context);
 }
 
 
@@ -1324,7 +1359,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
     auto actions = std::make_shared<ActionsDAG>(NamesAndTypesList());
 
     getRootActions(query, true, actions, true);
-    return std::make_shared<ExpressionActions>(actions);
+    return std::make_shared<ExpressionActions>(actions, context);
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
@@ -1415,7 +1450,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    ExpressionActions(prewhere_info->prewhere_actions).execute(before_prewhere_sample);
+                    ExpressionActions(prewhere_info->prewhere_actions, context).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1448,7 +1483,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    ExpressionActions(before_where).execute(before_where_sample);
+                    ExpressionActions(before_where, context).execute(before_where_sample);
                     auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)

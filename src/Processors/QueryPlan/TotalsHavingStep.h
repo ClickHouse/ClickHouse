@@ -17,6 +17,7 @@ public:
             const DataStream & input_stream_,
             bool overflow_row_,
             const ActionsDAGPtr & actions_dag_,
+            const Context & context_,
             const std::string & filter_column_,
             TotalsMode totals_mode_,
             double auto_include_threshold_,
@@ -37,6 +38,7 @@ private:
     TotalsMode totals_mode;
     double auto_include_threshold;
     bool final;
+    const Context & context;
 };
 
 }
