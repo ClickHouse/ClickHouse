@@ -47,6 +47,7 @@ public:
         size_t level;
         MapOfASTs finished_asts;    /// already processed vertices (and by what they replaced)
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
+        SetOfASTs used_alias_asts;  /// set of expressions from WITH that are actually used in query, other will be removed from WITH clause
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
         const bool ignore_alias; /// normalize query without any aliases
 

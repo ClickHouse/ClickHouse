@@ -350,6 +350,25 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
     }
 }
 
+/// Aliases in WITH clause might not be referred by anyone. Remove them to avoid redundant analysis.
+void removeUnusedAliasesFromWithClause(ASTSelectQuery * select_query, const std::set<const IAST*> & used_alias_asts)
+{
+    if (select_query->with())
+    {
+        ASTs & elements = select_query->with()->children;
+        std::erase_if(elements, [&used_alias_asts](const ASTPtr & elem)
+        {
+            if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(elem.get()))
+                return used_alias_asts.find(ast_with_alias) == used_alias_asts.end();
+            else
+                return true; // ASTWithElement
+        });
+
+        if (elements.empty())
+            select_query->setExpression(ASTSelectQuery::Expression::WITH, {});
+    }
+}
+
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
@@ -913,7 +932,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true);
+    normalize(
+        query,
+        result.aliases,
+        all_source_columns_set,
+        select_options.ignore_alias,
+        select_options.remove_unused_with_aliases && !select_options.is_subquery,
+        /* allow_self_aliases = */ true,
+        settings);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -981,7 +1007,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
 
-    normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
+    normalize(query, result.aliases, result.source_columns_set, false, false, allow_self_aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
@@ -1007,7 +1033,13 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 }
 
 void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
+    ASTPtr & query,
+    Aliases & aliases,
+    const NameSet & source_columns_set,
+    bool ignore_alias,
+    bool remove_unused_with_aliases,
+    bool allow_self_aliases,
+    const Settings & settings)
 {
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
@@ -1069,6 +1101,11 @@ void TreeRewriter::normalize(
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases);
     QueryNormalizer(normalizer_data).visit(query);
-}
 
+    if (remove_unused_with_aliases)
+    {
+        if (auto * select_query = query->as<ASTSelectQuery>())
+            removeUnusedAliasesFromWithClause(select_query, normalizer_data.used_alias_asts);
+    }
+}
 }

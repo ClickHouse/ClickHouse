@@ -44,6 +44,7 @@ struct SelectQueryOptions
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
+    bool remove_unused_with_aliases = false;
 
     SelectQueryOptions(
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -80,6 +81,12 @@ struct SelectQueryOptions
     SelectQueryOptions & removeDuplicates(bool value = true)
     {
         remove_duplicates = value;
+        return *this;
+    }
+
+    SelectQueryOptions & removeUnusedWithAliases(bool value = true)
+    {
+        remove_unused_with_aliases = value;
         return *this;
     }
 

@@ -374,7 +374,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     SubqueriesForSets subquery_for_sets;
     PreparedSets prepared_sets;
 
-    auto analyze = [&] (bool try_move_to_prewhere)
+    auto analyze = [&] (bool first_time)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
@@ -384,7 +384,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
-            options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+            /// Do not try to remove unused WITH ast elements if not first time analysis,
+            /// because used aliases are expanded and becomes "unused" too.
+            options.removeUnusedWithAliases(first_time),
+            joined_tables.tablesWithColumns(),
+            required_result_column_names,
+            table_join);
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
 
@@ -400,7 +405,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && storage->supportsPrewhere() && query.where() && !query.prewhere())
+        /// Do not try move conditions to PREWHERE if not first time analysis.
+        /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
+        if (first_time && storage && storage->supportsPrewhere() && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -533,9 +540,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
         prepared_sets = std::move(query_analyzer->getPreparedSets());
 
-        /// Do not try move conditions to PREWHERE for the second time.
-        /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
-        analyze(/* try_move_to_prewhere = */ false);
+        analyze(/* first_time = */ false);
     }
 
     /// If there is no WHERE, filter blocks as usual
