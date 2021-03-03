@@ -1,21 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-
-#include <common/logger_useful.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
-
-#include <memory>
-#include <string>
+#include <Functions/mercatorConverters.h>
 
 namespace DB
 {
@@ -26,11 +11,30 @@ namespace ErrorCodes
 }
 
 
-template <typename Point>
+struct UnionCartesian
+{
+    static inline const char * name = "polygonsUnionCartesian";
+    using Point = CartesianPoint;
+};
+
+struct UnionSpherical
+{
+    static inline const char * name = "polygonsUnionSpherical";
+    using Point = SphericalPoint;
+};
+
+struct UnionMercator
+{
+    static inline const char * name = "polygonsUnionMercator";
+    using Point = CartesianPoint;
+};
+
+
+template <typename Holder>
 class FunctionPolygonsUnion : public IFunction
 {
 public:
-    static inline const char * name;
+    static inline const char * name = Holder::name ;
 
     explicit FunctionPolygonsUnion() = default;
 
@@ -61,6 +65,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        using Point = typename Holder::Point;
         MultiPolygonSerializer<Point> serializer;
 
         callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type)
@@ -86,9 +91,18 @@ public:
                     boost::geometry::correct(first[i]);
                     boost::geometry::correct(second[i]);
 
+                    if constexpr (std::is_same_v<Holder, UnionMercator>)
+                    {
+                        mercatorForward(first[i]);
+                        mercatorForward(second[i]);
+                    }
+
                     MultiPolygon<Point> polygons_union{};
                     /// Main work here.
                     boost::geometry::union_(first[i], second[i], polygons_union);
+
+                    if constexpr (std::is_same_v<Holder, UnionMercator>)
+                        mercatorBackward(polygons_union);
 
                     serializer.add(polygons_union);
                 }
@@ -104,17 +118,12 @@ public:
     }
 };
 
-template <>
-const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
-
-template <>
-const char * FunctionPolygonsUnion<SphericalPoint>::name = "polygonsUnionSpherical";
-
 
 void registerFunctionPolygonsUnion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsUnion<SphericalPoint>>();
+    factory.registerFunction<FunctionPolygonsUnion<UnionCartesian>>();
+    factory.registerFunction<FunctionPolygonsUnion<UnionSpherical>>();
+    factory.registerFunction<FunctionPolygonsUnion<UnionMercator>>();
 }
 
 }

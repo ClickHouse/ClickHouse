@@ -335,6 +335,7 @@ SRCS(
     map.cpp
     match.cpp
     materialize.cpp
+    mercatorConverters.cpp
     minus.cpp
     modulo.cpp
     moduloOrZero.cpp

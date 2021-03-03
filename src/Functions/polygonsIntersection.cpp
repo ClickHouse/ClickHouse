@@ -1,22 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-
-#include <common/logger_useful.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
-
-#include <memory>
-#include <utility>
-#include <chrono>
+#include <Functions/mercatorConverters.h>
 
 namespace DB
 {
@@ -26,11 +10,29 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <typename Point>
+struct IntersectionCartesian
+{
+    static inline const char * name = "polygonsIntersectionCartesian";
+    using Point = CartesianPoint;
+};
+
+struct IntersectionSpherical
+{
+    static inline const char * name = "polygonsIntersectionSpherical";
+    using Point = SphericalPoint;
+};
+
+struct IntersectionMercator
+{
+    static inline const char * name = "polygonsIntersectionMercator";
+    using Point = CartesianPoint;
+};
+
+template <typename Holder>
 class FunctionPolygonsIntersection : public IFunction
 {
 public:
-    static inline const char * name;
+    static inline const char * name = Holder::name;
 
     explicit FunctionPolygonsIntersection() = default;
 
@@ -62,6 +64,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        using Point = typename Holder::Point;
+
         MultiPolygonSerializer<Point> serializer;
 
         callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type)
@@ -87,9 +91,18 @@ public:
                     boost::geometry::correct(first[i]);
                     boost::geometry::correct(second[i]);
 
+                    if constexpr (std::is_same_v<Holder, IntersectionMercator>)
+                    {
+                        mercatorForward(first[i]);
+                        mercatorForward(second[i]);
+                    }
+
                     MultiPolygon<Point> intersection{};
                     /// Main work here.
                     boost::geometry::intersection(first[i], second[i], intersection);
+
+                    if constexpr (std::is_same_v<Holder, IntersectionMercator>)
+                        mercatorBackward(intersection);
 
                     serializer.add(intersection);
                 }
@@ -105,18 +118,10 @@ public:
     }
 };
 
-
-template <>
-const char * FunctionPolygonsIntersection<CartesianPoint>::name = "polygonsIntersectionCartesian";
-
-template <>
-const char * FunctionPolygonsIntersection<SphericalPoint>::name = "polygonsIntersectionSpherical";
-
-
 void registerFunctionPolygonsIntersection(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonsIntersection<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsIntersection<SphericalPoint>>();
+    factory.registerFunction<FunctionPolygonsIntersection<IntersectionCartesian>>();
+    factory.registerFunction<FunctionPolygonsIntersection<IntersectionSpherical>>();
+    factory.registerFunction<FunctionPolygonsIntersection<IntersectionMercator>>();
 }
-
 }

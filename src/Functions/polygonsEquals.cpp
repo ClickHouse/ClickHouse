@@ -1,24 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-
-#include <common/logger_useful.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
-
-#include <memory>
-#include <utility>
-
 namespace DB
 {
 namespace ErrorCodes
