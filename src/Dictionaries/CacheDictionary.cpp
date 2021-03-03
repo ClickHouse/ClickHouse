@@ -136,10 +136,18 @@ void CacheDictionary<dictionary_key_type>::toParent(const PaddedPODArray<UInt64>
     {
         /// Run update on requested keys before fetch from storage
         const auto & attribute_name = hierarchical_attribute->name;
+
         auto result_type = std::make_shared<DataTypeUInt64>();
-        auto column = getColumnsImpl({attribute_name}, {result_type->createColumn()}, ids, {nullptr}).front();
-        const auto & values = assert_cast<const ColumnVector<UInt64> &>(*column);
-        out.assign(values.getData());
+        auto input_column = result_type->createColumn();
+        auto & input_column_typed = assert_cast<ColumnVector<UInt64> &>(*input_column);
+        auto & data = input_column_typed.getData();
+        data.insert(ids.begin(), ids.end());
+
+        auto column = getColumn({attribute_name}, result_type, {std::move(input_column)}, {result_type}, {nullptr});
+        const auto & result_column_typed = assert_cast<const ColumnVector<UInt64> &>(*column);
+        const auto & result_data = result_column_typed.getData();
+
+        out.assign(result_data);
     }
     else
         throw Exception("Hierarchy is not supported for complex key CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD);
