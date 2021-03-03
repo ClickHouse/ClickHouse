@@ -189,6 +189,7 @@ private:
 
         if (lut[guess - 1].date <= t)
             return LUTIndex(guess - 1);
+
         return LUTIndex(guess - 2);
     }
 
@@ -211,12 +212,6 @@ private:
     {
         return i;
     }
-
-//    template <typename T>
-//    inline LUTIndex toLUTIndex(T t) const
-//    {
-//        return LUTIndex{static_cast<LUTIndex::UnderlyingType>(t) & date_lut_mask};
-//    }
 
     template <typename V>
     inline const Values & find(V v) const
@@ -274,11 +269,6 @@ public:
         const auto i = toLUTIndex(v);
         return toDayNum(i - (lut[i].day_of_month - 1));
     }
-
-//    inline DayNum toFirstDayNumOfMonth(time_t t) const
-//    {
-//        return toFirstDayNumOfMonth(toDayNum(t));
-//    }
 
     /// Round down to start of quarter.
     template <typename V>
