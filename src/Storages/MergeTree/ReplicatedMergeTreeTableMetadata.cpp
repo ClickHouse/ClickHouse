@@ -26,7 +26,10 @@ static String formattedAST(const ASTPtr & ast)
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
+    {
+        auto minmax_idx_column_names = data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
+    }
 
     const auto data_settings = data.getSettings();
     sampling_expression = formattedAST(metadata_snapshot->getSamplingKeyAST());
