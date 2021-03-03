@@ -36,6 +36,12 @@ namespace
         return std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
     }
 
+    std::string getBaseName(const String & path)
+    {
+        size_t basename_start = path.rfind('/');
+        return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
+    }
+
     String parentPath(const String & path)
     {
         auto rslash_pos = path.rfind('/');
@@ -95,6 +101,7 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
     {
         const auto & path = it->key;
         const auto & node = it->value;
+
         Coordination::write(path, out);
         writeNode(node, out);
     }
@@ -138,12 +145,13 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
 
         current_size++;
     }
+
     for (const auto & itr : storage.container)
     {
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [&path = itr.key] (NuKeeperStorage::Node & value) { value.children.insert(path); });
+            storage.container.updateValue(parent_path, [&path = itr.key] (NuKeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
         }
     }
 
