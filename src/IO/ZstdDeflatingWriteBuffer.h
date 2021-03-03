@@ -20,25 +20,20 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    void finalize() override { finish(); }
+    /// Flush all pending data and write zstd footer to the underlying buffer.
+    /// After the first call to this function, subsequent calls will have no effect and
+    /// an attempt to write to this buffer will result in exception.
+    void finalize() override;
 
     ~ZstdDeflatingWriteBuffer() override;
 
 private:
     void nextImpl() override;
-    void finalize() override { out->finalize(); }
-
-    /// Flush all pending data and write zstd footer to the underlying buffer.
-    /// After the first call to this function, subsequent calls will have no effect and
-    /// an attempt to write to this buffer will result in exception.
-    void finish();
-    void finishImpl();
 
     std::unique_ptr<WriteBuffer> out;
     ZSTD_CCtx * cctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
-    bool finished = false;
 };
 
 }

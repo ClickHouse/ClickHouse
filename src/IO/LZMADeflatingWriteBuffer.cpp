@@ -47,15 +47,6 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
             LZMA_VERSION_STRING);
 }
 
-LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
-{
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-
-    finish();
-    lzma_end(&lstr);
-}
-
 void LZMADeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
@@ -97,53 +88,45 @@ void LZMADeflatingWriteBuffer::nextImpl()
 }
 
 
-void LZMADeflatingWriteBuffer::finish()
+void LZMADeflatingWriteBuffer::finalize()
 {
-    if (finished)
-        return;
-
     try
     {
-        finishImpl();
-        out->next();
-        finished = true;
+        next();
+
+        do
+        {
+            out->nextIfAtEnd();
+            lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
+            lstr.avail_out = out->buffer().end() - out->position();
+
+            lzma_ret ret = lzma_code(&lstr, LZMA_FINISH);
+            out->position() = out->buffer().end() - lstr.avail_out;
+
+            if (ret == LZMA_STREAM_END)
+                break;
+
+            if (ret != LZMA_OK)
+                throw Exception(
+                    ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
+                    "lzma stream encoding failed: error code: {}; lzma version: {}",
+                    ret,
+                    LZMA_VERSION_STRING);
+
+        } while (lstr.avail_out == 0);
+
+        out->finalize();
     }
     catch (...)
     {
         /// Do not try to flush next time after exception.
         out->position() = out->buffer().begin();
-        finished = true;
         throw;
     }
+
+    lzma_end(&lstr);
 }
 
-void LZMADeflatingWriteBuffer::finishImpl()
-{
-    next();
-
-    do
-    {
-        out->nextIfAtEnd();
-        lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
-        lstr.avail_out = out->buffer().end() - out->position();
-
-        lzma_ret ret = lzma_code(&lstr, LZMA_FINISH);
-        out->position() = out->buffer().end() - lstr.avail_out;
-
-        if (ret == LZMA_STREAM_END)
-        {
-            return;
-        }
-
-        if (ret != LZMA_OK)
-            throw Exception(
-                ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-                "lzma stream encoding failed: error code: {}; lzma version: {}",
-                ret,
-                LZMA_VERSION_STRING);
-
-    } while (lstr.avail_out == 0);
-}
 }
 
 #endif

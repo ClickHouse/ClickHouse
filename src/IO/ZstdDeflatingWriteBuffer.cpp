@@ -33,8 +33,6 @@ ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
     /// FIXME move final flush into the caller
     MemoryTracker::LockExceptionInThread lock;
 
-    finish();
-
     try
     {
         int err = ZSTD_freeCCtx(cctx);
@@ -86,44 +84,35 @@ void ZstdDeflatingWriteBuffer::nextImpl()
     }
 }
 
-void ZstdDeflatingWriteBuffer::finish()
+void ZstdDeflatingWriteBuffer::finalize()
 {
-    if (finished)
-        return;
-
     try
     {
-        finishImpl();
-        out->next();
-        finished = true;
+        next();
+
+        out->nextIfAtEnd();
+
+        input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
+        input.size = offset();
+        input.pos = 0;
+
+        output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
+        output.size = out->buffer().size();
+        output.pos = out->offset();
+
+        size_t remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
+        if (ZSTD_isError(remaining))
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder end failed: zstd version: {}", ZSTD_VERSION_STRING);
+        out->position() = out->buffer().begin() + output.pos;
+
+        out->finalize();
     }
     catch (...)
     {
         /// Do not try to flush next time after exception.
         out->position() = out->buffer().begin();
-        finished = true;
         throw;
     }
-}
-
-void ZstdDeflatingWriteBuffer::finishImpl()
-{
-    next();
-
-    out->nextIfAtEnd();
-
-    input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    input.size = offset();
-    input.pos = 0;
-
-    output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
-    output.size = out->buffer().size();
-    output.pos = out->offset();
-
-    size_t remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
-    if (ZSTD_isError(remaining))
-        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder end failed: zstd version: {}", ZSTD_VERSION_STRING);
-    out->position() = out->buffer().begin() + output.pos;
 }
 
 }

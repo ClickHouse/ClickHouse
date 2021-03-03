@@ -49,9 +49,6 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
 
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    finish();
 }
 
 void BrotliWriteBuffer::nextImpl()
@@ -98,56 +95,43 @@ void BrotliWriteBuffer::nextImpl()
     }
 }
 
-void BrotliWriteBuffer::finish()
+void BrotliWriteBuffer::finalize()
 {
-    if (finished)
-        return;
-
     try
     {
-        finishImpl();
-        out->next();
-        finished = true;
+        next();
+
+        while (true)
+        {
+            out->nextIfAtEnd();
+            out_data = reinterpret_cast<unsigned char *>(out->position());
+            out_capacity = out->buffer().end() - out->position();
+
+            int result = BrotliEncoderCompressStream(
+                    brotli->state,
+                    BROTLI_OPERATION_FINISH,
+                    &in_available,
+                    &in_data,
+                    &out_capacity,
+                    &out_data,
+                    nullptr);
+
+            out->position() = out->buffer().end() - out_capacity;
+
+            if (BrotliEncoderIsFinished(brotli->state))
+                break;
+
+            if (result == 0)
+                throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
+        }
+
+        out->finalize();
     }
     catch (...)
     {
         /// Do not try to flush next time after exception.
         out->position() = out->buffer().begin();
-        finished = true;
         throw;
-    }
-}
-
-void BrotliWriteBuffer::finishImpl()
-{
-    next();
-
-    while (true)
-    {
-        out->nextIfAtEnd();
-        out_data = reinterpret_cast<unsigned char *>(out->position());
-        out_capacity = out->buffer().end() - out->position();
-
-        int result = BrotliEncoderCompressStream(
-                brotli->state,
-                BROTLI_OPERATION_FINISH,
-                &in_available,
-                &in_data,
-                &out_capacity,
-                &out_data,
-                nullptr);
-
-        out->position() = out->buffer().end() - out_capacity;
-
-        if (BrotliEncoderIsFinished(brotli->state))
-        {
-            return;
-        }
-
-        if (result == 0)
-        {
-            throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
-        }
     }
 }
 

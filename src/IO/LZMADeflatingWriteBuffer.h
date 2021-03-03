@@ -24,20 +24,13 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    void finalize() override { finish(); }
-
-    ~LZMADeflatingWriteBuffer() override;
+    void finalize() override;
 
 private:
     void nextImpl() override;
-    void finalize() override { out->finalize(); }
-
-    void finish();
-    void finishImpl();
 
     std::unique_ptr<WriteBuffer> out;
     lzma_stream lstr;
-    bool finished = false;
 };
 
 #else
