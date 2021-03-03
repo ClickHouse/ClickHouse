@@ -373,6 +373,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    partitionID.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp

@@ -305,7 +305,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 }
 
 
-void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
+void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
@@ -341,7 +341,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     prepared_sets[set_key] = std::move(set);
 }
 
-SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
+SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
     const auto * table = subquery_or_table_name->as<ASTIdentifier>();
     if (!table)
@@ -387,7 +387,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
             if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
             {
                 if (settings.use_index_for_in_with_subqueries)
-                    tryMakeSetForIndexFromSubquery(arg);
+                    tryMakeSetForIndexFromSubquery(arg, query_options);
             }
             else
             {

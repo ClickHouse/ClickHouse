@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
@@ -672,6 +673,38 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     }
 
     /// TODO Checks for Graphite mode.
+}
+
+
+std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
+    const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    Block part_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+    ASTPtr expression_ast;
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, part_block, expression_ast);
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
+    if (partition_pruner.isUseless() && !valid)
+        return {};
+
+    std::unordered_set<String> part_values;
+    if (valid)
+    {
+        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, part_block);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, part_block, context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(part_block, "_part");
+        if (part_values.empty())
+            return 0;
+    }
+    // At this point, empty `part_values` means all parts.
+
+    size_t res = 0;
+    for (const auto & part : parts)
+    {
+        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(part))
+            res += part->rows_count;
+    }
+    return res;
 }
 
 
