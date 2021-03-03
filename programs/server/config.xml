@@ -892,6 +892,19 @@
 
         <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
         <!-- <pool_size>1</pool_size> -->
+
+        <!--
+             Cleanup settings (active tasks will not be removed)
+        -->
+
+        <!-- Controls task TTL (default 1 week) -->
+        <!-- <task_max_lifetime>604800</task_max_lifetime> -->
+
+        <!-- Controls how often cleanup should be performed (in seconds) -->
+        <!-- <cleanup_delay_period>60</cleanup_delay_period> -->
+
+        <!-- Controls how many tasks could be in the queue -->
+        <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
