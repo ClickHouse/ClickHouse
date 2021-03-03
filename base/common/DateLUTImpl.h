@@ -150,7 +150,7 @@ private:
     /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
     /// "epoch" is the Unix Epoch (starts at unix timestamp zero)
     static constexpr UInt32 daynum_offset_epoch = 16436;
-    static_assert(daynum_offset_epoch == (DATE_LUT_MIN_YEAR - 1970) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
+    static_assert(daynum_offset_epoch == (1970 - DATE_LUT_MIN_YEAR) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
 
     /// Lookup table is indexed by LUTIndex.
     /// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
