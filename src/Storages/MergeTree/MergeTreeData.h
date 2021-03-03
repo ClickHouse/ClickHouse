@@ -898,7 +898,7 @@ protected:
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const String &)>;
     PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
-    PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+    PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context & context);
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
