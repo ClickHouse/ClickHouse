@@ -292,7 +292,6 @@ TEST_P(DateLUTWithTimeZone, VaidateTimeComponentsAroundEpoch)
                 << "\n\ttimestamp: " << i
                 << "\n\t offset at start of epoch                  : " << lut.getOffsetAtStartOfEpoch()
                 << "\n\t offset_is_whole_number_of_hours_everytime : " << lut.getOffsetIsWholNumberOfHoursEveryWhere()
-                << "\n\t time_offset_epoch                         : " << lut.getTimeOffsetEpoch()
                 << "\n\t offset_at_start_of_lut                    : " << lut.getTimeOffsetAtStartOfLUT());
 
         EXPECT_GE(24, lut.toHour(i));

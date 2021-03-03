@@ -169,7 +169,6 @@ private:
     /// UTC offset at the beginning of the first supported year.
     time_t offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_everytime;
-    time_t time_offset_epoch;
 
     /// Time zone name.
     std::string time_zone;
@@ -230,7 +229,6 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getOffsetIsWholNumberOfHoursEveryWhere() const { return offset_is_whole_number_of_hours_everytime; }
-    auto getTimeOffsetEpoch() const { return time_offset_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
     /// All functions below are thread-safe; arguments are not checked.

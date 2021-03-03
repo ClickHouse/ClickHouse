@@ -54,7 +54,6 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     const cctz::civil_day epoch{1970, 1, 1};
     const cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
     time_t start_of_day;
-    time_offset_epoch = cctz::convert(cctz::civil_second(lut_start), cctz_time_zone).time_since_epoch().count();
 
     // Note: it's validated against all timezones in the system.
     assert((epoch - lut_start) == daynum_offset_epoch);
