@@ -56,7 +56,7 @@ example01-{01..02}-1
 
 Si tiene varios pares de llaves, genera el producto directo de los conjuntos correspondientes.
 
-Las direcciones y partes de las direcciones entre llaves se pueden separar mediante el símbolo de tubería (\|). En este caso, los conjuntos de direcciones correspondientes se interpretan como réplicas y la consulta se enviará a la primera réplica en buen estado. Sin embargo, las réplicas se iteran en el orden establecido actualmente en el [load_balancing](../../operations/settings/settings.md) configuración.
+Las direcciones y partes de las direcciones entre llaves se pueden separar mediante el símbolo de tubería (\|). En este caso, los conjuntos de direcciones correspondientes se interpretan como réplicas y la consulta se enviará a la primera réplica en buen estado. Sin embargo, las réplicas se iteran en el orden establecido actualmente en el [load\_balancing](../../operations/settings/settings.md) configuración.
 
 Ejemplo:
 
@@ -80,6 +80,6 @@ El `remote` puede ser útil en los siguientes casos:
 Si el usuario no está especificado, `default` se utiliza.
 Si no se especifica la contraseña, se utiliza una contraseña vacía.
 
-`remoteSecure` - igual que `remote` but with secured connection. Default port — [Tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) de config o 9440.
+`remoteSecure` - igual que `remote` but with secured connection. Default port — [Tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) de config o 9440.
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

@@ -7,11 +7,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
+#include <Common/tests/gtest_global_register_functions.h>
 
 
 using namespace DB;
@@ -77,24 +76,6 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
           state.context, state.columns);
     check("SELECT column FROM test.table WHERE column NOT IN ('hello', 'world')",
           R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('hello', 'world'))",
-          state.context, state.columns);
-}
-
-TEST(TransformQueryForExternalDatabase, InWithTable)
-{
-    const State & state = State::instance();
-
-    check("SELECT column FROM test.table WHERE 1 IN external_table",
-          R"(SELECT "column" FROM "test"."table")",
-          state.context, state.columns);
-    check("SELECT column FROM test.table WHERE 1 IN (x)",
-          R"(SELECT "column" FROM "test"."table")",
-          state.context, state.columns);
-    check("SELECT column, field, value FROM test.table WHERE column IN (field, value)",
-          R"(SELECT "column", "field", "value" FROM "test"."table" WHERE "column" IN ("field", "value"))",
-          state.context, state.columns);
-    check("SELECT column FROM test.table WHERE column NOT IN hello AND column = 123",
-          R"(SELECT "column" FROM "test"."table" WHERE ("column" = 123))",
           state.context, state.columns);
 }
 

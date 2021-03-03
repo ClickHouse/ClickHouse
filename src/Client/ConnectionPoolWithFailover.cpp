@@ -4,7 +4,6 @@
 #include <Poco/Net/DNS.h>
 
 #include <Common/BitHelpers.h>
-#include <Common/quoteString.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
@@ -57,9 +56,6 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
-    size_t offset = 0;
-    if (settings)
-        offset = settings->load_balancing_first_offset % nested_pools.size();
     GetPriorityFunc get_priority;
     switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
     {
@@ -72,7 +68,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     case LoadBalancing::RANDOM:
         break;
     case LoadBalancing::FIRST_OR_RANDOM:
-        get_priority = [offset](size_t i) -> size_t { return i != offset; };
+        get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
     case LoadBalancing::ROUND_ROBIN:
         if (last_used >= nested_pools.size())
@@ -194,9 +190,6 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     else
         throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
 
-    size_t offset = 0;
-    if (settings)
-        offset = settings->load_balancing_first_offset % nested_pools.size();
     GetPriorityFunc get_priority;
     switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
     {
@@ -209,7 +202,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     case LoadBalancing::RANDOM:
         break;
     case LoadBalancing::FIRST_OR_RANDOM:
-        get_priority = [offset](size_t i) -> size_t { return i != offset; };
+        get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
     case LoadBalancing::ROUND_ROBIN:
         if (last_used >= nested_pools.size())

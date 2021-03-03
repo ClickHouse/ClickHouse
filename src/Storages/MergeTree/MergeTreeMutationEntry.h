@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>

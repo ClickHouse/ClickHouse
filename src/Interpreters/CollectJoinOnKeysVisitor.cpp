@@ -16,26 +16,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-void addAndTerm(ASTPtr & ast, const ASTPtr & term)
-{
-    if (!ast)
-        ast = term;
-    else
-        ast = makeASTFunction("and", ast, term);
-}
-
-/// If this is an inner join and the expression related to less than 2 tables, then move it to WHERE
-bool canMoveToWhere(std::pair<size_t, size_t> table_numbers, ASTTableJoin::Kind kind)
-{
-    return kind == ASTTableJoin::Kind::Inner &&
-        (table_numbers.first == table_numbers.second || table_numbers.first == 0 || table_numbers.second == 0);
-}
-
-}
-
 void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
                                                  const std::pair<size_t, size_t> & table_no)
 {
@@ -49,8 +29,7 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
     else
         throw Exception("Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.",
                         ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-    if (table_no.first != table_no.second && table_no.first > 0 && table_no.second > 0)
-        has_some = true;
+    has_some = true;
 }
 
 void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
@@ -99,45 +78,22 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     {
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(left, right, data);
-
-        if (canMoveToWhere(table_numbers, data.kind))
-        {
-            addAndTerm(data.new_where_conditions, ast);
-        }
-        else
-        {
-            if (data.kind == ASTTableJoin::Kind::Inner)
-            {
-                addAndTerm(data.new_on_expression, ast);
-            }
-            data.addJoinKeys(left, right, table_numbers);
-        }
+        auto table_numbers = getTableNumbers(ast, left, right, data);
+        data.addJoinKeys(left, right, table_numbers);
     }
-    else if (inequality != ASOF::Inequality::None && !data.is_asof)
+    else if (inequality != ASOF::Inequality::None)
     {
-        ASTPtr left = func.arguments->children.at(0);
-        ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(left, right, data);
-        if (canMoveToWhere(table_numbers, data.kind))
-        {
-            addAndTerm(data.new_where_conditions, ast);
-        }
-        else
-        {
+        if (!data.is_asof)
             throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
-                ErrorCodes::NOT_IMPLEMENTED);
-        }
-    }
-    else if (inequality != ASOF::Inequality::None && data.is_asof)
-    {
+                            ErrorCodes::NOT_IMPLEMENTED);
+
         if (data.asof_left_key || data.asof_right_key)
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(left, right, data);
+        auto table_numbers = getTableNumbers(ast, left, right, data);
 
         data.addAsofJoinKeys(left, right, table_numbers, inequality);
     }
@@ -162,8 +118,7 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
         getIdentifiers(child, out);
 }
 
-
-std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast,
+std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & expr, const ASTPtr & left_ast, const ASTPtr & right_ast,
                                                                     Data & data)
 {
     std::vector<const ASTIdentifier *> left_identifiers;
@@ -172,24 +127,28 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
     getIdentifiers(left_ast, left_identifiers);
     getIdentifiers(right_ast, right_identifiers);
 
-    size_t left_idents_table = 0;
-    size_t right_idents_table = 0;
+    size_t left_idents_table = getTableForIdentifiers(left_identifiers, data);
+    size_t right_idents_table = getTableForIdentifiers(right_identifiers, data);
 
-    if (!left_identifiers.empty())
-        left_idents_table = getTableForIdentifiers(left_identifiers, data);
-    if (!right_identifiers.empty())
-        right_idents_table = getTableForIdentifiers(right_identifiers, data);
+    if (left_idents_table && left_idents_table == right_idents_table)
+    {
+        auto left_name = queryToString(*left_identifiers[0]);
+        auto right_name = queryToString(*right_identifiers[0]);
+
+        throw Exception("In expression " + queryToString(expr) + " columns " + left_name + " and " + right_name
+            + " are from the same table but from different arguments of equal function", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+    }
 
     return std::make_pair(left_idents_table, right_idents_table);
 }
 
 const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)
 {
-    if (identifier->supposedToBeCompound())
+    if (identifier->compound())
         return identifier;
 
     UInt32 max_attempts = 100;
-    for (auto it = aliases.find(identifier->name()); it != aliases.end();)
+    for (auto it = aliases.find(identifier->name); it != aliases.end();)
     {
         const ASTIdentifier * parent = identifier;
         identifier = it->second->as<ASTIdentifier>();
@@ -197,12 +156,12 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
             break; /// not a column alias
         if (identifier == parent)
             break; /// alias to itself with the same name: 'a as a'
-        if (identifier->supposedToBeCompound())
+        if (identifier->compound())
             break; /// not an alias. Break to prevent cycle through short names: 'a as b, t1.b as a'
 
-        it = aliases.find(identifier->name());
+        it = aliases.find(identifier->name);
         if (!max_attempts--)
-            throw Exception("Cannot unroll aliases for '" + identifier->name() + "'", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Cannot unroll aliases for '" + identifier->name + "'", ErrorCodes::LOGICAL_ERROR);
     }
 
     return identifier;
@@ -227,7 +186,7 @@ size_t CollectJoinOnKeysMatcher::getTableForIdentifiers(std::vector<const ASTIde
 
         if (!membership)
         {
-            const String & name = identifier->name();
+            const String & name = identifier->name;
             bool in_left_table = data.left_table.hasColumn(name);
             bool in_right_table = data.right_table.hasColumn(name);
 

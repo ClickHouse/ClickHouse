@@ -31,7 +31,7 @@ L'utilisation traditionnelle de la `Merge` moteur pour travailler avec un grand 
 
 Exemple 2:
 
-Disons que vous avez une ancienne table (WatchLog_old) et que vous avez décidé de changer de partitionnement sans déplacer les données vers une nouvelle table (WatchLog_new) et que vous devez voir les données des deux tables.
+Disons que vous avez une ancienne table (WatchLog\_old) et que vous avez décidé de changer de partitionnement sans déplacer les données vers une nouvelle table (WatchLog\_new) et que vous devez voir les données des deux tables.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)

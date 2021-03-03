@@ -1,8 +1,3 @@
----
-toc_priority: 17
-toc_title: WikiStat
----
-
 # WikiStat {#wikistat}
 
 См: http://dumps.wikimedia.org/other/pagecounts-raw/

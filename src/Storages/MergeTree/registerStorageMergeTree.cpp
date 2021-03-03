@@ -8,7 +8,6 @@
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -393,7 +392,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
-    bool allow_renaming = true;
 
     if (replicated)
     {
@@ -450,21 +448,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             arg_cnt += 2;
         }
         else
-            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool is_replicated_database = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
-        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+        bool allow_uuid_macro = is_on_cluster || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
         if (!args.attach)
         {
-            if (is_replicated_database && !is_extended_storage_def)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
-
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
@@ -492,12 +485,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         info.level = 0;
         info.table_id.uuid = UUIDHelpers::Nil;
         replica_name = args.context.getMacros()->expand(replica_name, info);
-
-        /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
-        /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
-        /// or if one of these macros is recursively expanded from some other macro.
-        if (info.expanded_database || info.expanded_table)
-            allow_renaming = false;
     }
 
     /// This merging param maybe used as part of sorting key
@@ -577,11 +564,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.columns = args.columns;
 
-    std::unique_ptr<MergeTreeSettings> storage_settings;
-    if (replicated)
-        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getReplicatedMergeTreeSettings());
-    else
-        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -594,14 +577,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
-        /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
-        if (!args.storage_def->order_by && args.storage_def->primary_key)
-            args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
-
         if (!args.storage_def->order_by)
             throw Exception(
-                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()",
+                "You must provide an ORDER BY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
         /// Get sorting key from engine arguments.
@@ -617,7 +596,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
         }
-        else /// Otherwise we don't have explicit primary key and copy it from order by
+        else /// Otherwise we copy it from primary key definition
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
@@ -629,10 +608,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
-        {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, args.context, metadata.primary_key);
-        }
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
@@ -726,15 +703,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
-    {
-        for (size_t i = 0; i < data_types.size(); ++i)
-            if (isFloat(data_types[i]))
-                throw Exception(
-                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
-    }
-
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -750,8 +718,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag,
-            allow_renaming);
+            args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.table_id,
@@ -773,7 +740,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_skipping_indices = true,
         .supports_sort_order = true,
         .supports_ttl = true,
-        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("MergeTree", create, features);

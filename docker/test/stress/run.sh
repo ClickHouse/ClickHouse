@@ -8,23 +8,16 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 dpkg -i package_folder/clickhouse-test_*.deb
 
-function configure()
-{
-    # install test configs
-    /usr/share/clickhouse-test/config/install.sh
-
-    # for clickhouse-server (via service)
-    echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
-    # for clickhouse-client
-    export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
-
-    # since we run clickhouse from root
-    sudo chown root: /var/lib/clickhouse
-}
-
 function stop()
 {
-    clickhouse stop
+    timeout 120 service clickhouse-server stop
+
+    # Wait for process to disappear from processlist and also try to kill zombies.
+    while kill -9 $(pidof clickhouse-server)
+    do
+        echo "Killed clickhouse-server"
+        sleep 0.5
+    done
 }
 
 function start()
@@ -40,30 +33,22 @@ function start()
             tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
-        # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
+        timeout 120 service clickhouse-server start
         sleep 0.5
-        counter=$((counter + 1))
+        counter=$(($counter + 1))
     done
-
-    echo "
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
 }
 
-configure
+ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
+ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
+
+echo "TSAN_OPTIONS='halt_on_error=1 history_size=7 ignore_noninstrumented_modules=1 verbosity=1'" >> /etc/environment
+echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment
+echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
 
 start
 
-# shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
@@ -78,7 +63,7 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" && echo "OK" > /test_output/script_exit_code.txt || echo "FAIL" > /test_output/script_exit_code.txt
+./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION"
 
 stop
 start

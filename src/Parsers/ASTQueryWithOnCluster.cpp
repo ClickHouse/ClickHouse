@@ -5,7 +5,6 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB

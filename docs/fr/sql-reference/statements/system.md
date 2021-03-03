@@ -24,12 +24,12 @@ toc_title: SYSTEM
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Recharge tous les dictionnaires qui ont déjà été chargés avec succès.
-Par défaut, les dictionnaires sont chargés paresseusement (voir [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), donc au lieu d'être chargés automatiquement au démarrage, ils sont initialisés lors du premier accès via la fonction dictGet ou sélectionnez dans les tables avec ENGINE = Dictionary . Le `SYSTEM RELOAD DICTIONARIES` query recharge ces dictionnaires (chargés).
+Par défaut, les dictionnaires sont chargés paresseusement (voir [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), donc au lieu d'être chargés automatiquement au démarrage, ils sont initialisés lors du premier accès via la fonction dictGet ou sélectionnez dans les tables avec ENGINE = Dictionary . Le `SYSTEM RELOAD DICTIONARIES` query recharge ces dictionnaires (chargés).
 Retourne toujours `Ok.` quel que soit le résultat de la mise à jour du dictionnaire.
 
-## Recharger le dictionnaire Dictionary_name {#query_language-system-reload-dictionary}
+## Recharger le dictionnaire Dictionary\_name {#query_language-system-reload-dictionary}
 
-Recharge complètement un dictionnaire `dictionary_name`, quel que soit l'état du dictionnaire (LOADED / NOT_LOADED / FAILED).
+Recharge complètement un dictionnaire `dictionary_name`, quel que soit l'état du dictionnaire (LOADED / NOT\_LOADED / FAILED).
 Retourne toujours `Ok.` quel que soit le résultat de la mise à jour du dictionnaire.
 L'état du dictionnaire peut être vérifié en interrogeant le `system.dictionaries` table.
 
@@ -41,7 +41,7 @@ SELECT name, status FROM system.dictionaries;
 
 Réinitialise le cache DNS interne de ClickHouse. Parfois (pour les anciennes versions de ClickHouse), il est nécessaire d'utiliser cette commande lors de la modification de l'infrastructure (modification de l'adresse IP d'un autre serveur ClickHouse ou du serveur utilisé par les dictionnaires).
 
-Pour une gestion du cache plus pratique (automatique), voir paramètres disable_internal_dns_cache, dns_cache_update_period.
+Pour une gestion du cache plus pratique (automatique), voir paramètres disable\_internal\_dns\_cache, dns\_cache\_update\_period.
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
@@ -49,7 +49,7 @@ Réinitialise le cache de marque. Utilisé dans le développement de ClickHouse 
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffers of log messages to system tables (e.g. system.query\_log). Allows you to not wait 7.5 seconds when debugging.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
