@@ -216,7 +216,9 @@ endif()
 
 # Compress the debug section for binaries
 if (COMPILER_GCC OR COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -gz=zlib")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--compress-debug-sections=zlib")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections=zlib")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -gz=zlib")
 endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
