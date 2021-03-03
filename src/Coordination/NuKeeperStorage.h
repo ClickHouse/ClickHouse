@@ -31,7 +31,6 @@ public:
     {
         String data;
         Coordination::ACLs acls{};
-        int64_t ephemeral_owner = 0;
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
