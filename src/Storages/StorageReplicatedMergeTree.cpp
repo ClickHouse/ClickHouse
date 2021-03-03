@@ -1339,7 +1339,8 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
                 getDiskForPart(part_name, "detached/"));
 
-            MergeTreeData::MutableDataPartPtr iter_part_ptr = createPart(part_name, single_disk_volume, part_to_path);
+            MergeTreeData::MutableDataPartPtr iter_part_ptr =
+                createPart(part_name, part_iter, single_disk_volume, part_to_path);
 
             if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
                 continue;
