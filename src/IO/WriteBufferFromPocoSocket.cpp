@@ -1,12 +1,12 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/TimeoutSetter.h>
 
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 #include <Common/MemoryTracker.h>
-#include <Client/TimeoutSetter.h>
 
 
 namespace ProfileEvents

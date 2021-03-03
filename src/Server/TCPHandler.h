@@ -8,10 +8,10 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
-#include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
 
