@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/BorrowedObjectPool.h>
 #include <Interpreters/Context.h>
 
 #include "IDictionarySource.h"
@@ -13,7 +13,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-using ProcessPool = ConcurrentBoundedQueue<std::unique_ptr<ShellCommand>>;
+using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
 
 /** ExecutablePoolDictionarySource allows loading data from pool of processes.
   * When client requests ids or keys source get process from ProcessPool

@@ -74,7 +74,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     , command_termination_timeout{other.command_termination_timeout}
     , sample_block{other.sample_block}
     , context(other.context)
-    , process_pool(std::make_shared<ProcessPool>(pool_size == 0 ? std::numeric_limits<size_t>::max() : pool_size))
+    , process_pool(std::make_shared<ProcessPool>(pool_size))
 {
 }
 
@@ -129,7 +129,7 @@ namespace
                 thread.join();
 
             if (command)
-                process_pool->emplace(std::move(command));
+                process_pool->returnObject(std::move(command));
         }
 
         Block getHeader() const override
@@ -217,15 +217,16 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
-    std::unique_ptr<ShellCommand> process;
+    std::cerr << "ExecutablePoolDictionarySource::getStreamForBlock borrow object start " << std::endl;
+    std::cerr << "Borrowed objects size " << process_pool->borrowedObjectsSize() << " allocated objects size " << process_pool->allocatedObjectsSize() << std::endl;
 
-    process_pool->popOrEmplaceIfNotFull(process, [=, this]()
+    std::unique_ptr<ShellCommand> process = process_pool->tryBorrowObject([this]()
     {
         bool terminate_in_destructor = true;
         ShellCommandDestructorStrategy strategy { terminate_in_destructor, command_termination_timeout };
         auto shell_command = ShellCommand::execute(command, false, strategy);
         return shell_command;
-    });
+    }, 5000);
 
     size_t rows_to_read = block.rows();
     auto read_stream = context.getInputFormat(format, process->out, sample_block, rows_to_read);
