@@ -3797,7 +3797,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
             if (!matcher(partition_id))
                 continue;
 
-            auto path = it->path();
+            const auto & path = it->path();
 
             disk->removeRecursive(path);
 
