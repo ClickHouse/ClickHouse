@@ -287,6 +287,11 @@ void ColumnString::compareColumn(
                                          compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnString::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnString>();
+}
+
 template <bool positive>
 struct ColumnString::Cmp
 {
