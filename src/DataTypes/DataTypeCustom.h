@@ -75,7 +75,7 @@ public:
     virtual ~IDataTypeCustomStreams() = default;
 
     virtual void enumerateStreams(
-        const IDataType::SubstreamCallback & callback,
+        const ISerialization::StreamCallback & callback,
         ISerialization::SubstreamPath & path) const = 0;
 
     virtual void serializeBinaryBulkStatePrefix(

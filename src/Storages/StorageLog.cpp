@@ -172,10 +172,10 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     {
         return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
         {
-            if (cache.count(IDataType::getSubcolumnNameForStream(path)))
+            if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
 
-            String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+            String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
             const auto & file_it = storage.files.find(stream_name);
             if (storage.files.end() == file_it)
                 throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
@@ -362,7 +362,7 @@ ISerialization::OutputStreamGetter LogBlockOutputStream::createStreamGetter(cons
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return nullptr;
 
@@ -384,7 +384,7 @@ void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, cons
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return;
 
@@ -404,7 +404,7 @@ void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, cons
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return;
 
@@ -422,7 +422,7 @@ void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, cons
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (!written_streams.emplace(stream_name).second)
             return;
 
@@ -503,9 +503,9 @@ void StorageLog::addFiles(const NameAndTypePair & column)
         throw Exception("Duplicate column with name " + column.name + " in constructor of StorageLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::SubstreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         if (!files.count(stream_name))
         {
@@ -518,8 +518,7 @@ void StorageLog::addFiles(const NameAndTypePair & column)
         }
     };
 
-    ISerialization::SubstreamPath substream_path;
-    column.type->enumerateStreams(stream_callback, substream_path);
+    column.type->getDefaultSerialization()->enumerateStreams(stream_callback);
 }
 
 
@@ -610,10 +609,10 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     ISerialization::SubstreamPath substream_root_path;
-    column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
-            filename = IDataType::getFileNameForStream(column, substream_path);
+            filename = ISerialization::getFileNameForStream(column, substream_path);
     }, substream_root_path);
 
     Files::const_iterator it = files.find(filename);

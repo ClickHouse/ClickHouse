@@ -39,17 +39,17 @@ void deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets, ReadBuffe
 
 }
 
-SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
-    : SerializationWrapper(nested_)
+SerializationSparse::SerializationSparse(const SerializationPtr & nested_serialization_)
+    : SerializationWrapper(nested_serialization_)
 {
 }
 
 void SerializationSparse::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::SparseOffsets);
-    nested->enumerateStreams(callback, path);
+    nested_serialization->enumerateStreams(callback, path);
     path.back() = Substream::SparseElements;
-    nested->enumerateStreams(callback, path);
+    nested_serialization->enumerateStreams(callback, path);
     path.pop_back();
 }
 
@@ -58,7 +58,7 @@ void SerializationSparse::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    nested->serializeBinaryBulkStatePrefix(settings, state);
+    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -67,7 +67,7 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    nested->serializeBinaryBulkStateSuffix(settings, state);
+    nested_serialization->serializeBinaryBulkStateSuffix(settings, state);
     settings.path.pop_back();
 }
 
@@ -76,7 +76,7 @@ void SerializationSparse::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -106,7 +106,7 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
         serializeOffsetsPositionIndependent(offsets_data, *stream);
 
     settings.path.back() = Substream::SparseElements;
-    nested->serializeBinaryBulkWithMultipleStreams(*values, 0, 0, settings, state);
+    nested_serialization->serializeBinaryBulkWithMultipleStreams(*values, 0, 0, settings, state);
 
     settings.path.pop_back();
 }
@@ -129,7 +129,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     settings.path.back() = Substream::SparseElements;
 
     ColumnPtr values = column->cloneEmpty();
-    nested->deserializeBinaryBulkWithMultipleStreams(values, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(values, limit, settings, state, cache);
 
     auto mutable_column = column->assumeMutable();
     size_t size = values->size();

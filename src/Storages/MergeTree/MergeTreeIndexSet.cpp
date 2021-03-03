@@ -52,14 +52,15 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
             "Attempt to write empty set index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
 
     if (max_rows != 0 && size() > max_rows)
     {
-        size_type->getDefaultSerialization()->serializeBinary(0, ostr);
+        size_serialization->serializeBinary(0, ostr);
         return;
     }
 
-    size_type->getDefaultSerialization()->serializeBinary(size(), ostr);
+    size_serialization->serializeBinary(size(), ostr);
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
@@ -70,10 +71,12 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         settings.position_independent_encoding = false;
         settings.low_cardinality_max_dictionary_size = 0;
 
+        auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
-        type->getDefaultSerialization()->serializeBinaryBulkStatePrefix(settings, state);
-        type->getDefaultSerialization()->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
-        type->getDefaultSerialization()->serializeBinaryBulkStateSuffix(settings, state);
+
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
+        serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -95,13 +98,16 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
         const auto & type = column.type;
         ColumnPtr new_column = type->createColumn();
 
+
         ISerialization::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
         settings.position_independent_encoding = false;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        type->getDefaultSerialization()->deserializeBinaryBulkStatePrefix(settings, state);
-        type->getDefaultSerialization()->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state);
+        auto serialization = type->getDefaultSerialization();
+
+        serialization->deserializeBinaryBulkStatePrefix(settings, state);
+        serialization->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state);
 
         block.insert(ColumnWithTypeAndName(new_column, type, column.name));
     }

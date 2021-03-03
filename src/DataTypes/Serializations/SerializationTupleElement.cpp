@@ -8,7 +8,7 @@ void SerializationTupleElement::enumerateStreams(
     SubstreamPath & path) const
 {
     addToPath(path);
-    nested->enumerateStreams(callback, path);
+    nested_serialization->enumerateStreams(callback, path);
     path.pop_back();
 }
 
@@ -17,7 +17,7 @@ void SerializationTupleElement::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
-    nested->serializeBinaryBulkStatePrefix(settings, state);
+    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -26,7 +26,7 @@ void SerializationTupleElement::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
-    nested->serializeBinaryBulkStateSuffix(settings, state);
+    nested_serialization->serializeBinaryBulkStateSuffix(settings, state);
     settings.path.pop_back();
 }
 
@@ -35,7 +35,7 @@ void SerializationTupleElement::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
-    nested->deserializeBinaryBulkStatePrefix(settings, state);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -47,7 +47,7 @@ void SerializationTupleElement::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
-    nested->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+    nested_serialization->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
     settings.path.pop_back();
 }
 
@@ -59,7 +59,7 @@ void SerializationTupleElement::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     addToPath(settings.path);
-    nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
     settings.path.pop_back();
 }
 

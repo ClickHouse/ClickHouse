@@ -39,9 +39,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
 {
-    IDataType::SubstreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+    IDataType::StreamCallbackWithType callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.count(stream_name))
@@ -50,7 +50,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         CompressionCodecPtr compression_codec;
 
         /// If we can use special codec than just get it
-        if (IDataType::isSpecialCompressionAllowed(substream_path))
+        if (ISerialization::isSpecialCompressionAllowed(substream_path))
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
@@ -63,8 +63,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    ISerialization::SubstreamPath stream_path;
-    column.type->enumerateStreams(callback, stream_path);
+    column.type->enumerateStreams(callback);
 }
 
 namespace
@@ -184,7 +183,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = IDataType::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.

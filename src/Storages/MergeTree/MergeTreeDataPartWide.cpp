@@ -84,7 +84,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 
     column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        String file_name = IDataType::getFileNameForStream(column, substream_path);
+        String file_name = ISerialization::getFileNameForStream(column, substream_path);
 
         if (processed_substreams && !processed_substreams->insert(file_name).second)
             return;
@@ -162,7 +162,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                 ISerialization::SubstreamPath stream_path;
                 name_type.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
                 {
-                    String file_name = IDataType::getFileNameForStream(name_type, substream_path);
+                    String file_name = ISerialization::getFileNameForStream(name_type, substream_path);
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
@@ -184,7 +184,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         {
             name_type.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                auto file_path = path + IDataType::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
+                auto file_path = path + ISerialization::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
 
                 /// Missing file is Ok for case when new column was added.
                 if (volume->getDisk()->exists(file_path))
@@ -212,7 +212,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 
     column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        String file_name = IDataType::getFileNameForStream(column, substream_path);
+        String file_name = ISerialization::getFileNameForStream(column, substream_path);
 
         auto bin_checksum = checksums.files.find(file_name + ".bin");
         auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
@@ -230,7 +230,7 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
     column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         if (filename.empty())
-            filename = IDataType::getFileNameForStream(column, substream_path);
+            filename = ISerialization::getFileNameForStream(column, substream_path);
     });
     return filename;
 }

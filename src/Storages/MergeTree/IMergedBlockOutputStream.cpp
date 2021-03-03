@@ -30,10 +30,10 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::map<String, size_t> stream_counts;
     for (const NameAndTypePair & column : columns)
     {
-        column.type->enumerateStreams(
-            [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_path */)
+        column.type->getDefaultSerialization()->enumerateStreams(
+            [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
+                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
             },
             {});
     }
@@ -46,9 +46,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (!column_with_type)
            continue;
 
-        IDataType::SubstreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_path */)
+        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = IDataType::getFileNameForStream(*column_with_type, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(*column_with_type, substream_path);
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {
@@ -58,7 +58,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         };
 
         ISerialization::SubstreamPath stream_path;
-        column_with_type->type->enumerateStreams(callback, stream_path);
+        column_with_type->type->getDefaultSerialization()->enumerateStreams(callback, stream_path);
     }
 
     /// Remove files on disk and checksums

@@ -9,10 +9,10 @@ namespace DB
 class SerializationWrapper : public ISerialization
 {
 protected:
-    SerializationPtr nested;
+    SerializationPtr nested_serialization;
 
 public:
-    SerializationWrapper(const SerializationPtr & nested_) : nested(nested_) {}
+    SerializationWrapper(const SerializationPtr & nested_serialization_) : nested_serialization(nested_serialization_) {}
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 

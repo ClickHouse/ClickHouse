@@ -107,9 +107,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    IDataType::SubstreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+                    IDataType::StreamCallbackWithType callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
-                        if (IDataType::isSpecialCompressionAllowed(substream_path))
+                        if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
                             result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
 

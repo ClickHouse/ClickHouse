@@ -89,7 +89,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & column,
     const ASTPtr & effective_codec_desc)
 {
-    IDataType::SubstreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+    IDataType::StreamCallbackWithType callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
     {
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
         /// Shared offsets for Nested type.
@@ -114,10 +114,9 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.max_compress_block_size);
     };
 
-    ISerialization::SubstreamPath stream_path;
+    column.type->enumerateStreams(callback);
 
     auto serialization = column.type->getSerialization(column.name, data_part->serialization_info);
-    column.type->enumerateStreams(serialization, callback, stream_path);
     serializations.emplace(column.name, std::move(serialization));
 }
 

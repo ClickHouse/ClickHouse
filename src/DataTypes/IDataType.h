@@ -6,7 +6,7 @@
 #include <Core/Names.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeCustom_fwd.h>
-#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationWrapper.h>
 
 
 namespace DB
@@ -82,20 +82,17 @@ public:
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
     SerializationPtr getSerialization(const IColumn & column) const;
 
-    virtual DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
+    using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
 
-    using SubstreamCallback = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
-    virtual void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath & path) const;
-    void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(serialization, callback, path); }
-    void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback) const { enumerateStreams(serialization, callback, {}); }
-
-    void enumerateStreams(const SubstreamCallback & callback, ISerialization::SubstreamPath & path) const { enumerateStreams(getDefaultSerialization(), callback, path); }
-    void enumerateStreams(const SubstreamCallback & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(getDefaultSerialization(), callback, path); }
-    void enumerateStreams(const SubstreamCallback & callback) const { enumerateStreams(getDefaultSerialization(), callback, {}); }
+    void enumerateStreams(const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const;
+    void enumerateStreams(const StreamCallbackWithType & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(callback, path); }
+    void enumerateStreams(const StreamCallbackWithType & callback) const { enumerateStreams(callback, {}); }
 
 protected:
     virtual String doGetName() const;
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
+
+    DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 
 public:
     /** Create empty column for corresponding type.
@@ -253,14 +250,6 @@ public:
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
-
-    static String getFileNameForStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & path);
-    static String getSubcolumnNameForStream(const ISerialization::SubstreamPath & path);
-
-    /// Substream path supports special compression methods like codec Delta.
-    /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
-    /// generic compression codecs like LZ4.
-    static bool isSpecialCompressionAllowed(const ISerialization::SubstreamPath & path);
 
 protected:
     friend class DataTypeFactory;

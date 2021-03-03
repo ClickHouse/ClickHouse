@@ -170,10 +170,10 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.count(IDataType::getSubcolumnNameForStream(path)))
+        if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
             return nullptr;
 
-        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         auto & stream = streams[stream_name];
         if (!stream)
         {
@@ -280,7 +280,7 @@ ISerialization::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String stream_name = IDataType::getFileNameForStream(column, path);
+        String stream_name = ISerialization::getFileNameForStream(column, path);
 
         if (!written_streams.insert(stream_name).second)
             return nullptr;
@@ -426,9 +426,9 @@ void StorageTinyLog::addFiles(const NameAndTypePair & column)
         throw Exception("Duplicate column with name " + name + " in constructor of StorageTinyLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::SubstreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
         if (!files.count(stream_name))
         {
             ColumnData column_data;
@@ -438,7 +438,7 @@ void StorageTinyLog::addFiles(const NameAndTypePair & column)
     };
 
     ISerialization::SubstreamPath substream_path;
-    type->enumerateStreams(stream_callback, substream_path);
+    type->getDefaultSerialization()->enumerateStreams(stream_callback, substream_path);
 }
 
 

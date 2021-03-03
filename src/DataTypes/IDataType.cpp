@@ -112,76 +112,13 @@ Names IDataType::getSubcolumnNames() const
         for (const auto & elem : substream_path)
         {
             new_path.push_back(elem);
-            auto subcolumn_name = getSubcolumnNameForStream(new_path);
+            auto subcolumn_name = ISerialization::getSubcolumnNameForStream(new_path);
             if (!subcolumn_name.empty() && tryGetSubcolumnType(subcolumn_name))
                 res.insert(subcolumn_name);
         }
     });
 
     return Names(std::make_move_iterator(res.begin()), std::make_move_iterator(res.end()));
-}
-
-static String getNameForSubstreamPath(
-    String stream_name,
-    const ISerialization::SubstreamPath & path,
-    bool escape_tuple_delimiter)
-{
-    size_t array_level = 0;
-    for (const auto & elem : path)
-    {
-        if (elem.type == ISerialization::Substream::NullMap)
-            stream_name += ".null";
-        else if (elem.type == ISerialization::Substream::ArraySizes)
-            stream_name += ".size" + toString(array_level);
-        else if (elem.type == ISerialization::Substream::ArrayElements)
-            ++array_level;
-        else if (elem.type == ISerialization::Substream::DictionaryKeys)
-            stream_name += ".dict";
-        else if (elem.type == ISerialization::Substream::TupleElement)
-        {
-            /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
-            /// Because nested data may be represented not by Array of Tuple,
-            ///  but by separate Array columns with names in a form of a.b,
-            ///  and name is encoded as a whole.
-            stream_name += (escape_tuple_delimiter && elem.escape_tuple_delimiter ?
-                escapeForFileName(".") : ".") + escapeForFileName(elem.tuple_element_name);
-        }
-    }
-
-    return stream_name;
-}
-
-String IDataType::getFileNameForStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & path)
-{
-    auto name_in_storage = column.getNameInStorage();
-    auto nested_storage_name = Nested::extractTableName(name_in_storage);
-
-    if (name_in_storage != nested_storage_name && (path.size() == 1 && path[0].type == ISerialization::Substream::ArraySizes))
-        name_in_storage = nested_storage_name;
-
-    auto stream_name = escapeForFileName(name_in_storage);
-    return getNameForSubstreamPath(std::move(stream_name), path, true);
-}
-
-String IDataType::getSubcolumnNameForStream(const ISerialization::SubstreamPath & path)
-{
-    auto subcolumn_name = getNameForSubstreamPath("", path, false);
-    if (!subcolumn_name.empty())
-        subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
-
-    return subcolumn_name;
-}
-
-bool IDataType::isSpecialCompressionAllowed(const ISerialization::SubstreamPath & path)
-{
-    for (const ISerialization::Substream & elem : path)
-    {
-        if (elem.type == ISerialization::Substream::NullMap
-            || elem.type == ISerialization::Substream::ArraySizes
-            || elem.type == ISerialization::Substream::DictionaryIndexes)
-            return false;
-    }
-    return true;
 }
 
 void IDataType::insertDefaultInto(IColumn & column) const
@@ -211,11 +148,6 @@ SerializationPtr IDataType::getDefaultSerialization() const
         return custom_serialization;
 
     return doGetDefaultSerialization();
-}
-
-SerializationPtr IDataType::doGetDefaultSerialization() const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no serialization in type {}", getName());
 }
 
 SerializationPtr IDataType::getSparseSerialization() const
@@ -293,9 +225,9 @@ DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath &
     return shared_from_this();
 }
 
-void IDataType::enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath & path) const
+void IDataType::enumerateStreams(const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const
 {
-    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         callback(substream_path, *getTypeForSubstream(substream_path));
     }, path);
