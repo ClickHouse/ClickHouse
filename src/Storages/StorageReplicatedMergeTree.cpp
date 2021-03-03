@@ -144,6 +144,12 @@ static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
+    /// Every ReplicatedMergeTree table is using only one ZooKeeper session.
+    /// But if several ReplicatedMergeTree tables are using different
+    /// ZooKeeper sessions, some queries like ATTACH PARTITION FROM may have
+    /// strange effects. So we always use only one session for all tables.
+    /// (excluding auxiliary zookeepers)
+
     std::lock_guard lock(current_zookeeper_mutex);
     if (zookeeper_name == default_zookeeper_name)
     {
@@ -749,8 +755,12 @@ void StorageReplicatedMergeTree::drop()
     if (has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
-        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
-        auto zookeeper = global_context.getZooKeeper();
+        /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
+        zkutil::ZooKeeperPtr zookeeper;
+        if (zookeeper_name == default_zookeeper_name)
+            zookeeper = global_context.getZooKeeper();
+        else
+            zookeeper = global_context.getAuxiliaryZooKeeper(zookeeper_name);
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
@@ -887,20 +897,7 @@ void StorageReplicatedMergeTree::setTableStructure(
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
     if (new_columns != new_metadata.columns)
-    {
         new_metadata.columns = new_columns;
-
-        new_metadata.column_ttls_by_name.clear();
-        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
-        {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
-            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
-        }
-
-        /// The type of partition key expression may change
-        if (new_metadata.partition_key.definition_ast != nullptr)
-            new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
-    }
 
     if (!metadata_diff.empty())
     {
@@ -965,6 +962,47 @@ void StorageReplicatedMergeTree::setTableStructure(
                 new_metadata.table_ttl = TTLTableDescription{};
             }
         }
+    }
+
+    /// Changes in columns may affect following metadata fields
+    if (new_metadata.columns != old_metadata.columns)
+    {
+        new_metadata.column_ttls_by_name.clear();
+        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
+
+        if (new_metadata.partition_key.definition_ast != nullptr)
+            new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+        if (!metadata_diff.sorting_key_changed) /// otherwise already updated
+            new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+        /// Primary key is special, it exists even if not defined
+        if (new_metadata.primary_key.definition_ast != nullptr)
+        {
+            new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+        }
+        else
+        {
+            new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, global_context);
+            new_metadata.primary_key.definition_ast = nullptr;
+        }
+
+        if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+            new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+        if (!metadata_diff.skip_indices_changed) /// otherwise already updated
+        {
+            for (auto & index : new_metadata.secondary_indices)
+                index.recalculateWithNewColumns(new_metadata.columns, global_context);
+        }
+
+        if (!metadata_diff.ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                new_metadata.table_ttl.definition_ast, new_metadata.columns, global_context, new_metadata.primary_key);
     }
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
@@ -3811,7 +3849,7 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 

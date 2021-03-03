@@ -52,7 +52,9 @@ public:
 
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
 

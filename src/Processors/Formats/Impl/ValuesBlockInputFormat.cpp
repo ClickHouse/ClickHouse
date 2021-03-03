@@ -73,11 +73,13 @@ Chunk ValuesBlockInputFormat::generate()
     {
         if (!templates[i] || !templates[i]->rowsCount())
             continue;
+
+        const auto & expected_type = header.getByPosition(i).type;
         if (columns[i]->empty())
-            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i));
+            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
         else
         {
-            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, columns[i]->size());
+            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
             columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
         }
     }
@@ -135,13 +137,16 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
         return true;
     }
 
+    const auto & header = getPort().getHeader();
+    const auto & expected_type = header.getByPosition(column_idx).type;
+
     /// Expression in the current row is not match template deduced on the first row.
     /// Evaluate expressions, which were parsed using this template.
     if (column->empty())
-        column = IColumn::mutate(templates[column_idx]->evaluateAll(block_missing_values, column_idx));
+        column = IColumn::mutate(templates[column_idx]->evaluateAll(block_missing_values, column_idx, expected_type));
     else
     {
-        ColumnPtr evaluated = templates[column_idx]->evaluateAll(block_missing_values, column_idx, column->size());
+        ColumnPtr evaluated = templates[column_idx]->evaluateAll(block_missing_values, column_idx, expected_type, column->size());
         column->insertRangeFrom(*evaluated, 0, evaluated->size());
     }
     /// Do not use this template anymore
@@ -340,9 +345,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             bool found_in_cache = false;
             const auto & result_type = header.getByPosition(column_idx).type;
             const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
-            auto structure = templates_cache.getFromCacheOrConstruct(result_type, format_settings.null_as_default,
-                                                                     TokenIterator(tokens), token_iterator,
-                                                                     ast, *context, &found_in_cache, delimiter);
+            auto structure = templates_cache.getFromCacheOrConstruct(
+                result_type,
+                !result_type->isNullable() && format_settings.null_as_default,
+                TokenIterator(tokens),
+                token_iterator,
+                ast,
+                *context,
+                &found_in_cache,
+                delimiter);
             templates[column_idx].emplace(structure);
             if (found_in_cache)
                 ++attempts_to_deduce_template_cached[column_idx];
