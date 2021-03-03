@@ -210,6 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
+    connectionID.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
