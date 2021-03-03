@@ -148,6 +148,7 @@ private:
     static_assert(date_lut_mask == DATE_LUT_SIZE - 1);
 
     /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
+    /// "epoch" is the Unix Epoch (starts at unix timestamp zero)
     static constexpr UInt32 daynum_offset_epoch = 16436;
     static_assert(daynum_offset_epoch == (DATE_LUT_MIN_YEAR - 1970) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
 
