@@ -9,7 +9,7 @@ Hash functions can be used for the deterministic pseudo-random shuffling of elem
 
 ## halfMD5 {#hash-functions-halfmd5}
 
-[Interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
+[Interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
 ``` sql
 halfMD5(par1, ...)
@@ -54,7 +54,7 @@ sipHash64(par1,...)
 
 This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) function.
 
-Function [interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. Then combines hashes by the following algorithm:
+Function [interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. Then combines hashes by the following algorithm:
 
 1.  After hashing all the input parameters, the function gets the array of hashes.
 2.  Function takes the first and the second elements and calculates a hash for the array of them.

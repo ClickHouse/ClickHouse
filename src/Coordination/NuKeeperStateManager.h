@@ -52,9 +52,14 @@ public:
         return start_as_follower_servers.count(my_server_id);
     }
 
+    nuraft::ptr<NuKeeperLogStore> getLogStore() const { return log_store; }
+
+    size_t getTotalServers() const { return total_servers; }
+
 private:
     int my_server_id;
     int my_port;
+    size_t total_servers{0};
     std::unordered_set<int> start_as_follower_servers;
     nuraft::ptr<NuKeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_config> my_server_config;

@@ -24,7 +24,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereInfoPtr & prewhere_,
+        const PrewhereInfoPtr & prewhere_info_,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
@@ -156,7 +156,7 @@ public:
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize(bool can_read_incomplete_granules);
+        void optimize(bool can_read_incomplete_granules, bool allow_filter_columns);
         /// Remove all rows from granules.
         void clear();
 
@@ -217,7 +217,7 @@ private:
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    PrewhereInfoPtr prewhere;
+    PrewhereInfoPtr prewhere_info;
 
     Stream stream;
 

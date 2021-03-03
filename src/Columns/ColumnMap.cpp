@@ -187,6 +187,11 @@ void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnMap::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnMap>();
+}
+
 void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     nested->getPermutation(reverse, limit, nan_direction_hint, res);

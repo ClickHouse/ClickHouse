@@ -6,6 +6,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsConversion.h>
 #include <Functions/materialize.h>
+#include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <IO/WriteBufferFromString.h>
@@ -80,14 +81,14 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     return **it;
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace, bool add_to_index)
 {
     Node node;
     node.type = ActionType::INPUT;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace)
@@ -364,7 +365,7 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
     removeUnusedActions();
 }
 
-void ActionsDAG::removeUnusedActions()
+void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
@@ -388,6 +389,9 @@ void ActionsDAG::removeUnusedActions()
             visited_nodes.insert(&node);
             stack.push(&node);
         }
+
+        if (node.type == ActionType::INPUT && !allow_remove_inputs)
+            visited_nodes.insert(&node);
     }
 
     while (!stack.empty())
@@ -515,6 +519,11 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
         for (const auto * child : node.children)
             if (col == child)
                 return false;
+
+    /// Do not remove input if it was mentioned in index several times.
+    for (const auto * node : index)
+        if (col == node)
+            return false;
 
     /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
@@ -1201,6 +1210,342 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
 
     std::unordered_set<const Node *> split_nodes = {*it};
     return split(split_nodes);
+}
+
+namespace
+{
+
+struct ConjunctionNodes
+{
+    std::vector<ActionsDAG::Node *> allowed;
+    std::vector<ActionsDAG::Node *> rejected;
+};
+
+/// Take a node which result is predicate.
+/// Assuming predicate is a conjunction (probably, trivial).
+/// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
+/// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
+ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
+{
+    ConjunctionNodes conjunction;
+    std::unordered_set<ActionsDAG::Node *> allowed;
+    std::unordered_set<ActionsDAG::Node *> rejected;
+
+    struct Frame
+    {
+        ActionsDAG::Node * node;
+        bool is_predicate = false;
+        size_t next_child_to_visit = 0;
+        size_t num_allowed_children = 0;
+    };
+
+    std::stack<Frame> stack;
+    std::unordered_set<ActionsDAG::Node *> visited_nodes;
+
+    stack.push(Frame{.node = predicate, .is_predicate = true});
+    visited_nodes.insert(predicate);
+    while (!stack.empty())
+    {
+        auto & cur = stack.top();
+        bool is_conjunction = cur.is_predicate
+                                && cur.node->type == ActionsDAG::ActionType::FUNCTION
+                                && cur.node->function_base->getName() == "and";
+
+        /// At first, visit all children.
+        while (cur.next_child_to_visit < cur.node->children.size())
+        {
+            auto * child = cur.node->children[cur.next_child_to_visit];
+
+            if (visited_nodes.count(child) == 0)
+            {
+                visited_nodes.insert(child);
+                stack.push({.node = child, .is_predicate = is_conjunction});
+                break;
+            }
+
+            if (allowed_nodes.contains(child))
+                ++cur.num_allowed_children;
+            ++cur.next_child_to_visit;
+        }
+
+        if (cur.next_child_to_visit == cur.node->children.size())
+        {
+            if (cur.num_allowed_children == cur.node->children.size())
+            {
+                if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN && cur.node->type != ActionsDAG::ActionType::INPUT)
+                    allowed_nodes.emplace(cur.node);
+            }
+            else if (is_conjunction)
+            {
+                for (auto * child : cur.node->children)
+                {
+                    if (allowed_nodes.count(child))
+                    {
+                        if (allowed.insert(child).second)
+                            conjunction.allowed.push_back(child);
+
+                    }
+                }
+            }
+            else if (cur.is_predicate)
+            {
+                if (rejected.insert(cur.node).second)
+                    conjunction.rejected.push_back(cur.node);
+            }
+
+            stack.pop();
+        }
+    }
+
+    if (conjunction.allowed.empty())
+    {
+        /// If nothing was added to conjunction, check if it is trivial.
+        if (allowed_nodes.count(predicate))
+            conjunction.allowed.push_back(predicate);
+    }
+
+    return conjunction;
+}
+
+ColumnsWithTypeAndName prepareFunctionArguments(const std::vector<ActionsDAG::Node *> nodes)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(nodes.size());
+
+    for (const auto * child : nodes)
+    {
+        ColumnWithTypeAndName argument;
+        argument.column = child->column;
+        argument.type = child->result_type;
+        argument.name = child->result_name;
+
+        arguments.emplace_back(std::move(argument));
+    }
+
+    return arguments;
+}
+
+}
+
+/// Create actions which calculate conjunction of selected nodes.
+/// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
+///
+/// Result actions add single column with conjunction result (it is always last in index).
+/// No other columns are added or removed.
+ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction)
+{
+    if (conjunction.empty())
+        return nullptr;
+
+    auto actions = cloneEmpty();
+    actions->settings.project_input = false;
+
+    FunctionOverloadResolverPtr func_builder_and =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionAnd>()));
+
+    std::unordered_map<const ActionsDAG::Node *, ActionsDAG::Node *> nodes_mapping;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child_to_visit = 0;
+    };
+
+    std::stack<Frame> stack;
+
+    /// DFS. Clone actions.
+    for (const auto * predicate : conjunction)
+    {
+        if (nodes_mapping.count(predicate))
+            continue;
+
+        stack.push({.node = predicate});
+        while (!stack.empty())
+        {
+            auto & cur = stack.top();
+            /// At first, visit all children.
+            while (cur.next_child_to_visit < cur.node->children.size())
+            {
+                auto * child = cur.node->children[cur.next_child_to_visit];
+
+                if (nodes_mapping.count(child) == 0)
+                {
+                    stack.push({.node = child});
+                    break;
+                }
+
+                ++cur.next_child_to_visit;
+            }
+
+            if (cur.next_child_to_visit == cur.node->children.size())
+            {
+                auto & node = actions->nodes.emplace_back(*cur.node);
+                nodes_mapping[cur.node] = &node;
+
+                for (auto & child : node.children)
+                    child = nodes_mapping[child];
+
+                if (node.type == ActionType::INPUT)
+                {
+                    actions->inputs.emplace_back(&node);
+                    actions->index.insert(&node);
+                }
+
+                stack.pop();
+            }
+        }
+    }
+
+    Node * result_predicate = nodes_mapping[*conjunction.begin()];
+
+    if (conjunction.size() > 1)
+    {
+        std::vector<Node *> args;
+        args.reserve(conjunction.size());
+        for (const auto * predicate : conjunction)
+            args.emplace_back(nodes_mapping[predicate]);
+
+        result_predicate = &actions->addFunction(func_builder_and, args, {}, true, false);
+    }
+
+    actions->index.insert(result_predicate);
+    return actions;
+}
+
+ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs)
+{
+    Node * predicate;
+
+    {
+        auto it = index.begin();
+        for (; it != index.end(); ++it)
+            if ((*it)->result_name == filter_name)
+                break;
+
+        if (it == index.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
+                            filter_name, dumpDAG());
+
+        predicate = *it;
+    }
+
+    std::unordered_set<const Node *> allowed_nodes;
+
+    /// Get input nodes from available_inputs names.
+    {
+        std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
+        for (const auto & input : inputs)
+            inputs_map[input->result_name].emplace_back(input);
+
+        for (const auto & name : available_inputs)
+        {
+            auto & inputs_list = inputs_map[name];
+            if (inputs_list.empty())
+                continue;
+
+            allowed_nodes.emplace(inputs_list.front());
+            inputs_list.pop_front();
+        }
+    }
+
+    auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
+    auto actions = cloneActionsForConjunction(conjunction.allowed);
+    if (!actions)
+        return nullptr;
+
+    /// Now, when actions are created, update current DAG.
+
+    if (conjunction.rejected.empty())
+    {
+        /// The whole predicate was split.
+        if (can_remove_filter)
+        {
+            /// If filter column is not needed, remove it from index.
+            for (auto i = index.begin(); i != index.end(); ++i)
+            {
+                if (*i == predicate)
+                {
+                    index.remove(i);
+                    break;
+                }
+            }
+        }
+        else
+        {
+            /// Replace predicate result to constant 1.
+            Node node;
+            node.type = ActionType::COLUMN;
+            node.result_name = std::move(predicate->result_name);
+            node.result_type = std::move(predicate->result_type);
+            node.column = node.result_type->createColumnConst(0, 1);
+            *predicate = std::move(node);
+        }
+
+        removeUnusedActions(false);
+    }
+    else
+    {
+        /// Predicate is conjunction, where both allowed and rejected sets are not empty.
+        /// Replace this node to conjunction of rejected predicates.
+
+        std::vector<Node *> new_children(conjunction.rejected.begin(), conjunction.rejected.end());
+
+        if (new_children.size() == 1)
+        {
+            /// Rejected set has only one predicate.
+            if (new_children.front()->result_type->equals(*predicate->result_type))
+            {
+                /// If it's type is same, just add alias.
+                Node node;
+                node.type = ActionType::ALIAS;
+                node.result_name = predicate->result_name;
+                node.result_type = predicate->result_type;
+                node.children.swap(new_children);
+                *predicate = std::move(node);
+            }
+            else
+            {
+                /// If type is different, cast column.
+                /// This case is possible, cause AND can use any numeric type as argument.
+                Node node;
+                node.type = ActionType::COLUMN;
+                node.result_name = predicate->result_type->getName();
+                node.column = DataTypeString().createColumnConst(0, node.result_name);
+                node.result_type = std::make_shared<DataTypeString>();
+
+                auto * right_arg = &nodes.emplace_back(std::move(node));
+                auto * left_arg = new_children.front();
+
+                predicate->children = {left_arg, right_arg};
+                auto arguments = prepareFunctionArguments(predicate->children);
+
+                FunctionOverloadResolverPtr func_builder_cast =
+                        std::make_shared<FunctionOverloadResolverAdaptor>(
+                                CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+
+                predicate->function_builder = func_builder_cast;
+                predicate->function_base = predicate->function_builder->build(arguments);
+                predicate->function = predicate->function_base->prepare(arguments);
+            }
+        }
+        else
+        {
+            /// Predicate is function AND, which still have more then one argument.
+            /// Just update children and rebuild it.
+            predicate->children.swap(new_children);
+            auto arguments = prepareFunctionArguments(predicate->children);
+
+            predicate->function_base = predicate->function_builder->build(arguments);
+            predicate->function = predicate->function_base->prepare(arguments);
+        }
+
+        removeUnusedActions(false);
+    }
+
+    return actions;
 }
 
 }

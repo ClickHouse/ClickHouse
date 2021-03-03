@@ -4,23 +4,22 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/HexWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,10 +29,11 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -166,7 +166,9 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
+
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
+            setProperties(metadata_, metadata_, attach);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
         }
@@ -183,7 +185,6 @@ MergeTreeData::MergeTreeData(
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
-
     setProperties(metadata_, metadata_, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
@@ -423,6 +424,29 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 }
 
+ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key)
+{
+    NamesAndTypesList partition_key_columns;
+    if (!partition_key.column_names.empty())
+        partition_key_columns = partition_key.expression->getRequiredColumnsWithTypes();
+
+    return std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(partition_key_columns));
+}
+
+Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key)
+{
+    if (!partition_key.column_names.empty())
+        return partition_key.expression->getRequiredColumns();
+    return {};
+}
+
+DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_key)
+{
+    if (!partition_key.column_names.empty())
+        return partition_key.expression->getRequiredColumnsWithTypes().getTypes();
+    return {};
+}
+
 ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
     return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
@@ -442,19 +466,13 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
 
     /// Add all columns used in the partition key to the min-max index.
-    const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(minmax_idx_columns_with_types));
-    for (const NameAndTypePair & column : minmax_idx_columns_with_types)
-    {
-        minmax_idx_columns.emplace_back(column.name);
-        minmax_idx_column_types.emplace_back(column.type);
-    }
+    DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
     /// Try to find the date column in columns used by the partition key (a common case).
     bool encountered_date_column = false;
-    for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+    for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
     {
-        if (typeid_cast<const DataTypeDate *>(minmax_idx_column_types[i].get()))
+        if (typeid_cast<const DataTypeDate *>(minmax_idx_columns_types[i].get()))
         {
             if (!encountered_date_column)
             {
@@ -470,9 +488,9 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     }
     if (!encountered_date_column)
     {
-        for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+        for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
         {
-            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_column_types[i].get()))
+            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_columns_types[i].get()))
             {
                 if (!encountered_date_column)
                 {
@@ -1407,11 +1425,13 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
-void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+
+    const auto & settings = context.getSettingsRef();
 
     if (!settings.allow_non_metadata_alters)
     {
@@ -1484,6 +1504,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         old_types.emplace(column.name, column.type.get());
 
     NamesAndTypesList columns_to_check_conversion;
+    auto name_deps = getDependentViewsByColumn(context);
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
@@ -1563,6 +1584,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     "Trying to ALTER DROP key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
+
+            const auto & deps_mv = name_deps[command.column_name];
+            if (!deps_mv.empty())
+            {
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+
             dropped_columns.emplace(command.column_name);
         }
         else if (command.isRequireMutationStage(getInMemoryMetadata()))
@@ -1668,6 +1699,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "Cannot drop or clear column{} '{}', because all columns in part '{}' will be removed from disk. Empty parts are not allowed", postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
         }
     }
+}
+
+
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
 }
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
@@ -3498,7 +3535,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
         if (column_name == name)
             return true;
 
-    for (const auto & name : minmax_idx_columns)
+    for (const auto & name : getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()))
         if (column_name == name)
             return true;
 
