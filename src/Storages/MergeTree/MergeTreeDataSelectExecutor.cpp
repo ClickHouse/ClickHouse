@@ -229,7 +229,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
-            return {};
+            return std::make_unique<QueryPlan>();
     }
     // At this point, empty `part_values` means all parts.
 
@@ -380,7 +380,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
             " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
-        return {};
+        return std::make_unique<QueryPlan>();
     }
 
     bool use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
