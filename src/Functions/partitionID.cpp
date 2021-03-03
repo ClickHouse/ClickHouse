@@ -1,0 +1,75 @@
+#include <memory>
+#include <Columns/ColumnString.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionImpl.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** partitionID(x, y, ...) is a function that computes partition ids of arguments.
+  */
+class FunctionPartitionID : public IFunction
+{
+public:
+    static constexpr auto name = "partitionID";
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPartitionID>(); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.empty())
+            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        size_t size = arguments.size();
+        Columns columns;
+        Block sample_block;
+        for (const auto & argument : arguments)
+        {
+            sample_block.insert(argument);
+            columns.push_back(argument.column);
+        }
+
+        auto result_column = ColumnString::create();
+        for (size_t j = 0; j < input_rows_count; ++j)
+        {
+            Row row(size);
+            for (size_t i = 0; i < size; ++i)
+                columns[i]->get(j, row[i]);
+            MergeTreePartition partition(std::move(row));
+            result_column->insert(partition.getID(sample_block));
+        }
+        return result_column;
+    }
+};
+
+void registerFunctionPartitionID(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPartitionID>();
+}
+
+}
