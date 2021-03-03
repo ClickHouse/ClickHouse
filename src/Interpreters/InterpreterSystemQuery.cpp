@@ -34,7 +34,9 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
+#include "Core/QueryProcessingStage.h"
 #include "Processors/Executors/PullingPipelineExecutor.h"
+#include "Storages/System/StorageSystemParts.h"
 
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -531,6 +533,19 @@ void InterpreterSystemQuery::restoreReplica()
 
     /// 3. Move parts to a new table that will register them in zookeeper.
     {
+        auto system_parts = DatabaseCatalog::instance().getTable({"system", "parts"}, context);
+
+        SelectQueryInfo info;
+
+
+        Pipe pipe = system_parts->as<StorageSystemParts>()->read({"partition_id"},
+            system_parts->getInMemoryMetadataPtr(), //snapshot
+            info,
+            context,
+            // these 3 params are ignored
+            QueryProcessingStage::Enum::Complete, 0, 0);
+
+
         /// 3.1 Form a partitions request (from the old table)
         /// (SELECT partition_id FROM system.parts WHERE database = 'old_db' AND table = 'old' AND active)
 
@@ -553,8 +568,8 @@ void InterpreterSystemQuery::restoreReplica()
         auto& get_parts_from_table = get_parts_from_table_ptr->as<ASTTablesInSelectQueryElement&>();
 
         get_parts_from_table.table_expression = std::make_shared<ASTTableExpression>();
-        get_parts_from_table.table_expression->children.emplace_back(
-            std::make_shared<ASTIdentifier>(std::vector<String>{"system", "parts"}));
+        get_parts_from_table.table_expression->children = {
+            std::make_shared<ASTIdentifier>(std::vector<String>{"system", "parts"})};
 
         get_parts_from.children.emplace_back(std::move(get_parts_from_table_ptr));
 
