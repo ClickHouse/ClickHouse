@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int UNKNOWN_SNAPSHOT;
 }
 
 namespace
@@ -203,6 +204,11 @@ NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_p
 
     for (const auto & p : fs::directory_iterator(snapshots_path))
     {
+        if (startsWith(p.path(), "tmp_")) /// Unfinished tmp files
+        {
+            std::filesystem::remove(p);
+            continue;
+        }
         size_t snapshot_up_to = getSnapshotPathUpToLogIdx(p.path());
         existing_snapshots[snapshot_up_to] = p.path();
     }
@@ -215,24 +221,40 @@ std::string NuKeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffe
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
-    std::string new_snapshot_path = std::filesystem::path{snapshots_path} / getSnapshotFileName(up_to_log_idx);
+    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx);
+    auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
+    std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
+    std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
 
-    WriteBufferFromFile plain_buf(new_snapshot_path);
+    WriteBufferFromFile plain_buf(tmp_snapshot_path);
     copyData(reader, plain_buf);
     plain_buf.sync();
+
+    std::filesystem::rename(tmp_snapshot_path, new_snapshot_path);
+
     existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
     removeOutdatedSnapshotsIfNeeded();
 
     return new_snapshot_path;
 }
 
-nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk() const
+nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
 {
-    if (!existing_snapshots.empty())
+    while (!existing_snapshots.empty())
     {
-        auto last_log_id = existing_snapshots.rbegin()->first;
-        return deserializeSnapshotBufferFromDisk(last_log_id);
+        auto latest_itr = existing_snapshots.rbegin();
+        try
+        {
+            return deserializeSnapshotBufferFromDisk(latest_itr->first);
+        }
+        catch (const DB::Exception &)
+        {
+            std::filesystem::remove(latest_itr->second);
+            existing_snapshots.erase(latest_itr->first);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
+
     return nullptr;
 }
 
@@ -262,23 +284,31 @@ SnapshotMetadataPtr NuKeeperSnapshotManager::deserializeSnapshotFromBuffer(NuKee
     return NuKeeperStorageSnapshot::deserialize(*storage, compressed_reader);
 }
 
-SnapshotMetadataPtr NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * storage) const
+SnapshotMetadataPtr NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * storage)
 {
     if (existing_snapshots.empty())
         return nullptr;
 
-    auto log_id = existing_snapshots.rbegin()->first;
-    auto buffer = deserializeSnapshotBufferFromDisk(log_id);
+    auto buffer = deserializeLatestSnapshotBufferFromDisk();
+    if (!buffer)
+        return nullptr;
     return deserializeSnapshotFromBuffer(storage, buffer);
 }
 
 void NuKeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
-    {
-        std::filesystem::remove(existing_snapshots.begin()->second);
-        existing_snapshots.erase(existing_snapshots.begin());
-    }
+        removeSnapshot(existing_snapshots.begin()->first);
+}
+
+void NuKeeperSnapshotManager::removeSnapshot(size_t log_idx)
+{
+    auto itr = existing_snapshots.find(log_idx);
+    if (itr == existing_snapshots.end())
+        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
+    std::filesystem::remove(itr->second);
+    existing_snapshots.erase(itr);
+
 }
 
 

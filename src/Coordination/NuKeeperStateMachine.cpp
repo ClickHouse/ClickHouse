@@ -41,19 +41,40 @@ NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, co
 
 void NuKeeperStateMachine::init()
 {
-    LOG_DEBUG(log, "Trying to load state machine");
-    latest_snapshot_buf = snapshot_manager.deserializeLatestSnapshotBufferFromDisk();
-    if (latest_snapshot_buf)
+    LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
+    bool loaded = false;
+    bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
+    while (snapshot_manager.totalSnapshots() != 0)
     {
-        latest_snapshot_meta = snapshot_manager.deserializeSnapshotFromBuffer(&storage, latest_snapshot_buf);
-        last_committed_idx = latest_snapshot_meta->get_last_log_idx();
+        size_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
+        LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
+
+        try
+        {
+            latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
+            latest_snapshot_meta = snapshot_manager.deserializeSnapshotFromBuffer(&storage, latest_snapshot_buf);
+            last_committed_idx = latest_snapshot_meta->get_last_log_idx();
+            loaded = true;
+            break;
+        }
+        catch (const DB::Exception & ex)
+        {
+            LOG_WARNING(log, "Failed to load from snapshot with index {}, with error {}, will remove it from disk", latest_log_index, ex.displayText());
+            snapshot_manager.removeSnapshot(latest_log_index);
+        }
+    }
+
+    if (has_snapshots)
+    {
+        if (loaded)
+            LOG_DEBUG(log, "Loaded snapshot with last commited log index {}", last_committed_idx);
+        else
+            LOG_WARNING(log, "All snapshots broken, last commited log index {}", last_committed_idx);
     }
     else
     {
-        latest_snapshot_meta = nullptr;
-        last_committed_idx = 0;
+        LOG_DEBUG(log, "No existing snapshots, last commited log index {}", last_committed_idx);
     }
-    LOG_DEBUG(log, "Loaded snapshot with last commited log index {}", last_committed_idx);
 }
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)

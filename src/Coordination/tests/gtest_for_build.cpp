@@ -1077,6 +1077,32 @@ TEST(CoordinationTest, TestStorageSnapshotMode)
     {
         EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
     }
+
+}
+
+TEST(CoordinationTest, TestStorageSnapshotBroken)
+{
+    ChangelogDirTest test("./snapshots");
+    DB::NuKeeperSnapshotManager manager("./snapshots", 3);
+    DB::NuKeeperStorage storage(500);
+    for (size_t i = 0; i < 50; ++i)
+    {
+        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
+    }
+    {
+        DB::NuKeeperStorageSnapshot snapshot(&storage, 50);
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        manager.serializeSnapshotBufferToDisk(*buf, 50);
+    }
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
+
+    /// Let's corrupt file
+    DB::WriteBufferFromFile plain_buf("./snapshots/snapshot_50.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    plain_buf.truncate(34);
+    plain_buf.sync();
+
+    DB::NuKeeperStorage restored_storage(500);
+    EXPECT_THROW(manager.restoreFromLatestSnapshot(&restored_storage), DB::Exception);
 }
 
 int main(int argc, char ** argv)

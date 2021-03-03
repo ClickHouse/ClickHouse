@@ -43,7 +43,7 @@ class NuKeeperSnapshotManager
 public:
     NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_);
 
-    SnapshotMetadataPtr restoreFromLatestSnapshot(NuKeeperStorage * storage) const;
+    SnapshotMetadataPtr restoreFromLatestSnapshot(NuKeeperStorage * storage);
 
     static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const NuKeeperStorageSnapshot & snapshot);
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx);
@@ -51,7 +51,21 @@ public:
     static SnapshotMetadataPtr deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer);
 
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const;
-    nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk() const;
+    nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
+
+    void removeSnapshot(size_t log_idx);
+
+    size_t totalSnapshots() const
+    {
+        return existing_snapshots.size();
+    }
+
+    size_t getLatestSnapshotIndex() const
+    {
+        if (!existing_snapshots.empty())
+            return existing_snapshots.rbegin()->first;
+        return 0;
+    }
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
