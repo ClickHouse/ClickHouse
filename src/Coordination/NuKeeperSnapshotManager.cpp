@@ -1,4 +1,4 @@
-#include <Coordination/NuKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperSnapshotManager.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>

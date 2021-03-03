@@ -5,7 +5,7 @@
 #include <common/logger_useful.h>
 #include <Coordination/ThreadSafeQueue.h>
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/NuKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperSnapshotManager.h>
 
 namespace DB
 {

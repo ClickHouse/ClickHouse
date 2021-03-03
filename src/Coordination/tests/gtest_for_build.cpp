@@ -10,7 +10,7 @@
 #include <Poco/Logger.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/NuKeeperStateManager.h>
-#include <Coordination/NuKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperSnapshotManager.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/NuKeeperStateMachine.h>
 #include <Coordination/LoggerWrapper.h>
