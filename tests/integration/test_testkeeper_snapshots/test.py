@@ -89,3 +89,43 @@ def test_state_after_restart(started_cluster):
                 node_zk2.close()
         except:
             pass
+
+
+def test_ephemeral_after_restart(started_cluster):
+    try:
+        node_zk = None
+        node_zk2 = None
+        node_zk = get_connection_zk("node")
+
+        node_zk.create("/test_ephemeral_after_restart", b"somevalue")
+        strs = []
+        for i in range(100):
+            strs.append(random_string(123).encode())
+            node_zk.create("/test_ephemeral_after_restart/node" + str(i), strs[i], ephemeral=True)
+
+        for i in range(100):
+            if i % 7 == 0:
+                node_zk.delete("/test_ephemeral_after_restart/node" + str(i))
+
+        node.restart_clickhouse(kill=True)
+
+        node_zk2 = get_connection_zk("node")
+
+        assert node_zk2.get("/test_ephemeral_after_restart")[0] == b"somevalue"
+        for i in range(100):
+            if i % 7 == 0:
+                assert node_zk2.exists("/test_ephemeral_after_restart/node" + str(i)) is None
+            else:
+                assert len(node_zk2.get("/test_ephemeral_after_restart/node" + str(i))[0]) == 123
+                assert node_zk2.get("/test_ephemeral_after_restart/node" + str(i))[0] == strs[i]
+    finally:
+        try:
+            if node_zk is not None:
+                node_zk.stop()
+                node_zk.close()
+
+            if node_zk2 is not None:
+                node_zk2.stop()
+                node_zk2.close()
+        except:
+            pass
