@@ -137,7 +137,7 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
             {
                 response.error = Coordination::Error::ZNONODE;
             }
-            else if (it->value.ephemeral_owner != 0)
+            else if (it->value.stat.ephemeralOwner != 0)
             {
                 response.error = Coordination::Error::ZNOCHILDRENFOREPHEMERALS;
             }
@@ -150,8 +150,8 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
                 created_node.stat.mtime = created_node.stat.ctime;
                 created_node.stat.numChildren = 0;
                 created_node.stat.dataLength = request.data.length();
+                created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
                 created_node.data = request.data;
-                created_node.ephemeral_owner = request.is_ephemeral ? session_id : 0;
                 created_node.is_sequental = request.is_sequential;
                 std::string path_created = request.path;
 
@@ -256,7 +256,7 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
         else
         {
             auto prev_node = it->value;
-            if (prev_node.ephemeral_owner != 0)
+            if (prev_node.stat.ephemeralOwner != 0)
                 ephemerals[session_id].erase(request.path);
 
             auto child_basename = getBaseName(it->key);
@@ -273,7 +273,7 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
 
             undo = [prev_node, &container, &ephemerals, session_id, path = request.path, child_basename]
             {
-                if (prev_node.ephemeral_owner != 0)
+                if (prev_node.stat.ephemeralOwner != 0)
                     ephemerals[session_id].emplace(path);
 
                 container.insert(path, prev_node);

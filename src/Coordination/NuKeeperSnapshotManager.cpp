@@ -54,7 +54,6 @@ namespace
     {
         Coordination::write(node.data, out);
         Coordination::write(node.acls, out);
-        Coordination::write(node.ephemeral_owner, out);
         Coordination::write(node.is_sequental, out);
         Coordination::write(node.stat, out);
         Coordination::write(node.seq_num, out);
@@ -64,7 +63,6 @@ namespace
     {
         Coordination::read(node.data, in);
         Coordination::read(node.acls, in);
-        Coordination::read(node.ephemeral_owner, in);
         Coordination::read(node.is_sequental, in);
         Coordination::read(node.stat, in);
         Coordination::read(node.seq_num, in);
@@ -78,7 +76,7 @@ namespace
 
     SnapshotMetadataPtr deserializeSnapshotMetadata(ReadBuffer & in)
     {
-        /// FIXME (alesap)
+        /// FIXME double copy (alesap)
         std::string data;
         Coordination::read(data, in);
         auto buffer = nuraft::buffer::alloc(data.size());
@@ -140,8 +138,8 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
         NuKeeperStorage::Node node;
         readNode(node, in);
         storage.container.insertOrReplace(path, node);
-        if (node.ephemeral_owner != 0)
-            storage.ephemerals[node.ephemeral_owner].insert(path);
+        if (node.stat.ephemeralOwner != 0)
+            storage.ephemerals[node.stat.ephemeralOwner].insert(path);
 
         current_size++;
     }
