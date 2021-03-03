@@ -140,8 +140,6 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     }
     while (i < DATE_LUT_SIZE && lut[i - 1].year <= DATE_LUT_MAX_YEAR);
 
-//    date_lut_max = start_of_day;
-
     /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
     while (i < DATE_LUT_SIZE)
     {
