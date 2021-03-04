@@ -630,9 +630,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         }
     }
 
-    if (!disk)
-        throw Exception("Can't find S3 disk", ErrorCodes::S3_ERROR);
-
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 

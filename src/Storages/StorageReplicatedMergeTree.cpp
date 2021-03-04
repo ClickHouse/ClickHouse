@@ -1955,16 +1955,15 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeFetchShared(ReplicatedMergeTreeLogEntry & entry)
+bool StorageReplicatedMergeTree::executeFetchShared(
+    const String & source_replica,
+    const String & new_part_name,
+    const DiskPtr & disk,
+    const String & path)
 {
-    if (entry.type != LogEntry::FETCH_SHARED_PART)
+    if (source_replica.empty())
     {
-        throw Exception("Wrong entry.type in executeFetchShared", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    if (entry.source_replica.empty())
-    {
-        LOG_INFO(log, "No active replica has part {} on S3.", entry.new_part_name);
+        LOG_INFO(log, "No active replica has part {} on S3.", new_part_name);
         return false;
     }
 
@@ -1992,8 +1991,8 @@ bool StorageReplicatedMergeTree::executeFetchShared(ReplicatedMergeTreeLogEntry 
 
     try
     {
-        if (!fetchPart(entry.new_part_name, metadata_snapshot, zookeeper_path + "/replicas/" + entry.source_replica, false, entry.quorum,
-                nullptr, true, entry.disk, entry.path))
+        if (!fetchPart(new_part_name, metadata_snapshot, zookeeper_path + "/replicas/" + source_replica, false, 0,
+                nullptr, true, disk, path))
             return false;
     }
     catch (Exception & e)
@@ -6478,10 +6477,8 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
 
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
-    String norm_path = part.relative_path;
-    boost::replace_all(norm_path, "/", "_");
 
-    String zookeeper_node = zookeeper_path + "/zero_copy_s3/shared/" + part.name + "/" + id + "/" + norm_path + "/" + replica_name;
+    String zookeeper_node = zookeeper_path + "/zero_copy_s3/shared/" + part.name + "/" + id + "/" + replica_name;
 
     LOG_TRACE(log, "Set zookeeper lock {}", zookeeper_node);
 
@@ -6507,12 +6504,6 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
 
 bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
 {
-    return unlockSharedData(part, part.relative_path);
-}
-
-
-bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, const String & path) const
-{
     if (!part.volume)
         return true;
     DiskPtr disk = part.volume->getDisk();
@@ -6527,29 +6518,16 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
 
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
-    String norm_path = path;
-    boost::replace_all(norm_path, "/", "_");
 
     String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/shared/" + part.name;
     String zookeeper_part_uniq_node = zookeeper_part_node + "/" + id;
-    String zookeeper_part_path_node = zookeeper_part_uniq_node + "/" + norm_path;
-    String zookeeper_node = zookeeper_part_path_node + "/" + replica_name;
+    String zookeeper_node = zookeeper_part_uniq_node + "/" + replica_name;
 
     LOG_TRACE(log, "Remove zookeeper lock {}", zookeeper_node);
 
     zookeeper->tryRemove(zookeeper_node);
 
     Strings children;
-    zookeeper->tryGetChildren(zookeeper_part_path_node, children);
-    if (!children.empty())
-    {
-        LOG_TRACE(log, "Found zookeper locks for {}", zookeeper_part_path_node);
-        return false;
-    }
-
-    zookeeper->tryRemove(zookeeper_part_path_node);
-
-    children.clear();
     zookeeper->tryGetChildren(zookeeper_part_uniq_node, children);
 
     if (!children.empty())
@@ -6589,18 +6567,10 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
     if (replica.empty())
         return false;
 
-    ReplicatedMergeTreeLogEntry log_entry;
-    log_entry.type = ReplicatedMergeTreeLogEntry::FETCH_SHARED_PART;
-    log_entry.source_replica = replica;
-    log_entry.new_part_name = part.name;
-    log_entry.create_time = 0;
-    log_entry.disk = disk;
-    log_entry.path = path;
-
     /// TODO: Fix const usage
     StorageReplicatedMergeTree * replicated_storage_nc = const_cast<StorageReplicatedMergeTree *>(this);
 
-    return replicated_storage_nc->executeFetchShared(log_entry);
+    return replicated_storage_nc->executeFetchShared(replica, part.name, disk, path);
 }
 
 
@@ -6613,8 +6583,6 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    String norm_path = part.relative_path;
-    boost::replace_all(norm_path, "/", "_");
     String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/shared/" + part.name;
 
     Strings ids;
@@ -6624,16 +6592,10 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     for (const auto & id : ids)
     {
         String zookeeper_part_uniq_node = zookeeper_part_node + "/" + id;
-        Strings paths;
-        zookeeper->tryGetChildren(zookeeper_part_uniq_node, paths);
-        for (const auto & path : paths)
-        {
-            String zookeeper_node = zookeeper_part_uniq_node + "/" + path;
-            Strings id_replicas;
-            zookeeper->tryGetChildren(zookeeper_node, id_replicas);
-            LOG_TRACE(log, "Found zookeper replicas for {}: {}", zookeeper_node, id_replicas.size());
-            replicas.insert(replicas.end(), id_replicas.begin(), id_replicas.end());
-        }
+        Strings id_replicas;
+        zookeeper->tryGetChildren(zookeeper_part_uniq_node, id_replicas);
+        LOG_TRACE(log, "Found zookeper replicas for {}: {}", zookeeper_part_uniq_node, id_replicas.size());
+        replicas.insert(replicas.end(), id_replicas.begin(), id_replicas.end());
     }
 
     LOG_TRACE(log, "Found zookeper replicas for part {}: {}", part.name, replicas.size());

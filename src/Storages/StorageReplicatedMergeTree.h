@@ -213,7 +213,7 @@ public:
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
     /// Fetch part only when it stored on shared storage like S3
-    bool executeFetchShared(ReplicatedMergeTreeLogEntry & entry);
+    bool executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
     /// Lock part in zookeeper for use common S3 data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part) const override;
@@ -222,7 +222,6 @@ public:
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
-    bool unlockSharedData(const IMergeTreeDataPart & part, const String & path) const override;
 
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) const override;
