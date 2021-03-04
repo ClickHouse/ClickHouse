@@ -274,7 +274,7 @@ If the input string contains a valid IPv4 address, then the IPv6 equivalent of t
 toIPv6(string)
 ```
 
-**Parameters**
+**Argument**
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md)
 
