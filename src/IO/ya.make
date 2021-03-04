@@ -29,7 +29,6 @@ SRCS(
     HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
-    HexWriteBuffer.cpp
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
