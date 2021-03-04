@@ -143,7 +143,7 @@ IPv6StringToNum(string)
 
 **Возвращаемое значение**
 
--   Адрес IPv6 в двоичном представление.
+-   Адрес IPv6 в двоичном представлении.
 
 Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
