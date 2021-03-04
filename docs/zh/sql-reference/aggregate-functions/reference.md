@@ -53,9 +53,6 @@ skewSamp(expr)
 SELECT skewSamp(value) FROM series_with_value_column
 ```
 
-## uniqCombined64 {#agg_function-uniqcombined64}
-
-和 [uniqCombined](#agg_function-uniqcombined)，但对所有数据类型使用64位哈希。
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
