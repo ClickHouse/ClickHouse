@@ -39,6 +39,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -74,14 +75,15 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 Block MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns()
 {
     return Block(std::initializer_list<ColumnWithTypeAndName>{
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
-        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid")});
+        ColumnWithTypeAndName(DataTypeString().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(DataTypeString().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(DataTypeUUID().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUUID>(), "_part_uuid")});
 }
 
 void MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block)
 {
-    MutableColumns columns = block.mutateColumns();
+    materializeBlockInplace(block);
+    MutableColumns columns = block.cloneEmptyColumns();
 
     auto & part_column = columns[0];
     auto & partition_id_column = columns[1];
@@ -219,14 +221,16 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
-    Block virtual_columns_block = getSampleBlockWithVirtualPartColumns();
-    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, virtual_columns_block, expression_ast);
+    auto virtual_columns_block = getSampleBlockWithVirtualPartColumns();
+
+    // Generate valid expressions for filtering
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info, context, virtual_columns_block, expression_ast);
 
     // If there is still something left, fill the virtual block and do the filtering.
     if (expression_ast)
     {
         fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, virtual_columns_block, context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return std::make_unique<QueryPlan>();

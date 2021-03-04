@@ -135,7 +135,7 @@ Pipe StorageSystemReplicas::read(
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, filtered_block, context);
 
         if (!filtered_block.rows())
             return {};

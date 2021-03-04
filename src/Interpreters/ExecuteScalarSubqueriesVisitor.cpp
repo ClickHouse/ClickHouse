@@ -201,7 +201,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     /// Don't descend into subqueries in arguments of IN operator.
-    /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
+    /// But if an argument is not subquery, then deeper may be scalar subqueries and we need to descend in them.
 
     std::vector<ASTPtr *> out;
     if (checkFunctionIsInOrGlobalInOperator(func))

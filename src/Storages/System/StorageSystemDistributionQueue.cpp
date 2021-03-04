@@ -155,7 +155,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, filtered_block, context);
 
         if (!filtered_block.rows())
             return;
