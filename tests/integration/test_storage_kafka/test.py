@@ -2525,6 +2525,8 @@ def test_kafka_unavailable(kafka_cluster):
     kafka_cluster.pause_container('kafka1')
 
     instance.query('''
+        DROP TABLE IF EXISTS test.destination_kafka_unavailable;
+        DROP TABLE IF EXISTS test.test_kafka_unavailable;
         CREATE TABLE test.test_kafka_unavailable (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -2555,7 +2557,7 @@ def test_kafka_unavailable(kafka_cluster):
     kafka_cluster.unpause_container('kafka1')
 
     instance.wait_for_log_line("Committed offset 2000")
-    assert int(instance.query("SELECT count() FROM test.destination_kafka_unavailable")) == 2000
+    assert int(instance.query("SELECT count() FROM test.destination_kafka_unavailable")) == 5000
     time.sleep(5) # needed to give time for kafka client in python test to recovery
 
 @pytest.mark.timeout(180)
