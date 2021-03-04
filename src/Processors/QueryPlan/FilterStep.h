@@ -15,11 +15,10 @@ public:
         const DataStream & input_stream_,
         ActionsDAGPtr actions_dag_,
         String filter_column_name_,
-        bool remove_filter_column_,
-        const Context & context_);
+        bool remove_filter_column_);
 
     String getName() const override { return "Filter"; }
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void updateInputStream(DataStream input_stream, bool keep_header);
 
@@ -28,13 +27,11 @@ public:
     const ActionsDAGPtr & getExpression() const { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
-    const Context & getContext() const { return context; }
 
 private:
     ActionsDAGPtr actions_dag;
     String filter_column_name;
     bool remove_filter_column;
-    const Context & context;
 };
 
 }

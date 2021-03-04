@@ -900,7 +900,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     }
 }
 
-static CompiledExpressionCacheFactory & CompiledExpressionCacheFactory::getInstance()
+CompiledExpressionCacheFactory & CompiledExpressionCacheFactory::instance()
 {
     static CompiledExpressionCacheFactory factory;
     return factory;
@@ -914,7 +914,7 @@ void CompiledExpressionCacheFactory::init(size_t cache_size)
     cache = std::make_unique<CompiledExpressionCache>(cache_size);
 }
 
-void CompiledExpressionCache * CompiledExpressionCacheFactory::tryGetCache()
+CompiledExpressionCache * CompiledExpressionCacheFactory::tryGetCache()
 {
     return cache.get();
 }

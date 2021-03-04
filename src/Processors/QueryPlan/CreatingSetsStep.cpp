@@ -2,6 +2,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ CreatingSetStep::CreatingSetStep(
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipeline & pipeline)
+void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
 }
@@ -60,8 +61,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << description << '\n';
 }
 
-CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_, const Context & context_)
-    : context(context_)
+CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {
     if (input_streams_.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -73,7 +73,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_, const Context & c
         assertBlocksHaveEqualStructure(output_stream->header, input_streams[i].header, "CreatingSets");
 }
 
-QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
+QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -89,7 +89,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, context);
+        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, settings.getActionsSettings());
         processors = collector.detachProcessors();
     }
     else
@@ -147,7 +147,7 @@ void addCreatingSetsStep(
         return;
     }
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams), context);
+    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
     creating_sets->setStepDescription("Create sets before main query execution");
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }

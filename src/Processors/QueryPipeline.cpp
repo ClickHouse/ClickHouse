@@ -212,7 +212,7 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 QueryPipeline QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines,
     const Block & common_header,
-    const ActionsDAG::Settings & settings,
+    const ExpressionActionsSettings & settings,
     size_t max_threads_limit,
     Processors * collected_processors)
 {

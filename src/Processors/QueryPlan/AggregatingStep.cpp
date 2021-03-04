@@ -45,7 +45,7 @@ AggregatingStep::AggregatingStep(
 {
 }
 
-void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
+void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
 

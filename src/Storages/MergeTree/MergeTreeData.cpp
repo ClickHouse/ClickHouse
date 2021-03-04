@@ -442,7 +442,9 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(minmax_idx_columns_with_types), global_context);
+    minmax_idx_expr = std::make_shared<ExpressionActions>(
+        std::make_shared<ActionsDAG>(minmax_idx_columns_with_types),
+        ExpressionActionsSettings::fromSettings(global_context.getSettingsRef()));
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);

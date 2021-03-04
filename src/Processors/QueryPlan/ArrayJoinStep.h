@@ -7,15 +7,13 @@ namespace DB
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-class Context;
-
 class ArrayJoinStep : public ITransformingStep
 {
 public:
-    explicit ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPtr array_join_, const Context & context_);
+    explicit ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPtr array_join_);
     String getName() const override { return "ArrayJoin"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(FormatSettings & settings) const override;
 
@@ -26,7 +24,6 @@ public:
 private:
     ArrayJoinActionPtr array_join;
     Block res_header;
-    const Context & context;
 };
 
 }

@@ -399,7 +399,11 @@ class ScopeStack::Index
     ActionsDAG::NodeRawConstPtrs & index;
 
 public:
-    explicit Index(ActionsDAG::NodeRawConstPtrs & index_) : index(index_) {}
+    explicit Index(ActionsDAG::NodeRawConstPtrs & index_) : index(index_)
+    {
+        for (const auto * node : index)
+            map.emplace(node->result_name, node);
+    }
 
     void addNode(const ActionsDAG::Node * node)
     {
@@ -465,18 +469,15 @@ ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, const Context & context_)
     level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
 
     for (const auto & node : level.actions_dag->getIndex())
-    {
-        level.index->addNode(node);
-
         if (node->type == ActionsDAG::ActionType::INPUT)
             level.inputs.emplace(node->result_name);
-    }
 }
 
 void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::make_shared<ActionsDAG>();
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
     const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
@@ -1009,7 +1010,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     String result_name = lambda->arguments->children.at(1)->getColumnName();
                     lambda_dag->removeUnusedActions(Names(1, result_name));
 
-                    auto lambda_actions = std::make_shared<ExpressionActions>(lambda_dag, data.context);
+                    auto lambda_actions = std::make_shared<ExpressionActions>(
+                        lambda_dag,
+                        ExpressionActionsSettings::fromContext(data.context));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 

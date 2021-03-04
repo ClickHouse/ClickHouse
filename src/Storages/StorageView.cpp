@@ -17,6 +17,8 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -59,7 +61,9 @@ Pipe StorageView::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageView::read(
@@ -89,7 +93,7 @@ void StorageView::read(
     auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
     materializing_actions->addMaterializingOutputActions();
 
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions), context);
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
     query_plan.addStep(std::move(materializing));
 
@@ -100,7 +104,7 @@ void StorageView::read(
             header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
-    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag, context);
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
 }

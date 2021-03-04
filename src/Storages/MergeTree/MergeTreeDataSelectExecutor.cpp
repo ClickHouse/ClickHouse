@@ -860,8 +860,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 plan->getCurrentDataStream(),
                 filter_expression,
                 filter_function->getColumnName(),
-                false,
-                context);
+                false);
 
         sampling_step->setStepDescription("Sampling");
         plan->addStep(std::move(sampling_step));
@@ -869,7 +868,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (result_projection)
     {
-        auto projection_step = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), result_projection, context);
+        auto projection_step = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), result_projection);
         projection_step->setStepDescription("Remove unused columns after reading from storage");
         plan->addStep(std::move(projection_step));
     }
@@ -884,7 +883,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         auto adding_column_action = ActionsDAG::makeAddingColumnActions(std::move(column));
 
-        auto adding_column = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), std::move(adding_column_action), context);
+        auto adding_column = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), std::move(adding_column_action));
         adding_column->setStepDescription("Add _sample_factor column");
         plan->addStep(std::move(adding_column));
     }
@@ -1329,7 +1328,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
             auto expression_step = std::make_unique<ExpressionStep>(
                     plan->getCurrentDataStream(),
-                    sorting_key_prefix_expr, context);
+                    sorting_key_prefix_expr);
 
             expression_step->setStepDescription("Calculate sorting key prefix");
             plan->addStep(std::move(expression_step));
@@ -1352,7 +1351,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         input_streams.emplace_back(plan->getCurrentDataStream());
 
     const auto & common_header = plans.front()->getCurrentDataStream().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), common_header, context);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), common_header);
 
     auto plan = std::make_unique<QueryPlan>();
     plan->unitePlans(std::move(union_step), std::move(plans));
@@ -1610,7 +1609,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     for (const auto & partition_plan : partition_plans)
         input_streams.push_back(partition_plan->getCurrentDataStream());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header, context);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header);
     union_step->setStepDescription("Unite sources after FINAL");
     QueryPlanPtr plan = std::make_unique<QueryPlan>();
     plan->unitePlans(std::move(union_step), std::move(partition_plans));

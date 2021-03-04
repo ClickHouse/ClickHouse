@@ -748,12 +748,12 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false, context));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions(), context));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
             }
         }
 
@@ -767,7 +767,10 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
-    auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    auto pipeline = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
+
     pipeline->addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);

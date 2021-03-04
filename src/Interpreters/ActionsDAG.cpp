@@ -32,7 +32,7 @@ namespace ErrorCodes
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {
     for (const auto & input : inputs_)
-        addInput(input.name, input.type);
+        index.push_back(&addInput(input.name, input.type));
 }
 
 ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
@@ -49,10 +49,10 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
             ///   without any respect to header structure. So, it is a way to drop materialized column and use
             ///   constant value from header.
             /// We cannot remove such input right now cause inputs positions are important in some cases.
-            addColumn(input);
+            index.push_back(&addColumn(input));
         }
         else
-            addInput(input.name, input.type);
+            index.push_back(&addInput(input.name, input.type));
     }
 }
 
@@ -321,7 +321,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
 
-    for (auto * node : index)
+    for (const auto * node : index)
     {
         visited_nodes.insert(node);
         stack.push(const_cast<Node *>(node));
@@ -374,22 +374,20 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases, bool project)
 {
-    std::unordered_map<std::string_view, std::list<const Node *>> names_map;
+    std::unordered_map<std::string_view, const Node *> names_map;
     for (const auto * node : index)
-        names_map[node->result_name].push_back(node);
+        names_map.emplace(node->result_name, node);
 
     NodeRawConstPtrs required_nodes;
 
     for (const auto & item : aliases)
     {
-        auto & nodes_list = names_map[item.first];
-        if (nodes_list.empty())
+        auto it = names_map.find(item.first);
+        if (it == names_map.end())
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                             "Unknown column: {}, there are only columns {}", item.first, dumpNames());
 
-        const auto * child = nodes_list.front();
-        nodes_list.pop_front();
-        required_nodes.push_back(child);
+        required_nodes.push_back(it->second);
     }
 
     if (project)
@@ -535,79 +533,97 @@ void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression)
     removeUnusedActions();
 }
 
-void ActionsDAG::transformHeader(Block & block)
-{
-    auto inputs_mapping = buildNameToNodeMapping(inputs);
-    auto inputs_pos = getInputsPositions(block, inputs_mapping);
+// void ActionsDAG::transformHeader(Block & block)
+// {
+//     NameToNodeMap names_mapping;
+//     std::unordered_map<const Node *, size_t> nodes_mapping;
+//     for (size_t i = 0, size = inputs.size(); i < size; ++i)
+//     {
+//         const auto * input = inputs[i];
+//         names_mapping[input->result_name].emplace_back(i);
+//         nodes_mapping[input] = i;
+//     }
 
-    ColumnsWithTypeAndName result;
-    result.reserve(index.size());
-    for (const auto * node : result)
-    {
-        
-    }
-}
+//     auto inputs_mapping = buildNameToNodeMapping(inputs);
+//     auto inputs_pos = getInputsPositions(block, inputs_mapping);
 
-ActionsDAG::NameToNodeMap ActionsDAG::buildNameToNodeMapping(const NodeRawConstPtrs & nodes)
-{
-    NameToNodeMap map;
-    for (size_t i = 0, size = nodes.size(); i < size; ++i)
-    {
-        const auto * node = nodes[i];
-        map[node->result_name].emplace_back(i);
-    }
+//     ColumnsWithTypeAndName result;
+//     result.reserve(index.size());
+//     for (const auto * node : result)
+//     {
+//         if (node->type = NodeType::INPUT)
+//         {
+//             ssize_t pos = inputs_pos[nodes_mapping[node]];
+//             if (pos >= 0)
+//                 result.push_back(block.getByPosition(pos));
+//         }
+//         else if (node->column)
+//             result.push_back({node->column, node->result_type, node->result_name});
+//         else
+//             result.push_back({node->result_type->, node->result_type, node->result_name});
+//     }
+// }
 
-    return map;
-}
+// ActionsDAG::NameToNodeMap ActionsDAG::buildNameToNodeMapping(const NodeRawConstPtrs & nodes)
+// {
+//     NameToNodeMap map;
+//     for (size_t i = 0, size = nodes.size(); i < size; ++i)
+//     {
+//         const auto * node = nodes[i];
+//         map[node->result_name].emplace_back(i);
+//     }
 
-static std::vector<ssize_t> ActionsDAG::getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping)
-{
-    std::vector<ssize_t> inputs_pos(inputs.size(), -1);
+//     return map;
+// }
 
-    for (size_t pos = 0; pos < block.columns(); ++pos)
-    {
-        const auto & col = block.getByPosition(pos);
-        auto it = inputs_mapping.find(col.name);
-        if (it != inputs_mapping.end())
-        {
-            for (auto input_pos : it->second)
-            {
-                if (inputs_pos[input_pos] < 0)
-                {
-                    inputs_pos[input_pos] = pos;
-                    break;
-                }
-            }
-        }
-    }
+// static std::vector<ssize_t> ActionsDAG::getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping)
+// {
+//     std::vector<ssize_t> inputs_pos(inputs.size(), -1);
 
-    return inputs_pos;
-}
+//     for (size_t pos = 0; pos < block.columns(); ++pos)
+//     {
+//         const auto & col = block.getByPosition(pos);
+//         auto it = inputs_mapping.find(col.name);
+//         if (it != inputs_mapping.end())
+//         {
+//             for (auto input_pos : it->second)
+//             {
+//                 if (inputs_pos[input_pos] < 0)
+//                 {
+//                     inputs_pos[input_pos] = pos;
+//                     break;
+//                 }
+//             }
+//         }
+//     }
 
-void ActionsDAG::transformBlock(Block & block, std::vector<ssize_t> inputs_pos, ColumnsWithTypeAndName result_columns)
-{
-    if (project_input))
-    {
-        block.clear();
-    }
-    else
-    {
-        std::sort(inputs_pos.rbegin(), inputs_pos.rend());
-        for (auto input : execution_context.inputs_pos)
-            if (input >= 0)
-                block.erase(input);
-    }
+//     return inputs_pos;
+// }
 
-    Block res;
+// void ActionsDAG::transformBlock(Block & block, std::vector<ssize_t> inputs_pos, ColumnsWithTypeAndName result_columns)
+// {
+//     if (project_input))
+//     {
+//         block.clear();
+//     }
+//     else
+//     {
+//         std::sort(inputs_pos.rbegin(), inputs_pos.rend());
+//         for (auto input : execution_context.inputs_pos)
+//             if (input >= 0)
+//                 block.erase(input);
+//     }
 
-    for (auto & col : result_columns)
-        res.insert(std::move(col));
+//     Block res;
 
-    for (const auto & item : block)
-        res.insert(std::move(item));
+//     for (auto & col : result_columns)
+//         res.insert(std::move(col));
 
-    block.swap(res);
-}
+//     for (const auto & item : block)
+//         res.insert(std::move(item));
+
+//     block.swap(res);
+// }
 
 std::string ActionsDAG::dumpDAG() const
 {
