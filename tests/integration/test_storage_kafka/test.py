@@ -19,7 +19,9 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
+from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
 from kafka.admin import NewTopic
 
 
@@ -75,7 +77,7 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
 
 ## just to ensure the python client / producer is working properly
 def kafka_producer_send_heartbeat_msg(max_retries=50):
-    kafka_produce('test_heartbeat_topic', ['test'], retries=max_retries)
+    kafka_produce(kafka_cluster, 'test_heartbeat_topic', ['test'], retries=max_retries)
 
 def kafka_consume(kafka_cluster, topic):
     consumer = KafkaConsumer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), auto_offset_reset="earliest")
@@ -154,8 +156,8 @@ def kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'
         else:
             return TSV(result) == TSV(reference)
 
-def describe_consumer_group(name):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+def describe_consumer_group(kafka_cluster, name):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
     consumer_groups = admin_client.describe_consumer_groups([name])
     res = []
     for member in consumer_groups[0].members:
@@ -216,7 +218,7 @@ kafka_topic_old	old
     messages = []
     for i in range(50):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('old', messages)
+    kafka_produce(kafka_cluster, 'old', messages)
 
     result = ''
     while True:
@@ -248,16 +250,16 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     messages = []
     for i in range(25):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('new', messages)
+    kafka_produce(kafka_cluster, 'new', messages)
 
     # Insert couple of malformed messages.
-    kafka_produce('new', ['}{very_broken_message,'])
-    kafka_produce('new', ['}another{very_broken_message,'])
+    kafka_produce(kafka_cluster, 'new', ['}{very_broken_message,'])
+    kafka_produce(kafka_cluster, 'new', ['}another{very_broken_message,'])
 
     messages = []
     for i in range(25, 50):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('new', messages)
+    kafka_produce(kafka_cluster, 'new', messages)
 
     result = ''
     while True:
@@ -907,7 +909,7 @@ def test_kafka_issue4116(kafka_cluster):
 
 @pytest.mark.timeout(180)
 def test_kafka_consumer_hang(kafka_cluster):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
 
     topic_list = []
     topic_list.append(NewTopic(name="consumer_hang", num_partitions=8, replication_factor=1))
@@ -959,7 +961,7 @@ def test_kafka_consumer_hang(kafka_cluster):
 
 @pytest.mark.timeout(180)
 def test_kafka_consumer_hang2(kafka_cluster):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
 
     topic_list = []
     topic_list.append(NewTopic(name="consumer_hang2", num_partitions=1, replication_factor=1))
@@ -1010,7 +1012,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
     messages = []
     for i in range(50):
         messages.append('{i}, {i}'.format(i=i))
-    kafka_produce('csv', messages)
+    kafka_produce(kafka_cluster, 'csv', messages)
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -1035,7 +1037,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
     messages = []
     for i in range(50):
         messages.append('{i}\t{i}'.format(i=i))
-    kafka_produce('tsv', messages)
+    kafka_produce(kafka_cluster, 'tsv', messages)
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -1057,7 +1059,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
 
 @pytest.mark.timeout(120)
 def test_kafka_select_empty(kafka_cluster):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
     topic_list = []
     topic_list.append(NewTopic(name="empty", num_partitions=1, replication_factor=1))
     admin_client.create_topics(new_topics=topic_list, validate_only=False)
@@ -1107,9 +1109,9 @@ def test_kafka_json_without_delimiter(kafka_cluster):
 
 @pytest.mark.timeout(180)
 def test_kafka_protobuf(kafka_cluster):
-    kafka_produce_protobuf_messages('pb', 0, 20)
-    kafka_produce_protobuf_messages('pb', 20, 1)
-    kafka_produce_protobuf_messages('pb', 21, 29)
+    kafka_produce_protobuf_messages(kafka_cluster, 'pb', 0, 20)
+    kafka_produce_protobuf_messages(kafka_cluster, 'pb', 20, 1)
+    kafka_produce_protobuf_messages(kafka_cluster, 'pb', 21, 29)
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value String)
@@ -1133,9 +1135,9 @@ def test_kafka_protobuf(kafka_cluster):
 @pytest.mark.timeout(180)
 def test_kafka_string_field_on_first_position_in_protobuf(kafka_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/12615
-    kafka_produce_protobuf_social('string_field_on_first_position_in_protobuf', 0, 20)
-    kafka_produce_protobuf_social('string_field_on_first_position_in_protobuf', 20, 1)
-    kafka_produce_protobuf_social('string_field_on_first_position_in_protobuf', 21, 29)
+    kafka_produce_protobuf_social(kafka_cluster, 'string_field_on_first_position_in_protobuf', 0, 20)
+    kafka_produce_protobuf_social(kafka_cluster, 'string_field_on_first_position_in_protobuf', 20, 1)
+    kafka_produce_protobuf_social(kafka_cluster, 'string_field_on_first_position_in_protobuf', 21, 29)
 
     instance.query('''
 CREATE TABLE test.kafka (
@@ -1349,7 +1351,7 @@ def test_librdkafka_compression(kafka_cluster):
                 SELECT * FROM test.kafka;
         '''.format(topic_name=topic_name) )
 
-        kafka_produce(topic_name, messages)
+        kafka_produce(kafka_cluster, topic_name, messages)
 
         instance.wait_for_log_line("Committed offset {}".format(number_of_messages))
 
