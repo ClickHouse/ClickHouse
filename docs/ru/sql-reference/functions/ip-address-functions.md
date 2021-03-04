@@ -275,7 +275,7 @@ SELECT
 toIPv6(string)
 ```
 
-**Параметры**
+**Аргумент**
 
 -   `string` — IP адрес. [String](../../sql-reference/data-types/string.md)
 
