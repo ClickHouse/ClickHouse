@@ -125,7 +125,7 @@ LIMIT 10
 
 The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
 
-If the IP address is a valid IPv4 address, returns the IPv6 equivalent of the IPv4 address.
+If the input string contains a valid IPv4 address, returns its IPv6 equivalent.
 HEX can be uppercase or lowercase.
 
 Alias: `INET6_ATON`.
