@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
