@@ -764,10 +764,10 @@ TEST(CoordinationTest, ChangelogTestLostFiles)
     fs::remove("./logs/changelog_1_20.bin");
 
     DB::NuKeeperLogStore changelog_reader("./logs", 20, true);
-    EXPECT_THROW(changelog_reader.init(5, 0), DB::Exception);
-
-    fs::remove("./logs/changelog_21_40.bin");
-    EXPECT_THROW(changelog_reader.init(3, 0), DB::Exception);
+    /// It should print error message, but still able to start
+    changelog_reader.init(5, 0);
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_20.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin"));
 }
 
 TEST(CoordinationTest, SnapshotableHashMapSimple)

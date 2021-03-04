@@ -284,10 +284,17 @@ void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_
         {
             if (!started)
             {
-                if (changelog_description.from_log_index > start_to_read_from)
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot read changelog from index {}, smallest available index {}", start_index, changelog_description.from_log_index);
-                started = true;
+                if (changelog_description.from_log_index > last_commited_log_index && (changelog_description.from_log_index - last_commited_log_index) > 1)
+                {
+                    LOG_ERROR(log, "Some records was lost, last commited log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
+                    incomplete_log_index = changelog_start_index;
+                    break;
+                }
+                else if (changelog_description.from_log_index > start_to_read_from)
+                    LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smalled available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
             }
+
+            started = true;
 
             ChangelogReader reader(changelog_description.path);
             result = reader.readChangelog(logs, start_to_read_from, index_to_start_pos, log);
@@ -312,8 +319,12 @@ void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_
 
     if (incomplete_log_index != 0)
     {
+        auto start_remove_from = existing_changelogs.begin();
+        if (started)
+            start_remove_from = existing_changelogs.upper_bound(incomplete_log_index);
+
         /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
-        for (auto itr = existing_changelogs.upper_bound(incomplete_log_index); itr != existing_changelogs.end();)
+        for (auto itr = start_remove_from; itr != existing_changelogs.end();)
         {
             LOG_WARNING(log, "Removing changelog {}, because it's goes after broken changelog entry", itr->second.path);
             std::filesystem::remove(itr->second.path);
