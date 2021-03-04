@@ -8,19 +8,12 @@
 #include <ext/chrono_io.h>
 
 #include <Core/Defines.h>
-#include <Common/BitHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
-#include <Common/typeid_cast.h>
-#include <Common/setThreadName.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
-#include <Dictionaries/CacheDictionaryStorage.h>
-#include <Dictionaries/SSDCacheDictionaryStorage.h>
-#include <Dictionaries/DictionaryFactory.h>
 
 namespace ProfileEvents
 {
@@ -323,6 +316,20 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
     const PaddedPODArray<KeyType> & keys,
     const Columns & default_values_columns) const
 {
+    /**
+    * Flow of getColumsImpl
+    * 1. Get fetch result from storage
+    * 2. If all keys are found in storage and not expired
+    *   2.1. If storage returns fetched columns in order of keys then result is returned to client.
+    *   2.2. If storage does not return fetched columns in order of keys then reorder
+    *    result columns and return result to client.
+    * 3. If all keys are found in storage but some of them are expired and we allow to read expired keys
+    * start async request to source and perform actions from step 2 for result returned from storage.
+    * 4. If some keys are found and some are not, start sync update from source.
+    * 5. Aggregate columns returned from storage and source, if key is not found in storage and in source
+    * use default value.
+    */
+
     DictionaryStorageFetchRequest request(dict_struct, attribute_names, default_values_columns);
 
     FetchResult result_of_fetch_from_storage;
@@ -418,6 +425,22 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
 template <DictionaryKeyType dictionary_key_type>
 ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
+    /**
+    * Flow of hasKeys. It is similar to getColumns. But there is an important detail, if key is identified with default value in storage
+    * it means that in hasKeys result this key will be false.
+    *
+    * 1. Get fetch result from storage
+    * 2. If all keys are found in storage and not expired and there are no default keys return that we have all keys.
+    * Othewise set allow_expired_keys_during_aggregation and go to step 5.
+    * 3. If all keys are found in storage and some of them are expired and allow_read_expired keys is true return that we have all keys.
+    * Othewise set allow_expired_keys_during_aggregation and go to step 5.
+    * 4. If not all keys are found in storage start sync update from source.
+    * 5. Start aggregation of keys from source and storage.
+    * If we allow read expired keys from step 2 or 3 then count them as founded in storage.
+    * Check if key was found in storage not default for that key set true in result array.
+    * Check that key was fetched during update for that key set true in result array.
+    */
+
     if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
@@ -516,6 +539,8 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
+    /// If keys were returned not in order of keys, aggregate fetched columns in order of requested keys.
+
     for (size_t fetch_request_index = 0; fetch_request_index < request.attributesSize(); ++fetch_request_index)
     {
         if (!request.shouldFillResultColumnWithIndex(fetch_request_index))
@@ -547,6 +572,13 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index)
 {
+    /**
+    * Aggregation of columns fetched from storage and from source during update.
+    * If key was found in storage add it to result.
+    * If key was found in source during update add it to result.
+    * If key was not found in storage or in source during update add default value.
+    */
+
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
     for (size_t fetch_request_index = 0; fetch_request_index < request.attributesSize(); ++fetch_request_index)
@@ -612,9 +644,25 @@ BlockInputStreamPtr CacheDictionary<dictionary_key_type>::getBlockInputStream(co
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr)
 {
+    /**
+    * Update has following flow.
+    * 1. Filter only necessary keys to request, keys that are expired or not found.
+    * And create not_found_keys hash_set including each requested key.
+    * In case of simple_keys we need to fill requested_keys_vector with requested value key.
+    * In case of complex_keys we need to fill requested_complex_key_rows with requested row.
+    * 2. Create stream from source with necessary keys to request using method for simple or complex keys.
+    * 3. Create fetched columns during update variable. This columns will aggregate columns that we fetch from source.
+    * 4. When block is fetched from source. Split it into keys columns and attributes columns.
+    * Insert attributes columns into associated fetched columns during update.
+    * Create KeysExtractor and extract keys from keys columns.
+    * Update map of requested found key to fetched column index.
+    * Remove found key from not_found_keys.
+    * 5. Add aggregated columns during update into storage.
+    * 6. Add not found keys as default into storage.
+    */
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
 
-    size_t found_num = 0;
+    size_t found_keys_size = 0;
 
     DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, update_unit_ptr->complex_key_arena);
     const auto & requested_keys = requested_keys_extractor.getKeys();
@@ -641,13 +689,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         }
     }
 
-    size_t requested_keys_size = 0;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        requested_keys_size = requested_keys_vector.size();
-    else
-        requested_keys_size = requested_complex_key_rows.size();
-
+    size_t requested_keys_size = update_unit_ptr->keys_to_update_size;
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_keys_size);
 
     const auto & fetch_request = update_unit_ptr->request;
@@ -690,22 +732,22 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 }
 
                 DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, update_unit_ptr->complex_key_arena);
-                const auto & keys = keys_extractor.getKeys();
+                const auto & keys_extracted_from_block = keys_extractor.getKeys();
 
                 for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
                 {
                     auto & column_to_update = fetched_columns_during_update[index_of_attribute];
                     auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
-                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys.size());
+                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
                 }
 
-                for (size_t i = 0; i < keys.size(); ++i)
+                for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
                 {
-                    auto fetched_key_from_source = keys[i];
+                    auto fetched_key_from_source = keys_extracted_from_block[i];
                     not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_num;
+                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
                     found_keys_in_source.emplace_back(fetched_key_from_source);
-                    ++found_num;
+                    ++found_keys_size;
                 }
             }
 
@@ -759,8 +801,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
         }
 
-        ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_num);
-        ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
+        ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_keys_size);
+        ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheRequests);
     }
     else
@@ -775,341 +817,5 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
 template class CacheDictionary<DictionaryKeyType::simple>;
 template class CacheDictionary<DictionaryKeyType::complex>;
-
-namespace
-{
-
-    CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
-        const std::string & full_name,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & layout_prefix,
-        const DictionaryLifetime & dict_lifetime,
-        bool is_complex)
-    {
-        std::string dictionary_type_prefix = is_complex ? ".complex_key_cache." : ".cache.";
-        std::string dictionary_configuration_prefix = layout_prefix + dictionary_type_prefix;
-
-        const size_t size = config.getUInt64(dictionary_configuration_prefix + "size_in_cells");
-        if (size == 0)
-            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 0 cells",
-                            ErrorCodes::TOO_SMALL_BUFFER_SIZE};
-
-        const size_t strict_max_lifetime_seconds =
-                config.getUInt64(dictionary_configuration_prefix + "strict_max_lifetime_seconds",
-                static_cast<size_t>(dict_lifetime.max_sec));
-
-        size_t rounded_size = roundUpToPowerOfTwoOrZero(size);
-
-        CacheDictionaryStorageConfiguration storage_configuration {
-            rounded_size,
-            strict_max_lifetime_seconds,
-            dict_lifetime
-        };
-
-        return storage_configuration;
-    }
-
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-
-    SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
-        const std::string & full_name,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & layout_prefix,
-        const DictionaryLifetime & dict_lifetime,
-        bool is_complex)
-    {
-        std::string dictionary_type_prefix = is_complex ? ".complex_key_ssd_cache." : ".ssd_cache.";
-        std::string dictionary_configuration_prefix = layout_prefix + dictionary_type_prefix;
-
-        const size_t strict_max_lifetime_seconds =
-                config.getUInt64(dictionary_configuration_prefix + "strict_max_lifetime_seconds",
-                static_cast<size_t>(dict_lifetime.max_sec));
-
-        static constexpr size_t DEFAULT_SSD_BLOCK_SIZE_BYTES = DEFAULT_AIO_FILE_BLOCK_SIZE;
-        static constexpr size_t DEFAULT_FILE_SIZE_BYTES = 4 * 1024 * 1024 * 1024ULL;
-        static constexpr size_t DEFAULT_READ_BUFFER_SIZE_BYTES = 16 * DEFAULT_SSD_BLOCK_SIZE_BYTES;
-        static constexpr size_t DEFAULT_WRITE_BUFFER_SIZE_BYTES = DEFAULT_SSD_BLOCK_SIZE_BYTES;
-
-        static constexpr size_t DEFAULT_MAX_STORED_KEYS = 100000;
-        static constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
-
-        const size_t max_partitions_count = config.getInt64(dictionary_configuration_prefix + "ssd_cache.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
-
-        const size_t block_size = config.getInt64(dictionary_configuration_prefix + "block_size", DEFAULT_SSD_BLOCK_SIZE_BYTES);
-        const size_t file_size = config.getInt64(dictionary_configuration_prefix + "file_size", DEFAULT_FILE_SIZE_BYTES);
-        if (file_size % block_size != 0)
-            throw Exception{full_name + ": file_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
-
-        const size_t read_buffer_size = config.getInt64(dictionary_configuration_prefix + "read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
-        if (read_buffer_size % block_size != 0)
-            throw Exception{full_name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
-
-        const size_t write_buffer_size = config.getInt64(dictionary_configuration_prefix + "write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
-        if (write_buffer_size % block_size != 0)
-            throw Exception{full_name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
-
-        auto directory_path = config.getString(dictionary_configuration_prefix + "path");
-        if (directory_path.empty())
-            throw Exception{full_name + ": dictionary of layout 'ssd_cache' cannot have empty path",
-                            ErrorCodes::BAD_ARGUMENTS};
-        if (directory_path.at(0) != '/')
-            directory_path = std::filesystem::path{config.getString("path")}.concat(directory_path).string();
-
-        const size_t max_stored_keys_in_partition = config.getInt64(dictionary_configuration_prefix + "max_stored_keys", DEFAULT_MAX_STORED_KEYS);
-        const size_t rounded_size = roundUpToPowerOfTwoOrZero(max_stored_keys_in_partition);
-
-        SSDCacheDictionaryStorageConfiguration configuration {
-            strict_max_lifetime_seconds,
-            dict_lifetime,
-            directory_path,
-            max_partitions_count,
-            rounded_size,
-            block_size,
-            file_size / block_size,
-            read_buffer_size / block_size,
-            write_buffer_size / block_size
-        };
-
-        return configuration;
-    }
-
-#endif
-
-    CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
-        const std::string & full_name,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & layout_prefix,
-        bool is_complex)
-    {
-        std::string type = is_complex ? "complex_key_cache" : "cache";
-
-        const size_t max_update_queue_size =
-                config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
-        if (max_update_queue_size == 0)
-            throw Exception{full_name + ": dictionary of layout'" +  type + "'cannot have empty update queue of size 0",
-                            ErrorCodes::TOO_SMALL_BUFFER_SIZE};
-
-        const size_t update_queue_push_timeout_milliseconds =
-                config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
-        if (update_queue_push_timeout_milliseconds < 10)
-            throw Exception{full_name + ": dictionary of layout'" + type + "'have too little update_queue_push_timeout",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const size_t query_wait_timeout_milliseconds =
-                config.getUInt64(layout_prefix + ".cache.query_wait_timeout_milliseconds", 60000);
-
-        const size_t max_threads_for_updates =
-                config.getUInt64(layout_prefix + ".max_threads_for_updates", 4);
-        if (max_threads_for_updates == 0)
-            throw Exception{full_name + ": dictionary of layout'"+ type +"'cannot have zero threads for updates.",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        CacheDictionaryUpdateQueueConfiguration update_queue_configuration {
-            max_update_queue_size,
-            max_threads_for_updates,
-            update_queue_push_timeout_milliseconds,
-            query_wait_timeout_milliseconds };
-
-        return update_queue_configuration;
-    }
-}
-
-void registerDictionaryCache(DictionaryFactory & factory)
-{
-    auto create_simple_cache_layout = [=](const std::string & full_name,
-                             const DictionaryStructure & dict_struct,
-                             const Poco::Util::AbstractConfiguration & config,
-                             const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
-    {
-        if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'cache'",
-                            ErrorCodes::UNSUPPORTED_METHOD};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{full_name
-                                + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                  "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        if (require_nonempty)
-            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-
-        const auto & layout_prefix = config_prefix + ".layout";
-
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-
-        const bool allow_read_expired_keys =
-                config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
-
-        auto storage_configuration = parseCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, false);
-        auto storage = std::make_shared<CacheDictionaryStorage<DictionaryKeyType::simple>>(storage_configuration);
-
-        auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, false);
-
-        return std::make_unique<CacheDictionary<DictionaryKeyType::simple>>(
-                dict_id,
-                dict_struct,
-                std::move(source_ptr),
-                storage,
-                update_queue_configuration,
-                dict_lifetime,
-                allow_read_expired_keys);
-    };
-
-    factory.registerLayout("cache", create_simple_cache_layout, false);
-
-    auto create_complex_key_cache_layout = [=](const std::string & full_name,
-                             const DictionaryStructure & dict_struct,
-                             const Poco::Util::AbstractConfiguration & config,
-                             const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
-    {
-        if (dict_struct.id)
-            throw Exception{"'id' is not supported for dictionary of layout 'complex_key_cache'",
-                            ErrorCodes::UNSUPPORTED_METHOD};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{full_name
-                                + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                  "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        if (require_nonempty)
-            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-
-        const auto & layout_prefix = config_prefix + ".layout";
-
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-
-        const bool allow_read_expired_keys =
-                config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
-
-        auto storage_configuration = parseCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, true);
-        auto storage = std::make_shared<CacheDictionaryStorage<DictionaryKeyType::complex>>(storage_configuration);
-
-        auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, true);
-
-        return std::make_unique<CacheDictionary<DictionaryKeyType::complex>>(
-                dict_id,
-                dict_struct,
-                std::move(source_ptr),
-                storage,
-                update_queue_configuration,
-                dict_lifetime,
-                allow_read_expired_keys);
-    };
-
-    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
-
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-
-    auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
-                             const DictionaryStructure & dict_struct,
-                             const Poco::Util::AbstractConfiguration & config,
-                             const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
-    {
-        if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'cache'",
-                            ErrorCodes::UNSUPPORTED_METHOD};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{full_name
-                                + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                  "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        if (require_nonempty)
-            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const auto & layout_prefix = config_prefix + ".layout";
-
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-
-        const bool allow_read_expired_keys =
-                config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
-
-        auto storage_configuration = parseSSDCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, false);
-        auto storage = std::make_shared<SSDCacheDictionaryStorage<DictionaryKeyType::simple>>(storage_configuration);
-
-        auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, false);
-
-        return std::make_unique<CacheDictionary<DictionaryKeyType::simple>>(
-                dict_id,
-                dict_struct,
-                std::move(source_ptr),
-                storage,
-                update_queue_configuration,
-                dict_lifetime,
-                allow_read_expired_keys);
-    };
-
-    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false);
-
-    auto create_complex_key_ssd_cache_layout = [=](const std::string & full_name,
-                             const DictionaryStructure & dict_struct,
-                             const Poco::Util::AbstractConfiguration & config,
-                             const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
-    {
-        if (dict_struct.id)
-            throw Exception{"'id' is not supported for dictionary of layout 'complex_key_cache'",
-                            ErrorCodes::UNSUPPORTED_METHOD};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{full_name
-                                + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                  "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        if (require_nonempty)
-            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-
-        const auto & layout_prefix = config_prefix + ".layout";
-
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-
-        const bool allow_read_expired_keys =
-                config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
-
-        auto storage_configuration = parseSSDCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, true);
-        auto storage = std::make_shared<SSDCacheDictionaryStorage<DictionaryKeyType::complex>>(storage_configuration);
-
-        auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, true);
-
-        return std::make_unique<CacheDictionary<DictionaryKeyType::complex>>(
-                dict_id,
-                dict_struct,
-                std::move(source_ptr),
-                storage,
-                update_queue_configuration,
-                dict_lifetime,
-                allow_read_expired_keys);
-    };
-
-    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);
-#endif
-
-}
 
 }

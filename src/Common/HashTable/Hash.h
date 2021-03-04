@@ -203,6 +203,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64) && UseD
             static_cast<UInt64>(key >> 256));
     }
 
+    assert(false);
     __builtin_unreachable();
 }
 

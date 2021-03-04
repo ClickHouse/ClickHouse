@@ -46,18 +46,23 @@ public:
         const Columns & key_columns_,
         const PaddedPODArray<KeyState> & key_index_to_state_from_storage_,
         const DictionaryStorageFetchRequest & request_,
-        size_t keys_to_update_size)
+        size_t keys_to_update_size_)
         : key_columns(key_columns_)
         , key_index_to_state(key_index_to_state_from_storage_.begin(), key_index_to_state_from_storage_.end())
         , request(request_)
+        , keys_to_update_size(keys_to_update_size_)
         , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, keys_to_update_size)
     {}
 
-    CacheDictionaryUpdateUnit(): alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, 0) {}
+    CacheDictionaryUpdateUnit()
+        : keys_to_update_size(0)
+        , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, 0)
+    {}
 
     const Columns key_columns;
     const PaddedPODArray<KeyState> key_index_to_state;
     const DictionaryStorageFetchRequest request;
+    const size_t keys_to_update_size;
 
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
     MutableColumns fetched_columns_during_update;

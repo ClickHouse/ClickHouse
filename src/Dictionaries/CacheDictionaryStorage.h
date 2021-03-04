@@ -397,9 +397,7 @@ private:
         {
             /// In case of complex key we keep it in arena
             if constexpr (std::is_same_v<Key, StringRef>)
-            {
                 arena.free(const_cast<char *>(key.data), key.size);
-            }
 
             if (value.place_for_serialized_columns)
                 arena.free(value.place_for_serialized_columns, value.allocated_size_for_columns);
