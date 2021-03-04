@@ -1324,7 +1324,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const NamesAndTypesList & constant_inputs)
+ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
 {
     auto actions = std::make_shared<ActionsDAG>(constant_inputs);
 

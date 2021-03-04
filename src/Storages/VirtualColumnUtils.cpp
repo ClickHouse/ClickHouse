@@ -131,9 +131,18 @@ bool prepareFilterBlockWithQuery(const SelectQueryInfo & query_info, const Conte
     if (!select.where() && !select.prewhere())
         return ret;
 
+    ASTPtr condition_ast;
+    if (select.prewhere() && select.where())
+        condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
+    else
+        condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
+
     // Prepare a block with valid expressions
-    ExpressionAnalyzer(query_info.query, query_info.syntax_analyzer_result, context)
-        .getConstActions(block.getNamesAndTypesList())
+    for (size_t i = 0; i < block.columns(); ++i)
+        block.getByPosition(i).column = block.getByPosition(i).type->createColumnConstWithDefaultValue(1);
+
+    ExpressionAnalyzer(condition_ast, query_info.syntax_analyzer_result, context)
+        .getConstActions(block.getColumnsWithTypeAndName())
         ->execute(block);
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.

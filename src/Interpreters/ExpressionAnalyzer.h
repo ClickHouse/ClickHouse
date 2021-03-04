@@ -110,7 +110,7 @@ public:
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
-    ExpressionActionsPtr getConstActions(const NamesAndTypesList & constant_inputs = {});
+    ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
       * Only the sets needed to perform actions returned from already executed `append*` or `getActions`.
