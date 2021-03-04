@@ -1,7 +1,9 @@
 DROP DATABASE IF EXISTS constraint_test;
 DROP TABLE IF EXISTS constraint_test.constrained;
 
+SET convert_query_to_cnf = 1;
 SET optimize_using_constraints = 1;
+SET optimize_move_to_prewhere = 1;
 
 CREATE DATABASE constraint_test;
 CREATE TABLE constraint_test.assumption (URL String, a Int32, CONSTRAINT c1 ASSUME domainWithoutWWW(URL) = 'yandex.ru', CONSTRAINT c2 ASSUME URL > 'zzz', CONSTRAINT c3 CHECK isValidUTF8(URL)) ENGINE = TinyLog;
@@ -18,6 +20,7 @@ SELECT count() FROM constraint_test.assumption WHERE domainWithoutWWW(URL) != 'y
 SELECT count() FROM constraint_test.assumption WHERE domainWithoutWWW(URL) = 'nothing'; --- not optimized -> 0
 
 SELECT count() FROM constraint_test.assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL > 'zzz'); ---> assumption -> 4
+SELECT count() FROM constraint_test.assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND NOT URL <= 'zzz'); ---> assumption -> 4
 SELECT count() FROM constraint_test.assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL > 'zzz') OR (a = 10 AND a + 5 < 100); ---> assumption -> 4
 SELECT count() FROM constraint_test.assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL = '111'); ---> assumption & no assumption -> 0
 
