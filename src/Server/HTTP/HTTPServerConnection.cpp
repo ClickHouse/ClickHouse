@@ -98,31 +98,4 @@ void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & sess
     session.setKeepAlive(false);
 }
 
-void HTTPServerConnection::onServerStopped(const bool & abortCurrent)
-{
-    stopped = true;
-    if (abortCurrent)
-    {
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-        }
-    }
-    else
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-        }
-    }
-}
-
 }
