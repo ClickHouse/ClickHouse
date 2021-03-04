@@ -1937,6 +1937,21 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Значение по умолчанию: 16.
 
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Задает количество потоков для фонового потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+**Смотрите также**
+
+-   Движок [Kafka](../../engines/table-engines/integrations/kafka.md#kafka).
+-   Движок [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine).
+
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
@@ -2536,5 +2551,16 @@ SELECT * FROM test2;
 ```
 
 Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
+
+## allow_experimental_geo_types {#allow-experimental-geo-types}
+
+Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
+
+Возможные значения:
+
+-   0 — Использование типов данных для работы с географическими структурами не поддерживается.
+-   1 — Использование типов данных для работы с географическими структурами поддерживается.
+
+Значение по умолчанию: `0`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
