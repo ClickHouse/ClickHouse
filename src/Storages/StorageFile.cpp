@@ -416,7 +416,7 @@ private:
 
 bool StorageFile::isColumnOriented() const
 {
-    return (format_name == "Parquet" || format_name == "Arrow" || format_name == "Native" || format_name == "ORC");
+    return (format_name == "Parquet" || format_name == "Arrow" || format_name == "ORC");
 };
 
 Pipe StorageFile::read(
