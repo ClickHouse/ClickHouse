@@ -4,7 +4,10 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <string_view>
+
 #include <cctz/time_zone.h>
+
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
@@ -25,14 +28,17 @@ cctz::civil_day YYYYMMDDToDay(unsigned value)
         value % 100);          // day
 }
 
-std::vector<const char*> allTimezones()
+std::vector<const char*> allTimezones(bool with_weird_offsets = true)
 {
     std::vector<const char*> result;
 
     const auto * timezone_name = auto_time_zones;
     while (*timezone_name)
     {
-        result.push_back(*timezone_name);
+        bool weird_offsets = (std::string_view(*timezone_name) == "Africa/Monrovia");
+
+        if (!weird_offsets || with_weird_offsets)
+            result.push_back(*timezone_name);
         ++timezone_name;
     }
 
@@ -345,7 +351,7 @@ std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
             << "\n\t weekday           : " << static_cast<unsigned int>(v.day_of_week)
             << "\n\t days in month     : " << static_cast<unsigned int>(v.days_in_month)
             << "\n\t offset change     : " << v.amount_of_offset_change()
-            << "\n\t offfset change at : " << v.time_at_offset_change()
+            << "\n\t offset change at : " << v.time_at_offset_change()
             << "\n}";
 }
 
@@ -386,6 +392,32 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
         SCOPED_TRACE(expected_time_t);
 
         const auto tz_time = cctz::convert(std::chrono::system_clock::from_time_t(expected_time_t), tz);
+
+        /// Weird offset, not supported.
+        /// Example: Africa/Monrovia has offset UTC-0:44:30 in year 1970.
+        if (tz.lookup(std::chrono::system_clock::from_time_t(expected_time_t)).offset % 900)
+            continue;
+
+        /// Unsupported timezone transitions - not in 15-minute time point or to different day.
+        /// Example: America/Goose_Bay decided to go back one hour at 00:01:
+        /// $ seq 1289097900 30 1289103600 | TZ=America/Goose_Bay LC_ALL=C xargs -I{} date -d @{}
+        /// Sat Nov  6 23:59:00 ADT 2010
+        /// Sat Nov  6 23:59:30 ADT 2010
+        /// Sun Nov  7 00:00:00 ADT 2010
+        /// Sun Nov  7 00:00:30 ADT 2010
+        /// Sat Nov  6 23:01:00 AST 2010
+        /// Sat Nov  6 23:01:30 AST 2010
+        cctz::time_zone::civil_transition transition{};
+        if (tz.next_transition(std::chrono::system_clock::from_time_t(expected_time_t), &transition)
+            && transition.from.day() == tz_time.day()
+            && (transition.from.second() != 0 || transition.from.minute() % 900 != 0
+                || (transition.from.day() != transition.to.day()
+                    && (transition.from.hour() != 0 && transition.from.minute() != 0 && transition.from.second() != 0))))
+        {
+            std::cerr << "Skipping " << timezone_name << " " << tz_time
+                << " because of unsupported timezone transition from " << transition.from << " to " << transition.to << "\n";
+            continue;
+        }
 
         EXPECT_EQ(tz_time.year(), lut.toYear(expected_time_t));
         EXPECT_EQ(tz_time.month(), lut.toMonth(expected_time_t));
@@ -429,7 +461,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010,
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970_WHOLE,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
-        ::testing::ValuesIn(allTimezones()),
+        ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             // Values from tests/date_lut3.cpp
             {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19701231), 3191 /*53m 11s*/},
@@ -439,7 +471,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970_WHOLE,
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010_WHOLE,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
-        ::testing::ValuesIn(allTimezones()),
+        ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             // Values from tests/date_lut3.cpp
             {YYYYMMDDToDay(20100101), YYYYMMDDToDay(20101231), 3191 /*53m 11s*/},
@@ -459,7 +491,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2020_WHOLE,
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_PreEpoch,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
-        ::testing::ValuesIn(allTimezones()),
+        ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             {YYYYMMDDToDay(19500101), YYYYMMDDToDay(19600101), 15 * 60},
             {YYYYMMDDToDay(19300101), YYYYMMDDToDay(19350101), 11 * 15 * 60}
@@ -469,7 +501,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_PreEpoch,
 INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
-        ::testing::ValuesIn(allTimezones()),
+        ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19700201), 15 * 60},
             {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19701231), 11 * 13 * 17}
