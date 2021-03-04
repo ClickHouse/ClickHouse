@@ -104,7 +104,7 @@ struct SimpliestRaftServer
         , state_machine(nuraft::cs_new<StateMachine>())
         , state_manager(nuraft::cs_new<DB::NuKeeperStateManager>(server_id, hostname, port, logs_path))
     {
-        state_manager->loadLogStore(1);
+        state_manager->loadLogStore(1, 0);
         nuraft::raft_params params;
         params.heart_beat_interval_ = 100;
         params.election_timeout_lower_bound_ = 200;
@@ -197,39 +197,6 @@ TEST(CoordinationTest, TestSummingRaft1)
     s1.launcher.shutdown(5);
 }
 
-nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
-{
-    DB::WriteBufferFromNuraftBuffer buf;
-    DB::writeIntBinary(session_id, buf);
-    request->write(buf);
-    return buf.getBuffer();
-}
-
-DB::NuKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
-{
-    DB::NuKeeperStorage::ResponsesForSessions results;
-    DB::ReadBufferFromNuraftBuffer buf(buffer);
-    while (!buf.eof())
-    {
-        int64_t session_id;
-        DB::readIntBinary(session_id, buf);
-
-        int32_t length;
-        Coordination::XID xid;
-        int64_t zxid;
-        Coordination::Error err;
-
-        Coordination::read(length, buf);
-        Coordination::read(xid, buf);
-        Coordination::read(zxid, buf);
-        Coordination::read(err, buf);
-        auto response = request->makeResponse();
-        response->readImpl(buf);
-        results.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
-    }
-    return results;
-}
-
 DB::LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {
     DB::WriteBufferFromNuraftBuffer bufwriter;
@@ -241,7 +208,7 @@ TEST(CoordinationTest, ChangelogTestSimple)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
     EXPECT_EQ(changelog.next_slot(), 2);
@@ -255,7 +222,7 @@ TEST(CoordinationTest, ChangelogTestFile)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin"));
@@ -276,7 +243,7 @@ TEST(CoordinationTest, ChangelogReadWrite)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 1000, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
@@ -284,7 +251,7 @@ TEST(CoordinationTest, ChangelogReadWrite)
     }
     EXPECT_EQ(changelog.size(), 10);
     DB::NuKeeperLogStore changelog_reader("./logs", 1000, true);
-    changelog_reader.init(1);
+    changelog_reader.init(1, 0);
     EXPECT_EQ(changelog_reader.size(), 10);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
     EXPECT_EQ(changelog_reader.start_index(), changelog.start_index());
@@ -303,7 +270,7 @@ TEST(CoordinationTest, ChangelogWriteAt)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 1000, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
@@ -319,7 +286,7 @@ TEST(CoordinationTest, ChangelogWriteAt)
     EXPECT_EQ(changelog.next_slot(), 8);
 
     DB::NuKeeperLogStore changelog_reader("./logs", 1000, true);
-    changelog_reader.init(1);
+    changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), changelog.size());
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
@@ -332,7 +299,7 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     for (size_t i = 0; i < 7; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
@@ -344,7 +311,7 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
 
     DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
-    changelog_reader.init(1);
+    changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 7);
     for (size_t i = 7; i < 10; ++i)
@@ -380,7 +347,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 3; ++i)
     {
@@ -421,7 +388,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     EXPECT_EQ(changelog.last_entry()->get_term(), 60);
     /// And we able to read it
     DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
-    changelog_reader.init(7);
+    changelog_reader.init(7, 0);
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.start_index(), 7);
     EXPECT_EQ(changelog_reader.next_slot(), 8);
@@ -432,7 +399,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperations)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 100, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
@@ -444,7 +411,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperations)
     auto entries = changelog.pack(1, 5);
 
     DB::NuKeeperLogStore apply_changelog("./logs", 100, true);
-    apply_changelog.init(1);
+    apply_changelog.init(1, 0);
 
     for (size_t i = 0; i < 10; ++i)
     {
@@ -474,7 +441,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 100, true);
-    changelog.init(1);
+    changelog.init(1, 0);
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
@@ -487,7 +454,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
 
     ChangelogDirTest test1("./logs1");
     DB::NuKeeperLogStore changelog_new("./logs1", 100, true);
-    changelog_new.init(1);
+    changelog_new.init(1, 0);
     EXPECT_EQ(changelog_new.size(), 0);
 
     changelog_new.apply_pack(5, *entries);
@@ -506,7 +473,7 @@ TEST(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     EXPECT_EQ(changelog_new.next_slot(), 11);
 
     DB::NuKeeperLogStore changelog_reader("./logs1", 100, true);
-    changelog_reader.init(5);
+    changelog_reader.init(5, 0);
 }
 
 
@@ -514,7 +481,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 33; ++i)
     {
@@ -549,7 +516,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
     DB::NuKeeperLogStore changelog_read("./logs", 5, true);
-    changelog_read.init(1);
+    changelog_read.init(1, 0);
     EXPECT_EQ(changelog_read.size(), 7);
     EXPECT_EQ(changelog_read.start_index(), 1);
     EXPECT_EQ(changelog_read.next_slot(), 8);
@@ -560,7 +527,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 33; ++i)
     {
@@ -595,7 +562,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
     DB::NuKeeperLogStore changelog_read("./logs", 5, true);
-    changelog_read.init(1);
+    changelog_read.init(1, 0);
     EXPECT_EQ(changelog_read.size(), 11);
     EXPECT_EQ(changelog_read.start_index(), 1);
     EXPECT_EQ(changelog_read.next_slot(), 12);
@@ -606,7 +573,7 @@ TEST(CoordinationTest, ChangelogTestWriteAtAllFiles)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 33; ++i)
     {
@@ -645,7 +612,7 @@ TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
 {
     ChangelogDirTest test("./logs");
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
     {
@@ -664,7 +631,7 @@ TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
 
 
     DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
-    changelog_reader.init(1);
+    changelog_reader.init(1, 0);
 
     auto entry = getLogEntry("36_hello_world", 360);
     changelog_reader.append(entry);
@@ -686,7 +653,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     ChangelogDirTest test("./logs");
 
     DB::NuKeeperLogStore changelog("./logs", 5, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
     {
@@ -706,7 +673,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     plain_buf.truncate(0);
 
     DB::NuKeeperLogStore changelog_reader("./logs", 5, true);
-    changelog_reader.init(1);
+    changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 10);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 90);
@@ -735,7 +702,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin"));
 
     DB::NuKeeperLogStore changelog_reader2("./logs", 5, true);
-    changelog_reader2.init(1);
+    changelog_reader2.init(1, 0);
     EXPECT_EQ(changelog_reader2.size(), 11);
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
@@ -745,7 +712,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     ChangelogDirTest test("./logs");
 
     DB::NuKeeperLogStore changelog("./logs", 20, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
     {
@@ -760,7 +727,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     plain_buf.truncate(140);
 
     DB::NuKeeperLogStore changelog_reader("./logs", 20, true);
-    changelog_reader.init(1);
+    changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 2);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 450);
@@ -773,7 +740,7 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 
 
     DB::NuKeeperLogStore changelog_reader2("./logs", 20, true);
-    changelog_reader2.init(1);
+    changelog_reader2.init(1, 0);
     EXPECT_EQ(changelog_reader2.size(), 3);
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
@@ -783,7 +750,7 @@ TEST(CoordinationTest, ChangelogTestLostFiles)
     ChangelogDirTest test("./logs");
 
     DB::NuKeeperLogStore changelog("./logs", 20, true);
-    changelog.init(1);
+    changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
     {
@@ -797,10 +764,10 @@ TEST(CoordinationTest, ChangelogTestLostFiles)
     fs::remove("./logs/changelog_1_20.bin");
 
     DB::NuKeeperLogStore changelog_reader("./logs", 20, true);
-    EXPECT_THROW(changelog_reader.init(5), DB::Exception);
+    EXPECT_THROW(changelog_reader.init(5, 0), DB::Exception);
 
     fs::remove("./logs/changelog_21_40.bin");
-    EXPECT_THROW(changelog_reader.init(3), DB::Exception);
+    EXPECT_THROW(changelog_reader.init(3, 0), DB::Exception);
 }
 
 TEST(CoordinationTest, SnapshotableHashMapSimple)
@@ -922,7 +889,6 @@ TEST(CoordinationTest, TestStorageSnapshotSimple)
     DB::NuKeeperStorageSnapshot snapshot(&storage, 2);
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
-    EXPECT_EQ(snapshot.zxid, 2);
     EXPECT_EQ(snapshot.session_id, 7);
     EXPECT_EQ(snapshot.snapshot_container_size, 3);
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
@@ -1106,6 +1072,162 @@ TEST(CoordinationTest, TestStorageSnapshotBroken)
 
     DB::NuKeeperStorage restored_storage(500);
     EXPECT_THROW(manager.restoreFromLatestSnapshot(&restored_storage), DB::Exception);
+}
+
+nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+{
+    DB::WriteBufferFromNuraftBuffer buf;
+    DB::writeIntBinary(session_id, buf);
+    request->write(buf);
+    return buf.getBuffer();
+}
+
+nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+{
+    auto buffer = getBufferFromZKRequest(session_id, request);
+    return nuraft::cs_new<nuraft::log_entry>(term, buffer);
+}
+
+void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, size_t total_logs)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    ResponsesQueue queue;
+    auto state_machine = std::make_shared<NuKeeperStateMachine>(queue, "./snapshots", settings);
+    state_machine->init();
+    DB::NuKeeperLogStore changelog("./logs", settings->rotate_log_storage_interval, true);
+    changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
+    for (size_t i = 1; i < total_logs + 1; ++i)
+    {
+        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = "/hello_" + std::to_string(i);
+        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        changelog.append(entry);
+
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+        bool snapshot_created = false;
+        if (i % settings->snapshot_distance == 0)
+        {
+            nuraft::snapshot s(i, 0, std::make_shared<nuraft::cluster_config>());
+            nuraft::async_result<bool>::handler_type when_done = [&snapshot_created] (bool & ret, nuraft::ptr<std::exception> &/*exception*/)
+            {
+                snapshot_created = ret;
+                std::cerr << "Snapshot finised\n";
+            };
+
+            state_machine->create_snapshot(s, when_done);
+        }
+        if (snapshot_created)
+        {
+            if (changelog.size() > settings->reserved_log_items)
+            {
+                changelog.compact(i - settings->reserved_log_items);
+            }
+        }
+    }
+
+    auto restore_machine = std::make_shared<NuKeeperStateMachine>(queue, "./snapshots", settings);
+    restore_machine->init();
+    EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
+
+    DB::NuKeeperLogStore restore_changelog("./logs", settings->rotate_log_storage_interval, true);
+    restore_changelog.init(restore_machine->last_commit_index() + 1, settings->reserved_log_items);
+
+    EXPECT_EQ(restore_changelog.size(), std::min(settings->reserved_log_items + total_logs % settings->snapshot_distance, total_logs));
+    EXPECT_EQ(restore_changelog.next_slot(), total_logs + 1);
+    if (total_logs > settings->reserved_log_items + 1)
+        EXPECT_EQ(restore_changelog.start_index(), total_logs - total_logs % settings->snapshot_distance - settings->reserved_log_items + 1);
+    else
+        EXPECT_EQ(restore_changelog.start_index(), 1);
+
+    for (size_t i = restore_machine->last_commit_index() + 1; i < restore_changelog.next_slot(); ++i)
+    {
+        restore_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    auto & source_storage = state_machine->getStorage();
+    auto & restored_storage = restore_machine->getStorage();
+
+    EXPECT_EQ(source_storage.container.size(), restored_storage.container.size());
+    for (size_t i = 1; i < total_logs + 1; ++i)
+    {
+        auto path = "/hello_" + std::to_string(i);
+        EXPECT_EQ(source_storage.container.getValue(path).data, restored_storage.container.getValue(path).data);
+    }
+}
+
+TEST(CoordinationTest, TestStateMachineAndLogStore)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 10;
+        settings->rotate_log_storage_interval = 10;
+        testLogAndStateMachine(settings, 37);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 10;
+        settings->rotate_log_storage_interval = 10;
+        testLogAndStateMachine(settings, 11);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 10;
+        settings->rotate_log_storage_interval = 10;
+        testLogAndStateMachine(settings, 40);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 20;
+        settings->rotate_log_storage_interval = 30;
+        testLogAndStateMachine(settings, 40);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 0;
+        settings->rotate_log_storage_interval = 10;
+        testLogAndStateMachine(settings, 40);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 1;
+        settings->reserved_log_items = 1;
+        settings->rotate_log_storage_interval = 32;
+        testLogAndStateMachine(settings, 32);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 7;
+        settings->rotate_log_storage_interval = 1;
+        testLogAndStateMachine(settings, 33);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 37;
+        settings->reserved_log_items = 1000;
+        settings->rotate_log_storage_interval = 5000;
+        testLogAndStateMachine(settings, 33);
+    }
+    {
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        settings->snapshot_distance = 37;
+        settings->reserved_log_items = 1000;
+        settings->rotate_log_storage_interval = 5000;
+        testLogAndStateMachine(settings, 45);
+    }
 }
 
 int main(int argc, char ** argv)

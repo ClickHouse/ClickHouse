@@ -25,7 +25,7 @@ NuKeeperServer::NuKeeperServer(
     ResponsesQueue & responses_queue_)
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, config.getString("test_keeper_server.snapshot_storage_path"), coordination_settings))
+    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, config.getString("test_keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"), coordination_settings))
     , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
@@ -36,13 +36,7 @@ void NuKeeperServer::startup()
 
     state_machine->init();
 
-    size_t new_logs_start = state_machine->last_commit_index() + 1;
-    if (new_logs_start < coordination_settings->reserved_log_items)
-        new_logs_start = 0;
-    else
-        new_logs_start -= coordination_settings->reserved_log_items;
-
-    state_manager->loadLogStore(new_logs_start);
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
     bool single_server = state_manager->getTotalServers() == 1;
 

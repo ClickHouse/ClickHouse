@@ -93,7 +93,6 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
 {
     Coordination::write(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
-    Coordination::write(snapshot.zxid, out);
     Coordination::write(snapshot.session_id, out);
     Coordination::write(snapshot.snapshot_container_size, out);
     size_t counter = 0;
@@ -101,6 +100,8 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
     {
         const auto & path = it->key;
         const auto & node = it->value;
+        if (static_cast<size_t>(node.stat.mzxid) > snapshot.snapshot_meta->get_last_log_idx())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stat.mzxid, snapshot.snapshot_meta->get_last_log_idx());
 
         Coordination::write(path, out);
         writeNode(node, out);
@@ -123,10 +124,9 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
     SnapshotMetadataPtr result = deserializeSnapshotMetadata(in);
-    int64_t session_id, zxid;
-    Coordination::read(zxid, in);
+    int64_t session_id;
     Coordination::read(session_id, in);
-    storage.zxid = zxid;
+    storage.zxid = result->get_last_log_idx();
     storage.session_id_counter = session_id;
 
     size_t snapshot_container_size;
@@ -174,7 +174,6 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
 NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, size_t up_to_log_idx_)
     : storage(storage_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
-    , zxid(storage->getZXID())
     , session_id(storage->session_id_counter)
 {
     storage->enableSnapshotMode();
@@ -186,7 +185,6 @@ NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, siz
 NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_)
     : storage(storage_)
     , snapshot_meta(snapshot_meta_)
-    , zxid(storage->getZXID())
     , session_id(storage->session_id_counter)
 {
     storage->enableSnapshotMode();

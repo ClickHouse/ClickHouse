@@ -31,7 +31,6 @@ public:
 
     SnapshotVersion version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
-    int64_t zxid;
     int64_t session_id;
     size_t snapshot_container_size;
     NuKeeperStorage::Container::const_iterator begin;
