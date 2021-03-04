@@ -102,3 +102,5 @@ SELECT * FROM postgresql_table WHERE str IN ('test')
 
 -   [The ‘postgresql’ table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
