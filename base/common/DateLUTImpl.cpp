@@ -94,9 +94,10 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.time_at_offset_change_value = 0;
         values.amount_of_offset_change_value = 0;
 
-        // TODO: this partially ignores fractional pre-epoch offsets, which may cause incorrect toRelativeHourNum() results for some timezones, namelly Europe/Minsk
-        // when pre-May 2 1924 it had an offset of UTC+1:50, and after it was UTC+2h.
-        // https://www.timeanddate.com/time/zone/belarus/minsk?syear=1900
+        /// TODO: This partially ignores fractional pre-epoch offsets,
+        /// which may cause incorrect toRelativeHourNum() results for some timezones, namelly Europe/Minsk
+        /// when pre-May 2 1924 it had an offset of UTC+1:50, and after it was UTC+2h.
+        /// https://www.timeanddate.com/time/zone/belarus/minsk?syear=1900
         if (start_of_day > 0 && start_of_day % 3600)
             offset_is_whole_number_of_hours_everytime = false;
 
@@ -113,16 +114,28 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
                 /// Find a time (timestamp offset from beginning of day),
                 ///  when UTC offset was changed. Search is performed with 15-minute granularity, assuming it is enough.
 
-                time_t time_at_offset_change = 900;
-                while (time_at_offset_change < 86400)
+                time_t time_at_offset_change = 0;
+
+                /// If offset was changed just at midnight.
+                if (utc_offset_at_beginning_of_day != cctz_time_zone.lookup(
+                    std::chrono::system_clock::from_time_t(lut[i - 1].date - 1)).offset)
                 {
-                    auto utc_offset_at_current_time = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(
-                        lut[i - 1].date + time_at_offset_change)).offset;
+                    /// time_at_offset_change is zero.
+                }
+                else
+                {
+                    time_at_offset_change = 900;
+                    while (time_at_offset_change < 86400)
+                    {
+                        auto utc_offset_at_current_time = cctz_time_zone.lookup(
+                            std::chrono::system_clock::from_time_t(
+                                lut[i - 1].date + time_at_offset_change)).offset;
 
-                    if (utc_offset_at_current_time != utc_offset_at_beginning_of_day)
-                        break;
+                        if (utc_offset_at_current_time != utc_offset_at_beginning_of_day)
+                            break;
 
-                    time_at_offset_change += 900;
+                        time_at_offset_change += 900;
+                    }
                 }
 
                 lut[i - 1].time_at_offset_change_value = time_at_offset_change / Values::OffsetChangeFactor;
