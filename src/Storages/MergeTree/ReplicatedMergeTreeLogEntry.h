@@ -39,7 +39,6 @@ struct ReplicatedMergeTreeLogEntryData
         REPLACE_RANGE,     /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,       /// Apply one or several mutations to the part.
         ALTER_METADATA,    /// Apply alter modification according to global /metadata and /columns paths
-        FETCH_SHARED_PART, /// Get the part from other replica only if it on shared S3 storade
     };
 
     static String typeToString(Type type)
@@ -54,7 +53,6 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:     return "REPLACE_RANGE";
             case ReplicatedMergeTreeLogEntryData::MUTATE_PART:       return "MUTATE_PART";
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:    return "ALTER_METADATA";
-            case ReplicatedMergeTreeLogEntryData::FETCH_SHARED_PART: return "FETCH_SHARED_PART";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -195,9 +193,6 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
     static Ptr parse(const String & s, const Coordination::Stat & stat);
-
-    DiskPtr disk;
-    String path;
 };
 
 using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
