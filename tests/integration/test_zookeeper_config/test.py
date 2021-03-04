@@ -184,6 +184,9 @@ def test_secure_connection():
                 [node1.query("SELECT count() FROM system.zookeeper WHERE path = '/'") for _ in range(kIterations)])))
 
         for thread in threads:
+            thread.start()
+
+        for thread in threads:
             thread.join()
 
     finally:
