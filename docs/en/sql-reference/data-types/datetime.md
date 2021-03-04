@@ -19,15 +19,17 @@ Resolution: 1 second.
 
 ## Usage Remarks {#usage-remarks}
 
-The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. Additionally, the `DateTime` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata.
-A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones).
-The `tzdata` package, containing [IANA Time Zone Database](https://www.iana.org/time-zones), should be installed in the system. Use the `timedatectl list-timezones` command to list timezones known by a local system.
+The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. The time zone affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01’).
 
-You can explicitly set a time zone for `DateTime`-type columns when creating a table. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
+Timezone agnostic unix timestamp is stored in tables, and the timezone is used to transform it to text format or back during data import/export or to make calendar calculations on the values (example: `toDate`, `toHour` functions et cetera). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata.
+
+A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`.
+
+You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn’t explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date\_time\_output\_format](../../operations/settings/settings.md#settings-date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionaly you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings.md#settings-date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionaly you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
 
@@ -113,6 +115,8 @@ FROM dt
 │ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
+
+As timezone conversion only changes the metadata, the operation has no computation cost.
 
 ## See Also {#see-also}
 
