@@ -24,10 +24,26 @@ template <typename A, typename B>
 struct ModuloByConstantImpl
     : BinaryOperation<A, B, ModuloImpl<A, B>>
 {
-    using ResultType = typename ModuloImpl<A, B>::ResultType;
+    using Op = ModuloImpl<A, B>;
+    using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static NO_INLINE void vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    template <OpCase op_case>
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    {
+        if constexpr (op_case == OpCase::Vector)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        else if constexpr (op_case == OpCase::LeftConstant)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
+        else
+            vectorConstant(a, *b, c, size);
+    }
+
+    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+
+    static void NO_INLINE vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"

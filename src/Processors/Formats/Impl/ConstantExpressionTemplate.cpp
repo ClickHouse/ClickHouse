@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -208,6 +209,14 @@ private:
                 const Map & map = literal->value.get<Map>();
                 if (map.size() % 2)
                     return false;
+            }
+            else if (literal->value.getType() == Field::Types::Tuple)
+            {
+                const Tuple & tuple = literal->value.get<Tuple>();
+
+                for (const auto & value : tuple)
+                    if (value.isNull())
+                        return true;
             }
 
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
@@ -581,7 +590,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     }
 }
 
-ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, size_t offset)
+ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset)
 {
     Block evaluated = structure->literals.cloneWithColumns(std::move(columns));
     columns = structure->literals.cloneEmptyColumns();
@@ -599,12 +608,13 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
                         ErrorCodes::LOGICAL_ERROR);
 
     rows_count = 0;
-    ColumnPtr res = evaluated.getByName(structure->result_column_name).column->convertToFullColumnIfConst();
+    auto res = evaluated.getByName(structure->result_column_name);
+    res.column = res.column->convertToFullColumnIfConst();
     if (!structure->null_as_default)
-        return res;
+        return castColumn(res, expected_type);
 
     /// Extract column with evaluated expression and mask for NULLs
-    const auto & tuple = assert_cast<const ColumnTuple &>(*res);
+    const auto & tuple = assert_cast<const ColumnTuple &>(*res.column);
     if (tuple.tupleSize() != 2)
         throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
     const auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
@@ -613,7 +623,9 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
         if (is_null.getUInt(i))
             nulls.setBit(column_idx, offset + i);
 
-    return tuple.getColumnPtr(0);
+    res.column = tuple.getColumnPtr(0);
+    res.type = assert_cast<const DataTypeTuple &>(*res.type).getElements()[0];
+    return castColumn(res, expected_type);
 }
 
 void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)
@@ -626,7 +638,7 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
         expr = makeASTFunction("assumeNotNull", std::move(expr));
     }
 
-    expr = makeASTFunction("cast", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
 
     if (null_as_default)
     {

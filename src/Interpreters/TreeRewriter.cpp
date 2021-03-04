@@ -8,6 +8,7 @@
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -714,18 +715,17 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            String hint_name{};
+            std::vector<String> hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
-                if (!hints.empty())
-                    hint_name = hint_name + " '" + toString(hints) + "'";
+                hint_name.insert(hint_name.end(), hints.begin(), hints.end());
             }
 
             if (!hint_name.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << hint_name;
+                ss << toString(hint_name);
             }
         }
         else
@@ -933,6 +933,10 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
+
+    /// Rewrite function names to their canonical ones.
+    if (settings.normalize_function_names)
+        FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, settings);

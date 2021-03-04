@@ -12,18 +12,18 @@ import tempfile
 
 def read_varint(input):
     res = 0
-    shift = 0
+    multiplier = 1
     while True:
         c = input.read(1)
         if len(c) == 0:
             return None
         b = c[0]
         if b < 0x80:
-            res += b << shift
+            res += b * multiplier
             break
         b -= 0x80
-        res += b << shift
-        shift = shift << 7
+        res += b * multiplier
+        multiplier *= 0x80
     return res
 
 def write_varint(output, value):
