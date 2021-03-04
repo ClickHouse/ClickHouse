@@ -29,6 +29,7 @@ class HTTPHandler : public HTTPRequestHandler
 {
 public:
     HTTPHandler(IServer & server_, const std::string & name);
+    virtual ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 

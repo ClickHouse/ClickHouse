@@ -268,6 +268,11 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 }
 
 
+HTTPHandler::~HTTPHandler()
+{
+}
+
+
 bool HTTPHandler::authenticateUser(
     Context & context,
     HTTPServerRequest & request,
