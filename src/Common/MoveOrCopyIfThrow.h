@@ -1,5 +1,6 @@
-#include <common/types.h>
+#pragma once
 
+#include <common/types.h>
 
 namespace detail
 {
