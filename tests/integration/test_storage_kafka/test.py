@@ -2525,7 +2525,7 @@ def test_kafka_unavailable(kafka_cluster):
     kafka_cluster.pause_container('kafka1')
 
     instance.query('''
-        CREATE TABLE test.kafka (key UInt64, value UInt64)
+        CREATE TABLE test.test_kafka_unavailable (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                     kafka_topic_list = 'test_kafka_unavailable',
@@ -2534,7 +2534,7 @@ def test_kafka_unavailable(kafka_cluster):
                     kafka_max_block_size = 1000,
                     kafka_flush_interval_ms = 1000;
 
-        CREATE MATERIALIZED VIEW test.destination Engine=Log AS
+        CREATE MATERIALIZED VIEW test.destination_kafka_unavailable Engine=Log AS
         SELECT
             key,
             now() as consume_ts,
@@ -2544,10 +2544,10 @@ def test_kafka_unavailable(kafka_cluster):
             _offset,
             _partition,
             _timestamp
-        FROM test.kafka;
+        FROM test.test_kafka_unavailable;
     ''')
 
-    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT * FROM test.test_kafka_unavailable")
 
     instance.wait_for_log_line('brokers are down')
     instance.wait_for_log_line('stalled. Reschedule', repetitions=2)
@@ -2555,7 +2555,7 @@ def test_kafka_unavailable(kafka_cluster):
     kafka_cluster.unpause_container('kafka1')
 
     instance.wait_for_log_line("Committed offset 2000")
-    assert int(instance.query("SELECT count() FROM test.destination")) == 2000
+    assert int(instance.query("SELECT count() FROM test.destination_kafka_unavailable")) == 2000
     time.sleep(5) # needed to give time for kafka client in python test to recovery
 
 @pytest.mark.timeout(180)
