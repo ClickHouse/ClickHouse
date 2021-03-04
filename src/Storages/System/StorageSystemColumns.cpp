@@ -299,7 +299,7 @@ Pipe StorageSystemColumns::read(
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, block_to_filter, context);
 
         if (!block_to_filter.rows())
         {
@@ -345,7 +345,7 @@ Pipe StorageSystemColumns::read(
     }
 
     /// Filter block with `database` and `table` columns.
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info, block_to_filter, context);
 
     if (!block_to_filter.rows())
     {

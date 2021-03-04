@@ -93,7 +93,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
             std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block_to_filter with column 'database'.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, block_to_filter, context);
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
@@ -162,7 +162,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     if (rows)
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, block_to_filter, context);
         rows = block_to_filter.rows();
     }
 

@@ -680,19 +680,22 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    Block part_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
     ASTPtr expression_ast;
-    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, part_block, expression_ast);
+    Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+
+    // Generate valid expressions for filtering
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info, context, virtual_columns_block, expression_ast);
+
     PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
     std::unordered_set<String> part_values;
-    if (valid)
+    if (valid && expression_ast)
     {
-        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, part_block);
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, part_block, context, expression_ast);
-        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(part_block, "_part");
+        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        VirtualColumnUtils::filterBlockWithQuery(query_info, virtual_columns_block, context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;
     }

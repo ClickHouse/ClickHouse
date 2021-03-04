@@ -1324,9 +1324,9 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
+ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const NamesAndTypesList & constant_inputs)
 {
-    auto actions = std::make_shared<ActionsDAG>(NamesAndTypesList());
+    auto actions = std::make_shared<ActionsDAG>(constant_inputs);
 
     getRootActions(query, true, actions, true);
     return std::make_shared<ExpressionActions>(actions);

@@ -30,52 +30,33 @@ namespace
 {
 
 /// Verifying that the function depends only on the specified columns
-bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
+bool isValidFunction(const ASTPtr & expression, const Block & block)
 {
     const auto * function = expression->as<ASTFunction>();
-    if (function)
+    if (function && functionIsInOrGlobalInOperator(function->name))
     {
-        if (functionIsInOrGlobalInOperator(function->name))
-        {
-            // Second argument of IN can be a scalar subquery
-            if (!isValidFunction(function->arguments->children[0], columns))
-                return false;
-        }
-        else if (function->name == "ignore")
-        {
-            return false;
-        }
-        else
-        {
-            if (function->arguments)
-            {
-                for (const auto & child : function->arguments->children)
-                    if (!isValidFunction(child, columns))
-                        return false;
-            }
-        }
+        // Second argument of IN can be a scalar subquery
+        return isValidFunction(function->arguments->children[0], block);
     }
     else
     {
-        if (auto opt_name = IdentifierSemantic::getColumnName(expression))
-            return columns.count(*opt_name);
+        auto column_name = expression->getColumnName();
+        return block.has(column_name) && isColumnConst(*block.getByName(column_name).column);
     }
-
-    return true;
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-bool extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
+bool extractFunctions(const ASTPtr & expression, const Block & block, std::vector<ASTPtr> & result)
 {
     const auto * function = expression->as<ASTFunction>();
     if (function && (function->name == "and" || function->name == "indexHint"))
     {
         bool ret = true;
         for (const auto & child : function->arguments->children)
-            ret &= extractFunctions(child, columns, result);
+            ret &= extractFunctions(child, block, result);
         return ret;
     }
-    else if (isValidFunction(expression, columns))
+    else if (isValidFunction(expression, block))
     {
         result.push_back(expression->clone());
         return true;
@@ -124,7 +105,6 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     if (!select.with())
         select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
 
-
     if (func.empty())
     {
         auto literal = std::make_shared<ASTLiteral>(value);
@@ -144,37 +124,38 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 }
 
-bool prepareFilterBlockWithQuery(const ASTPtr & query, const Block & block, ASTPtr & expression_ast)
+bool prepareFilterBlockWithQuery(const SelectQueryInfo & query_info, const Context & context, Block block, ASTPtr & expression_ast)
 {
     bool ret = true;
-    const auto & select = query->as<ASTSelectQuery &>();
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.where() && !select.prewhere())
         return ret;
 
-    NameSet columns;
-    for (const auto & it : block.getNamesAndTypesList())
-        columns.insert(it.name);
+    // Prepare a block with valid expressions
+    ExpressionAnalyzer(query_info.query, query_info.syntax_analyzer_result, context)
+        .getConstActions(block.getNamesAndTypesList())
+        ->execute(block);
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
     std::vector<ASTPtr> functions;
     if (select.where())
-        ret &= extractFunctions(select.where(), columns, functions);
+        ret &= extractFunctions(select.where(), block, functions);
     if (select.prewhere())
-        ret &= extractFunctions(select.prewhere(), columns, functions);
+        ret &= extractFunctions(select.prewhere(), block, functions);
 
     expression_ast = buildWhereExpression(functions);
     return ret;
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast)
+void filterBlockWithQuery(const SelectQueryInfo & query_info, Block & block, const Context & context, ASTPtr expression_ast)
 {
     if (!expression_ast)
-        prepareFilterBlockWithQuery(query, block, expression_ast);
+        prepareFilterBlockWithQuery(query_info, context, block, expression_ast);
 
     if (!expression_ast)
         return;
 
-    /// Let's analyze and calculate the expression.
+    /// Let's analyze and calculate the prepared expression.
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     buildSets(expression_ast, analyzer);
