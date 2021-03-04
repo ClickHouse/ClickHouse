@@ -1320,7 +1320,7 @@ class ClickHouseInstance:
         wait_duration = time.time() - start_time
 
         logging.debug('{} log line matching "{}" appeared in a {} seconds'.format(repetitions, regexp, wait_duration))
-        return wait_duratio
+        return wait_duration
 
     def file_exists(self, path):
         return self.exec_in_container(
