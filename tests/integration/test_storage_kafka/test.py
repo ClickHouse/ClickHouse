@@ -50,9 +50,9 @@ instance = cluster.add_instance('instance',
                                 clickhouse_path_dir='clickhouse_path')
 
 
-def get_kafka_producer(port, serializer):
+def get_kafka_producer(port, serializer, retries):
     errors = []
-    for _ in range(15):
+    for _ in range(retries):
         try:
             producer = KafkaProducer(bootstrap_servers="localhost:{}".format(port), value_serializer=serializer)
             logging.debug("Kafka Connection establised: localhost:{}".format(port))
@@ -66,7 +66,7 @@ def get_kafka_producer(port, serializer):
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
 
-def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=2):
+def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
     logging.debug("kafka_produce server:{}:{} topic:{}".format("localhost", kafka_cluster.kafka_port, topic))
     producer = get_kafka_producer(kafka_cluster.kafka_port, producer_serializer, retries)
     for message in messages:
