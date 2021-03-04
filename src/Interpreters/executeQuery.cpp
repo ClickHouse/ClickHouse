@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
 
+#include <IO/AsynchronousInsertionQueue.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -325,7 +326,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
 static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
 {
-    if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
+    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
     {
         if (ast_insert_into->watch)
             context.setSetting("output_format_enable_streaming", 1);
@@ -464,8 +465,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             query = serializeAST(*ast);
         }
 
-        /// MUST goes before any modification (except for prepared statements,
-        /// since it substitute parameters and w/o them query does not contains
+        /// MUST go before any modification (except for prepared statements,
+        /// since it substitute parameters and w/o them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal);
@@ -506,7 +507,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
                     BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(
-                        ast, istr, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                        ast, *istr, input_metadata_snapshot->getSampleBlock(), context, input_function);
                     input_storage.setInputStream(input_stream);
                 }
             }
@@ -541,6 +542,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             limits.mode = LimitsMode::LIMITS_CURRENT;
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+        }
+
+        const bool async_insert = insert_query && !insert_query->select && settings.asynchronous_insert_mode;
+        auto & queue = context.getAsynchronousInsertQueue();
+
+        if (async_insert && queue.push(insert_query, settings))
+        {
+            /// Shortcut for already processed similar insert-queries.
+            /// Similarity is defined by hashing query text and some settings.
+            return std::make_tuple(ast, BlockIO());
         }
 
         {
@@ -875,6 +886,23 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 res.in->dumpTree(msg_buf);
                 LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
             }
+        }
+
+        if (async_insert)
+        {
+            queue.push(insert_query, std::move(res), settings);
+            return std::make_tuple(ast, BlockIO());
+        }
+        else if (insert_query)
+        {
+            auto in = std::static_pointer_cast<InputStreamFromASTInsertQuery>(res.in);
+            auto ast_buffer = std::make_unique<ReadBufferFromMemory>(
+                insert_query->data, insert_query->data ? insert_query->end - insert_query->data : 0);
+
+            if (insert_query->data)
+                in->appendBuffer(std::move(ast_buffer));
+            if (insert_query->tail)
+                in->appendBuffer(wrapReadBufferReference(*insert_query->tail));
         }
     }
     catch (...)

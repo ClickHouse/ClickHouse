@@ -403,7 +403,7 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
     else
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, query.tail, query_sample_block, context, nullptr);
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, query_sample_block, context, nullptr);
 
     if (!out_streams.empty())
     {

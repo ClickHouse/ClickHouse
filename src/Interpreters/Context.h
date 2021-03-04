@@ -117,10 +117,11 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
-
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
 #endif
+
+class AsynchronousInsertQueue;
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(Context &)>;
@@ -748,6 +749,8 @@ public:
 
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
+
+    AsynchronousInsertQueue & getAsynchronousInsertQueue();
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
