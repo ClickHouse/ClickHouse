@@ -19,4 +19,9 @@
             <max_threads>12</max_threads>
         </default>
     </profiles>
+    <users>
+        <default>
+            <access_management>1</access_management>
+        </default>
+    </users>
 </yandex>
