@@ -5,7 +5,7 @@ toc_title: OpenTelemetry Support
 
 # [experimental] OpenTelemetry Support
 
-[OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for `OpenTelemetry`.
+[OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
 
 !!! warning "Warning"
     This is an experimental feature that will change in backwards-incompatible ways in future releases.
@@ -28,7 +28,7 @@ The trace context is propagated to downstream services in the following cases:
 
 ClickHouse creates `trace spans` for each query and some of the query execution stages, such as query planning or distributed queries.
 
-To be useful, the tracing information has to be exported to a monitoring system that supports `OpenTelemetry`, such as `Jaeger` or `Prometheus`. ClickHouse avoids a dependency on a particular monitoring system, instead only providing the tracing data through a system table. `OpenTelemetry` trace span information [required by the standard](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span) is stored in the [system.opentelemetry_span_log](../operations/system-tables/opentelemetry_span_log.md) table.
+To be useful, the tracing information has to be exported to a monitoring system that supports OpenTelemetry, such as [Jaeger](https://jaegertracing.io/) or [Prometheus](https://prometheus.io/). ClickHouse avoids a dependency on a particular monitoring system, instead only providing the tracing data through a system table. OpenTelemetry trace span information [required by the standard](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span) is stored in the [system.opentelemetry_span_log](../operations/system-tables/opentelemetry_span_log.md) table.
 
 The table must be enabled in the server configuration, see the `opentelemetry_span_log` element in the default config file `config.xml`. It is enabled by default.
 
