@@ -223,13 +223,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     auto virtual_columns_block = getSampleBlockWithVirtualPartColumns();
 
     // Generate valid expressions for filtering
-    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info, context, virtual_columns_block, expression_ast);
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
 
     // If there is still something left, fill the virtual block and do the filtering.
     if (expression_ast)
     {
         fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
-        VirtualColumnUtils::filterBlockWithQuery(query_info, virtual_columns_block, context, expression_ast);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return std::make_unique<QueryPlan>();

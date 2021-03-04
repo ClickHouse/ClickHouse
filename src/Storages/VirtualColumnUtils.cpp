@@ -21,6 +21,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/ActionsVisitor.h>
 
 
 namespace DB
@@ -124,10 +125,10 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 }
 
-bool prepareFilterBlockWithQuery(const SelectQueryInfo & query_info, const Context & context, Block block, ASTPtr & expression_ast)
+bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, Block block, ASTPtr & expression_ast)
 {
     bool ret = true;
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where() && !select.prewhere())
         return ret;
 
@@ -141,9 +142,15 @@ bool prepareFilterBlockWithQuery(const SelectQueryInfo & query_info, const Conte
     for (size_t i = 0; i < block.columns(); ++i)
         block.getByPosition(i).column = block.getByPosition(i).type->createColumnConstWithDefaultValue(1);
 
-    ExpressionAnalyzer(condition_ast, query_info.syntax_analyzer_result, context)
-        .getConstActions(block.getColumnsWithTypeAndName())
-        ->execute(block);
+    auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
+    PreparedSets prepared_sets;
+    SubqueriesForSets subqueries_for_sets;
+    ActionsVisitor::Data visitor_data(
+        context, SizeLimits{}, 1, {}, std::move(actions), prepared_sets, subqueries_for_sets, true, true, true, false);
+    ActionsVisitor(visitor_data).visit(condition_ast);
+    actions = visitor_data.getActions();
+    auto expression_actions = std::make_shared<ExpressionActions>(actions);
+    expression_actions->execute(block);
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
     std::vector<ASTPtr> functions;
@@ -156,10 +163,10 @@ bool prepareFilterBlockWithQuery(const SelectQueryInfo & query_info, const Conte
     return ret;
 }
 
-void filterBlockWithQuery(const SelectQueryInfo & query_info, Block & block, const Context & context, ASTPtr expression_ast)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast)
 {
     if (!expression_ast)
-        prepareFilterBlockWithQuery(query_info, context, block, expression_ast);
+        prepareFilterBlockWithQuery(query, context, block, expression_ast);
 
     if (!expression_ast)
         return;
