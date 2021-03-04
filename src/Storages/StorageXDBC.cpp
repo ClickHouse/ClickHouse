@@ -3,7 +3,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>

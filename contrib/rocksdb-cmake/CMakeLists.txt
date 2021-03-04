@@ -2,6 +2,12 @@
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
 list(APPEND CMAKE_MODULE_PATH "${ROCKSDB_SOURCE_DIR}/cmake/modules/")
 
+find_program(CCACHE_FOUND ccache)
+if(CCACHE_FOUND)
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
+endif(CCACHE_FOUND)
+
 if (SANITIZE STREQUAL "undefined")
     set(WITH_UBSAN ON)
 elseif (SANITIZE STREQUAL "address")
@@ -339,7 +345,6 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/db/arena_wrapped_db_iter.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_addition.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_builder.cc
-        ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_cache.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_garbage.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_meta.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_reader.cc
@@ -455,7 +460,6 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc
         ${ROCKSDB_SOURCE_DIR}/options/cf_options.cc
         ${ROCKSDB_SOURCE_DIR}/options/configurable.cc
-        ${ROCKSDB_SOURCE_DIR}/options/customizable.cc
         ${ROCKSDB_SOURCE_DIR}/options/db_options.cc
         ${ROCKSDB_SOURCE_DIR}/options/options.cc
         ${ROCKSDB_SOURCE_DIR}/options/options_helper.cc
@@ -579,9 +583,8 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/sim_cache.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_on_deletion_collector.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/trace/file_trace_reader_writer.cc
-        ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_manager.cc
-        ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_tracker.cc
-        ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_manager.cc
+        ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_tracker.cc
+        ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point_lock_tracker.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/optimistic_transaction_db_impl.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/optimistic_transaction.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/pessimistic_transaction.cc
@@ -589,6 +592,7 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/snapshot_checker.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_base.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_db_mutex_impl.cc
+        ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_lock_mgr.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_util.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn.cc
         ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn_db.cc

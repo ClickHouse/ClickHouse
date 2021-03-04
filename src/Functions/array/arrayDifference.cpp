@@ -48,29 +48,6 @@ struct ArrayDifferenceImpl
 
 
     template <typename Element, typename Result>
-    static void NO_SANITIZE_UNDEFINED impl(const Element * __restrict src, Result * __restrict dst, size_t begin, size_t end)
-    {
-        /// First element is zero, then the differences of ith and i-1th elements.
-
-        Element prev{};
-        for (size_t pos = begin; pos < end; ++pos)
-        {
-            if (pos == begin)
-            {
-                dst[pos] = 0;
-                prev = src[pos];
-            }
-            else
-            {
-                Element curr = src[pos];
-                dst[pos] = curr - prev;
-                prev = curr;
-            }
-        }
-    }
-
-
-    template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
@@ -96,14 +73,18 @@ struct ArrayDifferenceImpl
         size_t pos = 0;
         for (auto offset : offsets)
         {
-            impl(data.data(), res_values.data(), pos, offset);
-            pos = offset;
+            // skip empty arrays
+            if (pos < offset)
+            {
+                res_values[pos] = 0;
+                for (++pos; pos < offset; ++pos)
+                    res_values[pos] = static_cast<Result>(data[pos]) - static_cast<Result>(data[pos - 1]);
+            }
         }
-
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
-    }
 
+    }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
@@ -126,6 +107,7 @@ struct ArrayDifferenceImpl
         else
             throw Exception("Unexpected column for arrayDifference: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
+
 };
 
 struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };

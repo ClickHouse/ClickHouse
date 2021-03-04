@@ -31,7 +31,7 @@ public:
           */
         block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
-        /// Transform WHERE section to Reverse Polish notation
+        /// Trasform WHERE section to Reverse Polish notation
         const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
         if (select.where())
         {

@@ -12,9 +12,6 @@ using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToD
 void registerFunctionToDayOfWeek(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfWeek>();
-
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToDayOfWeek>("DAYOFWEEK", FunctionFactory::CaseInsensitive);
 }
 
 }

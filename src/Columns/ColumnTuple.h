@@ -83,13 +83,11 @@ public:
     void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
-    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
-    ColumnPtr compress() const override;
 
     size_t tupleSize() const { return columns.size(); }
 
@@ -100,7 +98,6 @@ public:
     Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
-    ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
 
 private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
