@@ -137,7 +137,7 @@ HEX может быть в любом регистре.
 IPv6StringToNum(string)
 ```
 
-**Параметры** 
+**Аргумент** 
 
 -   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
 
