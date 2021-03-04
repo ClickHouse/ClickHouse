@@ -370,6 +370,10 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnArray::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnArray>();
+}
 
 namespace
 {

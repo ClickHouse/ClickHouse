@@ -69,7 +69,7 @@ protected:
     ZooKeeperPtr getAndSetZooKeeper();
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
-    void scheduleTasks();
+    void scheduleTasks(bool reinitialized);
 
     DDLTaskBase & saveTask(DDLTaskPtr && task);
 
@@ -104,7 +104,8 @@ protected:
     /// Init task node
     void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
-    virtual void initializeMainThread();
+    /// Return false if the worker was stopped (stop_flag = true)
+    virtual bool initializeMainThread();
 
     void runMainThread();
     void runCleanupThread();
