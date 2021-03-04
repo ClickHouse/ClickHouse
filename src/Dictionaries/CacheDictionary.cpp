@@ -715,22 +715,22 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             for (auto & cell : not_found_keys)
                 not_found_keys_in_source.emplace_back(cell.getKey());
 
-            {
-                /// Lock for cache modification
-                ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-                cache_storage_ptr->insertColumnsForKeys(found_keys_in_source, fetched_columns_during_update);
-                cache_storage_ptr->insertDefaultKeys(not_found_keys_in_source);
-            }
-
             auto & update_unit_ptr_mutable_columns = update_unit_ptr->fetched_columns_during_update;
             for (const auto & fetched_column : fetched_columns_during_update)
                 update_unit_ptr_mutable_columns.emplace_back(fetched_column->assumeMutable());
 
             stream->readSuffix();
 
-            error_count = 0;
-            last_exception = std::exception_ptr{};
-            backoff_end_time = std::chrono::system_clock::time_point{};
+            {
+                /// Lock for cache modification
+                ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+                cache_storage_ptr->insertColumnsForKeys(found_keys_in_source, fetched_columns_during_update);
+                cache_storage_ptr->insertDefaultKeys(not_found_keys_in_source);
+
+                error_count = 0;
+                last_exception = std::exception_ptr{};
+                backoff_end_time = std::chrono::system_clock::time_point{};
+            }
 
             ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
         }
