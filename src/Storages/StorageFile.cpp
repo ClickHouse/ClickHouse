@@ -530,6 +530,7 @@ public:
     void writeSuffix() override
     {
         writer->writeSuffix();
+        write_buf->finalize();
     }
 
     void flush() override
