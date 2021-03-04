@@ -402,7 +402,6 @@ public:
 
         time_t time = t - lut[index].date;
 
-        /// Data is cleaned to avoid possibility of underflow.
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
 
@@ -454,8 +453,8 @@ public:
 
     inline unsigned toMinute(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
-            return mod((t / 60), 60);
+        if (offset_is_whole_number_of_hours_everytime && t >= 0)
+            return (t / 60) % 60;
 
         /// To consider the DST changing situation within this day.
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account
