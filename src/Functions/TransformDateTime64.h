@@ -78,7 +78,7 @@ public:
         }
     }
 
-    template <typename T, typename ... Args, typename = std::enable_if_t<std::negation_v<std::is_same_v<T, DateTime64>>>>
+    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
     inline auto execute(const T & t, Args && ... args) const
     {
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
