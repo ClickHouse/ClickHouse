@@ -48,7 +48,7 @@ public:
     static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 
     /// For scheduling via DistributedBlockOutputStream
-    bool scheduleAfter(size_t ms);
+    bool addAndSchedule(size_t file_size, size_t ms);
 
     /// system.distribution_queue interface
     struct Status
@@ -60,7 +60,7 @@ public:
         size_t bytes_count;
         bool is_blocked;
     };
-    Status getStatus() const;
+    Status getStatus();
 
 private:
     void run();
@@ -70,8 +70,9 @@ private:
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
-    void markAsBroken(const std::string & file_path) const;
-    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
+    void markAsBroken(const std::string & file_path);
+    void markAsSend(const std::string & file_path);
+    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e);
 
     std::string getLoggerName() const;
 
@@ -91,7 +92,7 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    mutable std::mutex metrics_mutex;
+    std::mutex metrics_mutex;
     size_t error_count = 0;
     size_t files_count = 0;
     size_t bytes_count = 0;
