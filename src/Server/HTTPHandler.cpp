@@ -268,8 +268,11 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 }
 
 
+/// We need d-tor to be present in this translation unit to make it play well with some
+/// forward decls in the header. Other than that, the default d-tor would be OK.
 HTTPHandler::~HTTPHandler()
 {
+    (void)this;
 }
 
 
