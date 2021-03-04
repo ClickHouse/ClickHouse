@@ -47,7 +47,7 @@ private:
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, ShellCommandDestructorStrategy destructor_strategy_);
 
-    bool shouldTerminateProcess();
+    bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
 
     static Poco::Logger * getLogger();
 

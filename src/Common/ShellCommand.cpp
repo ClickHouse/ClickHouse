@@ -58,12 +58,19 @@ ShellCommand::~ShellCommand()
     if (wait_called)
         return;
 
-    if (shouldTerminateProcess())
+    if (destructor_strategy.terminate_in_destructor)
     {
-        LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
-        int retcode = kill(pid, SIGTERM);
-        if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
+        size_t try_wait_timeout = destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+        bool process_terminated_normally = tryWaitProcessWithTimeout(try_wait_timeout);
+
+        if (!process_terminated_normally)
+        {
+            LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
+
+            int retcode = kill(pid, SIGTERM);
+            if (retcode != 0)
+                LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
+        }
     }
     else
     {
@@ -78,52 +85,59 @@ ShellCommand::~ShellCommand()
     }
 }
 
-bool ShellCommand::shouldTerminateProcess()
+bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
-    if (!destructor_strategy.terminate_in_destructor)
-        return false;
+    int status = 0;
 
-    size_t wait_before_signal_seconds = destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+    LOG_TRACE(getLogger(), "Try wait for shell command pid ({}) with timeout ({})", pid, timeout_in_seconds);
 
-    if (wait_before_signal_seconds > 0)
+    wait_called = true;
+    struct timespec interval {.tv_sec = 1, .tv_nsec = 0};
+
+    try
     {
-        LOG_TRACE(getLogger(), "Wait for shell command pid ({}) before termination with timeout ({})", pid, wait_before_signal_seconds);
+        in.close();
+        out.close();
+        err.close();
 
-        struct timespec interval{.tv_sec = 1, .tv_nsec = 0};
-        try
+        if (timeout_in_seconds == 0)
         {
-            in.close();
-            out.close();
-            err.close();
+            /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
+            /// signal if process is already terminated normally finished.
 
-            int status = 0;
-
-            while (wait_before_signal_seconds != 0)
-            {
-                int waitpid_res = waitpid(pid, &status, WNOHANG);
-
-                if (waitpid_res == 0)
-                {
-                    --wait_before_signal_seconds;
-                    nanosleep(&interval, nullptr);
-
-                    continue;
-                }
-                else if (waitpid_res == -1 && errno != EINTR)
-                    return true;
-                else
-                    return false;
-            }
-
-            return true;
+            int waitpid_res = waitpid(pid, &status, WNOHANG);
+            bool process_terminated_normally = (waitpid_res == pid);
+            return process_terminated_normally;
         }
-        catch (...)
+
+        /// If timeout is positive try waitpid without block in loop until
+        /// process is normally terminated or waitpid return error
+
+        while (timeout_in_seconds != 0)
         {
-            return true;
+            int waitpid_res = waitpid(pid, &status, WNOHANG);
+
+            bool process_terminated_normally = (waitpid_res == pid);
+
+            if (process_terminated_normally)
+                return true;
+            else if (waitpid_res == 0)
+            {
+                --timeout_in_seconds;
+                nanosleep(&interval, nullptr);
+
+                continue;
+            }
+            else if (waitpid_res == -1 && errno != EINTR)
+                return false;
         }
     }
-    else
-        return true;
+    catch (...)
+    {
+        return false;
+    }
+
+    return false;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
