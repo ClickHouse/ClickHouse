@@ -9,9 +9,9 @@
 
 namespace DB
 {
-std::vector<std::vector<ASTPtr>> getConstraintData(const StorageMetadataPtr & metadata_snapshot)
+std::vector<std::vector<CNFQuery::AtomicFormula>> getConstraintData(const StorageMetadataPtr & metadata_snapshot)
 {
-    std::vector<std::vector<ASTPtr>> constraint_data;
+    std::vector<std::vector<CNFQuery::AtomicFormula>> constraint_data;
     for (const auto & constraint :
          metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
@@ -22,6 +22,39 @@ std::vector<std::vector<ASTPtr>> getConstraintData(const StorageMetadataPtr & me
     }
 
     return constraint_data;
+}
+
+std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData(const StorageMetadataPtr & metadata_snapshot)
+{
+    std::vector<CNFQuery::AtomicFormula> constraint_data;
+    for (const auto & constraint :
+        metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    {
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+            .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
+        for (const auto & group : cnf.getStatements()) {
+            if (group.size() == 1)
+                constraint_data.push_back(*group.begin());
+        }
+    }
+
+    return constraint_data;
+}
+
+std::vector<std::pair<ASTPtr, ASTPtr>> getEqualConstraintData(const StorageMetadataPtr & metadata_snapshot)
+{
+    std::vector<std::pair<ASTPtr, ASTPtr>> equal_constraints;
+    const std::vector<CNFQuery::AtomicFormula> atomic_constraints = getAtomicConstraintData(metadata_snapshot);
+    for (const auto & constraint : atomic_constraints) {
+        auto * func = constraint.ast->as<ASTFunction>();
+        if (func && (func->name == "equal" && !constraint.negative))
+        {
+            equal_constraints.emplace_back(
+                func->arguments->children[0],
+                func->arguments->children[1]);
+        }
+    }
+    return equal_constraints;
 }
 
 WhereConstraintsOptimizer::WhereConstraintsOptimizer(
@@ -48,37 +81,22 @@ namespace
     };
 }
 
-MatchState match(ASTPtr a, ASTPtr b)
+MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 {
-    bool match_means_ok = true;
+    bool match_means_ok = true ^ a.negative ^ b.negative;
 
-    {
-        auto * func_a = a->as<ASTFunction>();
-        if (func_a && func_a->name == "not")
-        {
-            a = func_a->arguments->children.front();
-            match_means_ok ^= true;
-        }
-    }
-    {
-        auto * func_b = b->as<ASTFunction>();
-        if (func_b && func_b->name == "not")
-        {
-            b = func_b->arguments->children.front();
-            match_means_ok ^= true;
-        }
-    }
-
-    if (a->getTreeHash() == b->getTreeHash() &&
-        a->getColumnName() == b->getColumnName())
+    if (a.ast->getTreeHash() == b.ast->getTreeHash() &&
+        a.ast->getColumnName() == b.ast->getColumnName())
     {
         return match_means_ok ? MatchState::FULL_MATCH : MatchState::NOT_MATCH;
     }
     return MatchState::NONE;
 }
 
-bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<std::vector<ASTPtr>> & constraints)
+bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
+    /// TODO: constraints graph
+
     /// TODO: this is temporary; need to write more effective search
     /// TODO: go deeper into asts (a < b, a = b,...) with z3 or some visitor
     for (const auto & constraint : constraints) /// one constraint in group is enough,
@@ -111,7 +129,7 @@ bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<s
     return false;
 }
 
-bool checkIfAtomAlwaysFalse(const ASTPtr & atom, const std::vector<std::vector<ASTPtr>> & constraints)
+bool checkIfAtomAlwaysFalse(const CNFQuery::AtomicFormula & atom, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
     /// TODO: more efficient matching
 
@@ -120,9 +138,9 @@ bool checkIfAtomAlwaysFalse(const ASTPtr & atom, const std::vector<std::vector<A
         if (constraint.size() > 1)
             continue; /// TMP
 
-        for (const auto & constraint_ast : constraint)
+        for (const auto & constraint_atoms : constraint)
         {
-            const auto match_result = match(constraint_ast, atom);
+            const auto match_result = match(constraint_atoms, atom);
 
             if (match_result != MatchState::NONE)
                 return match_result == MatchState::NOT_MATCH;
@@ -137,14 +155,15 @@ void WhereConstraintsOptimizer::perform()
     if (select_query->where() && metadata_snapshot)
     {
         const auto constraint_data = getConstraintData(metadata_snapshot);
+        Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());
         cnf.pullNotOutFunctions()
             .filterAlwaysTrueGroups([&constraint_data](const auto & group) { /// remove always true groups from CNF
                 return !checkIfGroupAlwaysTrue(group, constraint_data);
             })
-            .filterAlwaysFalseAtoms([&constraint_data](const auto & ast) { /// remove always false atoms from CNF
-                return !checkIfAtomAlwaysFalse(ast, constraint_data);
+            .filterAlwaysFalseAtoms([&constraint_data](const auto & atom) { /// remove always false atoms from CNF
+                return !checkIfAtomAlwaysFalse(atom, constraint_data);
             })
             .pushNotInFuntions();
 
