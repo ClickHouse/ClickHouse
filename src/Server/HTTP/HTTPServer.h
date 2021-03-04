@@ -19,7 +19,7 @@ public:
     explicit HTTPServer(
         const Context & context,
         HTTPRequestHandlerFactoryPtr factory,
-        UInt16 portNumber = 80,
+        UInt16 port_number = 80,
         Poco::Net::HTTPServerParams::Ptr params = new Poco::Net::HTTPServerParams);
 
     HTTPServer(
@@ -31,13 +31,13 @@ public:
     HTTPServer(
         const Context & context,
         HTTPRequestHandlerFactoryPtr factory,
-        Poco::ThreadPool & threadPool,
+        Poco::ThreadPool & thread_pool,
         const Poco::Net::ServerSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params);
 
     ~HTTPServer() override;
 
-    void stopAll(bool abortCurrent = false);
+    void stopAll(bool abort_current = false);
 
 private:
     HTTPRequestHandlerFactoryPtr factory;
