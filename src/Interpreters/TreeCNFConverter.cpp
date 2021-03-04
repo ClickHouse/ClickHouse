@@ -149,9 +149,13 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
             traverseCNF(child, and_group, or_group);
         }
     }
+    else if (func && func->name == "not")
+    {
+        or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
+    }
     else
     {
-        or_group.insert(node);
+        or_group.insert(CNFQuery::AtomicFormula{false, node});
     }
 }
 
@@ -190,13 +194,23 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
     for (const auto & group : groups)
     {
         if (group.size() == 1)
-            or_groups.push_back((*group.begin())->clone());
+        {
+            if ((*group.begin()).negative)
+                or_groups.push_back(makeASTFunction("not", (*group.begin()).ast->clone()));
+            else
+                or_groups.push_back((*group.begin()).ast->clone());
+        }
         else if (group.size() > 1)
         {
             or_groups.push_back(makeASTFunction("or"));
             auto * func = or_groups.back()->as<ASTFunction>();
-            for (const auto & ast : group)
-                func->arguments->children.push_back(ast->clone());
+            for (const auto & atom : group)
+            {
+                if ((*group.begin()).negative)
+                    func->arguments->children.push_back(makeASTFunction("not", atom.ast->clone()));
+                else
+                    func->arguments->children.push_back(atom.ast->clone());
+            }
         }
     }
 
@@ -211,7 +225,23 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
     return res;
 }
 
-void pullNotOut(ASTPtr & node)
+void pushPullNotInAtom(CNFQuery::AtomicFormula & atom, const std::map<std::string, std::string> & inverse_relations)
+{
+    auto * func = atom.ast->as<ASTFunction>();
+    if (!func)
+        return;
+    if (auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
+    {
+        /// inverse func
+        atom.ast = atom.ast->clone();
+        auto * new_func = atom.ast->as<ASTFunction>();
+        new_func->name = it->second;
+        /// add not
+        atom.negative = !atom.negative;
+    }
+}
+
+void pullNotOut(CNFQuery::AtomicFormula & atom)
 {
     static const std::map<std::string, std::string> inverse_relations = {
         {"notEquals", "equals"},
@@ -222,22 +252,14 @@ void pullNotOut(ASTPtr & node)
         {"notEmpty", "empty"},
     };
 
-    auto * func = node->as<ASTFunction>();
-    if (!func)
-        return;
-    if (auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
-    {
-        /// inverse func
-        node = node->clone();
-        auto * new_func = node->as<ASTFunction>();
-        new_func->name = it->second;
-        /// add not
-        node = makeASTFunction("not", node);
-    }
+    pushPullNotInAtom(atom, inverse_relations);
 }
 
-void pushNotIn(ASTPtr & node)
+void pushNotIn(CNFQuery::AtomicFormula & atom)
 {
+    if (!atom.negative)
+        return;
+
     static const std::map<std::string, std::string> inverse_relations = {
         {"equals", "notEquals"},
         {"less", "greaterOrEquals"},
@@ -245,51 +267,34 @@ void pushNotIn(ASTPtr & node)
         {"in", "notIn"},
         {"like", "notLike"},
         {"empty", "notEmpty"},
+        {"notEquals", "equals"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+        {"notIn", "in"},
+        {"notLike", "like"},
+        {"notEmpty", "empty"},
     };
 
-    auto * func = node->as<ASTFunction>();
-    if (!func)
-        return;
-    if (auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
-    {
-        /// inverse func
-        node = node->clone();
-        auto * new_func = node->as<ASTFunction>();
-        new_func->name = it->second;
-        /// add not
-        node = makeASTFunction("not", node);
-    }
+    pushPullNotInAtom(atom, inverse_relations);
 }
 
 CNFQuery & CNFQuery::pullNotOutFunctions()
 {
-    transformAtoms([](const ASTPtr & node) -> ASTPtr
-                 {
-                     auto * func = node->as<ASTFunction>();
-                     if (!func)
-                        return node;
-                     ASTPtr result = node->clone();
-                     if (func->name == "not")
-                         pullNotOut(func->arguments->children.front());
-                     else
-                         pullNotOut(result);
-                     traversePushNot(result, false);
-                     return result;
-                 });
+    transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
+                    {
+                        AtomicFormula result{atom.negative, atom.ast->clone()};
+                        pullNotOut(result);
+                        return result;
+                    });
     return *this;
 }
 
 CNFQuery & CNFQuery::pushNotInFuntions()
 {
-    transformAtoms([](const ASTPtr & node) -> ASTPtr
+    transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
                    {
-                       auto * func = node->as<ASTFunction>();
-                       if (!func)
-                           return node;
-                       ASTPtr result = node->clone();
-                       if (func->name == "not")
-                           pushNotIn(func->arguments->children.front());
-                       traversePushNot(result, false);
+                       AtomicFormula result{atom.negative, atom.ast->clone()};
+                       pushNotIn(result);
                        return result;
                    });
     return *this;
@@ -306,12 +311,14 @@ std::string CNFQuery::dump() const
         first = false;
         res << "(";
         bool first_in_group = true;
-        for (const auto & ast : group)
+        for (const auto & atom : group)
         {
             if (!first_in_group)
                 res << " OR ";
             first_in_group = false;
-            res << ast->getColumnName();
+            if (atom.negative)
+                res << " NOT ";
+            res << atom.ast->getColumnName();
         }
         res << ")";
     }

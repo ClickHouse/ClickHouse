@@ -12,7 +12,19 @@ namespace DB
 class CNFQuery
 {
 public:
-    using OrGroup = std::set<ASTPtr>; // Add NOT container???
+    struct AtomicFormula
+    {
+        bool negative = false;
+        ASTPtr ast;
+
+        /// for set
+        bool operator<(const AtomicFormula & rhs) const
+        {
+            return ast == rhs.ast ? negative < rhs.negative : ast < rhs.ast;
+        }
+    };
+
+    using OrGroup = std::set<AtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
     CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { }
@@ -46,10 +58,10 @@ public:
                 filtered.insert(filtered_group);
             else
             {
-                /// all atoms false -> group false -> CNF false
+                /// all atoms false -> group false -> CNF   false
                 filtered.clear();
                 filtered_group.clear();
-                filtered_group.insert(std::make_shared<ASTLiteral>(static_cast<UInt8>(0)));
+                filtered_group.insert(AtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
                 filtered.insert(filtered_group);
                 std::swap(statements, filtered);
                 return *this;
@@ -79,11 +91,11 @@ public:
         transformGroups([func](const OrGroup & group) -> OrGroup
                         {
                             OrGroup result;
-                            for (const auto & ast : group)
+                            for (const auto & atom : group)
                             {
-                                auto new_ast = func(ast);
-                                if (new_ast)
-                                    result.insert(std::move(new_ast));
+                                auto new_atom = func(atom);
+                                if (new_atom.ast)
+                                    result.insert(std::move(new_atom));
                             }
                             return result;
                         });

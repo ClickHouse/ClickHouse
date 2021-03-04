@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TreeCNFConverter.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
 struct ConstraintsDescription
 {
     std::vector<ASTPtr> constraints;
+    std::vector<CNFQuery> cnf_constraints;
 
     ConstraintsDescription() = default;
 
@@ -27,6 +29,9 @@ struct ConstraintsDescription
     };
 
     ASTs filterConstraints(ConstraintType selection) const;
+    // TODO: перенести преобразование в КНФ + get constraitns
+    //ASTs filterAtomicConstraints(ConstraintType selection) const;
+    //ASTs filterEqualConstraints(ConstraintType selection) const;
 
     ConstraintsExpressions getExpressionsToCheck(const Context & context, const NamesAndTypesList & source_columns_) const;
 
