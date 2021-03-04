@@ -108,7 +108,7 @@ public:
         : block_size(block_size_)
     {}
 
-    /// Checks if size can be written in empty block with block_size
+    /// Checks if simple key can be written in empty block with block_size
     static bool canBeWrittenInEmptyBlock(SSDCacheSimpleKey & simple_key, size_t block_size)
     {
         static constexpr size_t simple_key_size = sizeof(simple_key.key);
@@ -116,6 +116,7 @@ public:
         return (block_header_size + simple_key_size + sizeof(simple_key.size) + simple_key.size) <= block_size;
     }
 
+    /// Checks if complex key can be written in empty block with block_size
     static bool canBeWrittenInEmptyBlock(SSDCacheComplexKey & complex_key, size_t block_size)
     {
         StringRef & key = complex_key.key;
@@ -139,6 +140,7 @@ public:
         return (current_block_offset + (sizeof(cache_key.key) + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
 
+    /// Check if it is enough place to write key in block
     ALWAYS_INLINE inline bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
         const StringRef & key = cache_key.key;
@@ -335,6 +337,14 @@ inline bool operator==(const SSDCacheIndex & lhs, const SSDCacheIndex & rhs)
     return lhs.block_index == rhs.block_index && lhs.offset_in_block == rhs.offset_in_block;
 }
 
+/** SSDCacheMemoryBuffer initialized with block size and memory buffer blocks size.
+  * Allocate block_size * memory_buffer_blocks_size bytes with page alignment.
+  * Logically represents multiple memory_buffer_blocks_size blocks and current write block.
+  * If key cannot be written into current_write_block, current block keys size and check summ is written
+  * and buffer increase index of current_write_block_index.
+  * If current_write_block_index == memory_buffer_blocks_size write key will always returns true.
+  * If reset is called current_write_block_index is set to 0.
+  */
 template <typename SSDCacheKeyType>
 class SSDCacheMemoryBuffer
 {
@@ -434,6 +444,7 @@ private:
     size_t current_block_index = 0;
 };
 
+/// TODO: Add documentation
 template <typename SSDCacheKeyType>
 class SSDCacheFileBuffer : private boost::noncopyable
 {
@@ -784,6 +795,7 @@ private:
     size_t current_blocks_size = 0;
 };
 
+/// TODO: Add documentation
 template <DictionaryKeyType dictionary_key_type>
 class SSDCacheDictionaryStorage final : public ICacheDictionaryStorage
 {

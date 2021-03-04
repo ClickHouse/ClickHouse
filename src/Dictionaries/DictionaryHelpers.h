@@ -18,7 +18,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// TODO: Remove DictionaryDefaultValueExtractor
+/** Simple helper for getting default.
+  * Initialized with default value and default values column.
+  * If default values column is not null default value is taken from column.
+  * If default value is null default value is taken from initializer.
+  */
 class DefaultValueProvider final
 {
 public:
