@@ -8,25 +8,83 @@
 
 #include <Common/MoveOrCopyIfThrow.h>
 
-/// TODO: Add documentation
+/** Pool for limited size objects that cannot be used from different threads simultaneously.
+  * The main use case is to have fixed size of objects that can be reused in difference threads during their lifetime
+  * and have to be initialized on demand.
+  * Two main properies of pool are allocated objects size and borrowed objects size.
+  * Allocated objects size is size of objects that are currently allocated by the pool.
+  * Borrowed objects size is size of objects that are borrowed from clients.
+  * If max_size == 0 then pool has unlimited size and objects will be allocated without limit.
+  *
+  * Pool provides following strategy for borrowing object:
+  * If max_size == 0 then pool has unlimited size and objects will be allocated without limit.
+  * 1. If pool has objects that can be increase borrowed objects size and return it.
+  * 2. If pool allocatedObjectsSize is lower than max objects size or pool has unlimited size
+  * allocate new object, increase borrowed objects size and return it.
+  * 3. If pool is full wait on condition variable with or without timeout until some object
+  * will be returned to the pool.
+  */
 template <typename T>
 class BorrowedObjectPool final
 {
 public:
     explicit BorrowedObjectPool(size_t max_size_) : max_size(max_size_) {}
 
+    /// Borrow object from pool. If pull is full and all objects were borrowed
+    /// then calling thread will wait until some object will be returned into pool.
     template <typename FactoryFunc>
-    T borrowObject(FactoryFunc && func)
+    void borrowObject(T & dest, FactoryFunc && func)
     {
-        return borrowObjectImpl<NoTimeoutStrategy>(std::forward<FactoryFunc>(func), NoTimeoutStrategy());
+        std::unique_lock<std::mutex> lock(objects_mutex);
+
+        if (!objects.empty())
+        {
+            dest = borrowFromObjects();
+            return;
+        }
+
+        bool has_unlimited_size = (max_size == 0);
+
+        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
+        {
+            dest = allocateObjectForBorrowing(std::forward<FactoryFunc>(func));
+            return;
+        }
+
+        condition_variable.wait(lock, [this] { return !objects.empty(); });
+        dest = borrowFromObjects();
     }
 
+    /// Same as borrowObject function, but wait with timeout.
+    /// Returns true if object was borrowed during timeout.
     template <typename FactoryFunc>
-    T tryBorrowObject(FactoryFunc && func, size_t timeout_in_milliseconds = 0)
+    bool tryBorrowObject(T & dest, FactoryFunc && func, size_t timeout_in_milliseconds = 0)
     {
-        return borrowObjectImpl<WaitTimeoutStrategy>(std::forward<FactoryFunc>(func), WaitTimeoutStrategy{timeout_in_milliseconds});
+        std::unique_lock<std::mutex> lock(objects_mutex);
+
+        if (!objects.empty())
+        {
+            dest = borrowFromObjects();
+            return true;
+        }
+
+        bool has_unlimited_size = (max_size == 0);
+
+        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
+        {
+            dest = allocateObjectForBorrowing(std::forward<FactoryFunc>(func));
+            return true;
+        }
+
+        bool wait_result = condition_variable.wait_for(lock, std::chrono::milliseconds(timeout_in_milliseconds), [this] { return !objects.empty(); });
+
+        if (wait_result)
+            dest = borrowFromObjects();
+
+        return wait_result;
     }
 
+    /// Return object into pool. Client must return same object that was borrowed.
     ALWAYS_INLINE inline void returnObject(T && object_to_return)
     {
         std::unique_lock<std::mutex> lck(objects_mutex);
@@ -37,12 +95,28 @@ public:
         condition_variable.notify_one();
     }
 
+    /// Max pool size
+    ALWAYS_INLINE inline size_t maxSize() const
+    {
+        return max_size;
+    }
+
+    /// Allocated objects size by the pool. If allocatedObjectsSize == maxSize then pool is full.
     ALWAYS_INLINE inline size_t allocatedObjectsSize() const
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
         return allocated_objects_size;
     }
 
+    /// Returns allocatedObjectsSize == maxSize
+    ALWAYS_INLINE inline bool isFull() const
+    {
+        std::unique_lock<std::mutex> lock(objects_mutex);
+        return allocated_objects_size == max_size;
+    }
+
+    /// Borrowed objects size. If borrowedObjectsSize == allocatedObjectsSize and pool is full.
+    /// Then client will wait during borrowObject function call.
     ALWAYS_INLINE inline size_t borrowedObjectsSize() const
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
@@ -50,34 +124,6 @@ public:
     }
 
 private:
-
-    struct NoTimeoutStrategy {};
-
-    struct WaitTimeoutStrategy { size_t timeout_in_milliseconds; };
-
-    template <typename TimeoutStrategy, typename FactoryFunc>
-    ALWAYS_INLINE inline T borrowObjectImpl(FactoryFunc && func, TimeoutStrategy strategy [[maybe_unused]])
-    {
-        std::unique_lock<std::mutex> lock(objects_mutex);
-
-        if (!objects.empty())
-                return borrowFromObjects();
-
-        bool has_unlimited_size = (max_size == 0);
-
-        if (unlikely(has_unlimited_size))
-            return allocateObjectForBorrowing(std::forward<FactoryFunc>(func));
-
-        if (allocated_objects_size < max_size)
-            return allocateObjectForBorrowing(std::forward<FactoryFunc>(func));
-
-        if constexpr (std::is_same_v<TimeoutStrategy, WaitTimeoutStrategy>)
-            condition_variable.wait_for(lock, std::chrono::milliseconds(strategy.timeout_in_milliseconds), [this] { return !objects.empty(); });
-        else
-            condition_variable.wait(lock, [this] { return !objects.empty(); });
-
-        return borrowFromObjects();
-    }
 
     template <typename FactoryFunc>
     ALWAYS_INLINE inline T allocateObjectForBorrowing(FactoryFunc && func)

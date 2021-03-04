@@ -217,16 +217,14 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
-    std::cerr << "ExecutablePoolDictionarySource::getStreamForBlock borrow object start " << std::endl;
-    std::cerr << "Borrowed objects size " << process_pool->borrowedObjectsSize() << " allocated objects size " << process_pool->allocatedObjectsSize() << std::endl;
-
-    std::unique_ptr<ShellCommand> process = process_pool->tryBorrowObject([this]()
+    std::unique_ptr<ShellCommand> process;
+    process_pool->borrowObject(process, [this]()
     {
         bool terminate_in_destructor = true;
         ShellCommandDestructorStrategy strategy { terminate_in_destructor, command_termination_timeout };
         auto shell_command = ShellCommand::execute(command, false, strategy);
         return shell_command;
-    }, 5000);
+    });
 
     size_t rows_to_read = block.rows();
     auto read_stream = context.getInputFormat(format, process->out, sample_block, rows_to_read);
