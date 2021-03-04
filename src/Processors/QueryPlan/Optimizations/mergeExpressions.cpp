@@ -22,7 +22,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     if (parent_expr && child_expr)
     {
-        const auto & context = child_expr->getContext();
         const auto & child_actions = child_expr->getExpression();
         const auto & parent_actions = parent_expr->getExpression();
 
@@ -34,7 +33,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
 
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged, context);
+        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
         expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(expr);
@@ -43,7 +42,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     }
     else if (parent_filter && child_expr)
     {
-        const auto & context = child_expr->getContext();
         const auto & child_actions = child_expr->getExpression();
         const auto & parent_actions = parent_filter->getExpression();
 
@@ -55,8 +53,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(),
                                                    merged,
                                                    parent_filter->getFilterColumnName(),
-                                                   parent_filter->removesFilterColumn(),
-                                                   context);
+                                                   parent_filter->removesFilterColumn());
         filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(filter);

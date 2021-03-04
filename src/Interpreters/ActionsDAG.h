@@ -236,15 +236,15 @@ public:
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
 
-    void transformHeader(Block & block);
+    // void transformHeader(Block & block);
 
-    /// This map helps to find input position by it's name.
-    /// Key is a view to input::result_name.
-    /// Result is a list because it is allowed for inputs to have same names.
-    using NameToNodeMap = std::unordered_map<std::string_view, std::list<size_t>>;
-    static NameToNodeMap buildNameToNodeMapping(const NodeRawConstPtrs & nodes);
-    static std::vector<ssize_t> getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping);
-    void transformHeader(Block & block, ColumnsWithTypeAndName result_columns) const;
+    // /// This map helps to find input position by it's name.
+    // /// Key is a view to input::result_name.
+    // /// Result is a list because it is allowed for inputs to have same names.
+    // using NameToNodeMap = std::unordered_map<std::string_view, std::list<size_t>>;
+    // static NameToNodeMap buildNameToNodeMapping(const NodeRawConstPtrs & nodes);
+    // static std::vector<ssize_t> getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping);
+    // void transformBlock(Block & block, std::vector<ssize_t> inputs_pos, ColumnsWithTypeAndName result_columns) const;
 
     void compileExpressions(size_t min_count_to_compile_expression);
 

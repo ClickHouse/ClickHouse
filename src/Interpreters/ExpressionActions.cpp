@@ -44,7 +44,7 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Settings & settings)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings)
 {
     actions_dag = actions_dag_->clone();
 
@@ -142,7 +142,7 @@ void ExpressionActions::linearizeActions()
 
         ExpressionActions::Arguments arguments;
         arguments.reserve(cur.node->children.size());
-        for (auto * child : cur.node->children)
+        for (const auto * child : cur.node->children)
         {
             auto & arg = data[reverse_index[child]];
 
@@ -207,9 +207,8 @@ void ExpressionActions::linearizeActions()
         auto pos = required_columns.size();
         actions[cur.position].arguments.front().pos = pos;
         required_columns.push_back({input->result_name, input->result_type});
+        input_positions[input->result_name].emplace_back(pos);
     }
-
-    input_positions = actions_dag->buildNameToNodeMapping(inputs);
 }
 
 

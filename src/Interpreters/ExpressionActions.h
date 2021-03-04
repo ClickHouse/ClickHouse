@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
 
@@ -29,7 +30,6 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class Context;
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -81,18 +81,9 @@ private:
     size_t max_temporary_non_const_columns = 0;
 
 public:
-    struct Settings
-    {
-        bool compile_expressions = false;
-        size_t min_count_to_compile_expression = 0;
-
-        size_t max_temporary_columns = 0;
-        size_t max_temporary_non_const_columns = 0;
-    }
-
     ExpressionActions() = delete;
     ~ExpressionActions();
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const Context & context);
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings);
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 

@@ -40,13 +40,12 @@ static ITransformingStep::Traits getJoinTraits()
     };
 }
 
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_, const Context & context_)
+ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_)
     : ITransformingStep(
         input_stream_,
-        Transform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_, context_)),
+        Transform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{})),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
-    , context(context_)
 {
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
@@ -55,7 +54,8 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
 void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = keep_header ? std::move(output_stream->header)
-                                   : Transform::transformHeader(input_stream.header, std::make_shared<ExpressionActions>(actions_dag, context));
+                                   : Transform::transformHeader(input_stream.header,
+                                                                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{}));
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),
@@ -65,9 +65,9 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
     input_streams.emplace_back(std::move(input_stream));
 }
 
-void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
+void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, context);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
     pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<Transform>(header, expression);
@@ -79,7 +79,7 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, context);
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -93,7 +93,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, context);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
@@ -117,7 +117,7 @@ JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_)
 {
 }
 
-void JoinStep::transformPipeline(QueryPipeline & pipeline)
+void JoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool add_default_totals = false;

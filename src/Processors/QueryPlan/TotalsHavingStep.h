@@ -17,7 +17,6 @@ public:
             const DataStream & input_stream_,
             bool overflow_row_,
             const ActionsDAGPtr & actions_dag_,
-            const Context & context_,
             const std::string & filter_column_,
             TotalsMode totals_mode_,
             double auto_include_threshold_,
@@ -25,7 +24,7 @@ public:
 
     String getName() const override { return "TotalsHaving"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(FormatSettings & settings) const override;
 
@@ -38,7 +37,6 @@ private:
     TotalsMode totals_mode;
     double auto_include_threshold;
     bool final;
-    const Context & context;
 };
 
 }

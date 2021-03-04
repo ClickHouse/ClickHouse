@@ -27,8 +27,6 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     const auto & array_join = array_join_step->arrayJoin();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
-    const auto & context = expression_step ? expression_step->getContext()
-                                           : filter_step->getContext();
 
     auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
 
@@ -49,14 +47,12 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
         if (expression_step)
             child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                     std::move(split_actions.first),
-                                                     context);
+                                                     std::move(split_actions.first));
         else
             child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
                                                  std::move(split_actions.first),
                                                  filter_step->getFilterColumnName(),
-                                                 filter_step->removesFilterColumn(),
-                                                 context);
+                                                 filter_step->removesFilterColumn());
 
         child->setStepDescription(std::move(description));
 
@@ -72,17 +68,15 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions.first),
-                                                 context);
+                                                 std::move(split_actions.first));
     node.step->setStepDescription(description);
     array_join_step->updateInputStream(node.step->getOutputStream(), {});
 
     if (expression_step)
-        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second, context);
+        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second);
     else
         parent = std::make_unique<FilterStep>(array_join_step->getOutputStream(), split_actions.second,
-                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn(),
-                                              context);
+                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 
     parent->setStepDescription(description + " [split]");
     return 3;

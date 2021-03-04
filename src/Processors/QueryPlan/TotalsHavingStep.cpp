@@ -28,7 +28,6 @@ TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
     bool overflow_row_,
     const ActionsDAGPtr & actions_dag_,
-    const Context & context_,
     const std::string & filter_column_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
@@ -37,7 +36,7 @@ TotalsHavingStep::TotalsHavingStep(
             input_stream_,
             TotalsHavingTransform::transformHeader(
                     input_stream_.header,
-                    (actions_dag_ ? std::make_shared<ExpressionActions>(actions_dag_, context_) : nullptr),
+                    (actions_dag_ ? std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{}) : nullptr),
                     final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
@@ -46,14 +45,14 @@ TotalsHavingStep::TotalsHavingStep(
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)
-    , context(context_)
 {
 }
 
-void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline)
+void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto totals_having = std::make_shared<TotalsHavingTransform>(
-            pipeline.getHeader(), overflow_row, (actions_dag ? std::make_shared<ExpressionActions>(actions_dag, context) : nullptr),
+            pipeline.getHeader(), overflow_row,
+            (actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr),
             filter_column_name, totals_mode, auto_include_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
@@ -85,7 +84,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(actions_dag, context);
+        auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
         for (const auto & action : expression->getActions())
         {
             settings.out << prefix << (first ? "Actions: "

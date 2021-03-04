@@ -37,7 +37,6 @@ static size_t tryAddNewFilterStep(
     auto & child = child_node->step;
 
     auto * filter = static_cast<FilterStep *>(parent.get());
-    const auto & context = filter->getContext();
     const auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
     bool removes_filter = filter->removesFilterColumn();
@@ -70,7 +69,7 @@ static size_t tryAddNewFilterStep(
     if (!found_filter_column || filter_is_constant)
         /// This means that all predicates of filter were pushed down.
         /// Replace current actions to expression, as we don't need to filter anything.
-        parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression, context);
+        parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
 
     /// Add new Filter step before Aggregating.
     /// Expression/Filter -> Aggregating -> Something
@@ -83,7 +82,7 @@ static size_t tryAddNewFilterStep(
     auto split_filter_column_name = (*split_filter->getIndex().rbegin())->result_name;
     node.step = std::make_unique<FilterStep>(
             node.children.at(0)->step->getOutputStream(),
-            std::move(split_filter), std::move(split_filter_column_name), true, context);
+            std::move(split_filter), std::move(split_filter_column_name), true);
 
     return 3;
 }

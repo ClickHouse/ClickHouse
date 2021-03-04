@@ -910,7 +910,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
         tmp_actions_dag->removeUnusedActions({prewhere_column_name});
-        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag, context);
+        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag, ExpressionActionsSettings::fromContext(context));
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
 
@@ -1040,7 +1040,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, context));
+            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context)));
         }
     }
 
@@ -1198,7 +1198,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, context));
+            order_by_elements_actions.emplace_back(
+                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context)));
         }
     }
 
@@ -1339,18 +1340,26 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
 
     if (!(add_aliases && project_result))
     {
+        NameSet name_set(result_names.begin(), result_names.end());
         /// We will not delete the original columns.
         for (const auto & column_name_type : sourceColumns())
-            result_names.push_back(column_name_type.name);
+        {
+            if (name_set.count(column_name_type.name) == 0)
+            {
+                result_names.push_back(column_name_type.name);
+                name_set.insert(column_name_type.name);
+            }
+        }
+
+        actions_dag->removeUnusedActions(result_names);
     }
 
-    actions_dag->removeUnusedActions(result_names);
     return actions_dag;
 }
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
-    return std::make_shared<ExpressionActions>(getActionsDAG(add_aliases, project_result), context);
+    return std::make_shared<ExpressionActions>(getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(context));
 }
 
 
@@ -1359,7 +1368,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
     auto actions = std::make_shared<ActionsDAG>(NamesAndTypesList());
 
     getRootActions(query, true, actions, true);
-    return std::make_shared<ExpressionActions>(actions, context);
+    return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(context));
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
@@ -1450,7 +1459,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    ExpressionActions(prewhere_info->prewhere_actions, context).execute(before_prewhere_sample);
+                    ExpressionActions(
+                        prewhere_info->prewhere_actions,
+                        ExpressionActionsSettings::fromSettings(context.getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1483,7 +1494,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    ExpressionActions(before_where, context).execute(before_where_sample);
+                    ExpressionActions(
+                        before_where,
+                        ExpressionActionsSettings::fromSettings(context.getSettingsRef())).execute(before_where_sample);
                     auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)

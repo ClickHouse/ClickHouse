@@ -29,7 +29,8 @@
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
-
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
 namespace ProfileEvents
 {
@@ -166,7 +167,9 @@ Pipe StorageBuffer::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageBuffer::read(
@@ -254,8 +257,7 @@ void StorageBuffer::read(
 
                     auto adding_missed = std::make_unique<ExpressionStep>(
                             query_plan.getCurrentDataStream(),
-                            std::move(actions),
-                            context);
+                            std::move(actions));
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
@@ -265,7 +267,7 @@ void StorageBuffer::read(
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag, context);
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -372,7 +374,7 @@ void StorageBuffer::read(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header, context);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header);
     union_step->setStepDescription("Unite sources from Buffer table");
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }

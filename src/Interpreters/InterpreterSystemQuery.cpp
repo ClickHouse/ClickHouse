@@ -24,6 +24,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -270,7 +271,8 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            system_context.dropCompiledExpressionCache();
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
