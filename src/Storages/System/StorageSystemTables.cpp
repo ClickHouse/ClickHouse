@@ -76,7 +76,7 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const 
     }
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithQuery(query_info, block, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
     return block.getByPosition(0).column;
 }
 

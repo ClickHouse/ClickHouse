@@ -89,7 +89,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
             { col_table, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

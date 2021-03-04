@@ -437,7 +437,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     if (has_virtual_column)
     {
         Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(virtual_column), std::make_shared<DataTypeString>(), "_table")};
-        VirtualColumnUtils::filterBlockWithQuery(query_info, virtual_columns_block, global_context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, global_context);
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
