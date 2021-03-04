@@ -143,6 +143,7 @@ private:
 struct ChangelogReadResult
 {
     size_t entries_read;
+    size_t first_read_index;
     off_t last_position;
     bool error;
 };
@@ -212,6 +213,8 @@ public:
                 }
 
                 auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, record.header.value_type);
+                if (result.first_read_index == 0)
+                    result.first_read_index = record.header.index;
 
                 logs.emplace(record.header.index, log_entry);
                 index_to_offset[record.header.index] = result.last_position;
@@ -258,30 +261,39 @@ Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval
     }
 }
 
-void Changelog::readChangelogAndInitWriter(size_t from_log_index)
+void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_t logs_to_keep)
 {
-    start_index = from_log_index == 0 ? 1 : from_log_index;
     size_t total_read = 0;
     size_t entries_in_last = 0;
     size_t incomplete_log_index = 0;
     ChangelogReadResult result{};
+    size_t first_read_index = 0;
+
+    size_t start_to_read_from = last_commited_log_index;
+    if (start_to_read_from > logs_to_keep)
+        start_to_read_from -= logs_to_keep;
+    else
+        start_to_read_from = 1;
 
     bool started = false;
     for (const auto & [changelog_start_index, changelog_description] : existing_changelogs)
     {
         entries_in_last = changelog_description.to_log_index - changelog_description.from_log_index + 1;
 
-        if (changelog_description.to_log_index >= from_log_index)
+        if (changelog_description.to_log_index >= start_to_read_from)
         {
             if (!started)
             {
-                if (changelog_description.from_log_index > start_index)
+                if (changelog_description.from_log_index > start_to_read_from)
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot read changelog from index {}, smallest available index {}", start_index, changelog_description.from_log_index);
                 started = true;
             }
 
             ChangelogReader reader(changelog_description.path);
-            result = reader.readChangelog(logs, from_log_index, index_to_start_pos, log);
+            result = reader.readChangelog(logs, start_to_read_from, index_to_start_pos, log);
+            if (first_read_index == 0)
+                first_read_index = result.first_read_index;
+
             total_read += result.entries_read;
 
             /// May happen after truncate, crash or simply unfinished log
@@ -293,12 +305,10 @@ void Changelog::readChangelogAndInitWriter(size_t from_log_index)
         }
     }
 
-    if (!started && start_index != 1)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Required to read data from {}, but we don't have any active changelogs", from_log_index);
-
-    /// Nothing was read. Our start index is smaller than required
-    if (logs.empty() && start_index != 1)
-        start_index--;
+    if (first_read_index != 0)
+        start_index = first_read_index;
+    else
+        start_index = last_commited_log_index;
 
     if (incomplete_log_index != 0)
     {

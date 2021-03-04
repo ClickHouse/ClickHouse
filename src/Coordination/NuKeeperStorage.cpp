@@ -628,7 +628,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     if (new_last_zxid)
     {
         if (zxid >= *new_last_zxid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller than current {}. It's a bug", *new_last_zxid, zxid);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal than current {}. It's a bug", *new_last_zxid, zxid);
         zxid = *new_last_zxid;
     }
 
