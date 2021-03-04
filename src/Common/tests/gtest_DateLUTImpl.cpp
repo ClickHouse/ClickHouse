@@ -267,7 +267,7 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
 class DateLUTWithTimeZone : public ::testing::TestWithParam<const char * /* timezone name */>
 {};
 
-TEST_P(DateLUTWithTimeZone, DISABLED_LoadLUT)
+TEST_P(DateLUTWithTimeZone, LoadLUT)
 {
     // There are some assumptions and assertions about TZ data made in DateLUTImpl which are verified upon loading,
     // to make sure that those assertions are true for all timezones we are going to load all of them one by one.
@@ -317,14 +317,6 @@ TEST_P(DateLUTWithTimeZone, getTimeZone)
     EXPECT_EQ(GetParam(), lut.getTimeZone());
 }
 
-TEST_P(DateLUTWithTimeZone, ZeroTime)
-{
-    const auto & lut = DateLUT::instance(GetParam());
-
-    EXPECT_EQ(0, lut.toDayNum(time_t{0}));
-    EXPECT_EQ(0, lut.toDayNum(DayNum{0}));
-    EXPECT_EQ(0, lut.toDayNum(ExtendedDayNum{0}));
-}
 
 // Group of tests for timezones that have or had some time ago an offset which is not multiple of 15 minutes.
 INSTANTIATE_TEST_SUITE_P(ExoticTimezones,
