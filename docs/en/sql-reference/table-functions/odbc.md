@@ -103,4 +103,4 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 -   [ODBC external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBC table engine](../../engines/table-engines/integrations/odbc.md).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/jdbc/) <!--hide-->

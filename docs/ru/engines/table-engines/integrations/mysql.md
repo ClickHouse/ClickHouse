@@ -101,4 +101,4 @@ SELECT * FROM mysql_table
 -   [Табличная функция ‘mysql’](../../../engines/table-engines/integrations/mysql.md)
 -   [Использование MySQL в качестве источника для внешнего словаря](../../../engines/table-engines/integrations/mysql.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/engines/table-engines/integrations/mysql/) <!--hide-->
