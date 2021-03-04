@@ -34,7 +34,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
 
     size_t num_selects = ast.list_of_selects->children.size();
-
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
