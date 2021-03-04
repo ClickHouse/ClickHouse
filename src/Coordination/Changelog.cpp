@@ -286,7 +286,7 @@ void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_
             {
                 if (changelog_description.from_log_index > last_commited_log_index && (changelog_description.from_log_index - last_commited_log_index) > 1)
                 {
-                    LOG_ERROR(log, "Some records was lost, last commited log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
+                    LOG_ERROR(log, "Some records was lost, last committed log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
                     incomplete_log_index = changelog_start_index;
                     break;
                 }
