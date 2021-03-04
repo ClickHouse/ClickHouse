@@ -514,7 +514,9 @@ void SystemLog<LogElement>::prepareTable()
 
             LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
 
-            InterpreterRenameQuery(rename, context).execute();
+            Context query_context = context;
+            query_context.makeQueryContext();
+            InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
             table = nullptr;
@@ -530,7 +532,10 @@ void SystemLog<LogElement>::prepareTable()
 
         auto create = getCreateTableQuery();
 
-        InterpreterCreateQuery interpreter(create, context);
+
+        Context query_context = context;
+        query_context.makeQueryContext();
+        InterpreterCreateQuery interpreter(create, query_context);
         interpreter.setInternal(true);
         interpreter.execute();
 

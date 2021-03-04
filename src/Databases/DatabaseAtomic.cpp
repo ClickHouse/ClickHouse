@@ -4,13 +4,14 @@
 #include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
-
+#include <Interpreters/DDLTask.h>
 
 namespace DB
 {
@@ -33,7 +34,6 @@ public:
         : DatabaseTablesSnapshotIterator(std::move(base)) {}
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
-
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, const Context & context_)
     : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
@@ -106,7 +106,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     return table;
 }
 
-void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool no_delay)
+void DatabaseAtomic::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
@@ -115,6 +115,16 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
         std::unique_lock lock(mutex);
         table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+        auto txn = context.getZooKeeperMetadataTransaction();
+        if (txn && !context.isInternalSubquery())
+            txn->commit();      /// Commit point (a sort of) for Replicated database
+
+        /// NOTE: replica will be lost if server crashes before the following rename
+        /// We apply changes in ZooKeeper before applying changes in local metadata file
+        /// to reduce probability of failures between these operations
+        /// (it's more likely to lost connection, than to fail before applying local changes).
+        /// TODO better detection and recovery
+
         Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);    /// Mark table as dropped
         DatabaseWithDictionaries::detachTableUnlocked(table_name, lock);       /// Should never throw
         table_name_to_path.erase(table_name);
@@ -124,7 +134,7 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
     if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
-        mv->dropInnerTable(no_delay);
+        mv->dropInnerTable(no_delay, context);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
@@ -144,6 +154,8 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     if (exchange && dictionary)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot exchange dictionaries");
+    if (exchange && !supportsRenameat2())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -232,6 +244,13 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     }
 
     /// Table renaming actually begins here
+    auto txn = context.getZooKeeperMetadataTransaction();
+    if (txn && !context.isInternalSubquery())
+        txn->commit();     /// Commit point (a sort of) for Replicated database
+
+    /// NOTE: replica will be lost if server crashes before the following rename
+    /// TODO better detection and recovery
+
     if (exchange)
         renameExchange(old_metadata_path, new_metadata_path);
     else
@@ -267,7 +286,8 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 }
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                       const String & table_metadata_tmp_path, const String & table_metadata_path)
+                                       const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                       const Context & query_context)
 {
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
@@ -284,6 +304,14 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
         DatabaseCatalog::instance().addUUIDMapping(query.uuid);
         locked_uuid = true;
+
+        auto txn = query_context.getZooKeeperMetadataTransaction();
+        if (txn && !query_context.isInternalSubquery())
+            txn->commit();     /// Commit point (a sort of) for Replicated database
+
+        /// NOTE: replica will be lost if server crashes before the following renameNoReplace(...)
+        /// TODO better detection and recovery
+
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
         attachTableUnlocked(query.table, table, lock);   /// Should never throw
@@ -300,7 +328,8 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         tryCreateSymlink(query.table, table_data_path);
 }
 
-void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
+void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                      const String & /*statement*/, const Context & query_context)
 {
     bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
@@ -310,6 +339,13 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
+
+    auto txn = query_context.getZooKeeperMetadataTransaction();
+    if (txn && !query_context.isInternalSubquery())
+        txn->commit();      /// Commit point (a sort of) for Replicated database
+
+    /// NOTE: replica will be lost if server crashes before the following rename
+    /// TODO better detection and recovery
 
     check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
     if (!check_file_exists)
@@ -327,6 +363,12 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     if (detached_tables.count(uuid))
         throw Exception("Cannot attach table with UUID " + toString(uuid) +
               ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
+{
+    std::unique_lock lock{mutex};
+    detached_tables.erase(uuid);
 }
 
 DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()

@@ -540,7 +540,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     /// If we execute in single thread, wait for async tasks here.
                     auto res = async_task_queue.wait(lock);
                     if (!res)
+                    {
+                        /// The query had been cancelled (finished is also set)
+                        if (finished)
+                            break;
                         throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
+                    }
 
                     node = static_cast<ExecutingGraph::Node *>(res.data);
                     break;

@@ -1355,6 +1355,52 @@ SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
 └─────┘
 ```
 
+**Синтаксис** 
+
+``` sql
+arraySum(arr)
+```
+
+**Возвращаемое значение**
+
+-   Число.
+
+Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Параметры** 
+
+-   `arr` — [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT arraySum([2,3]) AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│  13 │
+└─────┘
+```
+
 ## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
 Возвращает массив из частичных сумм элементов исходного массива (сумма с накоплением). Если указана функция `func`, то значения элементов массива преобразуются этой функцией перед суммированием.
