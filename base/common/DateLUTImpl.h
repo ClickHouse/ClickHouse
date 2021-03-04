@@ -8,19 +8,22 @@
 #include <string>
 
 
-#define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
-#define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
-/// Table size is bigger than DATE_LUT_MAX_DAY_NUM to fill all indices within UInt16 range: this allows to remove extra check.
-#define DATE_LUT_SIZE 0x20000
 #define DATE_LUT_MIN_YEAR 1925 /// 1925 since wast majority of timezones changed to 15-minute aligned offsets somewhere in 1924 or earlier.
 #define DATE_LUT_MAX_YEAR 2283 /// Last supported year (complete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
+
+#define DATE_LUT_SIZE 0x20000
+
+#define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
+#define DATE_LUT_MAX_DAY_NUM 0xFFFF
+
 
 #if defined(__PPC__)
 #if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 #endif
+
 
 /// Flags for toYearWeek() function.
 enum class WeekModeFlag : UInt8
@@ -208,17 +211,14 @@ private:
 
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
         if (t >= lut[guess].date && t < lut[UInt32(guess + 1)].date)
-            return LUTIndex{guess};
+            return LUTIndex(guess);
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any)
         /// towards increasing UTC offset (example: British Standard Time).
         if (t >= lut[UInt32(guess + 1)].date)
             return LUTIndex(guess + 1);
 
-        if (lut[guess - 1].date <= t)
-            return LUTIndex(guess - 1);
-
-        return LUTIndex(guess - 2);
+        return LUTIndex(guess - 1);
     }
 
     inline LUTIndex toLUTIndex(DayNum d) const
@@ -388,9 +388,6 @@ public:
     {
         const LUTIndex index = findIndex(t);
 
-        if (unlikely(index > DATE_LUT_MAX_DAY_NUM))
-            return t + offset_at_start_of_epoch;
-
         time_t res = t - lut[index].date;
 
         if (res >= lut[index].time_at_offset_change())
@@ -402,11 +399,6 @@ public:
     inline unsigned toHour(time_t t) const
     {
         const LUTIndex index = findIndex(t);
-
-        /// If it is overflow case,
-        ///  than limit number of hours to avoid insane results like 1970-01-01 89:28:15
-        if (unlikely(index > DATE_LUT_MAX_DAY_NUM))
-            return static_cast<unsigned>((t + offset_at_start_of_epoch) / 3600) % 24;
 
         time_t time = t - lut[index].date;
 
