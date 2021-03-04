@@ -688,7 +688,7 @@ SOURCE(REDIS(
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
-  </posgresql>
+  </postgresql>
 </source>
 ```
 

@@ -29,7 +29,7 @@ You can use table functions in:
 | [remote](../../sql-reference/table-functions/remote.md)         | Allows you to access remote servers without creating a [Distributed](../../engines/table-engines/special/distributed.md)-engine table. |
 | [url](../../sql-reference/table-functions/url.md)               | Creates a [Url](../../engines/table-engines/special/url.md)-engine table.                                                              |
 | [mysql](../../sql-reference/table-functions/mysql.md)           | Creates a [MySQL](../../engines/table-engines/integrations/mysql.md)-engine table.                                                     |
-| [postgresql](../../sql-reference/table-functions/postgresql.md) | Creates a [PostgreSQL](../../engines/table-engines/integrations/posgresql.md)-engine table.                                                     |
+| [postgresql](../../sql-reference/table-functions/postgresql.md) | Creates a [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)-engine table.                                                     |
 | [jdbc](../../sql-reference/table-functions/jdbc.md)             | Creates a [JDBC](../../engines/table-engines/integrations/jdbc.md)-engine table.                                                       |
 | [odbc](../../sql-reference/table-functions/odbc.md)             | Creates a [ODBC](../../engines/table-engines/integrations/odbc.md)-engine table.                                                       |
 | [hdfs](../../sql-reference/table-functions/hdfs.md)             | Creates a [HDFS](../../engines/table-engines/integrations/hdfs.md)-engine table.                                                       |
