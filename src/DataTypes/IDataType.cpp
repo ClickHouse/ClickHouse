@@ -26,10 +26,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr), custom_streams(nullptr)
-{
-}
-
 IDataType::~IDataType() = default;
 
 String IDataType::getName() const
@@ -132,12 +128,6 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
     if (custom_desc_->name)
         custom_name = std::move(custom_desc_->name);
 
-    if (custom_desc_->text_serialization)
-        custom_text_serialization = std::move(custom_desc_->text_serialization);
-
-    if (custom_desc_->streams)
-        custom_streams = std::move(custom_desc_->streams);
-
     if (custom_desc_->serialization)
         custom_serialization = std::move(custom_desc_->serialization);
 }
@@ -186,6 +176,7 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
 {
+    std::cerr << "non_default: " << settings.num_non_default_rows << ", num_rows: " << settings.num_rows << ", ratio: " << settings.min_ratio_for_dense_serialization << "\n";
     // if (settings.num_non_default_rows * settings.min_ratio_for_dense_serialization < settings.num_rows)
     //     return getSparseSerialization();
 
@@ -197,18 +188,19 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
 // static
 SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const IDataType::StreamExistenceCallback & callback)
 {
+    std::cerr << "getSerialization for: " << column.name << ' ' << column.getSubcolumnName() << "\n";
     auto base_serialization = column.type->getSerialization(column.name, callback);
-    if (column.isSubcolumn())
-        return column.getTypeInStorage()->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization);
+    // if (column.isSubcolumn())
+    //     return column.getTypeInStorage()->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization);
 
     return base_serialization;
 }
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
 {
-    // auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
-    // if (callback(sparse_idx_name))
-    //     return getSparseSerialization();
+    auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
+    if (callback(sparse_idx_name))
+        return getSparseSerialization();
 
     UNUSED(column_name);
     UNUSED(callback);
@@ -225,9 +217,9 @@ DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath &
     return shared_from_this();
 }
 
-void IDataType::enumerateStreams(const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const
+void IDataType::enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const
 {
-    getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         callback(substream_path, *getTypeForSubstream(substream_path));
     }, path);

@@ -5,8 +5,7 @@
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/Types.h>
-#include <DataTypes/DataTypeCustom_fwd.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/DataTypeCustom.h>
 
 
 namespace DB
@@ -44,7 +43,7 @@ class SerializationInfo;
 class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
-    IDataType();
+    IDataType() = default;
     virtual ~IDataType();
 
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -84,9 +83,9 @@ public:
 
     using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
 
-    void enumerateStreams(const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallbackWithType & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallbackWithType & callback) const { enumerateStreams(callback, {}); }
+    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const;
+    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(serialization, callback, path); }
+    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback) const { enumerateStreams(serialization, callback, {}); }
 
 protected:
     virtual String doGetName() const;
@@ -254,19 +253,16 @@ public:
 protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
+
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
-    mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
-    mutable DataTypeCustomStreamsPtr custom_streams;
-
     mutable SerializationPtr custom_serialization;
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
-    const IDataTypeCustomStreams * getCustomStreams() const { return custom_streams.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 };
 

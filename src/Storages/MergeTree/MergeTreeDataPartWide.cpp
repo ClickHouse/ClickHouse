@@ -82,7 +82,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
 
@@ -160,7 +160,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
             for (const NameAndTypePair & name_type : columns)
             {
                 ISerialization::SubstreamPath stream_path;
-                name_type.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+                name_type.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
                     String file_name = ISerialization::getFileNameForStream(name_type, substream_path);
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
@@ -182,7 +182,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         std::optional<UInt64> marks_size;
         for (const NameAndTypePair & name_type : columns)
         {
-            name_type.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            name_type.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 auto file_path = path + ISerialization::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
 
@@ -208,18 +208,28 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
 
 bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 {
-    bool res = true;
-
-    column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    auto check_stream_exists = [this](const String & stream_name)
     {
+        auto bin_checksum = checksums.files.find(stream_name + ".bin");
+        auto mrk_checksum = checksums.files.find(stream_name + index_granularity_info.marks_file_extension);
+
+        return bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end();
+    };
+
+    std::cerr << "has_column_files, name: " << column.name << "\n";
+
+    bool res = true;
+    auto serialization = IDataType::getSerialization(column, check_stream_exists);
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        std::cerr << "path: " << substream_path.toString() << "\n";
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
-
-        auto bin_checksum = checksums.files.find(file_name + ".bin");
-        auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
-
-        if (bin_checksum == checksums.files.end() || mrk_checksum == checksums.files.end())
+        std::cerr << "file_name: " << file_name << "\n";
+        if (!check_stream_exists(file_name))
             res = false;
-    }, {});
+    });
+
+    std::cerr << "has_column_files, name: " << column.name << ", has: " << res << "\n";
 
     return res;
 }
@@ -227,7 +237,8 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
-    column.type->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    auto serialization = column.type->getSerialization(column.name, serialization_info);
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = ISerialization::getFileNameForStream(column, substream_path);

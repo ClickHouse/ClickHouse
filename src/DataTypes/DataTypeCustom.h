@@ -3,7 +3,6 @@
 #include <memory>
 #include <cstddef>
 #include <Core/Types.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -25,108 +24,19 @@ public:
     virtual String getName() const = 0;
 };
 
-class IDataTypeCustomTextSerialization
-{
-public:
-    virtual ~IDataTypeCustomTextSerialization() {}
-
-    /** Text serialization for displaying on a terminal or saving into a text file, and the like.
-      * Without escaping or quoting.
-      */
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-
-    /** Text deserialization without quoting or escaping.
-      */
-    virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-
-    /** Text serialization with escaping but without quoting.
-      */
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-
-    /** Text serialization as a literal that may be inserted into a query.
-      */
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-
-    /** Text serialization for the CSV format.
-      */
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-
-    /** Text serialization intended for using in JSON format.
-      */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-
-    /** Text serialization for putting into the XML format.
-      */
-    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const = 0;
-};
-
-/** Allows to customize an existing data type by representation with custom substreams.
-  * Customized data type will be serialized/deserialized to files with different names than base type,
-  * but binary and text representation will be unchanged.
-  * E.g it can be used for reading single subcolumns of complex types.
-  */
-class IDataTypeCustomStreams
-{
-public:
-    virtual ~IDataTypeCustomStreams() = default;
-
-    virtual void enumerateStreams(
-        const ISerialization::StreamCallback & callback,
-        ISerialization::SubstreamPath & path) const = 0;
-
-    virtual void serializeBinaryBulkStatePrefix(
-        ISerialization::SerializeBinaryBulkSettings & settings,
-        ISerialization::SerializeBinaryBulkStatePtr & state) const = 0;
-
-    virtual void serializeBinaryBulkStateSuffix(
-        ISerialization::SerializeBinaryBulkSettings & settings,
-        ISerialization::SerializeBinaryBulkStatePtr & state) const = 0;
-
-    virtual void deserializeBinaryBulkStatePrefix(
-        ISerialization::DeserializeBinaryBulkSettings & settings,
-        ISerialization::DeserializeBinaryBulkStatePtr & state) const = 0;
-
-    virtual void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        ISerialization::SerializeBinaryBulkSettings & settings,
-        ISerialization::SerializeBinaryBulkStatePtr & state) const = 0;
-
-    virtual void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t limit,
-        ISerialization::DeserializeBinaryBulkSettings & settings,
-        ISerialization::DeserializeBinaryBulkStatePtr & state,
-        ISerialization::SubstreamsCache * cache) const = 0;
-};
-
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
-using DataTypeCustomTextSerializationPtr = std::unique_ptr<const IDataTypeCustomTextSerialization>;
-using DataTypeCustomStreamsPtr = std::unique_ptr<const IDataTypeCustomStreams>;
-
 
 /** Describe a data type customization
  */
 struct DataTypeCustomDesc
 {
     DataTypeCustomNamePtr name;
-    DataTypeCustomTextSerializationPtr text_serialization;
-    DataTypeCustomStreamsPtr streams;
     SerializationPtr serialization;
 
     DataTypeCustomDesc(
         DataTypeCustomNamePtr name_,
-        DataTypeCustomTextSerializationPtr text_serialization_ = nullptr,
-        DataTypeCustomStreamsPtr streams_ = nullptr,
         SerializationPtr serialization_ = nullptr)
     : name(std::move(name_))
-    , text_serialization(std::move(text_serialization_))
-    , streams(std::move(streams_))
     , serialization(std::move(serialization_)) {}
 };
 

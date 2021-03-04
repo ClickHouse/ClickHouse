@@ -23,7 +23,9 @@ NameAndTypePair::NameAndTypePair(
     : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
     , type(subcolumn_type_)
     , type_in_storage(type_in_storage_)
-    , subcolumn_delimiter_position(name_in_storage_.size()) {}
+    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
+{
+}
 
 String NameAndTypePair::getNameInStorage() const
 {
@@ -37,6 +39,8 @@ String NameAndTypePair::getSubcolumnName() const
 {
     if (!subcolumn_delimiter_position)
         return "";
+
+    std::cerr << "name: " << name << ", delimiter: " << *subcolumn_delimiter_position << "\n";
 
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
 }

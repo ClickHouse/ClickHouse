@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeOneElementTuple.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationTupleElement.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <IO/ReadBuffer.h>
@@ -78,6 +79,14 @@ ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IC
         return column_nullable.getNullMapColumnPtr();
 
     return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
+}
+
+SerializationPtr DataTypeNullable::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serialization) const
+{
+    if (subcolumn_name == "null")
+        return std::make_shared<SerializationTupleElement>(base_serialization, subcolumn_name, false);
+
+    return nested_data_type->getSubcolumnSerialization(subcolumn_name, base_serialization);
 }
 
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const

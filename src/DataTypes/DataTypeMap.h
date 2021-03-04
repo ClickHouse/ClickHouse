@@ -34,6 +34,7 @@ public:
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serialization) const override;
 
     MutableColumnPtr createColumn() const override;
 

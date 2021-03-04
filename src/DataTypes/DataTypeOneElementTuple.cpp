@@ -105,9 +105,7 @@ DataTypePtr createOneElementTuple(const DataTypePtr & type, const String & name,
 {
     auto custom_desc = std::make_unique<DataTypeCustomDesc>(
         std::make_unique<DataTypeCustomFixedName>(type->getName()),
-        nullptr, nullptr,
         std::make_shared<SerializationTupleElement>(type->getDefaultSerialization(), name, escape_delimiter));
-    /// FIXME
 
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }

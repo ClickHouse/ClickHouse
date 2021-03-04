@@ -63,7 +63,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    column.type->enumerateStreams(callback);
+    column.type->enumerateStreams(column.type->getDefaultSerialization(), callback);
 }
 
 namespace

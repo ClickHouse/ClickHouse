@@ -114,9 +114,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.max_compress_block_size);
     };
 
-    column.type->enumerateStreams(callback);
-
     auto serialization = column.type->getSerialization(column.name, data_part->serialization_info);
+    column.type->enumerateStreams(serialization, callback);
     serializations.emplace(column.name, std::move(serialization));
 }
 
@@ -276,6 +275,8 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
 
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+
+        std::cerr << "stream_name: " << stream_name << "\n";
 
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.count(stream_name))

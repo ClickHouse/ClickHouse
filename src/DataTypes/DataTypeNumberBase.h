@@ -39,7 +39,7 @@ public:
     bool shouldAlignRightInPrettyFormats() const override
     {
         /// Just a number, without customizations. Counterexample: IPv4.
-        return !custom_text_serialization;
+        return !custom_serialization;
     }
 
     bool textCanContainOnlyValidUTF8() const override { return true; }

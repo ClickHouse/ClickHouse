@@ -33,7 +33,7 @@ void deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets, ReadBuffe
         readIntBinary(current_size, istr);
         current_offset += current_size;
         offsets.push_back(current_offset);
-        // std::cerr << "current_offset: " << current_offset << "\n";
+        std::cerr << "current_offset: " << current_offset << "\n";
     }
 }
 
@@ -46,10 +46,14 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_seriali
 
 void SerializationSparse::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    path.push_back(Substream::SparseOffsets);
     nested_serialization->enumerateStreams(callback, path);
+
+    path.push_back(Substream::SparseOffsets);
+    callback(path);
+
     path.back() = Substream::SparseElements;
     nested_serialization->enumerateStreams(callback, path);
+
     path.pop_back();
 }
 
@@ -126,6 +130,8 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (auto * stream = settings.getter(settings.path))
         deserializeOffsetsPositionIndependent(offsets_data, *stream);
 
+    std::cerr << "offsets.size: " << offsets_column->size() << "\n";
+
     settings.path.back() = Substream::SparseElements;
 
     ColumnPtr values = column->cloneEmpty();
@@ -134,6 +140,8 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     auto mutable_column = column->assumeMutable();
     size_t size = values->size();
     ssize_t prev_offset = -1;
+
+    std::cerr << "size: " << size << "\n";
 
     for (size_t i = 0; i < size; ++i)
     {
