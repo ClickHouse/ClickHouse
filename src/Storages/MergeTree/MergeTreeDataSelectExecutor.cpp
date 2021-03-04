@@ -75,15 +75,14 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 Block MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns()
 {
     return Block(std::initializer_list<ColumnWithTypeAndName>{
-        ColumnWithTypeAndName(DataTypeString().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeString>(), "_part"),
-        ColumnWithTypeAndName(DataTypeString().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeString>(), "_partition_id"),
-        ColumnWithTypeAndName(DataTypeUUID().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUUID>(), "_part_uuid")});
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid")});
 }
 
 void MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block)
 {
-    materializeBlockInplace(block);
-    MutableColumns columns = block.cloneEmptyColumns();
+    MutableColumns columns = block.mutateColumns();
 
     auto & part_column = columns[0];
     auto & partition_id_column = columns[1];
