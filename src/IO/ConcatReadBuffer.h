@@ -8,16 +8,35 @@
 namespace DB
 {
 
-/** Reads from the concatenation of multiple ReadBuffers
-  */
+/// Reads from the concatenation of multiple ReadBuffer's
 class ConcatReadBuffer : public ReadBuffer
 {
 public:
-    using ReadBuffers = std::vector<ReadBuffer *>;
+    using Buffers = std::vector<std::unique_ptr<ReadBuffer>>;
+
+    ConcatReadBuffer() : ReadBuffer(nullptr, 0)
+    {
+    }
+
+    explicit ConcatReadBuffer(Buffers && buffers_) : ReadBuffer(nullptr, 0), buffers(std::move(buffers_)), current(buffers.begin())
+    {
+        assert(!buffers.empty());
+    }
+
+    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ConcatReadBuffer()
+    {
+        appendBuffer(wrapReadBufferReference(buf1));
+        appendBuffer(wrapReadBufferReference(buf2));
+    }
+
+    void appendBuffer(std::unique_ptr<ReadBuffer> buffer)
+    {
+        buffers.push_back(std::move(buffer));
+    }
 
 protected:
-    ReadBuffers buffers;
-    ReadBuffers::iterator current;
+    Buffers buffers;
+    Buffers::iterator current;
 
     bool nextImpl() override
     {
@@ -54,14 +73,6 @@ protected:
         working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
         return true;
     }
-
-public:
-    explicit ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin())
-    {
-        assert(!buffers.empty());
-    }
-
-    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ConcatReadBuffer({&buf1, &buf2}) {}
 };
 
 }

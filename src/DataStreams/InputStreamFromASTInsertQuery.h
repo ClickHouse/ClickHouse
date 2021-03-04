@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <IO/ConcatReadBuffer.h>
+#include <Parsers/IAST.h>
+
 #include <cstddef>
 #include <memory>
 
@@ -9,10 +11,7 @@
 namespace DB
 {
 
-struct BlockIO;
 class Context;
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Prepares an input stream which produce data containing in INSERT query
   * Head of inserting data could be stored in INSERT ast directly
@@ -21,12 +20,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class InputStreamFromASTInsertQuery : public IBlockInputStream
 {
 public:
+    InputStreamFromASTInsertQuery(const ASTPtr & ast, const Block & header, const Context & context, const ASTPtr & input_function);
     InputStreamFromASTInsertQuery(
-        const ASTPtr & ast,
-        ReadBuffer * input_buffer_tail_part,
-        const Block & header,
-        const Context & context,
-        const ASTPtr & input_function);
+        const ASTPtr & ast, ReadBuffer & tail, const Block & header, const Context & context, const ASTPtr & input_function);
 
     Block readImpl() override { return res_stream->read(); }
     void readPrefixImpl() override { return res_stream->readPrefix(); }
@@ -36,9 +32,10 @@ public:
 
     Block getHeader() const override { return res_stream->getHeader(); }
 
+    void appendBuffer(std::unique_ptr<ReadBuffer> buffer) { input_buffer.appendBuffer(std::move(buffer)); }
+
 private:
-    std::unique_ptr<ReadBuffer> input_buffer_ast_part;
-    std::unique_ptr<ReadBuffer> input_buffer_contacenated;
+    ConcatReadBuffer input_buffer;
 
     BlockInputStreamPtr res_stream;
 };

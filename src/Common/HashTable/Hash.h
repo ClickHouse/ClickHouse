@@ -75,7 +75,7 @@ template <typename T>
 inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
-    auto * begin = reinterpret_cast<const char *>(&x);
+    const auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
     {
         updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
@@ -93,8 +93,8 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         DB::UInt64 value = 0;
         auto * value_ptr = reinterpret_cast<unsigned char *>(&value);
 
-        typedef __attribute__((__aligned__(1))) uint16_t uint16_unaligned_t;
-        typedef __attribute__((__aligned__(1))) uint32_t uint32_unaligned_t;
+        using uint16_unaligned_t = __attribute__((__aligned__(1))) uint16_t;
+        using uint32_unaligned_t = __attribute__((__aligned__(1))) uint32_t;
 
         /// Adopted code from FastMemcpy.h (memcpy_tiny)
         switch (size)

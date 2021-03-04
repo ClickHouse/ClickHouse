@@ -191,8 +191,7 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
     std::vector<WriteBufferPtr> write_buffers;
-    std::vector<ReadBufferPtr> read_buffers;
-    std::vector<ReadBuffer *> read_buffers_raw_ptr;
+    ConcatReadBuffer::Buffers read_buffers;
 
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
@@ -212,14 +211,13 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
             && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
             && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
         {
-            read_buffers.emplace_back(reread_buf);
-            read_buffers_raw_ptr.emplace_back(reread_buf.get());
+            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
-    if (!read_buffers_raw_ptr.empty())
+    if (!read_buffers.empty())
     {
-        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
         copyData(concat_read_buffer, *used_output.out_maybe_compressed);
     }
 }

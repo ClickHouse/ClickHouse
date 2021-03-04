@@ -13,13 +13,15 @@ class ReadBuffer;
 class ASTInsertQuery : public IAST
 {
 public:
+    /// Part of hash
     StorageID table_id = StorageID::createEmpty();
     ASTPtr columns;
     String format;
-    ASTPtr select;
-    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
+
+    ASTPtr select;
+    ASTPtr watch;
 
     /// Data to insert
     const char * data = nullptr;
