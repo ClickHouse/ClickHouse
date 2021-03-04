@@ -109,6 +109,26 @@ private:
         return LUTIndex{(v / index.toUnderType()) & date_lut_mask};
     }
 
+    /// Remainder of division in the sense of modular arithmetic:
+    /// the difference between x and the maximal divisable number not greater than x.
+    /// Example: -1 % 10 = 9, because -10 is the maximal number not greater than -1 that is divisable by 10.
+    /// Why do we need this:
+    /// - because the unix timestamp -1 is 1969-12-31 23:59:59 in UTC.
+    template <typename T, typename U>
+    static constexpr inline auto mod(T x, U divisor)
+    {
+        /// This is the C++ way of modulo of division:
+        /// x % y is the number that: (x / y) * y + x % y == x
+        /// For example, -1 % 10 = -1
+        /// Note that both variants are "correct" in the mathematical sense. They are just different operations.
+        auto res = x % divisor;
+
+        if (unlikely(res < 0))
+            res += divisor;
+
+        return res;
+    }
+
 public:
     /// The order of fields matters for alignment and sizeof.
     struct Values
@@ -368,7 +388,7 @@ public:
     {
         const LUTIndex index = findIndex(t);
 
-        if (unlikely(index == daynum_offset_epoch || index > DATE_LUT_MAX_DAY_NUM))
+        if (unlikely(index > DATE_LUT_MAX_DAY_NUM))
             return t + offset_at_start_of_epoch;
 
         time_t res = t - lut[index].date;
@@ -385,7 +405,7 @@ public:
 
         /// If it is overflow case,
         ///  than limit number of hours to avoid insane results like 1970-01-01 89:28:15
-        if (unlikely(index == daynum_offset_epoch || index > DATE_LUT_MAX_DAY_NUM))
+        if (unlikely(index > DATE_LUT_MAX_DAY_NUM))
             return static_cast<unsigned>((t + offset_at_start_of_epoch) / 3600) % 24;
 
         time_t time = t - lut[index].date;
@@ -399,10 +419,10 @@ public:
     }
 
     /** Calculating offset from UTC in seconds.
-     * which means Using the same literal time of "t" to get the corresponding timestamp in UTC,
-     * then subtract the former from the latter to get the offset result.
-     * The boundaries when meets DST(daylight saving time) change should be handled very carefully.
-     */
+      * which means Using the same literal time of "t" to get the corresponding timestamp in UTC,
+      * then subtract the former from the latter to get the offset result.
+      * The boundaries when meets DST(daylight saving time) change should be handled very carefully.
+      */
     inline time_t timezoneOffset(time_t t) const
     {
         const LUTIndex index = findIndex(t);
@@ -412,6 +432,7 @@ public:
         /// but we can figure out all the accumulated offsets from 1970-01-01 to that day just by get the whole difference between lut[].date,
         /// and then, we can directly subtract multiple 86400s to get the real DST offsets for the leap seconds is not considered now.
         time_t res = (lut[index].date - lut[daynum_offset_epoch].date) % 86400;
+
         /// As so far to know, the maximal DST offset couldn't be more than 2 hours, so after the modulo operation the remainder
         /// will sits between [-offset --> 0 --> offset] which respectively corresponds to moving clock forward or backward.
         res = res > 43200 ? (86400 - res) : (0 - res);
@@ -423,13 +444,6 @@ public:
         return res + offset_at_start_of_epoch;
     }
 
-    static inline time_t toSecondsSinceTheDayStart(time_t t)
-    {
-        t %= 86400;
-        t = (t < 0 ? t + 86400 : t);
-
-        return t;
-    }
 
     /** Only for time zones with/when offset from UTC is multiple of five minutes.
       * This is true for all time zones: right now, all time zones have an offset that is multiple of 15 minutes.
@@ -443,13 +457,13 @@ public:
       */
     inline unsigned toSecond(time_t t) const
     {
-        return toSecondsSinceTheDayStart(t) % 60;
+        return mod(t, 60);
     }
 
     inline unsigned toMinute(time_t t) const
     {
         if (offset_is_whole_number_of_hours_everytime)
-            return (toSecondsSinceTheDayStart(t) / 60) % 60;
+            return mod((t / 60), 60);
 
         /// To consider the DST changing situation within this day.
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account
