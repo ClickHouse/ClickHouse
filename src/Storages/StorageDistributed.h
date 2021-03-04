@@ -41,6 +41,7 @@ class StorageDistributed final : public ext::shared_ptr_helper<StorageDistribute
     friend struct ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
+    friend class StorageSystemDistributionQueue;
 
 public:
     ~StorageDistributed() override;
@@ -76,6 +77,7 @@ public:
         unsigned /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
+    std::optional<UInt64> totalBytes(const Settings &) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -83,7 +85,6 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
-    void renameOnDisk(const String & new_path_to_table_data);
 
     void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
@@ -98,65 +99,24 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
-    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
-    const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
-    size_t getShardCount() const;
-    const String & getRelativeDataPath() const { return relative_data_path; }
-    std::string getRemoteDatabaseName() const { return remote_database; }
-    std::string getRemoteTableName() const { return remote_table; }
-    std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
-
-    /// create directory monitors for each existing subdirectory
-    void createDirectoryMonitors(const DiskPtr & disk);
-    /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
-    /// Return list of metrics for all created monitors
-    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
-    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
-
-    void flushClusterNodesAllData(const Context & context);
-
-    ClusterPtr getCluster() const;
-
-    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
-    /// Apply the following settings:
-    /// - optimize_skip_unused_shards
-    /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(const Context &, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, const Context & context) const;
-
     ActionLock getActionLock(StorageActionBlockType type) override;
 
     NamesAndTypesList getVirtuals() const override;
 
-    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
+    /// Used by InterpreterInsertQuery
+    std::string getRemoteDatabaseName() const { return remote_database; }
+    std::string getRemoteTableName() const { return remote_table; }
+    /// Returns empty string if tables is used by TableFunctionRemote
+    std::string getClusterName() const { return cluster_name; }
+    ClusterPtr getCluster() const;
 
-    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
+    /// Used by InterpreterSystemQuery
+    void flushClusterNodesAllData(const Context & context);
 
-    String remote_database;
-    String remote_table;
-    ASTPtr remote_table_function_ptr;
+    /// Used by ClusterCopier
+    size_t getShardCount() const;
 
-    const Context & global_context;
-    Poco::Logger * log;
-
-    /// Used to implement TableFunctionRemote.
-    std::shared_ptr<Cluster> owned_cluster;
-
-    /// Is empty if this storage implements TableFunctionRemote.
-    const String cluster_name;
-
-    bool has_sharding_key;
-    bool sharding_key_is_deterministic = false;
-    ExpressionActionsPtr sharding_key_expr;
-    String sharding_key_column_name;
-
-    /// Used for global monotonic ordering of files to send.
-    SimpleIncrement file_names_increment;
-
-    ActionBlocker monitors_blocker;
-
-protected:
+private:
     StorageDistributed(
         const StorageID & id_,
         const ColumnsDescription & columns_,
@@ -185,6 +145,60 @@ protected:
         const DistributedSettings & distributed_settings_,
         bool attach,
         ClusterPtr owned_cluster_ = {});
+
+    void renameOnDisk(const String & new_path_to_table_data);
+
+    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
+    const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
+    const String & getRelativeDataPath() const { return relative_data_path; }
+
+    /// create directory monitors for each existing subdirectory
+    void createDirectoryMonitors(const DiskPtr & disk);
+    /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
+
+    /// Return list of metrics for all created monitors
+    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
+    ///
+    /// Used by StorageSystemDistributionQueue
+    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
+
+    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
+    /// Apply the following settings:
+    /// - optimize_skip_unused_shards
+    /// - force_optimize_skip_unused_shards
+    ClusterPtr getOptimizedCluster(const Context &, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, const Context & context) const;
+
+    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
+
+    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
+
+    void delayInsertOrThrowIfNeeded() const;
+
+private:
+    String remote_database;
+    String remote_table;
+    ASTPtr remote_table_function_ptr;
+
+    const Context & global_context;
+    Poco::Logger * log;
+
+    /// Used to implement TableFunctionRemote.
+    std::shared_ptr<Cluster> owned_cluster;
+
+    /// Is empty if this storage implements TableFunctionRemote.
+    const String cluster_name;
+
+    bool has_sharding_key;
+    bool sharding_key_is_deterministic = false;
+    ExpressionActionsPtr sharding_key_expr;
+    String sharding_key_column_name;
+
+    /// Used for global monotonic ordering of files to send.
+    SimpleIncrement file_names_increment;
+
+    ActionBlocker monitors_blocker;
 
     String relative_data_path;
 
