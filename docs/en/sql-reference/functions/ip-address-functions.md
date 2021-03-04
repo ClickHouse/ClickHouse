@@ -136,7 +136,7 @@ Alias: `INET6_ATON`.
 IPv6StringToNum(string)
 ```
 
-**Parameters** 
+**Argument** 
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
