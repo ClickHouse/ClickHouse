@@ -18,9 +18,9 @@ static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
+    std::stringstream ss;
+    formatAST(*ast, ss, false, true);
+    return ss.str();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)

@@ -394,8 +394,12 @@ inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
 
 inline String DB::TaskShard::getDescription() const
 {
-    return fmt::format("N{} (having a replica {}, pull table {} of cluster {}",
-                       numberInCluster(), getHostNameExample(), getQuotedTable(task_table.table_pull), task_table.cluster_pull_name);
+    std::stringstream ss;
+    ss << "N" << numberInCluster()
+       << " (having a replica " << getHostNameExample()
+       << ", pull table " + getQuotedTable(task_table.table_pull)
+       << " of cluster " + task_table.cluster_pull_name << ")";
+    return ss.str();
 }
 
 inline String DB::TaskShard::getHostNameExample() const

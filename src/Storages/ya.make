@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
@@ -17,17 +15,15 @@ SRCS(
     ConstraintsDescription.cpp
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedBlockOutputStream.cpp
-    Distributed/DistributedSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
     LiveView/TemporaryLiveViewCleaner.cpp
-    MemorySettings.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
-    MergeTree/BackgroundJobsExecutor.cpp
+    MergeTree/BackgroundProcessingPool.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
@@ -49,7 +45,6 @@ SRCS(
     MergeTree/MergeTreeDataPartInMemory.cpp
     MergeTree/MergeTreeDataPartTTLInfo.cpp
     MergeTree/MergeTreeDataPartType.cpp
-    MergeTree/MergeTreeDataPartUUID.cpp
     MergeTree/MergeTreeDataPartWide.cpp
     MergeTree/MergeTreeDataPartWriterCompact.cpp
     MergeTree/MergeTreeDataPartWriterInMemory.cpp
@@ -90,14 +85,12 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
-    MergeTree/PartitionPruner.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
     MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
     MergeTree/ReplicatedMergeTreeCleanupThread.cpp
     MergeTree/ReplicatedMergeTreeLogEntry.cpp
-    MergeTree/ReplicatedMergeTreeMergeStrategyPicker.cpp
     MergeTree/ReplicatedMergeTreeMutationEntry.cpp
     MergeTree/ReplicatedMergeTreePartCheckThread.cpp
     MergeTree/ReplicatedMergeTreePartHeader.cpp
@@ -150,7 +143,6 @@ SRCS(
     System/StorageSystemContributors.cpp
     System/StorageSystemContributors.generated.cpp
     System/StorageSystemCurrentRoles.cpp
-    System/StorageSystemDDLWorkerQueue.cpp
     System/StorageSystemDataTypeFamilies.cpp
     System/StorageSystemDatabases.cpp
     System/StorageSystemDetachedParts.cpp

@@ -78,7 +78,7 @@ def parse_one_pull_request(item):
 # This array gives the preferred category order, and is also used to
 # normalize category names.
 categories_preferred_order = ['Backward Incompatible Change',
-    'New Feature', 'Performance Improvement', 'Improvement', 'Bug Fix',
+    'New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement',
     'Build/Testing/Packaging Improvement', 'Other']
 
 category_to_pr = collections.defaultdict(lambda: [])
@@ -108,11 +108,8 @@ def print_category(category):
         user = users[pr["user"]["id"]]
         user_name = user["name"] if user["name"] else user["login"]
 
-        # Substitute issue links.
-        # 1) issue number w/o markdown link
+        # Substitute issue links
         pr["entry"] = re.sub(r'([^[])#([0-9]{4,})', r'\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)', pr["entry"])
-        # 2) issue URL w/o markdown link
-        pr["entry"] = re.sub(r'([^(])https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})', r'\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)', pr["entry"])
 
         print(f'* {pr["entry"]} [#{pr["number"]}]({pr["html_url"]}) ([{user_name}]({user["html_url"]})).')
 

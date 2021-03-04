@@ -407,23 +407,6 @@ struct ToHourImpl
     using FactorTransform = ToDateImpl;
 };
 
-struct TimezoneOffsetImpl
-{
-    static constexpr auto name = "timezoneOffset";
-
-    static inline time_t execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.timezoneOffset(t);
-    }
-
-    static inline time_t execute(UInt16, const DateLUTImpl &)
-    {
-        return dateIsNotSupported(name);
-    }
-
-    using FactorTransform = ToTimeImpl;
-};
-
 struct ToMinuteImpl
 {
     static constexpr auto name = "toMinute";
@@ -700,15 +683,11 @@ struct Transformer
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
         using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
 
-        size_t time_zone_argument_position = 1;
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            time_zone_argument_position = 2;
-
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 1, 0);
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))

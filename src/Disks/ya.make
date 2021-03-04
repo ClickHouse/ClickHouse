@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
@@ -17,7 +15,6 @@ SRCS(
     DiskSelector.cpp
     IDisk.cpp
     IVolume.cpp
-    LocalDirectorySyncGuard.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
     VolumeJBOD.cpp

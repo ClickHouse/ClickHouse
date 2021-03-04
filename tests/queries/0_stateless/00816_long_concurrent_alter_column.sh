@@ -3,7 +3,6 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 echo "DROP TABLE IF EXISTS concurrent_alter_column" | ${CLICKHOUSE_CLIENT}
@@ -60,7 +59,7 @@ wait
 
 echo "DROP TABLE concurrent_alter_column NO DELAY" | ${CLICKHOUSE_CLIENT}   # NO DELAY has effect only for Atomic database
 
-db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$CLICKHOUSE_DATABASE'"`
+db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name=currentDatabase()"`
 if [[ $db_engine == "Atomic" ]]; then
     # DROP is non-blocking, so wait for alters
     while true; do

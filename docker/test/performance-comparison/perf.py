@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 
 import argparse
 import clickhouse_driver
@@ -14,12 +14,10 @@ import string
 import sys
 import time
 import traceback
-import logging
 import xml.etree.ElementTree as et
 from threading import Thread
 from scipy import stats
 
-logging.basicConfig(format='%(asctime)s: %(levelname)s: %(module)s: %(message)s', level='WARNING')
 
 total_start_seconds = time.perf_counter()
 stage_start_seconds = total_start_seconds
@@ -44,13 +42,10 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated l
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
-parser.add_argument('--max-query-seconds', type=int, default=10, help='For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.')
 parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
-parser.add_argument('--keep-created-tables', action='store_true', help="Don't drop the created tables after the test.")
-parser.add_argument('--use-existing-tables', action='store_true', help="Don't create or drop the tables, use the existing ones instead.")
 args = parser.parse_args()
 
 reportStageEnd('start')
@@ -144,37 +139,44 @@ reportStageEnd('before-connect')
 
 # Open connections
 servers = [{'host': host or args.host[0], 'port': port or args.port[0]} for (host, port) in itertools.zip_longest(args.host, args.port)]
-# Force settings_is_important to fail queries on unknown settings.
-all_connections = [clickhouse_driver.Client(**server, settings_is_important=True) for server in servers]
+all_connections = [clickhouse_driver.Client(**server) for server in servers]
 
 for i, s in enumerate(servers):
     print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
 
 reportStageEnd('connect')
 
-if not args.use_existing_tables:
-    # Run drop queries, ignoring errors. Do this before all other activity,
-    # because clickhouse_driver disconnects on error (this is not configurable),
-    # and the new connection loses the changes in settings.
-    drop_query_templates = [q.text for q in root.findall('drop_query')]
-    drop_queries = substitute_parameters(drop_query_templates)
-    for conn_index, c in enumerate(all_connections):
-        for q in drop_queries:
-            try:
-                c.execute(q)
-                print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
-            except:
-                pass
+# Run drop queries, ignoring errors. Do this before all other activity, because
+# clickhouse_driver disconnects on error (this is not configurable), and the new
+# connection loses the changes in settings.
+drop_query_templates = [q.text for q in root.findall('drop_query')]
+drop_queries = substitute_parameters(drop_query_templates)
+for conn_index, c in enumerate(all_connections):
+    for q in drop_queries:
+        try:
+            c.execute(q)
+            print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+        except:
+            pass
 
-    reportStageEnd('drop-1')
+reportStageEnd('drop-1')
 
 # Apply settings.
+# If there are errors, report them and continue -- maybe a new test uses a setting
+# that is not in master, but the queries can still run. If we have multiple
+# settings and one of them throws an exception, all previous settings for this
+# connection will be reset, because the driver reconnects on error (not
+# configurable). So the end result is uncertain, but hopefully we'll be able to
+# run at least some queries.
 settings = root.findall('settings/*')
 for conn_index, c in enumerate(all_connections):
     for s in settings:
-        # requires clickhouse-driver >= 1.1.5 to accept arbitrary new settings
-        # (https://github.com/mymarilyn/clickhouse-driver/pull/142)
-        c.settings[s.tag] = s.text
+        try:
+            q = f"set {s.tag} = '{s.text}'"
+            c.execute(q)
+            print(f'set\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+        except:
+            print(traceback.format_exc(), file=sys.stderr)
 
 reportStageEnd('settings')
 
@@ -192,40 +194,37 @@ for t in tables:
 
 reportStageEnd('preconditions')
 
-if not args.use_existing_tables:
-    # Run create and fill queries. We will run them simultaneously for both
-    # servers, to save time. The weird XML search + filter is because we want to
-    # keep the relative order of elements, and etree doesn't support the
-    # appropriate xpath query.
-    create_query_templates = [q.text for q in root.findall('./*')
-        if q.tag in ('create_query', 'fill_query')]
-    create_queries = substitute_parameters(create_query_templates)
+# Run create and fill queries. We will run them simultaneously for both servers,
+# to save time.
+# The weird search is to keep the relative order of elements, which matters, and
+# etree doesn't support the appropriate xpath query.
+create_query_templates = [q.text for q in root.findall('./*') if q.tag in ('create_query', 'fill_query')]
+create_queries = substitute_parameters(create_query_templates)
 
-    # Disallow temporary tables, because the clickhouse_driver reconnects on
-    # errors, and temporary tables are destroyed. We want to be able to continue
-    # after some errors.
-    for q in create_queries:
-        if re.search('create temporary table', q, flags=re.IGNORECASE):
-            print(f"Temporary tables are not allowed in performance tests: '{q}'",
-                file = sys.stderr)
-            sys.exit(1)
+# Disallow temporary tables, because the clickhouse_driver reconnects on errors,
+# and temporary tables are destroyed. We want to be able to continue after some
+# errors.
+for q in create_queries:
+    if re.search('create temporary table', q, flags=re.IGNORECASE):
+        print(f"Temporary tables are not allowed in performance tests: '{q}'",
+            file = sys.stderr)
+        sys.exit(1)
 
-    def do_create(connection, index, queries):
-        for q in queries:
-            connection.execute(q)
-            print(f'create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}')
+def do_create(connection, index, queries):
+    for q in queries:
+        connection.execute(q)
+        print(f'create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}')
 
-    threads = [
-        Thread(target = do_create, args = (connection, index, create_queries))
-        for index, connection in enumerate(all_connections)]
+threads = [Thread(target = do_create, args = (connection, index, create_queries))
+                for index, connection in enumerate(all_connections)]
 
-    for t in threads:
-        t.start()
+for t in threads:
+    t.start()
 
-    for t in threads:
-        t.join()
+for t in threads:
+    t.join()
 
-    reportStageEnd('create')
+reportStageEnd('create')
 
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))
@@ -324,7 +323,7 @@ for query_index in queries_to_run:
             server_seconds += elapsed
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
 
-            if elapsed > args.max_query_seconds:
+            if elapsed > 10:
                 # Stop processing pathologically slow queries, to avoid timing out
                 # the entire test task. This shouldn't really happen, so we don't
                 # need much handling for this case and can just exit.
@@ -404,11 +403,10 @@ print(f'profile-total\t{profile_total_seconds}')
 reportStageEnd('run')
 
 # Run drop queries
-if not args.keep_created_tables and not args.use_existing_tables:
-    drop_queries = substitute_parameters(drop_query_templates)
-    for conn_index, c in enumerate(all_connections):
-        for q in drop_queries:
-            c.execute(q)
-            print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+drop_queries = substitute_parameters(drop_query_templates)
+for conn_index, c in enumerate(all_connections):
+    for q in drop_queries:
+        c.execute(q)
+        print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
-    reportStageEnd('drop-2')
+reportStageEnd('drop-2')

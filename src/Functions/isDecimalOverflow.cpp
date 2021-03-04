@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)
@@ -133,7 +133,7 @@ private:
         static_assert(IsDecimalNumber<T>);
         using NativeT = typename T::NativeType;
 
-        if (precision > DecimalUtils::max_precision<T>)
+        if (precision > DecimalUtils::maxPrecision<T>())
             return false;
 
         NativeT pow10 = intExp10OfSize<NativeT>(precision);

@@ -18,9 +18,9 @@ halfMD5(par1, ...)
 The function is relatively slow (5 million short strings per second per processor core).
 Consider using the [sipHash64](#hash_functions-siphash64) function instead.
 
-**Arguments**
+**Parameters**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -61,9 +61,9 @@ Function [interprets](../../sql-reference/functions/type-conversion-functions.md
 3.  Then the function takes the hash value, calculated at the previous step, and the third element of the initial hash array, and calculates a hash for the array of them.
 4.  The previous step is repeated for all the remaining elements of the initial hash array.
 
-**Arguments**
+**Parameters**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -97,9 +97,9 @@ cityHash64(par1,...)
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
-**Arguments**
+**Parameters**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -157,18 +157,18 @@ Levels are the same as in URLHierarchy. This function is specific to Yandex.Metr
 
 ## farmHash64 {#farmhash64}
 
-Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. `farmFingerprint64` is preferred for a stable and portable value.
+Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. Prefer `farmFingerprint64` for a stable and portable value.
 
 ``` sql
 farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
 
-These functions use the `Fingerprint64` and `Hash64` methods respectively from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
+These functions use the `Fingerprint64` and `Hash64` method respectively from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
-**Arguments**
+**Parameters**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -226,7 +226,7 @@ Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add97
 javaHashUTF16LE(stringUtf16le)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `stringUtf16le` — a string in UTF-16LE encoding.
 
@@ -292,9 +292,9 @@ Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/
 metroHash64(par1, ...)
 ```
 
-**Arguments**
+**Parameters**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -327,9 +327,9 @@ murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
 
-**Arguments**
+**Parameters**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+Both functions take a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -358,7 +358,7 @@ Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash val
 gccMurmurHash(par1, ...);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `par1, ...` — A variable number of parameters that can be any of the [supported data types](../../sql-reference/data-types/index.md#data_types).
 
@@ -395,9 +395,9 @@ murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
 
-**Arguments**
+**Parameters**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+Both functions take a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -424,7 +424,7 @@ Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash valu
 murmurHash3_128( expr )
 ```
 
-**Arguments**
+**Parameters**
 
 -   `expr` — [Expressions](../../sql-reference/syntax.md#syntax-expressions) returning a [String](../../sql-reference/data-types/string.md)-type value.
 

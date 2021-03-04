@@ -61,9 +61,9 @@ private:
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
-    const bool secure;
     const std::string host;
     const UInt16 port;
+    const bool secure;
     const std::string user;
     const std::string password;
     const std::string db;

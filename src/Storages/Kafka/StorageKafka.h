@@ -4,6 +4,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Interpreters/Context.h>
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
@@ -36,6 +37,7 @@ class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public I
 public:
     std::string getName() const override { return "Kafka"; }
 
+    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
@@ -44,7 +46,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -67,13 +69,13 @@ public:
 protected:
     StorageKafka(
         const StorageID & table_id_,
-        const Context & context_,
+        Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_);
 
 private:
     // Configuration and state
-    const Context & global_context;
+    Context & global_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
     const Names topics;
     const String brokers;

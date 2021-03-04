@@ -1,10 +1,10 @@
 #include <Parsers/ASTIdentifier.h>
 
+#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/queryToString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -80,12 +80,8 @@ void ASTIdentifier::setShortName(const String & new_name)
     name_parts = {new_name};
 
     bool special = semantic->special;
-    //how about keep the semantic info here, such as table
-    auto table = semantic->table;
-
     *semantic = IdentifierSemanticImpl();
     semantic->special = special;
-    semantic->table = table;
 }
 
 const String & ASTIdentifier::name() const

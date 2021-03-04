@@ -41,7 +41,7 @@ public:
         return if_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName is_finite_columns{arguments[0]};
         auto is_finite = FunctionFactory::instance().get("isFinite", context)->build(is_finite_columns);

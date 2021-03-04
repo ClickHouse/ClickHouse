@@ -27,6 +27,9 @@ struct RowInputFormatParams
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;
 
+    using ReadCallback = std::function<void()>;
+    ReadCallback callback;
+
     Poco::Timespan max_execution_time = 0;
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };

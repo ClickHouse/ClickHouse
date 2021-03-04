@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <bool or_null>
-ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t)
 {
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -25,18 +25,16 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(const ColumnsWithTypeAndNa
         auto key = arguments[i];
         keys.emplace_back(std::move(key));
     }
-    return storage_join->joinGet(keys, result_columns).column;
+    return join->joinGet(keys, result_columns).column;
 }
 
 template <bool or_null>
 ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
-    Block result_columns {{return_type->createColumn(), return_type, attr_name}};
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(table_lock, storage_join, result_columns);
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(join, DB::Block{{return_type->createColumn(), return_type, attr_name}});
 }
 
-static std::pair<std::shared_ptr<StorageJoin>, String>
-getJoin(const ColumnsWithTypeAndName & arguments, const Context & context)
+static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & context)
 {
     String join_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
@@ -89,12 +87,13 @@ FunctionBaseImplPtr JoinGetOverloadResolver<or_null>::build(const ColumnsWithTyp
                 + ", should be greater or equal to 3",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     auto [storage_join, attr_name] = getJoin(arguments, context);
+    auto join = storage_join->getJoin();
     DataTypes data_types(arguments.size() - 2);
     for (size_t i = 2; i < arguments.size(); ++i)
         data_types[i - 2] = arguments[i].type;
-    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
+    auto return_type = join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
     auto table_lock = storage_join->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, attr_name, data_types, return_type);
+    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, join, attr_name, data_types, return_type);
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)

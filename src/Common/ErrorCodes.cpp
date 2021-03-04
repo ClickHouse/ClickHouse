@@ -404,7 +404,7 @@
     M(432, UNKNOWN_CODEC) \
     M(433, ILLEGAL_CODEC_PARAMETER) \
     M(434, CANNOT_PARSE_PROTOBUF_SCHEMA) \
-    M(435, NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD) \
+    M(435, NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD) \
     M(436, PROTOBUF_BAD_CAST) \
     M(437, PROTOBUF_FIELD_NOT_REPEATED) \
     M(438, DATA_TYPE_CANNOT_BE_PROMOTED) \
@@ -412,7 +412,7 @@
     M(440, INVALID_LIMIT_EXPRESSION) \
     M(441, CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING) \
     M(442, BAD_DATABASE_FOR_TEMPORARY_TABLE) \
-    M(443, NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS) \
+    M(443, NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA) \
     M(444, UNKNOWN_PROTOBUF_FORMAT) \
     M(445, CANNOT_MPROTECT) \
     M(446, FUNCTION_NOT_ALLOWED) \
@@ -519,54 +519,34 @@
     M(550, CONDITIONAL_TREE_PARENT_NOT_FOUND) \
     M(551, ILLEGAL_PROJECTION_MANIPULATOR) \
     M(552, UNRECOGNIZED_ARGUMENTS) \
-    M(553, LZMA_STREAM_ENCODER_FAILED) \
-    M(554, LZMA_STREAM_DECODER_FAILED) \
-    M(555, ROCKSDB_ERROR) \
-    M(556, SYNC_MYSQL_USER_ACCESS_ERROR)\
-    M(557, UNKNOWN_UNION) \
-    M(558, EXPECTED_ALL_OR_DISTINCT) \
-    M(559, INVALID_GRPC_QUERY_INFO) \
-    M(560, ZSTD_ENCODER_FAILED) \
-    M(561, ZSTD_DECODER_FAILED) \
-    M(562, TLD_LIST_NOT_FOUND) \
-    M(563, CANNOT_READ_MAP_FROM_TEXT) \
-    M(564, INTERSERVER_SCHEME_DOESNT_MATCH) \
-    M(565, TOO_MANY_PARTITIONS) \
-    M(566, CANNOT_RMDIR) \
-    M(567, DUPLICATED_PART_UUIDS) \
-    M(568, RAFT_ERROR) \
-    M(569, MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD) \
-    M(570, DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD) \
-    M(571, DATABASE_REPLICATION_FAILED) \
-    M(572, TOO_MANY_QUERY_PLAN_OPTIMIZATIONS) \
     \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-    M(1003, INVALID_SHARD_ID) \
 
 /* See END */
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-#define M(VALUE, NAME) extern const Value NAME = VALUE;
-    APPLY_FOR_ERROR_CODES(M)
-#undef M
+    #define M(VALUE, NAME) extern const Value NAME = VALUE;
+        APPLY_FOR_ERROR_CODES(M)
+    #undef M
 
     constexpr Value END = 3000;
-    std::atomic<Value> values[END + 1]{};
+    std::atomic<Value> values[END + 1] {};
 
     struct ErrorCodesNames
     {
         std::string_view names[END + 1];
         ErrorCodesNames()
         {
-#define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
-            APPLY_FOR_ERROR_CODES(M)
-#undef M
+            #define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
+                APPLY_FOR_ERROR_CODES(M)
+            #undef M
         }
     } error_codes_names;
 
@@ -577,7 +557,7 @@ namespace ErrorCodes
         return error_codes_names.names[error_code];
     }
 
-    ErrorCode end() { return END + 1; }
+    ErrorCode end() { return END+1; }
 }
 
 }

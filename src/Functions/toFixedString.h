@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -20,11 +18,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-enum class ConvertToFixedStringExceptionMode
-{
-    Throw,
-    Null
-};
 
 /** Conversion to fixed string is implemented only for strings.
   */
@@ -59,24 +52,15 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto n = arguments[1].column->getUInt(0);
-        return executeForN<ConvertToFixedStringExceptionMode::Throw>(arguments, n);
+        return executeForN(arguments, n);
     }
 
-    template<ConvertToFixedStringExceptionMode exception_mode>
-    static ColumnPtr executeForN(const ColumnsWithTypeAndName & arguments, const size_t n)
+    static ColumnPtr executeForN(ColumnsWithTypeAndName & arguments, const size_t n)
     {
         const auto & column = arguments[0].column;
-
-        ColumnUInt8::MutablePtr col_null_map_to;
-        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-        if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Null)
-        {
-            col_null_map_to = ColumnUInt8::create(column->size(), false);
-            vec_null_map_to = &col_null_map_to->getData();
-        }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -93,42 +77,18 @@ public:
                 const size_t off = i ? in_offsets[i - 1] : 0;
                 const size_t len = in_offsets[i] - off - 1;
                 if (len > n)
-                {
-                    if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
-                    {
-                        throw Exception("String too long for type FixedString(" + toString(n) + ")",
-                            ErrorCodes::TOO_LARGE_STRING_SIZE);
-                    }
-                    else
-                    {
-                        (*vec_null_map_to)[i] = true;
-                        continue;
-                    }
-                }
+                    throw Exception("String too long for type FixedString(" + toString(n) + ")",
+                        ErrorCodes::TOO_LARGE_STRING_SIZE);
                 memcpy(&out_chars[i * n], &in_chars[off], len);
             }
 
-            if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Null)
-                return ColumnNullable::create(std::move(column_fixed), std::move(col_null_map_to));
-            else
-                return column_fixed;
+            return column_fixed;
         }
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
             if (src_n > n)
-            {
-                if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
-                {
-                    throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
-                }
-                else
-                {
-                    auto column_fixed = ColumnFixedString::create(n);
-                    std::fill(vec_null_map_to->begin(), vec_null_map_to->end(), true);
-                    return ColumnNullable::create(column_fixed->cloneResized(column->size()), std::move(col_null_map_to));
-                }
-            }
+                throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
 
             auto column_fixed = ColumnFixedString::create(n);
 
@@ -143,16 +103,7 @@ public:
             return column_fixed;
         }
         else
-        {
-            if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
-                throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-            else
-            {
-                auto column_fixed = ColumnFixedString::create(n);
-                std::fill(vec_null_map_to->begin(), vec_null_map_to->end(), true);
-                return ColumnNullable::create(column_fixed->cloneResized(column->size()), std::move(col_null_map_to));
-            }
-        }
+            throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

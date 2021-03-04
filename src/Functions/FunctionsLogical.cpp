@@ -509,7 +509,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
@@ -550,7 +550,7 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
 }
 
 template <template <typename> class Impl, typename T>
-ColumnPtr functionUnaryExecuteType(const ColumnsWithTypeAndName & arguments)
+ColumnPtr functionUnaryExecuteType(ColumnsWithTypeAndName & arguments)
 {
     if (auto col = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
     {
@@ -567,7 +567,7 @@ ColumnPtr functionUnaryExecuteType(const ColumnsWithTypeAndName & arguments)
 }
 
 template <template <typename> class Impl, typename Name>
-ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     ColumnPtr res;
     if (!((res = functionUnaryExecuteType<Impl, UInt8>(arguments))

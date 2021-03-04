@@ -1,30 +1,34 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/poco/Data
+    contrib/libs/poco/Data/ODBC
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
 )
-
-IF (USE_ODBC)
-    PEERDIR(contrib/libs/poco/Data/ODBC)
-ENDIF ()
 
 NO_COMPILER_WARNINGS()
 
 
 SRCS(
     CacheDictionary.cpp
+    CacheDictionary_generate1.cpp
+    CacheDictionary_generate2.cpp
+    CacheDictionary_generate3.cpp
     CassandraBlockInputStream.cpp
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
     ComplexKeyCacheDictionary.cpp
+    ComplexKeyCacheDictionary_createAttributeWithType.cpp
+    ComplexKeyCacheDictionary_generate1.cpp
+    ComplexKeyCacheDictionary_generate2.cpp
+    ComplexKeyCacheDictionary_generate3.cpp
+    ComplexKeyCacheDictionary_setAttributeValue.cpp
+    ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
     ComplexKeyDirectDictionary.cpp
     ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
@@ -47,7 +51,6 @@ SRCS(
     FlatDictionary.cpp
     HTTPDictionarySource.cpp
     HashedDictionary.cpp
-    IPAddressDictionary.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp

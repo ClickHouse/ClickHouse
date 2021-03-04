@@ -1,4 +1,5 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
+#include <sstream>
 #include <IO/MySQLPacketPayloadReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 
@@ -20,9 +21,9 @@ void IMySQLReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
     readPayloadImpl(payload);
     if (!payload.eof())
     {
-        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                        "Packet payload is not fully read. Stopped after {} bytes, while {} bytes are in buffer.",
-                        payload.count(), payload.available());
+        std::stringstream tmp;
+        tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
+        throw Exception(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
 }
 

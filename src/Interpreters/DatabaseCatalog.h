@@ -54,20 +54,15 @@ public:
     DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name);
     ~DDLGuard();
 
-    /// Unlocks table name, keeps holding read lock for database name
-    void releaseTableLock() noexcept;
-
 private:
     Map & map;
     std::shared_mutex & db_mutex;
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
-    bool table_lock_removed = false;
-    bool is_database_guard = false;
-};
 
-using DDLGuardPtr = std::unique_ptr<DDLGuard>;
+    void removeTableLock();
+};
 
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
@@ -78,6 +73,7 @@ struct TemporaryTableHolder : boost::noncopyable
 {
     typedef std::function<StoragePtr(const StorageID &)> Creator;
 
+    TemporaryTableHolder() = default;
     TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
@@ -99,7 +95,7 @@ struct TemporaryTableHolder : boost::noncopyable
 
     operator bool () const { return id != UUIDHelpers::Nil; }
 
-    const Context & global_context;
+    const Context * global_context = nullptr;
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
 };
@@ -115,14 +111,14 @@ public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
-    static DatabaseCatalog & init(Context & global_context_);
+    static DatabaseCatalog & init(Context * global_context_);
     static DatabaseCatalog & instance();
     static void shutdown();
 
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    DDLGuardPtr getDDLGuard(const String & database, const String & table);
+    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
 
@@ -203,7 +199,7 @@ private:
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
-    DatabaseCatalog(Context & global_context_);
+    DatabaseCatalog(Context * global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -244,7 +240,7 @@ private:
     using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
 
     /// For some reason Context is required to get Storage from Database object
-    Context & global_context;
+    Context * global_context;
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;

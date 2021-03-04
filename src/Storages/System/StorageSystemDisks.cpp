@@ -29,7 +29,7 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
 Pipe StorageSystemDisks::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
@@ -51,7 +51,7 @@ Pipe StorageSystemDisks::read(
         col_free->insert(disk_ptr->getAvailableSpace());
         col_total->insert(disk_ptr->getTotalSpace());
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
-        col_type->insert(DiskType::toString(disk_ptr->getType()));
+        col_type->insert(disk_ptr->getType());
     }
 
     Columns res_columns;

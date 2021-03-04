@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test max_ignored_relative_change="0.2">
     <settings>
         <output_format_pretty_max_rows>1000000</output_format_pretty_max_rows>
         <max_threads>1</max_threads>

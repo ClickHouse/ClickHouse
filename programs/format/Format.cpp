@@ -6,7 +6,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -130,9 +129,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 ASTPtr res = parseQueryAndMovePosition(parser, pos, end, "query", multiple, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
                 if (!quiet)
                 {
-                    WriteBufferFromOStream res_buf(std::cout, 4096);
-                    formatAST(*res, res_buf, hilite, oneline);
-                    res_buf.next();
+                    formatAST(*res, std::cout, hilite, oneline);
                     if (multiple)
                         std::cout << "\n;\n";
                     std::cout << std::endl;
@@ -142,7 +139,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(true) << '\n';
+        std::cerr << getCurrentExceptionMessage(true);
         return getCurrentExceptionCode();
     }
 

@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
@@ -28,12 +29,10 @@ public:
     void disconnect();
     void ping();
 
-    void setBinlogChecksum(const String & binlog_checksum);
-
     /// Start replication stream by GTID.
     /// replicate_db: replication database schema, events from other databases will be ignored.
     /// gtid: executed gtid sets format like 'hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh:x-y'.
-    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid, const String & binlog_checksum);
+    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid);
 
     BinlogEventPtr readOneBinlogEvent(UInt64 milliseconds = 0);
     Position getPosition() const { return replication.getPosition(); }

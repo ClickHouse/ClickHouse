@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include <optional>
 
 #include <Interpreters/Set.h>
@@ -404,9 +405,6 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type);
-
-    bool canConstantBeWrappedByFunctions(
-        const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',

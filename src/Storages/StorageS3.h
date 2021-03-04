@@ -31,11 +31,9 @@ public:
         const StorageID & table_id_,
         const String & format_name_,
         UInt64 min_upload_part_size_,
-        UInt64 max_single_part_upload_size_,
-        UInt64 max_connections_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
+        Context & context_,
         const String & compression_method_ = "");
 
     String getName() const override
@@ -46,7 +44,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -58,11 +56,10 @@ public:
 
 private:
     S3::URI uri;
-    const Context & global_context;
+    const Context & context_global;
 
     String format_name;
-    size_t min_upload_part_size;
-    size_t max_single_part_upload_size;
+    UInt64 min_upload_part_size;
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
     String name;

@@ -98,7 +98,6 @@ When creating a table, the following settings are applied:
 -   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
 -   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
 -   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
--   [persistent](../../../operations/settings/settings.md#persistent)
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 

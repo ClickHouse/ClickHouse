@@ -8,8 +8,7 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/graphite_rollup.xml'],
-                                user_configs=["configs/users.xml"])
+                                main_configs=['configs/graphite_rollup.xml'])
 q = instance.query
 
 

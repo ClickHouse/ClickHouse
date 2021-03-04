@@ -1,28 +1,26 @@
 #include "ColumnVector.h"
 
-#include <pdqsort.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnCompressed.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <IO/WriteHelpers.h>
-#include <Common/Arena.h>
+#include <cstring>
+#include <cmath>
+#include <common/unaligned.h>
 #include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
-#include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <common/sort.h>
-#include <common/unaligned.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
+#include <IO/WriteHelpers.h>
+#include <Columns/ColumnsCommon.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
 #include <ext/scope_guard.h>
+#include <pdqsort.h>
 
-#include <cmath>
-#include <cstring>
 
-#if defined(__SSE2__)
-#    include <emmintrin.h>
+#ifdef __SSE2__
+    #include <emmintrin.h>
 #endif
 
 namespace DB
@@ -141,9 +139,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
     }
     else
     {
@@ -239,9 +237,9 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
         /// Since then, we are working inside the interval.
 
         if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
         else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
@@ -357,8 +355,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
     while (filt_pos < filt_end_sse)
     {
-        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
 
         if (0 == mask)
         {
@@ -521,33 +518,6 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
-
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-
-template <typename T>
-ColumnPtr ColumnVector<T>::compress() const
-{
-    size_t source_size = data.size() * sizeof(T);
-
-    /// Don't compress small blocks.
-    if (source_size < 4096) /// A wild guess.
-        return ColumnCompressed::wrap(this->getPtr());
-
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
-
-    if (!compressed)
-        return ColumnCompressed::wrap(this->getPtr());
-
-    return ColumnCompressed::create(data.size(), compressed->size(),
-        [compressed = std::move(compressed), column_size = data.size()]
-        {
-            auto res = ColumnVector<T>::create(column_size);
-            ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
-            return res;
-        });
-}
-
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
@@ -563,5 +533,4 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-
 }

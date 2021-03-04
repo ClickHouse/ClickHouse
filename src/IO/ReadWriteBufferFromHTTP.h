@@ -72,11 +72,16 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", initial_uri.toString());
+            std::stringstream error_message;
+            error_message << "Too many redirects while trying to access " << initial_uri.toString();
+
+            throw Exception(error_message.str(), ErrorCodes::TOO_MANY_REDIRECTS);
         }
     }
 
-    virtual ~UpdatableSessionBase() = default;
+    virtual ~UpdatableSessionBase()
+    {
+    }
 };
 
 
@@ -203,8 +208,6 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
-            if (!working_buffer.empty())
-                impl->position() = position();
             if (!impl->next())
                 return false;
             internal_buffer = impl->buffer();

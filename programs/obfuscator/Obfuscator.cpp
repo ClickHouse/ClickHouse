@@ -23,7 +23,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Formats/registerFormats.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -1051,8 +1050,6 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
-    registerFormats();
-
     po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
@@ -1180,7 +1177,7 @@ try
         file_in.seek(0, SEEK_SET);
 
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context.getOutputStream(output_format, file_out, header);
+        BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
 
         if (processed_rows + source_rows > limit)
             input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);

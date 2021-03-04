@@ -47,12 +47,10 @@ def test_single_file(started_cluster, cluster):
 def test_two_files(started_cluster, cluster):
     node.query(
         "create table test.distr_2 (x UInt64, s String) engine = Distributed('{}', database, table)".format(cluster))
-    node.query("insert into test.distr_2 values (0, '_'), (1, 'a')", settings={
-        "use_compact_format_in_distributed_parts_names": "1",
-    })
-    node.query("insert into test.distr_2 values (2, 'bb'), (3, 'ccc')", settings={
-        "use_compact_format_in_distributed_parts_names": "1",
-    })
+    node.query("insert into test.distr_2 values (0, '_'), (1, 'a')",
+               settings={"use_compact_format_in_distributed_parts_names": "1"})
+    node.query("insert into test.distr_2 values (2, 'bb'), (3, 'ccc')",
+               settings={"use_compact_format_in_distributed_parts_names": "1"})
 
     query = "select * from file('/var/lib/clickhouse/data/test/distr_2/shard1_replica1/{1,2,3,4}.bin', 'Distributed') order by x"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])
@@ -72,9 +70,7 @@ def test_two_files(started_cluster, cluster):
 def test_single_file_old(started_cluster, cluster):
     node.query(
         "create table test.distr_3 (x UInt64, s String) engine = Distributed('{}', database, table)".format(cluster))
-    node.query("insert into test.distr_3 values (1, 'a'), (2, 'bb'), (3, 'ccc')", settings={
-        "use_compact_format_in_distributed_parts_names": "0",
-    })
+    node.query("insert into test.distr_3 values (1, 'a'), (2, 'bb'), (3, 'ccc')")
 
     query = "select * from file('/var/lib/clickhouse/data/test/distr_3/default@not_existing:9000/1.bin', 'Distributed')"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])

@@ -69,12 +69,12 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto array_column = arguments[0].column;
+        auto & array_column = arguments[0].column;
         const auto & offset_column = arguments[1].column;
         const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
 
@@ -119,7 +119,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, static_cast<size_t>(offset - 1));
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, -static_cast<size_t>(offset));
+                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, static_cast<size_t>(-offset));
             }
             else if (isColumnConst(*length_column))
             {
@@ -127,7 +127,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, static_cast<size_t>(offset - 1), length);
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, -static_cast<size_t>(offset), length);
+                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, static_cast<size_t>(-offset), length);
             }
             else
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);

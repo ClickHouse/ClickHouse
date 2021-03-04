@@ -29,7 +29,7 @@ public:
 
     String getName() const override { return "now"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr execute(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) override
     {
         return DataTypeDateTime().createColumnConst(
                 input_rows_count,
