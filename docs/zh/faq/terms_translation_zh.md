@@ -13,6 +13,9 @@ Decimal             定点数
 Tuple               元组
 function            函数
 array               数组/阵列
+hash                哈希/散列
+Parameters          参数
+Arguments           参数
 
 
 ##
