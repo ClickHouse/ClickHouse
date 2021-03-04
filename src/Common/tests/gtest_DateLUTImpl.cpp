@@ -200,9 +200,9 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.dateToString(time), "1970-01-01" /*std::string*/);
 }
 
-TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOLDLut)
+TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
 {
-    // Value is at the right border of the OLD (small) LUT, and provides meaningful values where OLD LUT would provide garbage.
+    // Value is at the right border of the old (small) LUT, and provides meaningful values where old LUT would provide garbage.
     const DateLUTImpl & lut = DateLUT::instance("UTC");
 
     const time_t time = 4294343873; // 2106-01-31T01:17:53 (Sunday)
@@ -267,7 +267,7 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOLDLut)
 class DateLUTWithTimeZone : public ::testing::TestWithParam<const char * /* timezone name */>
 {};
 
-TEST_P(DateLUTWithTimeZone, DISABLED_LoadLut)
+TEST_P(DateLUTWithTimeZone, DISABLED_LoadLUT)
 {
     // There are some assumptions and assertions about TZ data made in DateLUTImpl which are verified upon loading,
     // to make sure that those assertions are true for all timezones we are going to load all of them one by one.
