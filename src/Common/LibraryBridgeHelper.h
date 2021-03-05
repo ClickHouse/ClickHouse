@@ -33,15 +33,21 @@ public:
 
     BlockInputStreamPtr loadIds(const std::string attributes_string, const std::string ids_string, const Block & sample_block);
 
+    bool isModified();
+
+    bool supportsSelectiveLoad();
+
     static constexpr inline size_t DEFAULT_PORT = 9018;
     static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
 
     static constexpr inline auto PING_HANDLER = "/ping";
-    static constexpr inline auto MAIN_HANDLER = "/";
 
-    static constexpr inline auto LIBNEW_METHOD = "libNew";
-    static constexpr inline auto LIBDELETE_METHOD = "libDelete";
-    static constexpr inline auto LOADALL_METHOD = "loadAll";
+    static constexpr inline auto LIB_NEW_METHOD = "libNew";
+    static constexpr inline auto LIB_DELETE_METHOD = "libDelete";
+    static constexpr inline auto LOAD_ALL_METHOD = "loadAll";
+    static constexpr inline auto LOAD_IDS_METHOD = "loadIds";
+    static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
+    static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
 
     static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";

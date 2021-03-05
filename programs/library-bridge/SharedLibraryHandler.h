@@ -28,6 +28,10 @@ public:
 
     BlockInputStreamPtr loadIds(const std::string & ids_string, const std::string & attributes_string, const Block & sample_block);
 
+    bool isModified();
+
+    bool supportsSelectiveLoad();
+
 private:
     Block dataToBlock(const Block & sample_block, const void * data);
 

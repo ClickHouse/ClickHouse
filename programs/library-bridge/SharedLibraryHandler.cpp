@@ -39,12 +39,31 @@ void SharedLibraryHandler::libNew(const std::string & path, const std::string & 
     settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(lib_settings));
 
     auto lib_new = library->tryGet<decltype(lib_data) (*)(
-        decltype(&settings_holder->strings), decltype(&ClickHouseLibrary::log))>("ClickHouseDictionary_v3_libNew");
+            decltype(&settings_holder->strings), decltype(&ClickHouseLibrary::log))>("ClickHouseDictionary_v3_libNew");
 
     if (lib_new)
         lib_data = lib_new(&settings_holder->strings, ClickHouseLibrary::log);
 }
 
+
+bool SharedLibraryHandler::isModified()
+{
+    if (auto func_is_modified = library->tryGet<bool (*)(
+            decltype(lib_data), decltype(&settings_holder->strings))>("ClickHouseDictionary_v3_isModified"))
+        return func_is_modified(lib_data, &settings_holder->strings);
+
+    return true;
+}
+
+
+bool SharedLibraryHandler::supportsSelectiveLoad()
+{
+    if (auto func_supports_selective_load = library->tryGet<bool (*)(
+            decltype(lib_data), decltype(&settings_holder->strings))>("ClickHouseDictionary_v3_supportsSelectiveLoad"))
+        return func_supports_selective_load(lib_data, &settings_holder->strings);
+
+    return true;
+}
 
 //void SharedLibraryHandler::libCloneOrNew()
 //{

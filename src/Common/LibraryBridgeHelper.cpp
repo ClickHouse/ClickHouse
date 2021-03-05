@@ -66,15 +66,13 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
     startLibraryBridgeSync();
 
     auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LIBNEW_METHOD);
+    uri.addQueryParameter("method", LIB_NEW_METHOD);
     uri.addQueryParameter("library_path", library_path);
     uri.addQueryParameter("library_settings", library_settings);
 
     ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
-
     bool res;
     readBoolText(res, buf);
-
     return res;
 }
 
@@ -84,13 +82,39 @@ bool LibraryBridgeHelper::deleteLibrary()
     startLibraryBridgeSync();
 
     auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LIBDELETE_METHOD);
+    uri.addQueryParameter("method", LIB_DELETE_METHOD);
 
     ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
-
     bool res;
     readBoolText(res, buf);
+    return res;
+}
 
+
+bool LibraryBridgeHelper::isModified()
+{
+    startLibraryBridgeSync();
+
+    auto uri = getDictionaryURI();
+    uri.addQueryParameter("method", IS_MODIFIED_METHOD);
+
+    ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+    bool res;
+    readBoolText(res, buf);
+    return res;
+}
+
+
+bool LibraryBridgeHelper::supportsSelectiveLoad()
+{
+    startLibraryBridgeSync();
+
+    auto uri = getDictionaryURI();
+    uri.addQueryParameter("method", SUPPORTS_SELECTIVE_LOAD_METHOD);
+
+    ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+    bool res;
+    readBoolText(res, buf);
     return res;
 }
 
@@ -101,7 +125,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadAll(const std::string attributes_st
 
     auto uri = getDictionaryURI();
 
-    uri.addQueryParameter("method", LOADALL_METHOD);
+    uri.addQueryParameter("method", LOAD_ALL_METHOD);
     uri.addQueryParameter("attributes", attributes_string);
     uri.addQueryParameter("columns", sample_block.getNamesAndTypesList().toString());
 
@@ -123,7 +147,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_st
 
     auto uri = getDictionaryURI();
 
-    uri.addQueryParameter("method", LOADALL_METHOD);
+    uri.addQueryParameter("method", LOAD_IDS_METHOD);
     uri.addQueryParameter("attributes", attributes_string);
     uri.addQueryParameter("ids", ids_string);
     uri.addQueryParameter("columns", sample_block.getNamesAndTypesList().toString());
@@ -145,7 +169,7 @@ bool LibraryBridgeHelper::isLibraryBridgeRunning() const
     try
     {
         ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(context));
-        return checkString(LibraryBridgeHelper::PING_OK_ANSWER, buf);
+        return checkString(PING_OK_ANSWER, buf);
     }
     catch (...)
     {

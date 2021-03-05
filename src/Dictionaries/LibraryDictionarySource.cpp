@@ -189,19 +189,13 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns &/* key_colu
 
 bool LibraryDictionarySource::isModified() const
 {
-    //if (auto func_is_modified = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_isModified"))
-    //    return func_is_modified(lib_data, &settings->strings);
-
-    return true;
+    return bridge_helper->isModified();
 }
 
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    //if (auto func_supports_selective_load = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_supportsSelectiveLoad"))
-    //    return func_supports_selective_load(lib_data, &settings->strings);
-
-    return true;
+    return bridge_helper->supportsSelectiveLoad();
 }
 
 
