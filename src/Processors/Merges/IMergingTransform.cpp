@@ -64,10 +64,7 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
 
         if (input_states[i].is_initialized)
-        {
-            // input.setNotNeeded();
             continue;
-        }
 
         input.setNeeded();
 
@@ -77,7 +74,10 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
         }
 
-        auto chunk = input.pull();
+        /// setNotNeeded after reading first chunk, because in optimismtic case
+        /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
+        /// we won't have to read any chunks anymore;
+        auto chunk = input.pull(true);
         if (!chunk.hasRows())
         {
 

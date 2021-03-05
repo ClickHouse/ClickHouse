@@ -40,10 +40,6 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     part_index_in_query(part_index_in_query_),
     path(data_part->getFullRelativePath())
 {
-    /// Let's estimate total number of rows for progress bar.
-    for (const auto & range : all_mark_ranges)
-        total_marks_count += range.end - range.begin;
-
     size_t total_rows = data_part->index_granularity.getTotalRows();
 
     if (!quiet)
@@ -79,7 +75,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
 bool MergeTreeReverseSelectProcessor::getNewTask()
 try
 {
-    if ((chunks.empty() && all_mark_ranges.empty()) || total_marks_count == 0)
+    if (chunks.empty() && all_mark_ranges.empty())
     {
         finish();
         return false;

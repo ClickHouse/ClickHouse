@@ -1286,7 +1286,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     true,
                     reader_settings,
                     virt_columns,
-                    part.part_index_in_query));
+                    part.part_index_in_query,
+                    /* one_range_per_task = */ true));
             }
             else
             {

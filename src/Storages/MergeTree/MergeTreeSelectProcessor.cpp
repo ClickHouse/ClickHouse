@@ -27,6 +27,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
+    bool one_range_per_task_,
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
@@ -38,18 +39,35 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     data_part{owned_data_part_},
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
+    one_range_per_task(one_range_per_task_),
     check_columns(check_columns_)
 {
-    /// Let's estimate total number of rows for progress bar.
-    for (const auto & range : all_mark_ranges)
-        total_marks_count += range.end - range.begin;
-
     size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
         LOG_TRACE(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
+
+    /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+    const auto & column_names = task_columns.columns.getNames();
+    column_name_set = NameSet{column_names.begin(), column_names.end()};
+
+    task_columns = getReadTaskColumns(
+        storage, metadata_snapshot, data_part,
+        required_columns, prewhere_info, check_columns);
+
+    if (use_uncompressed_cache)
+        owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+
+    owned_mark_cache = storage.global_context.getMarkCache();
+
+    reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
+        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+
+    if (prewhere_info)
+        pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
+            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
     addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();
@@ -59,45 +77,32 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 bool MergeTreeSelectProcessor::getNewTask()
 try
 {
-    /// Produce no more than one task
-    if (!is_first_task || total_marks_count == 0)
+    if (all_mark_ranges.empty())
     {
         finish();
         return false;
     }
-    is_first_task = false;
-
-    task_columns = getReadTaskColumns(
-        storage, metadata_snapshot, data_part,
-        required_columns, prewhere_info, check_columns);
 
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
         : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
 
-    /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-    const auto & column_names = task_columns.columns.getNames();
-    column_name_set = NameSet{column_names.begin(), column_names.end()};
+    MarkRanges mark_ranges_for_task;
+    if (one_range_per_task)
+    {
+        mark_ranges_for_task = { std::move(all_mark_ranges.front()) };
+        all_mark_ranges.pop_front();
+    }
+    else
+    {
+        mark_ranges_for_task = std::move(all_mark_ranges);
+        all_mark_ranges.clear();
+    }
 
     task = std::make_unique<MergeTreeReadTask>(
-        data_part, all_mark_ranges, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
+        data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
         task_columns.pre_columns, prewhere_info && prewhere_info->remove_prewhere_column,
         task_columns.should_reorder, std::move(size_predictor));
-
-    if (!reader)
-    {
-        if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
-
-        owned_mark_cache = storage.global_context.getMarkCache();
-
-        reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
-            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
-
-        if (prewhere_info)
-            pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
-    }
 
     return true;
 }

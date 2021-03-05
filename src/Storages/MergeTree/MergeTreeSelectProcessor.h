@@ -31,6 +31,7 @@ public:
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
         size_t part_index_in_query = 0,
+        bool one_range_per_task_ = false,
         bool quiet = false);
 
     ~MergeTreeSelectProcessor() override;
@@ -59,13 +60,13 @@ private:
 
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;
-    /// Total number of marks we should read
-    size_t total_marks_count = 0;
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
+    /// If true, every task will be created only with one range.
+    /// It reduces amount of read data for queries with small LIMIT.
+    bool one_range_per_task = false;
 
     bool check_columns;
-    bool is_first_task = true;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
 };
