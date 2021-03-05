@@ -116,7 +116,6 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
     }
 }
 
-
 void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const
 {
     SettingsProfileElements merged_settings;

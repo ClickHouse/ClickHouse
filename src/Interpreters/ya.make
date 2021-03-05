@@ -148,6 +148,8 @@ SRCS(
     RowRefs.cpp
     SelectIntersectExceptQueryVisitor.cpp
     Session.cpp
+    Session.cpp
+    SessionLog.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp
