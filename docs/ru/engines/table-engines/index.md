@@ -31,7 +31,7 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 -   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [GraphiteMergeTree](mergetree-family/graphitemergetree.md#graphitemergetree)
--   [S3](../../engines/table-engines/integrations/s3.md#table_engines-s3)
+-   [S3](../../engines/table-engines/integrations/s3.md#table-engine-s3)
 
 ### Log {#log}
 
