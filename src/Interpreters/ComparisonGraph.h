@@ -26,7 +26,6 @@ public:
     };
 
     CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
-    CompareResult getExpectedCompare(const ASTPtr & ast) const;
 
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
 
@@ -81,6 +80,8 @@ private:
     void dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const;
     void dfsComponents(
             const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component) const;
+
+    std::pair<bool, bool> findPath(const size_t start, const size_t finish) const;
 
     Graph graph;
 };

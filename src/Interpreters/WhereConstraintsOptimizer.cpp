@@ -193,7 +193,7 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
             Poco::Logger::get("GRAPH REASON").information(atom.ast->dumpTree());
             Poco::Logger::get("GRAPH REASON").information(std::to_string(static_cast<int>(expected)) + " " + std::to_string(static_cast<int>(result)));
 
-            if (expected == ComparisonGraph::CompareResult::UNKNOWN)
+            if (expected == ComparisonGraph::CompareResult::UNKNOWN || result == ComparisonGraph::CompareResult::UNKNOWN)
                 return false;
 
             if (expected == result)
@@ -232,6 +232,38 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const
     return false;
 }
 
+bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
+{
+    const auto * func = atom.ast->as<ASTFunction>();
+    if (func && func->arguments->children.size() == 2)
+    {
+        /// TODO: special support for !=
+        const auto expected = getExpectedCompare(atom);
+        const auto result = graph.compare(func->arguments->children[0], func->arguments->children[1]);
+        Poco::Logger::get("GRAPH REASON F").information("neg: " + std::to_string(atom.negative));
+        Poco::Logger::get("GRAPH REASON F").information(atom.ast->dumpTree());
+        Poco::Logger::get("GRAPH REASON F").information(std::to_string(static_cast<int>(expected)) + " " + std::to_string(static_cast<int>(result)));
+
+        if (expected == ComparisonGraph::CompareResult::UNKNOWN || result == ComparisonGraph::CompareResult::UNKNOWN)
+            return false;
+
+        if (expected == result)
+            return false;
+        else if (result == ComparisonGraph::CompareResult::EQUAL &&
+            (expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL || expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL))
+            return false;
+        else if (result == ComparisonGraph::CompareResult::LESS && expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL)
+            return false;
+        else if (result == ComparisonGraph::CompareResult::GREATER && expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL)
+            return false;
+        else
+            return true;
+    }
+
+    return false;
+}
+
+
 void WhereConstraintsOptimizer::perform()
 {
     if (select_query->where() && metadata_snapshot)
@@ -245,8 +277,8 @@ void WhereConstraintsOptimizer::perform()
             .filterAlwaysTrueGroups([&constraint_data, &compare_graph](const auto & group) { /// remove always true groups from CNF
                 return !checkIfGroupAlwaysTrueFullMatch(group, constraint_data) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
             })
-            .filterAlwaysFalseAtoms([&constraint_data](const auto & atom) { /// remove always false atoms from CNF
-                return !checkIfAtomAlwaysFalseFullMatch(atom, constraint_data);
+            .filterAlwaysFalseAtoms([&constraint_data, &compare_graph](const auto & atom) { /// remove always false atoms from CNF
+                return !checkIfAtomAlwaysFalseFullMatch(atom, constraint_data) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
             })
             .pushNotInFuntions();
 
