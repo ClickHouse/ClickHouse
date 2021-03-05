@@ -17,7 +17,7 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
  * sorted by group by key (prefix of sorting key).
  * Then it merges aggregated data from inputs by the following algorithm:
  *  - At each step find the smallest value X of the sorting key among last rows of current blocks of inputs.
- *    Since the data is sorted in order of sorting key and has no duplicates (because of aggregation),
+ *    Since the data is sorted in order of sorting key and has no duplicates in single input stream (because of aggregation),
  *    X will never appear later in any of input streams.
  *  - Aggregate all rows in current blocks of inputs up to the upper_bound of X using
  *    regular hash table algorithm (Aggregator::mergeBlock).
