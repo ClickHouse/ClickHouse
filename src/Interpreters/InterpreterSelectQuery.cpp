@@ -349,8 +349,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     joined_tables.rewriteDistributedInAndJoins(query_ptr);
 
     max_streams = settings.max_threads;
-    ASTSelectQuery & query = getSelectQuery();
-    std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     ASTPtr row_policy_filter;
     if (storage)
@@ -362,6 +360,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     SubqueriesForSets subquery_for_sets;
 
+    ASTSelectQuery & query = getSelectQuery();
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
@@ -372,7 +372,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         syntax_analyzer_result = TreeRewriter(*context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
-            options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+            options, required_result_column_names, &joined_tables);
 
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())

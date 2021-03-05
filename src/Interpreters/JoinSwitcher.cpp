@@ -17,16 +17,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
-    : limits(table_join_->sizeLimits())
+JoinSwitcher::JoinSwitcher(JoinInfo join_info_, const Block & right_sample_block_,
+                           const MergeJoin::TemporaryVolumeSettings & temp_vol_settings_)
+    : join_info(join_info_)
     , switched(false)
-    , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
+    , temp_vol_settings(temp_vol_settings_)
 {
-    join = std::make_shared<HashJoin>(table_join, right_sample_block);
-
-    if (!limits.hasLimits())
-        limits.max_bytes = table_join->defaultMaxBytes();
+    join = std::make_shared<HashJoin>(join_info, right_sample_block);
 }
 
 bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
@@ -42,7 +40,7 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
     size_t rows = join->getTotalRowCount();
     size_t bytes = join->getTotalByteCount();
 
-    if (!limits.softCheck(rows, bytes))
+    if (!join_info.size_limits.softCheck(rows, bytes))
         switchJoin();
 
     return true;
@@ -54,7 +52,7 @@ void JoinSwitcher::switchJoin()
     BlocksList right_blocks = std::move(joined_data->blocks);
 
     /// Destroy old join & create new one. Early destroy for memory saving.
-    join = std::make_shared<MergeJoin>(table_join, right_sample_block);
+    join = std::make_shared<MergeJoin>(join_info, right_sample_block, temp_vol_settings);
 
     /// names to positions optimization
     std::vector<size_t> positions;
