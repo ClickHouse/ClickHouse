@@ -74,6 +74,7 @@ class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
+class SessionLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -275,6 +276,8 @@ private:
 
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
+    /// Non-owning, only here for MySQLOutputFormat to be able to modify sequence_id, see setSession() and getSession()
+    Session * session = nullptr;
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
     bool is_internal_query = false;
@@ -369,6 +372,8 @@ public:
     /// WARNING: This function doesn't check password!
     /// Normally you shouldn't call this function. Use the Session class to do authentication instead.
     void setUser(const UUID & user_id_);
+
+    std::shared_ptr<const ContextAccess> getContextAccessForUser(const UUID & user_id) const;
 
     UserPtr getUser() const;
     String getUserName() const;
@@ -598,6 +603,15 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
+    // Exists only due to MySQLOutputFormat
+    Session * getSession() const { return getSessionContext()->session; }
+    void setSession(Session * new_session)
+    {
+        session = getSessionContext()->session = new_session;
+    }
+    Session * getSessionOrNull() const;
+
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -733,6 +747,7 @@ public:
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
+    std::shared_ptr<SessionLog> getSessionLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

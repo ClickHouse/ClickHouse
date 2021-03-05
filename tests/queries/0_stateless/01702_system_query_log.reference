@@ -8,6 +8,7 @@ GRANT queries
 REVOKE queries
 Misc queries
 ACTUAL LOG CONTENT:
+	-- fire all kinds of queries and then check if those are present in the system.query_log\nSET log_comment=\'system.query_log logging test\';
 Select	SELECT \'DROP queries and also a cleanup before the test\';
 Drop	DROP DATABASE IF EXISTS sqllt SYNC;
 	DROP USER IF EXISTS sqllt_user;
@@ -82,5 +83,4 @@ Rename	RENAME TABLE sqllt.table TO sqllt.table_new;
 Rename	RENAME TABLE sqllt.table_new TO sqllt.table;
 Drop	TRUNCATE TABLE sqllt.table;
 Drop	DROP TABLE sqllt.table SYNC;
-	SET log_comment=\'\';
 DROP queries and also a cleanup after the test
