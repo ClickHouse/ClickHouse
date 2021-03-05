@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.2">
     <substitutions>
         <substitution>
            <name>gp_hash_func</name>
@@ -41,7 +41,7 @@
         <substitution>
            <name>table</name>
            <values>
-               <value>numbers(100000000)</value>
+               <value>numbers(10000000)</value>
                <value>numbers_mt(500000000)</value>
            </values>
         </substitution>

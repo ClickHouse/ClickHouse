@@ -98,7 +98,7 @@ private:
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
-    mutable std::shared_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
 };

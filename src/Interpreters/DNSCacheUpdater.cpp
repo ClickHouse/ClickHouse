@@ -1,7 +1,7 @@
 #include "DNSCacheUpdater.h"
 #include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+
 
 namespace DB
 {
@@ -37,7 +37,7 @@ void DNSCacheUpdater::run()
       * - automatically throttle when DNS requests take longer time;
       * - add natural randomization on huge clusters - avoid sending all requests at the same moment of time from different servers.
       */
-    task_handle->scheduleAfter(update_period_seconds * 1000);
+    task_handle->scheduleAfter(size_t(update_period_seconds) * 1000);
 }
 
 void DNSCacheUpdater::start()

@@ -22,6 +22,15 @@ struct ASTExistsTableQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "EXISTS TEMPORARY TABLE";
 };
 
+struct ASTExistsViewQueryIDAndQueryNames
+{
+    static constexpr auto ID = "ExistsViewQuery";
+    static constexpr auto Query = "EXISTS VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
+};
+
+
 struct ASTExistsDictionaryQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsDictionaryQuery";
@@ -35,6 +44,14 @@ struct ASTShowCreateTableQueryIDAndQueryNames
     static constexpr auto ID = "ShowCreateTableQuery";
     static constexpr auto Query = "SHOW CREATE TABLE";
     static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY TABLE";
+};
+
+struct ASTShowCreateViewQueryIDAndQueryNames
+{
+    static constexpr auto ID = "ShowCreateViewQuery";
+    static constexpr auto Query = "SHOW CREATE VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
@@ -59,11 +76,22 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "DESCRIBE TEMPORARY TABLE";
 };
 
-using ASTExistsDatabaseQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>;
 using ASTExistsTableQuery = ASTQueryWithTableAndOutputImpl<ASTExistsTableQueryIDAndQueryNames>;
+using ASTExistsViewQuery = ASTQueryWithTableAndOutputImpl<ASTExistsViewQueryIDAndQueryNames>;
 using ASTExistsDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDictionaryQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;
+using ASTShowCreateViewQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateViewQueryIDAndQueryNames>;
 using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateDictionaryQueryIDAndQueryNames>;
+
+class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
+{
+protected:
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
+                    << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+    }
+};
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {

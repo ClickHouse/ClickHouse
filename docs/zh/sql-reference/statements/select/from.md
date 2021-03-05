@@ -25,11 +25,13 @@ toc_title: FROM
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) 版本 `MergeTree` 引擎
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md)，和 [MaterializedView](../../../engines/table-engines/special/materializedview.md) 在其他引擎上运行的引擎，只要是它们底层是 `MergeTree`-引擎表即可。
 
+现在使用 `FINAL` 修饰符 的 `SELECT` 查询启用了并发执行, 这会快一点。但是仍然存在缺陷 (见下)。  [max_final_threads](../../../operations/settings/settings.md#max-final-threads) 设置使用的最大线程数限制。
+
 ### 缺点 {#drawbacks}
 
-使用的查询 `FINAL` 执行速度不如类似的查询那么快，因为:
+使用的查询 `FINAL` 执行速度比类似的查询慢一点，因为:
 
--   查询在单个线程中执行，并在查询执行期间合并数据。
+-   在查询执行期间合并数据。
 -   查询与 `FINAL` 除了读取查询中指定的列之外，还读取主键列。
 
 **在大多数情况下，避免使用 `FINAL`.** 常见的方法是使用假设后台进程的不同查询 `MergeTree` 引擎还没有发生，并通过应用聚合（例如，丢弃重复项）来处理它。 {## TODO: examples ##}

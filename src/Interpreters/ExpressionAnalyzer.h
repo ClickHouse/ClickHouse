@@ -3,6 +3,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Interpreters/WindowDescription.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
@@ -55,12 +56,13 @@ struct ExpressionAnalyzerData
     NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+    /// Columns after window functions.
+    NamesAndTypesList columns_after_window;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
 
-    bool has_window = false;
     WindowDescriptions window_descriptions;
     NamesAndTypesList window_columns;
 
@@ -123,6 +125,8 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
+    void makeWindowDescriptions(ActionsDAGPtr actions);
+
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
@@ -166,8 +170,6 @@ protected:
     void analyzeAggregation();
     bool makeAggregateDescriptions(ActionsDAGPtr & actions);
 
-    bool makeWindowDescriptions(ActionsDAGPtr & actions);
-
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const { return syntax->is_remote_storage; }
@@ -202,18 +204,19 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
     ActionsDAGPtr before_window;
-    ActionsDAGPtr before_order_and_select;
+    ActionsDAGPtr before_order_by;
     ActionsDAGPtr before_limit_by;
     ActionsDAGPtr final_projection;
 
-    /// Columns from the SELECT list, before renaming them to aliases.
+    /// Columns from the SELECT list, before renaming them to aliases. Used to
+    /// perform SELECT DISTINCT.
     Names selected_columns;
 
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereDAGInfoPtr prewhere_info;
-    FilterInfoPtr filter_info;
+    FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -228,7 +231,7 @@ struct ExpressionAnalysisResult
         bool first_stage,
         bool second_stage,
         bool only_types,
-        const FilterInfoPtr & filter_info,
+        const FilterDAGInfoPtr & filter_info,
         const Block & source_header);
 
     /// Filter for row-level security.
@@ -269,7 +272,7 @@ public:
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
-    bool hasWindow() const { return has_window; }
+    bool hasWindow() const { return !syntax->window_function_asts.empty(); }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 

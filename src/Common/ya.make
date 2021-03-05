@@ -33,11 +33,13 @@ SRCS(
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
     Config/configReadClient.cpp
+    CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
     Dwarf.cpp
     Elf.cpp
+    Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
@@ -82,7 +84,6 @@ SRCS(
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
-    ZooKeeper/TestKeeperStorage.cpp
     ZooKeeper/ZooKeeper.cpp
     ZooKeeper/ZooKeeperCommon.cpp
     ZooKeeper/ZooKeeperConstants.cpp
@@ -97,6 +98,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getHashOfLoadedBinary.cpp
     getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp

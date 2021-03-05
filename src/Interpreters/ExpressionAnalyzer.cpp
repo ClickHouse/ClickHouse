@@ -1,12 +1,13 @@
 #include <Core/Block.h>
 
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
 
 #include <DataTypes/DataTypeNullable.h>
@@ -53,6 +54,9 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Parsers/formatAST.h>
+
 namespace DB
 {
 
@@ -85,8 +89,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
         {
-            auto name = node.function_base->getName();
-            if (name == "ignore")
+            if (!node.function_base->isSuitableForConstantFolding())
                 return false;
         }
     }
@@ -288,8 +291,6 @@ void ExpressionAnalyzer::analyzeAggregation()
     {
         aggregated_columns = temp_actions->getNamesAndTypesList();
     }
-
-    has_window = makeWindowDescriptions(temp_actions);
 }
 
 
@@ -318,21 +319,24 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    auto stream = interpreter_subquery->execute().getInputStream();
+    auto io = interpreter_subquery->execute();
+    PullingAsyncPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(stream->getHeader());
+    set->setHeader(executor.getHeader());
 
-    stream->readPrefix();
-    while (Block block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
+        if (block.rows() == 0)
+            continue;
+
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
             return;
     }
 
     set->finishInsert();
-    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -471,68 +475,107 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     return !aggregates().empty();
 }
 
+void makeWindowDescriptionFromAST(WindowDescription & desc, const IAST * ast)
+{
+    const auto & definition = ast->as<const ASTWindowDefinition &>();
 
-bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
+    if (definition.partition_by)
+    {
+        for (const auto & column_ast : definition.partition_by->children)
+        {
+            const auto * with_alias = dynamic_cast<const ASTWithAlias *>(
+                column_ast.get());
+            if (!with_alias)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected a column in PARTITION BY in window definition,"
+                    " got '{}'",
+                    column_ast->formatForErrorMessage());
+            }
+            desc.partition_by.push_back(SortColumnDescription(
+                    with_alias->getColumnName(), 1 /* direction */,
+                    1 /* nulls_direction */));
+        }
+    }
+
+    if (definition.order_by)
+    {
+        for (const auto & column_ast
+            : definition.order_by->children)
+        {
+            // Parser should have checked that we have a proper element here.
+            const auto & order_by_element
+                = column_ast->as<ASTOrderByElement &>();
+            // Ignore collation for now.
+            desc.order_by.push_back(
+                SortColumnDescription(
+                    order_by_element.children.front()->getColumnName(),
+                    order_by_element.direction,
+                    order_by_element.nulls_direction));
+        }
+    }
+
+    desc.full_sort_description = desc.partition_by;
+    desc.full_sort_description.insert(desc.full_sort_description.end(),
+        desc.order_by.begin(), desc.order_by.end());
+
+    if (definition.frame.type != WindowFrame::FrameType::Rows
+        && definition.frame.type != WindowFrame::FrameType::Range)
+    {
+        std::string name = definition.frame.type == WindowFrame::FrameType::Rows
+            ? "ROWS"
+            : definition.frame.type == WindowFrame::FrameType::Groups
+                ? "GROUPS" : "RANGE";
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window frame '{}' is not implemented (while processing '{}')",
+            name, ast->formatForErrorMessage());
+    }
+
+    desc.frame = definition.frame;
+}
+
+void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 {
     // Convenient to check here because at least we have the Context.
     if (!syntax->window_function_asts.empty() &&
         !context.getSettingsRef().allow_experimental_window_functions)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window functions are not implemented (while processing '{}')",
+            "The support for window functions is experimental and will change"
+            " in backwards-incompatible ways in the future releases. Set"
+            " allow_experimental_window_functions = 1 to enable it."
+            " While processing '{}'",
             syntax->window_function_asts[0]->formatForErrorMessage());
     }
 
+    // Window definitions from the WINDOW clause
+    const auto * select_query = query->as<ASTSelectQuery>();
+    if (select_query && select_query->window())
+    {
+        for (const auto & ptr : select_query->window()->children)
+        {
+            const auto & elem = ptr->as<const ASTWindowListElement &>();
+            WindowDescription desc;
+            desc.window_name = elem.name;
+            makeWindowDescriptionFromAST(desc, elem.definition.get());
+
+            auto [it, inserted] = window_descriptions.insert(
+                {desc.window_name, desc});
+
+            if (!inserted)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window '{}' is defined twice in the WINDOW clause",
+                    desc.window_name);
+            }
+        }
+    }
+
+    // Window functions
     for (const ASTFunction * function_node : syntax->window_function_asts)
     {
         assert(function_node->is_window_function);
-
-        WindowDescription window_description;
-        window_description.window_name = function_node->getWindowDescription();
-
-        if (function_node->window_partition_by)
-        {
-            for (const auto & column_ast
-                : function_node->window_partition_by->children)
-            {
-                const auto * with_alias = dynamic_cast<const ASTWithAlias *>(
-                    column_ast.get());
-                if (!with_alias)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Expected a column in PARTITION BY for window '{}',"
-                        " got '{}'", window_description.window_name,
-                        column_ast->formatForErrorMessage());
-                }
-                window_description.partition_by.push_back(
-                    SortColumnDescription(
-                        with_alias->getColumnName(), 1 /* direction */,
-                        1 /* nulls_direction */));
-            }
-        }
-
-        if (function_node->window_order_by)
-        {
-            for (const auto & column_ast
-                : function_node->window_order_by->children)
-            {
-                // Parser should have checked that we have a proper element here.
-                const auto & order_by_element
-                    = column_ast->as<ASTOrderByElement &>();
-                // Ignore collation for now.
-                window_description.order_by.push_back(
-                    SortColumnDescription(
-                        order_by_element.children.front()->getColumnName(),
-                        order_by_element.direction,
-                        order_by_element.nulls_direction));
-            }
-        }
-
-        window_description.full_sort_description = window_description.partition_by;
-        window_description.full_sort_description.insert(
-            window_description.full_sort_description.end(),
-            window_description.order_by.begin(),
-            window_description.order_by.end());
 
         WindowFunctionDescription window_function;
         window_function.function_node = function_node;
@@ -578,19 +621,43 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
                 window_function.argument_types,
                 window_function.function_parameters, properties);
 
-        auto [it, inserted] = window_descriptions.insert(
-            {window_description.window_name, window_description});
 
-        if (!inserted)
+        // Find the window corresponding to this function. It may be either
+        // referenced by name and previously defined in WINDOW clause, or it
+        // may be defined inline.
+        if (!function_node->window_name.empty())
         {
-            assert(it->second.full_sort_description
-                == window_description.full_sort_description);
+            auto it = window_descriptions.find(function_node->window_name);
+            if (it == std::end(window_descriptions))
+            {
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Window '{}' is not defined (referenced by '{}')",
+                    function_node->window_name,
+                    function_node->formatForErrorMessage());
+            }
+
+            it->second.window_functions.push_back(window_function);
         }
+        else
+        {
+            const auto & definition = function_node->window_definition->as<
+                const ASTWindowDefinition &>();
+            WindowDescription desc;
+            desc.window_name = definition.getDefaultWindowName();
+            makeWindowDescriptionFromAST(desc, &definition);
 
-        it->second.window_functions.push_back(window_function);
+            auto [it, inserted] = window_descriptions.insert(
+                {desc.window_name, desc});
+
+            if (!inserted)
+            {
+                assert(it->second.full_sort_description
+                    == desc.full_sort_description);
+            }
+
+            it->second.window_functions.push_back(window_function);
+        }
     }
-
-    return !syntax->window_function_asts.empty();
 }
 
 
@@ -675,7 +742,7 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 {
     if (auto * table = analyzed_join->joined_storage.get())
         if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoin(analyzed_join);
+            return storage_join->getJoinLocked(analyzed_join);
     return {};
 }
 
@@ -791,13 +858,22 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     if (!select_query->prewhere())
         return prewhere_actions;
 
+    Names first_action_names;
+    if (!chain.steps.empty())
+        first_action_names = chain.steps.front()->getRequiredColumns().getNames();
+
     auto & step = chain.lastStep(sourceColumns());
     getRootActions(select_query->prewhere(), only_types, step.actions());
     String prewhere_column_name = select_query->prewhere()->getColumnName();
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
-    auto filter_type = (*step.actions()->getIndex().find(prewhere_column_name))->result_type;
+    const auto & index = step.actions()->getIndex();
+    auto it = index.find(prewhere_column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", prewhere_column_name);
+
+    auto filter_type = (*it)->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -810,6 +886,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag);
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
+        required_source_columns.insert(first_action_names.begin(), first_action_names.end());
 
         /// Add required columns to required output in order not to remove them after prewhere execution.
         /// TODO: add sampling and final execution to common chain.
@@ -897,7 +974,12 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     step.required_output.push_back(where_column_name);
     step.can_remove_required_output = {true};
 
-    auto filter_type = (*step.actions()->getIndex().find(where_column_name))->result_type;
+    const auto & index = step.actions()->getIndex();
+    auto it = index.find(where_column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", where_column_name);
+
+    auto filter_type = (*it)->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -969,53 +1051,42 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
 {
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    // 1) Add actions for window functions and their arguments;
-    // 2) Mark the columns that are really required.
+    // (1) Add actions for window functions and the columns they require.
+    // (2) Mark the columns that are really required. We have to mark them as
+    //     required because we finish the expression chain before processing the
+    //     window functions.
+    // The required columns are:
+    //  (a) window function arguments,
+    //  (b) the columns from PARTITION BY and ORDER BY.
+
+    // (1a) Actions for PARTITION BY and ORDER BY for windows defined in the
+    // WINDOW clause. The inline window definitions will be processed
+    // recursively together with (1b) as ASTFunction::window_definition.
+    if (getSelectQuery()->window())
+    {
+        getRootActionsNoMakeSet(getSelectQuery()->window(),
+            true /* no_subqueries */, step.actions());
+    }
+
     for (const auto & [_, w] : window_descriptions)
     {
         for (const auto & f : w.window_functions)
         {
-            // 1.1) arguments of window functions;
+            // (1b) Actions for function arguments, and also the inline window
+            // definitions (1a).
             // Requiring a constant reference to a shared pointer to non-const AST
             // doesn't really look sane, but the visitor does indeed require it.
             getRootActionsNoMakeSet(f.function_node->clone(),
                 true /* no_subqueries */, step.actions());
 
-            // 1.2) result of window function: an empty INPUT.
-            // It is an aggregate function, so it won't be added by getRootActions.
-            // This is something of a hack. Other options:
-            //  a] do it like aggregate function -- break the chain of actions
-            //     and manually add window functions to the starting list of
-            //     input columns. Logically this is similar to what we're doing
-            //     now, but would require to split the window function processing
-            //     into a full-fledged step after plain functions. This would be
-            //     somewhat cumbersome. With INPUT hack we can avoid a separate
-            //     step and pretend that window functions are almost "normal"
-            //     select functions. The limitation of both these ways is that
-            //     we can't reference window functions in other SELECT
-            //     expressions.
-            //  b] add a WINDOW action type, then sort, then split the chain on
-            //     each WINDOW action and insert the Window pipeline between the
-            //     Expression pipelines. This is a "proper" way that would allow
-            //     us to depend on window functions in other functions. But it's
-            //     complicated so I avoid doing it for now.
-            ColumnWithTypeAndName col;
-            col.type = f.aggregate_function->getReturnType();
-            col.column = col.type->createColumn();
-            col.name = f.column_name;
-
-            step.actions()->addInput(col);
-
+            // (2b) Required function argument columns.
             for (const auto & a : f.function_node->arguments->children)
             {
-                // 2.1) function arguments;
                 step.required_output.push_back(a->getColumnName());
             }
-            // 2.2) function result;
-            step.required_output.push_back(f.column_name);
         }
 
-        // 2.3) PARTITION BY and ORDER BY columns.
+        // (2a) Required PARTITION BY and ORDER BY columns.
         for (const auto & c : w.full_sort_description)
         {
             step.required_output.push_back(c.column_name);
@@ -1048,6 +1119,15 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     for (const auto & child : select_query->select()->children)
     {
+        if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
+            function
+            && function->is_window_function)
+        {
+            // Skip window function columns here -- they are calculated after
+            // other SELECT expressions by a special step.
+            continue;
+        }
+
         step.required_output.push_back(child->getColumnName());
     }
 }
@@ -1265,7 +1345,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         bool first_stage_,
         bool second_stage_,
         bool only_types,
-        const FilterInfoPtr & filter_info_,
+        const FilterDAGInfoPtr & filter_info_,
         const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
@@ -1328,7 +1408,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (storage && filter_info_)
         {
             filter_info = filter_info_;
-            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions_dag, filter_info->column_name);
+            filter_info->do_remove_column = true;
         }
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
@@ -1421,11 +1501,56 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
 
-        query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+        // Window functions are processed in a separate expression chain after
+        // the main SELECT, similar to what we do for aggregate functions.
+        if (has_window)
+        {
+            query_analyzer.makeWindowDescriptions(chain.getLastActions());
+
+            query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+
+            // Build a list of output columns of the window step.
+            // 1) We need the columns that are the output of ExpressionActions.
+            for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
+            {
+                query_analyzer.columns_after_window.push_back(x);
+            }
+            // 2) We also have to manually add the output of the window function
+            // to the list of the output columns of the window step, because the
+            // window functions are not in the ExpressionActions.
+            for (const auto & [_, w] : query_analyzer.window_descriptions)
+            {
+                for (const auto & f : w.window_functions)
+                {
+                    query_analyzer.columns_after_window.push_back(
+                        {f.column_name, f.aggregate_function->getReturnType()});
+                }
+            }
+
+            before_window = chain.getLastActions();
+            finalize_chain(chain);
+
+            auto & step = chain.lastStep(query_analyzer.columns_after_window);
+
+            // The output of this expression chain is the result of
+            // SELECT (before "final projection" i.e. renaming the columns), so
+            // we have to mark the expressions that are required in the output,
+            // again. We did it for the previous expression chain ("select w/o
+            // window functions") earlier, in appendSelect(). But that chain also
+            // produced the expressions required to calculate window functions.
+            // They are not needed in the final SELECT result. Knowing the correct
+            // list of columns is important when we apply SELECT DISTINCT later.
+            const auto * select_query = query_analyzer.getSelectQuery();
+            for (const auto & child : select_query->select()->children)
+            {
+                step.required_output.push_back(child->getColumnName());
+            }
+        }
 
         selected_columns = chain.getLastStep().required_output;
+
         has_order_by = query.orderBy() != nullptr;
-        before_order_and_select = query_analyzer.appendOrderBy(
+        before_order_by = query_analyzer.appendOrderBy(
                 chain,
                 only_types || (need_aggregate ? !second_stage : !first_stage),
                 optimize_read_in_order,
@@ -1450,10 +1575,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
 void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
 {
+    size_t next_step_i = 0;
+
     if (hasPrewhere())
     {
-        const ExpressionActionsChain::Step & step = *chain.steps.at(0);
+        const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
         prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
+        prewhere_info->prewhere_actions->projectInput(false);
 
         NameSet columns_to_remove;
         for (size_t i = 1; i < step.required_output.size(); ++i)
@@ -1462,38 +1590,18 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
                 columns_to_remove.insert(step.required_output[i]);
         }
 
-        if (!columns_to_remove.empty())
-        {
-            auto columns = prewhere_info->prewhere_actions->getResultColumns();
-
-            auto remove_actions = std::make_shared<ActionsDAG>();
-            for (const auto & column : columns)
-            {
-                if (columns_to_remove.count(column.name))
-                {
-                    remove_actions->addInput(column);
-                    remove_actions->removeColumn(column.name);
-                }
-            }
-
-            prewhere_info->remove_columns_actions = std::move(remove_actions);
-        }
-
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
     }
-    else if (hasFilter())
-    {
-        /// Can't have prewhere and filter set simultaneously
-        filter_info->do_remove_column = chain.steps.at(0)->can_remove_required_output.at(0);
-    }
+
     if (hasWhere())
-        remove_where_filter = chain.steps.at(where_step_num)->can_remove_required_output.at(0);
+    {
+        const ExpressionActionsChain::Step & step = *chain.steps.at(where_step_num);
+        remove_where_filter = step.can_remove_required_output.at(0);
+    }
 }
 
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
-    if (hasFilter())
-        filter_info->actions_dag->projectInput();
     if (hasWhere())
         before_where->projectInput();
     if (hasHaving())
@@ -1572,9 +1680,9 @@ std::string ExpressionAnalysisResult::dump() const
         ss << "before_window " << before_window->dumpDAG() << "\n";
     }
 
-    if (before_order_and_select)
+    if (before_order_by)
     {
-        ss << "before_order_and_select " << before_order_and_select->dumpDAG() << "\n";
+        ss << "before_order_by " << before_order_by->dumpDAG() << "\n";
     }
 
     if (before_limit_by)
@@ -1585,6 +1693,20 @@ std::string ExpressionAnalysisResult::dump() const
     if (final_projection)
     {
         ss << "final_projection " << final_projection->dumpDAG() << "\n";
+    }
+
+    if (!selected_columns.empty())
+    {
+        ss << "selected_columns ";
+        for (size_t i = 0; i < selected_columns.size(); i++)
+        {
+            if (i > 0)
+            {
+                ss << ", ";
+            }
+            ss << backQuote(selected_columns[i]);
+        }
+        ss << "\n";
     }
 
     return ss.str();

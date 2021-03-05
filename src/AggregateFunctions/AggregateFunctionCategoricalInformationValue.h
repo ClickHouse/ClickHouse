@@ -33,7 +33,7 @@ public:
         return "categoricalInformationValue";
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         memset(place, 0, sizeOfData());
     }

@@ -37,7 +37,15 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
-service clickhouse-server restart && sleep 5
+
+service clickhouse-server restart
+
+# Wait for server to start accepting connections
+for _ in {1..120}; do
+    clickhouse-client --query "SELECT 1" && break
+    sleep 1
+done
+
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
@@ -51,5 +59,9 @@ fi
 # We can have several additional options so we path them as array because it's
 # more idiologically correct.
 read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
+
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    ADDITIONAL_OPTIONS+=('--replicated-database')
+fi
 
 clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

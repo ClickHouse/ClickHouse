@@ -57,7 +57,7 @@ class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnC
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists{false};
-    bool is_view{false};
+    bool is_ordinary_view{false};
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_populate{false};
@@ -77,6 +77,8 @@ public:
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
+    std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
+
     bool attach_short_syntax{false};
 
     std::optional<String> attach_from_path = std::nullopt;
@@ -93,6 +95,8 @@ public:
     {
         return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
+
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

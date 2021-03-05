@@ -221,7 +221,8 @@ public:
     TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    mutable State state{State::Temporary};
+    void setState(State new_state) const;
+    State getState() const;
 
     /// Returns name of state
     static String stateToString(State state);
@@ -329,7 +330,7 @@ public:
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
+    virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
 
     /// Returns true if this part shall participate in merges according to
     /// settings of given storage policy.
@@ -423,6 +424,8 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    mutable State state{State::Temporary};
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

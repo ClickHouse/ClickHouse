@@ -94,13 +94,12 @@ StorageRabbitMQ::StorageRabbitMQ(
         , login_password(std::make_pair(
                     global_context.getConfigRef().getString("rabbitmq.username"),
                     global_context.getConfigRef().getString("rabbitmq.password")))
+        , vhost(global_context.getConfigRef().getString("rabbitmq.vhost", "/"))
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
 {
-    loop = std::make_unique<uv_loop_t>();
-    uv_loop_init(loop.get());
-    event_handler = std::make_shared<RabbitMQHandler>(loop.get(), log);
+    event_handler = std::make_shared<RabbitMQHandler>(loop.getLoop(), log);
     restoreConnection(false);
 
     StorageInMemoryMetadata storage_metadata;
@@ -112,13 +111,13 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
-    looping_task = global_context.getSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
+    looping_task = global_context.getMessageBrokerSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
+    streaming_task = global_context.getMessageBrokerSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    connection_task = global_context.getSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
+    connection_task = global_context.getMessageBrokerSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
     connection_task->deactivate();
 
     if (queue_base.empty())
@@ -198,6 +197,15 @@ std::shared_ptr<Context> StorageRabbitMQ::addSettings(const Context & context) c
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);
+
+    for (const auto & setting : *rabbitmq_settings)
+    {
+        const auto & setting_name = setting.getName();
+
+        /// check for non-rabbitmq-related settings
+        if (!setting_name.starts_with("rabbitmq_"))
+            modified_context->setSetting(setting_name, setting.getValue());
+    }
 
     return modified_context;
 }
@@ -472,7 +480,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
          * an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
          */
-        while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+        while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
             event_handler->iterateLoop();
 
         /// This will force immediate closure if not yet closed
@@ -483,10 +491,12 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
     }
 
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
-            AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+            AMQP::Address(
+                parsed_address.first, parsed_address.second,
+                AMQP::Login(login_password.first, login_password.second), vhost));
 
     cnt_retries = 0;
-    while (!connection->ready() && !stream_cancelled && ++cnt_retries != RETRIES_MAX)
+    while (!connection->ready() && !stream_cancelled && cnt_retries++ != RETRIES_MAX)
     {
         event_handler->iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
@@ -641,7 +651,7 @@ void StorageRabbitMQ::shutdown()
     connection->close();
 
     size_t cnt_retries = 0;
-    while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
         event_handler->iterateLoop();
 
     /// Should actually force closure, if not yet closed, but it generates distracting error logs
@@ -702,7 +712,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
-        parsed_address, global_context, login_password, routing_keys, exchange_name, exchange_type,
+        parsed_address, global_context, login_password, vhost, routing_keys, exchange_name, exchange_type,
         producer_id.fetch_add(1), persistent, wait_confirm, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }

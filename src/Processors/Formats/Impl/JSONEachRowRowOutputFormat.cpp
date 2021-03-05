@@ -138,6 +138,7 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
         return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
             settings);
     });
+    factory.markOutputFormatSupportsParallelFormatting("JSONEachRow");
 
     factory.registerOutputFormatProcessor("JSONStringsEachRow", [](
         WriteBuffer & buf,
@@ -150,6 +151,7 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
         return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
             settings);
     });
+    factory.markOutputFormatSupportsParallelFormatting("JSONStringEachRow");
 }
 
 }

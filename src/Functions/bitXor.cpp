@@ -20,7 +20,7 @@ struct BitXorImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return bigint_cast<Result>(a) ^ bigint_cast<Result>(b);
+        return static_cast<Result>(a) ^ static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -36,7 +36,7 @@ struct BitXorImpl
 };
 
 struct NameBitXor { static constexpr auto name = "bitXor"; };
-using FunctionBitXor = BinaryArithmeticOverloadResolver<BitXorImpl, NameBitXor, true>;
+using FunctionBitXor = BinaryArithmeticOverloadResolver<BitXorImpl, NameBitXor, true, false>;
 
 }
 

@@ -12,7 +12,7 @@ Similar to `topK` but takes one additional argument of integer type - `weight`. 
 topKWeighted(N)(x, weight)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `N` — The number of elements to return.
 

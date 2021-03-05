@@ -39,14 +39,14 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     const std::string & marks_path_,
     const std::string & marks_file_extension_,
     const CompressionCodecPtr & compression_codec_,
-    size_t max_compress_block_size_,
-    size_t estimated_size_,
-    size_t aio_threshold_) :
+    size_t max_compress_block_size_) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite, estimated_size_, aio_threshold_)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec_), compressed(compressed_buf),
+    plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite)),
+    plain_hashing(*plain_file),
+    compressed_buf(plain_hashing, compression_codec_, max_compress_block_size_),
+    compressed(compressed_buf),
     marks_file(disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite)), marks(*marks_file)
 {
 }
@@ -164,8 +164,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         data_part->volume->getDisk(),
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
-                        default_codec, settings.max_compress_block_size,
-                        0, settings.aio_threshold));
+                        default_codec, settings.max_compress_block_size));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }
@@ -183,27 +182,30 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
-    /** While filling index (index_columns), disable memory tracker.
-     * Because memory is allocated here (maybe in context of INSERT query),
-     *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-     * And otherwise it will look like excessively growing memory consumption in context of query.
-     *  (observed in long INSERT SELECTs)
-     */
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
-    /// Write index. The index contains Primary Key value for each `index_granularity` row.
-    for (const auto & granule : granules_to_write)
     {
-        if (metadata_snapshot->hasPrimaryKey() && granule.mark_on_start)
+        /** While filling index (index_columns), disable memory tracker.
+         * Because memory is allocated here (maybe in context of INSERT query),
+         *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
+         * And otherwise it will look like excessively growing memory consumption in context of query.
+         *  (observed in long INSERT SELECTs)
+         */
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+
+        /// Write index. The index contains Primary Key value for each `index_granularity` row.
+        for (const auto & granule : granules_to_write)
         {
-            for (size_t j = 0; j < primary_columns_num; ++j)
+            if (metadata_snapshot->hasPrimaryKey() && granule.mark_on_start)
             {
-                const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
-                primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                for (size_t j = 0; j < primary_columns_num; ++j)
+                {
+                    const auto & primary_column = primary_index_block.getByPosition(j);
+                    index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
+                    primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                }
             }
         }
     }
+
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
         last_block_index_columns[j] = primary_index_block.getByPosition(j).column;

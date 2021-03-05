@@ -1180,7 +1180,7 @@ try
         file_in.seek(0, SEEK_SET);
 
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
+        BlockOutputStreamPtr output = context.getOutputStream(output_format, file_out, header);
 
         if (processed_rows + source_rows > limit)
             input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);

@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
