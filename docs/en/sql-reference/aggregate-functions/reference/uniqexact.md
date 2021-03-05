@@ -14,7 +14,7 @@ Use the `uniqExact` function if you absolutely need an exact result. Otherwise u
 
 The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 
-**Parameters**
+**Arguments**
 
 The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 

@@ -50,12 +50,12 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_request.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_roundrobin_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c
-#  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c # optionally included below
-  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c
+#  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c        # optionally included below
+#  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c  # optionally included below
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c
-  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c
+#  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c        # optionally included below
 #  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_win32.c
-  ${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c
+#  ${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c               # optionally included below
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sticky_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_subscription.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_timer.c
@@ -82,10 +82,33 @@ set(SRCS
 
 if(${ENABLE_CYRUS_SASL})
     message (STATUS "librdkafka with SASL support")
-    set(SRCS
-        ${SRCS}
-        ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c # needed to support Kerberos, requires cyrus-sasl
-    )
+    set(WITH_SASL_CYRUS 1)
+endif()
+
+if(OPENSSL_FOUND)
+    message (STATUS "librdkafka with SSL support")
+    set(WITH_SSL 1)
+
+    if(${ENABLE_CYRUS_SASL})
+       set(WITH_SASL_SCRAM 1)
+       set(WITH_SASL_OAUTHBEARER 1)
+    endif()
+endif()
+
+if(WITH_SSL)
+  list(APPEND SRCS ${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c)
+endif()
+
+if(WITH_SASL_CYRUS)
+  list(APPEND SRCS ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c) # needed to support Kerberos, requires cyrus-sasl
+endif()
+
+if(WITH_SASL_SCRAM)
+  list(APPEND SRCS ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c)
+endif()
+
+if(WITH_SASL_OAUTHBEARER)
+  list(APPEND SRCS ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c)
 endif()
 
 add_library(rdkafka ${SRCS})
@@ -101,7 +124,6 @@ if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
 endif()
 if(${ENABLE_CYRUS_SASL})
     target_link_libraries(rdkafka PRIVATE ${CYRUS_SASL_LIBRARY})
-    set(WITH_SASL_CYRUS 1)
 endif()
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/auxdir)

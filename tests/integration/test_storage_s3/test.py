@@ -410,6 +410,20 @@ def test_custom_auth_headers(cluster):
     assert result == '1\t2\t3\n'
 
 
+def test_custom_auth_headers_exclusion(cluster):
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = f"SELECT * FROM s3('http://resolver:8080/{cluster.minio_restricted_bucket}/restricteddirectory/{filename}', 'CSV', '{table_format}')"
+
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        result = run_query(instance, get_query)
+        print(result)
+
+    assert ei.value.returncode == 243
+    assert '403 Forbidden' in ei.value.stderr
+
+
 def test_infinite_redirect(cluster):
     bucket = "redirected"
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -429,10 +443,14 @@ def test_infinite_redirect(cluster):
         assert exception_raised
 
 
-def test_storage_s3_get_gzip(cluster):
+@pytest.mark.parametrize("extension,method", [
+    ("bin", "gzip"),
+    ("gz", "auto")
+])
+def test_storage_s3_get_gzip(cluster, extension, method):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
-    filename = "test_get_gzip.bin"
+    filename = f"test_get_gzip.{extension}"
     name = "test_get_gzip"
     data = [
         "Sophia Intrieri,55",
@@ -459,13 +477,15 @@ def test_storage_s3_get_gzip(cluster):
     put_s3_file_content(cluster, bucket, filename, buf.getvalue())
 
     try:
-        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
-            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+        run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
+                                    'http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                                    'CSV',
+                                    '{method}')""")
 
         run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["565"]
 
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")
 
 
 def test_storage_s3_put_uncompressed(cluster):
@@ -501,13 +521,17 @@ def test_storage_s3_put_uncompressed(cluster):
         uncompressed_content = get_s3_file_content(cluster, bucket, filename)
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 753
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")
 
 
-def test_storage_s3_put_gzip(cluster):
+@pytest.mark.parametrize("extension,method", [
+    ("bin", "gzip"),
+    ("gz", "auto")
+])
+def test_storage_s3_put_gzip(cluster, extension, method):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
-    filename = "test_put_gzip.bin"
+    filename = f"test_put_gzip.{extension}"
     name = "test_put_gzip"
     data = [
         "'Joseph Tomlinson',5",
@@ -527,8 +551,10 @@ def test_storage_s3_put_gzip(cluster):
         "'Yolanda Joseph',89"
     ]
     try:
-        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
-            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+        run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
+                                    'http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                                    'CSV',
+                                    '{method}')""")
 
         run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
 
@@ -539,4 +565,4 @@ def test_storage_s3_put_gzip(cluster):
         uncompressed_content = f.read().decode()
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")

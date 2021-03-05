@@ -270,7 +270,7 @@ def ldap_authenticated_users(*users, config_d_dir="/etc/clickhouse-server/users.
             config = create_ldap_users_config_content(*users, config_d_dir=config_d_dir, config_file=config_file)
         return add_config(config, restart=restart)
 
-def invalid_server_config(servers, message=None, tail=13, timeout=60):
+def invalid_server_config(servers, message=None, tail=30, timeout=60):
     """Check that ClickHouse errors when trying to load invalid LDAP servers configuration file.
     """
     node = current().context.node
@@ -299,7 +299,7 @@ def invalid_server_config(servers, message=None, tail=13, timeout=60):
             with By("removing the config file", description=config.path):
                 node.command(f"rm -rf {config.path}", exitcode=0)
 
-def invalid_user_config(servers, config, message=None, tail=13, timeout=60):
+def invalid_user_config(servers, config, message=None, tail=30, timeout=60):
     """Check that ClickHouse errors when trying to load invalid LDAP users configuration file.
     """
     node = current().context.node

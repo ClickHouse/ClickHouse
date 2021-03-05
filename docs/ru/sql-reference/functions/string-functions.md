@@ -95,6 +95,8 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 Повторяет строку определенное количество раз и объединяет повторяемые значения в одну строку.
 
+Синоним: `REPEAT`.
+
 **Синтаксис**
 
 ``` sql
@@ -273,9 +275,13 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 
 Производит кодирование строки s в base64-представление.
 
+Синоним: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
+
+Синоним: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -596,5 +602,47 @@ Hello, &quot;world&quot;!
 &amp;clickhouse
 &apos;foo&apos;
 ```
+
+
+## decodeXMLComponent {#decode-xml-component}
+
+Заменяет символами предопределенные мнемоники XML: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+Также эта функция заменяет числовые ссылки соответствующими символами юникод. Поддерживаются десятичная (например, `&#10003;`) и шестнадцатеричная (`&#x2713;`) формы.
+
+**Синтаксис**
+
+``` sql
+decodeXMLComponent(x)
+```
+
+**Параметры**
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка с произведенными заменами.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT decodeXMLComponent('&apos;foo&apos;');
+SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
+```
+
+Результат:
+
+``` text
+'foo' 
+< Σ >
+```
+
+**Смотрите также**
+
+-   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

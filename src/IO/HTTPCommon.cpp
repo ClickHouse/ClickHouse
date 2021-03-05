@@ -1,5 +1,6 @@
 #include <IO/HTTPCommon.h>
 
+#include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/PoolBase.h>
@@ -23,7 +24,6 @@
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
 
 #include <tuple>
@@ -120,7 +120,7 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if !defined(ARCADIA_BUILD)
+#if !defined(ARCADIA_BUILD) && defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
@@ -266,7 +266,7 @@ namespace
     };
 }
 
-void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
+void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;
