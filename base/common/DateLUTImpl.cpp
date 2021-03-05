@@ -46,17 +46,16 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     if (&inside_main)
         assert(inside_main);
 
-
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
         throw Poco::Exception("Cannot load time zone " + time_zone_);
 
-    const cctz::civil_day epoch{1970, 1, 1};
-    const cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
+    constexpr cctz::civil_day epoch{1970, 1, 1};
+    constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
     time_t start_of_day;
 
-    // Note: it's validated against all timezones in the system.
-    assert((epoch - lut_start) == daynum_offset_epoch);
+    /// Note: it's validated against all timezones in the system.
+    static_assert((epoch - lut_start) == daynum_offset_epoch);
 
     offset_at_start_of_epoch = cctz_time_zone.lookup(cctz_time_zone.lookup(epoch).pre).offset;
     offset_at_start_of_lut = cctz_time_zone.lookup(cctz_time_zone.lookup(lut_start).pre).offset;
