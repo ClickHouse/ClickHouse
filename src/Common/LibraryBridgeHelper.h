@@ -27,7 +27,9 @@ public:
 
     bool initLibrary(const std::string & library_path, const std::string librray_settings);
 
-    bool deleteLibrary();
+    bool removeLibrary();
+
+    bool cloneLibrary(const std::string & other_dictionary_id);
 
     BlockInputStreamPtr loadAll(const std::string attributes_string, const Block & sample_block);
 
@@ -43,6 +45,7 @@ public:
     static constexpr inline auto PING_HANDLER = "/ping";
 
     static constexpr inline auto LIB_NEW_METHOD = "libNew";
+    static constexpr inline auto LIB_CLONE_METHOD = "libClone";
     static constexpr inline auto LIB_DELETE_METHOD = "libDelete";
     static constexpr inline auto LOAD_ALL_METHOD = "loadAll";
     static constexpr inline auto LOAD_IDS_METHOD = "loadIds";

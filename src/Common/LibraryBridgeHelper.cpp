@@ -77,17 +77,33 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
 }
 
 
-bool LibraryBridgeHelper::deleteLibrary()
+bool LibraryBridgeHelper::cloneLibrary(const std::string & other_dictionary_id)
 {
     startLibraryBridgeSync();
 
     auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LIB_DELETE_METHOD);
+    uri.addQueryParameter("method", LIB_CLONE_METHOD);
+    uri.addQueryParameter("other_dictionary_id", other_dictionary_id);
 
     ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
     bool res;
     readBoolText(res, buf);
     return res;
+}
+
+
+bool LibraryBridgeHelper::removeLibrary()
+{
+//    startLibraryBridgeSync();
+//
+//    auto uri = getDictionaryURI();
+//    uri.addQueryParameter("method", LIB_DELETE_METHOD);
+//
+//    ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+//    bool res;
+//    readBoolText(res, buf);
+//    return res;
+    return true;
 }
 
 

@@ -14,13 +14,11 @@ class SharedLibraryHandler
 {
 
 public:
-    SharedLibraryHandler(const std::string & dictionary_id_);
+    SharedLibraryHandler() {}
+
+    SharedLibraryHandler(const SharedLibraryHandler & other);
 
     ~SharedLibraryHandler();
-
-    const std::string & getDictID() { return dictionary_id; }
-
-    //void libDelete();
 
     void libNew(const std::string & path, const std::string & settings);
 
@@ -33,11 +31,9 @@ public:
     bool supportsSelectiveLoad();
 
 private:
+    void libDelete();
+
     Block dataToBlock(const Block & sample_block, const void * data);
-
-    Poco::Logger * log;
-
-    std::string dictionary_id;
 
     std::string library_path;
 
