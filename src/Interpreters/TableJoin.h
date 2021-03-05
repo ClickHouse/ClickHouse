@@ -65,11 +65,12 @@ private:
     const String temporary_files_codec = "LZ4";
 
     Names key_names_left;
-
     Names key_names_right; /// Duplicating names are qualified.
+
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
+
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
