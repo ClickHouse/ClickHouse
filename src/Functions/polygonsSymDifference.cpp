@@ -1,6 +1,21 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-#include <Functions/mercatorConverters.h>
+
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+
+#include <common/logger_useful.h>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeCustomGeo.h>
+
+#include <memory>
+#include <utility>
 
 namespace DB
 {
@@ -11,30 +26,11 @@ namespace ErrorCodes
 }
 
 
-struct SymDifferenceCartesian
-{
-    static inline const char * name = "polygonsSymDifferenceCartesian";
-    using Point = CartesianPoint;
-};
-
-struct SymDifferenceSpherical
-{
-    static inline const char * name = "polygonsSymDifferenceSpherical";
-    using Point = SphericalPoint;
-};
-
-struct SymDifferenceMercator
-{
-    static inline const char * name = "polygonsSymDifferenceMercator";
-    using Point = CartesianPoint;
-};
-
-
-template <typename Holder>
+template <typename Point>
 class FunctionPolygonsSymDifference : public IFunction
 {
 public:
-    static inline const char * name = Holder::name;
+    static const char * name;
 
     explicit FunctionPolygonsSymDifference() = default;
 
@@ -65,8 +61,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        using Point = typename Holder::Point;
-
         MultiPolygonSerializer<Point> serializer;
 
         callOnTwoGeometryDataTypes<Point>(arguments[0].type, arguments[1].type, [&](const auto & left_type, const auto & right_type)
@@ -90,17 +84,8 @@ public:
                     boost::geometry::correct(first[i]);
                     boost::geometry::correct(second[i]);
 
-                    if constexpr (std::is_same_v<Holder, SymDifferenceMercator>)
-                    {
-                        mercatorForward(first[i]);
-                        mercatorForward(second[i]);
-                    }
-
                     MultiPolygon<Point> sym_difference{};
                     boost::geometry::sym_difference(first[i], second[i], sym_difference);
-
-                    if constexpr (std::is_same_v<Holder, SymDifferenceMercator>)
-                        mercatorBackward(sym_difference);
 
                     serializer.add(sym_difference);
                 }
@@ -116,11 +101,16 @@ public:
     }
 };
 
+template <>
+const char * FunctionPolygonsSymDifference<CartesianPoint>::name = "polygonsSymDifferenceCartesian";
+
+template <>
+const char * FunctionPolygonsSymDifference<SphericalPoint>::name = "polygonsSymDifferenceSpherical";
+
 void registerFunctionPolygonsSymDifference(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonsSymDifference<SymDifferenceCartesian>>();
-    factory.registerFunction<FunctionPolygonsSymDifference<SymDifferenceSpherical>>();
-    factory.registerFunction<FunctionPolygonsSymDifference<SymDifferenceMercator>>();
+    factory.registerFunction<FunctionPolygonsSymDifference<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsSymDifference<SphericalPoint>>();
 }
 
 }

@@ -2,6 +2,7 @@
 1
 0
 1
+<<<<<<< HEAD
 0
 1
 -------- MultiPolygon with Polygon
@@ -13,3 +14,5 @@
 -------- Polygon with Polygon with Holes
 0
 0
+=======
+>>>>>>> parent of d4258922d1... more mercator
