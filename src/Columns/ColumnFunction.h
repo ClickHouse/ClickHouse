@@ -128,6 +128,11 @@ public:
         throw Exception("compareColumn is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    bool hasEqualValues() const override
+    {
+        throw Exception("hasEqualValues is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void getPermutation(bool, size_t, int, Permutation &) const override
     {
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

@@ -132,6 +132,11 @@ public:
                                                compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return hasEqualValuesImpl<ColumnFixedString>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
