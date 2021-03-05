@@ -1,6 +1,11 @@
 #pragma once
 
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
+
+#include <boost/geometry/geometries/geometries.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -9,9 +14,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustomGeo.h>
-#include <Functions/geometryTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
+
+#include <cmath>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -21,6 +28,26 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+template <typename Point>
+using Ring = boost::geometry::model::ring<Point>;
+
+template <typename Point>
+using Polygon = boost::geometry::model::polygon<Point>;
+
+template <typename Point>
+using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>>;
+
+using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
+using CartesianRing = Ring<CartesianPoint>;
+using CartesianPolygon = Polygon<CartesianPoint>;
+using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
+
+/// Latitude, longitude
+using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
+using SphericalRing = Ring<SphericalPoint>;
+using SphericalPolygon = Polygon<SphericalPoint>;
+using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
 
 /**
  * Class which takes converts Column with type Tuple(Float64, Float64) to a vector of boost point type.
