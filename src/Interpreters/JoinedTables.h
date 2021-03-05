@@ -34,9 +34,10 @@ public:
 
     /// Make fake tables_with_columns[0] in case we have predefined input in InterpreterSelectQuery
     void makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header);
-    std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query) const;
+    std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
     const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
+    TablesWithColumns moveTablesWithColumns() { return std::move(tables_with_columns); }
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;

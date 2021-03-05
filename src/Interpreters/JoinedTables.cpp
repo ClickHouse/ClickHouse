@@ -249,16 +249,16 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
     }
 }
 
-std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & select_query) const
+std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & select_query)
 {
     if (tables_with_columns.size() < 2)
-        return std::make_shared<TableJoin>();
+        return {};
 
     auto settings = context.getSettingsRef();
+    auto table_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
+
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
-
-    auto table_join = std::make_shared<TableJoin>(ast_join->table_join->as<ASTTableJoin &>(), settings, context.getTemporaryVolume());
 
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)

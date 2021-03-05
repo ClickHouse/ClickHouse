@@ -4,17 +4,14 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataStreams/materializeBlock.h>
 
 namespace DB
 {
 
 struct ColumnWithTypeAndName;
 class TableJoin;
-struct JoinInfo;
 class IColumn;
 using ColumnRawPtrs = std::vector<const IColumn *>;
-using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
 
 namespace JoinCommon
 {
@@ -37,23 +34,11 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);
 
 void createMissedColumns(Block & block);
-void joinTotals(const Block & totals, const Block & columns_to_add, const JoinInfo & table_join, Block & block);
+void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block);
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
-
-
-/// Calculate converting actions, rename key columns in required
-/// For `USING` join we will convert key columns inplace and affect into types in the result table
-/// For `JOIN ON` we will create new columns with converted keys to join by.
-ActionsDAGPtr applyKeyConvertToTable(
-    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, bool replace_columns, Names & names_to_rename);
-
-void splitAdditionalColumns(const Names & key_names_right, const Block & sample_block, Block & block_keys, Block & block_others);
-
-Block getRequiredRightKeys(const Names & left_keys, const Names & right_keys,
-                           const NameSet & required_keys, const Block & right_table_keys, std::vector<String> & keys_sources);
 
 }
 
@@ -61,7 +46,7 @@ Block getRequiredRightKeys(const Names & left_keys, const Names & right_keys,
 class NotJoined
 {
 public:
-    NotJoined(const JoinInfo & join_info, const Block & saved_block_sample_, const Block & right_sample_block,
+    NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
               const Block & result_sample_block_);
 
     void correctLowcardAndNullability(MutableColumns & columns_right);

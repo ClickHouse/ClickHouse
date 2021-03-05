@@ -9,6 +9,8 @@
 #include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataStreams/materializeBlock.h>
+
 
 namespace DB
 {
@@ -18,11 +20,31 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-TableJoin::TableJoin(const ASTTableJoin & table_join_ast, const Settings & settings, VolumePtr tmp_volume_)
-    : join_info(table_join_ast, settings)
+TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , default_max_bytes(settings.default_max_bytes_in_join)
+    , join_use_nulls(settings.join_use_nulls)
+    , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , join_algorithm(settings.join_algorithm)
+    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
+    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
+}
+
+void TableJoin::resetCollected()
+{
+    key_names_left.clear();
+    key_names_right.clear();
+    key_asts_left.clear();
+    key_asts_right.clear();
+    columns_from_joined_table.clear();
+    columns_added_by_join.clear();
+    original_names.clear();
+    renames.clear();
 }
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
@@ -50,7 +72,7 @@ void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 /// @return how many times right key appears in ON section.
 size_t TableJoin::rightKeyInclusion(const String & name) const
 {
-    if (!hasOn())
+    if (hasUsing())
         return 0;
 
     size_t count = 0;
@@ -145,18 +167,66 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
     return getNamesWithAliases(required_columns);
 }
 
+void TableJoin::splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const
+{
+    block_others = materializeBlock(sample_block);
+
+    for (const String & column_name : key_names_right)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
+}
+
+Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const
+{
+    const Names & left_keys = keyNamesLeft();
+    const Names & right_keys = keyNamesRight();
+    NameSet required_keys(requiredRightKeys().begin(), requiredRightKeys().end());
+    Block required_right_keys;
+
+    for (size_t i = 0; i < right_keys.size(); ++i)
+    {
+        const String & right_key_name = right_keys[i];
+
+        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        {
+            const auto & right_key = right_table_keys.getByName(right_key_name);
+            required_right_keys.insert(right_key);
+            keys_sources.push_back(left_keys[i]);
+        }
+    }
+
+    return required_right_keys;
+}
+
+
+bool TableJoin::leftBecomeNullable(const DataTypePtr & column_type) const
+{
+    return forceNullableLeft() && column_type->canBeInsideNullable();
+}
+
+bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
+{
+    return forceNullableRight() && column_type->canBeInsideNullable();
+}
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
     DataTypePtr type = joined_column.type;
 
-    if (!hasOn())
+    if (hasUsing())
     {
         if (auto it = right_type_map.find(joined_column.name); it != right_type_map.end())
             type = it->second;
     }
 
-    if (join_info.forceNullableRight() && type->canBeInsideNullable())
+    if (rightBecomeNullable(type))
         type = makeNullable(joined_column.type);
 
     columns_added_by_join.emplace_back(joined_column.name, type);
@@ -179,12 +249,12 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
 {
     for (auto & col : columns)
     {
-        if (!hasOn())
+        if (hasUsing())
         {
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
                 col.type = it->second;
         }
-        if (correct_nullability && join_info.forceNullableLeft() && col.type->canBeInsideNullable())
+        if (correct_nullability && leftBecomeNullable(col.type))
         {
             /// No need to nullify constants
             bool is_column_const = col.column && isColumnConst(*col.column);
@@ -198,26 +268,53 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
         columns.emplace_back(nullptr, col.type, col.name);
 }
 
+bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
+{
+    if (strictness_ == strictness() && kind_ == kind())
+        return true;
+
+    /// Compatibility: old ANY INNER == new SEMI LEFT
+    if (strictness_ == ASTTableJoin::Strictness::Semi && isLeft(kind_) &&
+        strictness() == ASTTableJoin::Strictness::RightAny && isInner(kind()))
+        return true;
+    if (strictness() == ASTTableJoin::Strictness::Semi && isLeft(kind()) &&
+        strictness_ == ASTTableJoin::Strictness::RightAny && isInner(kind_))
+        return true;
+
+    return false;
+}
+
+bool TableJoin::allowMergeJoin() const
+{
+    bool is_any = (strictness() == ASTTableJoin::Strictness::Any);
+    bool is_all = (strictness() == ASTTableJoin::Strictness::All);
+    bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
+
+    bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
+    bool special_left = isLeft(kind()) && (is_any || is_semi);
+    return all_join || special_left;
+}
 
 bool TableJoin::needStreamWithNonJoinedRows() const
 {
-    if (join_info.strictness == ASTTableJoin::Strictness::Asof ||
-        join_info.strictness == ASTTableJoin::Strictness::Semi)
+    if (strictness() == ASTTableJoin::Strictness::Asof ||
+        strictness() == ASTTableJoin::Strictness::Semi)
         return false;
-    return isRightOrFull(join_info.kind);
+    return isRightOrFull(kind());
 }
 
 bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & src_names, NamesAndTypesList & dst_columns) const
 {
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
-    if (!isLeft(join_info.kind) && !(isInner(join_info.kind) && join_info.strictness == ASTTableJoin::Strictness::All))
+    if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
         return false;
 
-    if (key_names_right.size() != 1)
+    const Names & right_keys = keyNamesRight();
+    if (right_keys.size() != 1)
         return false;
 
     /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
-    auto it_key = original_names.find(key_names_right[0]);
+    auto it_key = original_names.find(right_keys[0]);
     if (it_key == original_names.end())
         return false;
 
@@ -226,7 +323,7 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
 
     for (const auto & col : sample_block)
     {
-        if (col.name == key_names_right[0])
+        if (col.name == right_keys[0])
             continue; /// do not extract key column
 
         auto it = original_names.find(col.name);
@@ -241,13 +338,10 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     return true;
 }
 
-bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns,
-                                    const ColumnsWithTypeAndName & right_sample_columns,
-                                    ActionsDAGPtr & left_converting_actions,
-                                    ActionsDAGPtr & right_converting_actions)
+bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
-    bool need_convert = !left_type_map.empty();
-    if (hasOn() && !need_convert)
+    bool need_convert = needConvert();
+    if (!need_convert && !hasUsing())
     {
         /// For `USING` we already inferred common type an syntax analyzer stage
         NamesAndTypesList left_list;
@@ -262,8 +356,8 @@ bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_c
 
     if (need_convert)
     {
-        left_converting_actions = JoinCommon::applyKeyConvertToTable(left_sample_columns, left_type_map, hasOn(), key_names_left);
-        right_converting_actions = JoinCommon::applyKeyConvertToTable(right_sample_columns, right_type_map, hasOn(), key_names_right);
+        left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
+        right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
     }
 
     return need_convert;
@@ -321,38 +415,31 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
     return !left_type_map.empty();
 }
 
-JoinInfo TableJoin::getJoinInfo() const
+ActionsDAGPtr TableJoin::applyKeyConvertToTable(
+    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const
 {
-    JoinInfo res = join_info;
-    res.key_names_right = key_names_right;
-    res.key_names_left = key_names_left;
-    res.required_right_keys = requiredRightKeys();
-    return res;
-}
+    ColumnsWithTypeAndName cols_dst = cols_src;
+    for (auto & col : cols_dst)
+    {
+        if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+        {
+            col.type = it->second;
+            col.column = nullptr;
+        }
+    }
 
+    NameToNameMap key_column_rename;
+    /// Returns converting actions for tables that need to be performed before join
+    auto dag = ActionsDAG::makeConvertingActions(
+        cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !hasUsing(), &key_column_rename);
 
-
-JoinInfo::JoinInfo(const ASTTableJoin & table_join_ast, const Settings & settings)
-    : join_use_nulls(settings.join_use_nulls)
-    , join_algorithm(settings.join_algorithm)
-    , max_joined_block_rows(settings.max_joined_block_size_rows)
-    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
-    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
-    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
-    , size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
-
-{
-    kind = table_join_ast.kind;
-    strictness = table_join_ast.strictness;
-    if (table_join_ast.using_expression_list)
-        match_expression = JoinInfo::MatchExpressionType::JoinUsing;
-    if (table_join_ast.on_expression)
-        match_expression = JoinInfo::MatchExpressionType::JoinOn;
-
-
-    if (!size_limits.hasLimits())
-        size_limits.max_bytes = settings.default_max_bytes_in_join;
+    for (auto & name : names_to_rename)
+    {
+        const auto it = key_column_rename.find(name);
+        if (it != key_column_rename.end())
+            name = it->second;
+    }
+    return dag;
 }
 
 }
