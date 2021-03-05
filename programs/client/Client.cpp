@@ -1354,19 +1354,45 @@ private:
                 // e.g. we can format query incorrectly, but to a valid SQL that
                 // we can then parse and format into the same SQL.
                 {
-                    const auto * tmp_pos = fuzzed_text.c_str();
-                    auto parsed_formatted_query = parseQuery(tmp_pos,
-                        tmp_pos + fuzzed_text.size(),
-                        false /* allow_multi_statements */);
-                    const auto formatted_twice
-                        = parsed_formatted_query->formatForErrorMessage();
-
-                    if (formatted_twice != fuzzed_text)
+                    ASTPtr parsed_formatted_query;
+                    try
                     {
-                        fmt::print(stderr, "The query formatting is broken. Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
-                            formatted_twice, fuzzed_text);
+                        const auto * tmp_pos = fuzzed_text.c_str();
+                        parsed_formatted_query = parseQuery(tmp_pos,
+                            tmp_pos + fuzzed_text.size(),
+                            false /* allow_multi_statements */);
+                    }
+                    catch (Exception & e)
+                    {
+                        // Some complicated cases where we can generate the SQL
+                        // which we can't parse:
+                        // * first argument of lambda() replaced by fuzzer with
+                        //   something else, leading to constructs such as
+                        //   arrayMap((min(x) + 3) -> x + 1, ....)
+                        // * internals of Enum replaced, leading to:
+                        //   Enum(equals(someFunction(y), 3)).
+                        // We could filter them on case-by-case basis, but they
+                        // are probably also helpful in that they test the parsing
+                        // errors, so let's just ignore them in this check and
+                        // send them to the server normally.
+                        if (e.code() != ErrorCodes::SYNTAX_ERROR)
+                        {
+                            throw;
+                        }
+                    }
 
-                        exit(1);
+                    if (parsed_formatted_query)
+                    {
+                        const auto formatted_twice
+                            = parsed_formatted_query->formatForErrorMessage();
+
+                        if (formatted_twice != fuzzed_text)
+                        {
+                            fmt::print(stderr, "The query formatting is broken. Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
+                                formatted_twice, fuzzed_text);
+
+                            exit(1);
+                        }
                     }
                 }
 
