@@ -113,8 +113,8 @@ private:
     }
 
     /// Remainder of division in the sense of modular arithmetic:
-    /// the difference between x and the maximal divisable number not greater than x.
-    /// Example: -1 % 10 = 9, because -10 is the maximal number not greater than -1 that is divisable by 10.
+    /// the difference between x and the maximal divisible number not greater than x.
+    /// Example: -1 % 10 = 9, because -10 is the maximal number not greater than -1 that is divisible by 10.
     /// Why do we need this:
     /// - because the unix timestamp -1 is 1969-12-31 23:59:59 in UTC.
     template <typename T, typename U>
