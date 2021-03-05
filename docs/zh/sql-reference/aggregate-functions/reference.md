@@ -90,28 +90,6 @@ uniqHLL12(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqExact](#agg_function-uniqexact)
 
-## uniqExact {#agg_function-uniqexact}
-
-计算不同参数值的准确数目。
-
-``` sql
-uniqExact(x[, ...])
-```
-
-如果你绝对需要一个确切的结果，使用 `uniqExact` 功能。 否则使用 [uniq](#agg_function-uniq) 功能。
-
-`uniqExact` 比 `uniq` 使用更多的内存，因为状态的大小随着不同值的数量的增加而无界增长。
-
-**参数**
-
-该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
-
-**另请参阅**
-
--   [uniq](#agg_function-uniq)
--   [uniqCombined](#agg_function-uniqcombined)
--   [uniqHLL12](#agg_function-uniqhll12)
-
 
 ## quantileExact {#quantileexact}
 

@@ -4,21 +4,22 @@ toc_priority: 191
 
 # uniqExact {#agg_function-uniqexact}
 
-Calculates the exact number of different argument values.
+计算不同参数值的准确数目。
+
+**语法**
 
 ``` sql
 uniqExact(x[, ...])
 ```
+如果你绝对需要一个确切的结果，使用 `uniqExact` 函数。 否则使用 [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) 函数。
 
-Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function.
+`uniqExact` 函数比 `uniq` 使用更多的内存，因为状态的大小随着不同值的数量的增加而无界增长。
 
-The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
+**参数**
 
-**Parameters**
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
-
-**See Also**
+**参见**
 
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
