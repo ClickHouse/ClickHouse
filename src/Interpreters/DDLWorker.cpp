@@ -354,6 +354,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             {
                 /// We didn't even executed a query, so let's just remove it.
                 /// We will try to read the task again and execute it from the beginning.
+                /// NOTE: We can safely compare entry names as Strings, because they are padded.
+                /// Entry name always starts with "query-" and contain exactly 10 decimal digits
+                /// of log entry number (with leading zeros).
                 if (!first_failed_task_name || task->entry_name < *first_failed_task_name)
                     first_failed_task_name = task->entry_name;
                 task_it = current_tasks.erase(task_it);
