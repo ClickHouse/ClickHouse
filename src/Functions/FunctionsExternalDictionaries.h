@@ -389,6 +389,13 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
+            if (!WhichDataType(key_col_with_type.type).isUInt64())
+                 throw Exception(
+                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Third argument of function ({}) must be uint64 when dictionary is simple. Actual type ({}).",
+                     getName(),
+                     key_col_with_type.type->getName());
+
             if (attribute_names.size() > 1)
             {
                 const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
@@ -413,11 +420,11 @@ public:
         else if (dictionary_key_type == DictionaryKeyType::complex)
         {
             if (!isTuple(key_col_with_type.type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function ({}) must be tuple when dictionary is complex. Actual type ({}).",
-                    getName(),
-                    key_col_with_type.type->getName());
+                 throw Exception(
+                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Third argument of function ({}) must be tuple when dictionary is complex. Actual type ({}).",
+                     getName(),
+                     key_col_with_type.type->getName());
 
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
             ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
@@ -448,6 +455,13 @@ public:
         }
         else if (dictionary_key_type == DictionaryKeyType::range)
         {
+            if (!WhichDataType(key_col_with_type.type).isUInt64())
+                 throw Exception(
+                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Third argument of function ({}) must be uint64 when dictionary is range. Actual type ({}).",
+                     getName(),
+                     key_col_with_type.type->getName());
+
             if (attribute_names.size() > 1)
             {
                 const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);

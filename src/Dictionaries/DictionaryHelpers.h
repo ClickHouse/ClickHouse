@@ -177,11 +177,7 @@ static inline void insertDefaultValuesIntoColumns(
         const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(column_index);
 
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-        {
-            std::cerr << "insertDefaultValuesIntoColumns" << default_value_provider.getDefaultValue(row_index).dump() << std::endl;
-
             column->insert(default_value_provider.getDefaultValue(row_index));
-        }
     }
 }
 
