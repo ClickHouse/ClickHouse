@@ -94,6 +94,8 @@ public:
     std::shared_ptr<const AccessRights> getAccessRights() const;
     std::shared_ptr<const AccessRights> getAccessRightsWithImplicit() const;
 
+    Strings getCurrentProfileNames() const;
+
     /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;

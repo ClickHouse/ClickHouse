@@ -140,14 +140,17 @@ public:
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
-    std::shared_ptr<const EnabledSettings> getEnabledSettings(const UUID & user_id,
-                                                              const SettingsProfileElements & settings_from_user,
-                                                              const boost::container::flat_set<UUID> & enabled_roles,
-                                                              const SettingsProfileElements & settings_from_enabled_roles) const;
+    std::shared_ptr<const EnabledSettings> getEnabledSettings(
+        const UUID & user_id,
+        const SettingsProfileElements & settings_from_user,
+        const boost::container::flat_set<UUID> & enabled_roles,
+        const SettingsProfileElements & settings_from_enabled_roles) const;
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
+
+    String getProfileName(const UUID & profile_id) const;
 
 private:
     class ContextAccessCache;

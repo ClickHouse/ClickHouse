@@ -499,4 +499,9 @@ const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators()
     return *external_authenticators;
 }
 
+String AccessControlManager::getProfileName(const UUID & profile_id) const
+{
+    return settings_profiles_cache->getProfileName(profile_id);
+}
+
 }
