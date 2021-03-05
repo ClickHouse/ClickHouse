@@ -79,12 +79,22 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, library_settings);
 
             library_handler->libNew(library_path, library_settings);
-            writeStringBinary("Ok.", out);
+            writeStringBinary("1", out);
         }
         else if (method == "libDelete")
         {
             //library_handler->libDelete();
-            writeStringBinary("Ok.", out);
+            writeStringBinary("1", out);
+        }
+        else if (method == "isModified")
+        {
+            auto res = library_handler->isModified();
+            writeStringBinary(std::to_string(res), out);
+        }
+        else if (method == "supportsSelectiveLoad")
+        {
+            auto res = library_handler->supportsSelectiveLoad();
+            writeStringBinary(std::to_string(res), out);
         }
         else if (method == "loadAll")
         {
@@ -110,6 +120,42 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             auto input = library_handler->loadAll(attributes, *sample_block);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
+
+            copyData(*input, *output);
+        }
+        else if (method == "loadIds")
+        {
+            if (!params.has("attributes"))
+            {
+                processError(response, "No 'attributes' in request URL");
+                return;
+            }
+
+            if (!params.has("ids"))
+            {
+                processError(response, "No 'ids' in request URL");
+                return;
+            }
+
+            std::string attributes = params.get("attributes");
+            std::string ids = params.get("ids");
+
+            std::string columns = params.get("columns");
+            std::shared_ptr<Block> sample_block;
+
+            try
+            {
+                sample_block = parseColumns(std::move(columns));
+            }
+            catch (const Exception & ex)
+            {
+                processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
+                LOG_WARNING(log, ex.getStackTraceString());
+                return;
+            }
+
+            auto input = library_handler->loadIds(attributes, ids, *sample_block);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
 
             copyData(*input, *output);
