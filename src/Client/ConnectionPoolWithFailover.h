@@ -80,6 +80,15 @@ public:
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings * settings);
+
+    size_t getMaxErrorCup() const { return Base::max_error_cap; }
+
+    void updateSharedError(std::vector<ShuffledPool> & shuffled_pools)
+    {
+        Base::updateSharedErrorCounts(shuffled_pools);
+    }
+
 private:
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
@@ -96,6 +105,8 @@ private:
             std::string & fail_message,
             const Settings * settings,
             const QualifiedTableName * table_to_check = nullptr);
+
+    GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
 private:
     std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.

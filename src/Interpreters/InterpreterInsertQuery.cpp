@@ -208,7 +208,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         auto storage_dst = std::dynamic_pointer_cast<StorageDistributed>(table);
 
-        if (storage_src && storage_dst && storage_src->cluster_name == storage_dst->cluster_name)
+        if (storage_src && storage_dst && storage_src->getClusterName() == storage_dst->getClusterName())
         {
             is_distributed_insert_select = true;
 

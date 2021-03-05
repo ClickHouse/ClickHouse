@@ -208,6 +208,7 @@ public:
     const Node & addColumn(ColumnWithTypeAndName column /*, bool materialize = false*/);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
+
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
@@ -227,9 +228,10 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
-    void projectInput() { project_input = true; }
+    void projectInput(bool project = true) { project_input = project; }
     bool projectedInput() const { return project_input; }
     bool projectedOutput() const { return projected_output; }
+
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;

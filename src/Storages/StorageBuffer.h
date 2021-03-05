@@ -99,7 +99,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
