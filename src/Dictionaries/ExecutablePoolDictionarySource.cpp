@@ -285,7 +285,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (check_config)
-            throw Exception("Dictionaries with executable pool dictionary source is not allowed created from DDL are not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
+            throw Exception("Dictionaries with executable pool dictionary source are not allowed to be created from DDL query", ErrorCodes::DICTIONARY_ACCESS_DENIED);
 
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
