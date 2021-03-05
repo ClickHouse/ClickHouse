@@ -1100,14 +1100,14 @@ public:
             return executeBitmapData<UInt32>(arguments, input_rows_count);
         else if (which.isUInt64())
             return executeBitmapData<UInt64>(arguments, input_rows_count);
-        else if (which.isUInt8())
-            return executeBitmapData<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
-            return executeBitmapData<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
-            return executeBitmapData<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
-            return executeBitmapData<UInt64>(arguments, input_rows_count);
+        else if (which.isInt8())
+            return executeBitmapData<Int8>(arguments, input_rows_count);
+        else if (which.isInt16())
+            return executeBitmapData<Int16>(arguments, input_rows_count);
+        else if (which.isInt32())
+            return executeBitmapData<Int32>(arguments, input_rows_count);
+        else if (which.isInt64())
+            return executeBitmapData<Int64>(arguments, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
