@@ -3,6 +3,7 @@ import errno
 import http.client
 import logging
 import os
+import stat
 import os.path as p
 import pprint
 import pwd
@@ -110,7 +111,6 @@ def check_kafka_is_available(kafka_id, kafka_port):
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
-
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -242,11 +242,16 @@ class ClickHouseCluster:
 
         # available when with_mysql == True
         self.mysql_host = "mysql57"
-        self.mysql_port = get_open_port()
+        self.mysql_port = 3306
+        self.mysql_ip = None
+        self.mysql_dir = p.abspath(p.join(self.instances_dir, "mysql"))
+        self.mysql_logs_dir = os.path.join(self.mysql_dir, "logs")
 
         # available when with_mysql8 == True
         self.mysql8_host = "mysql80"
         self.mysql8_port = get_open_port()
+        self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
+        self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
         self.zookeeper_use_tmpfs = True
 
@@ -263,8 +268,10 @@ class ClickHouseCluster:
     def setup_mysql_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql = True
         env_variables['MYSQL_HOST'] = self.mysql_host
-        env_variables['MYSQL_EXTERNAL_PORT'] = str(self.mysql_port)
-        env_variables['MYSQL_INTERNAL_PORT'] = "3306"
+        env_variables['MYSQL_PORT'] = str(self.mysql_port)
+        env_variables['MYSQL_ROOT_HOST'] = '%'
+        env_variables['MYSQL_LOGS'] = self.mysql_logs_dir
+        env_variables['MYSQL_LOGS_FS'] = "bind"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
         self.base_mysql_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
@@ -276,6 +283,8 @@ class ClickHouseCluster:
         env_variables['MYSQL8_HOST'] = self.mysql8_host
         env_variables['MYSQL8_EXTERNAL_PORT'] = str(self.mysql8_port)
         env_variables['MYSQL8_INTERNAL_PORT'] = "3306"
+        env_variables['MYSQL8_LOGS'] = self.mysql8_logs_dir
+        env_variables['MYSQL8_LOGS_FS'] = "bind"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')])
         self.base_mysql8_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')]
@@ -627,12 +636,13 @@ class ClickHouseCluster:
                                    ["bash", "-c", "echo {} | base64 --decode > {}".format(encodedStr, dest_path)],
                                    user='root')
 
-    def wait_mysql_to_start(self, timeout=60):
+    def wait_mysql_to_start(self, timeout=30):
+        self.mysql_ip = self.get_instance_ip('mysql57')
         start = time.time()
         errors = []
         while time.time() - start < timeout:
             try:
-                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=self.mysql_port)
+                conn = pymysql.connect(user='root', password='clickhouse', host=self.mysql_ip, port=self.mysql_port)
                 conn.close()
                 logging.debug("Mysql Started")
                 return
@@ -812,6 +822,7 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
+
         # Just in case kill unstopped containers from previous launch
         try:
             logging.debug("Trying to kill unstopped containers...")
@@ -822,6 +833,15 @@ class ClickHouseCluster:
         except:
             pass
 
+        # # Just in case remove unused networks
+        # try:
+        #     logging.debug("Trying to prune unused networks...")
+
+        #     subprocess_call(['docker', 'network', 'prune', '-f'])
+        #     logging.debug("Networks pruned")
+        # except:
+        #     pass
+
         try:
             if destroy_dirs and p.exists(self.instances_dir):
                 logging.debug(("Removing instances dir %s", self.instances_dir))
@@ -831,7 +851,7 @@ class ClickHouseCluster:
                 logging.debug(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
 
-            self.docker_client = docker.from_env(version=self.docker_api_version)
+            self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=180)
 
             common_opts = ['up', '-d', '--force-recreate']
 
@@ -856,11 +876,14 @@ class ClickHouseCluster:
 
             if self.with_mysql and self.base_mysql_cmd:
                 logging.debug('Setup MySQL')
+                os.makedirs(self.mysql_logs_dir)
+                os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
-                self.wait_mysql_to_start(120)
+                self.wait_mysql_to_start(60)
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug('Setup MySQL 8')
+                os.makedirs(self.mysql8_logs_dir)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start(120)
 
@@ -935,7 +958,7 @@ class ClickHouseCluster:
             subprocess_check_call(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            start_deadline = time.time() + 20.0  # seconds
+            start_deadline = time.time() + 30.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -970,13 +993,19 @@ class ClickHouseCluster:
                         break
 
             for instance in list(self.instances.values()):
-                if instance.contains_in_log(SANITIZER_SIGN):
-                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN)
-                    logging.ERROR(f"Sanitizer in instance {instance.name} fatal log {fatal_log}")
+                try:
+                    if not instance.is_up:
+                        continue
+                    if instance.contains_in_log(SANITIZER_SIGN):
+                        sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN)
+                        logging.ERROR(f"Sanitizer in instance {instance.name} log {sanitizer_assert_instance}")
 
-                if instance.contains_in_log("Fatal"):
-                    fatal_log = instance.grep_in_log("Fatal")
-                    logging.ERROR(f"Crash in instance {instance.name} fatal log {fatal_log}")
+                    if instance.contains_in_log("Fatal"):
+                        fatal_log = instance.grep_in_log("Fatal")
+                        name = instance.name
+                        logging.ERROR(f"Crash in instance {name} fatal log {fatal_log}")
+                except Exception as e:
+                    logging.error(f"Failed to check fails in logs: {e}")
 
             if kill:
                 try:
@@ -1177,6 +1206,7 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
         self.env_file = os.path.join(os.path.dirname(self.docker_compose_path), DEFAULT_ENV_NAME)
+        self.is_up = False
 
 
     def is_built_with_thread_sanitizer(self):
@@ -1342,7 +1372,7 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_latest_version(self, stop_start_wait_sec=10, callback_onstop=None, signal=15):
+    def restart_with_latest_version(self, stop_start_wait_sec=15, callback_onstop=None, signal=15):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
@@ -1410,6 +1440,7 @@ class ClickHouseInstance:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(time_left)
                 sock.connect((self.ip_address, 9000))
+                self.is_up = True
                 return
             except socket.timeout:
                 continue
