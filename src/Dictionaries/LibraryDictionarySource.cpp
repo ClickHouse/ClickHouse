@@ -66,6 +66,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
+    bridge_helper->removeLibrary();
 }
 
 
@@ -74,64 +75,13 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , dict_struct{other.dict_struct}
     , config_prefix{other.config_prefix}
     , path{other.path}
-    , dictionary_id{other.dictionary_id}
+    , dictionary_id{createDictID()}
     , sample_block{other.sample_block}
     , context(other.context)
     , description{other.description}
 {
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, dictionary_id);
-}
-
-
-String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
-{
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_root, config_keys);
-    std::string res;
-
-    for (const auto & key : config_keys)
-    {
-        std::string key_name = key;
-        auto bracket_pos = key.find('[');
-
-        if (bracket_pos != std::string::npos && bracket_pos > 0)
-            key_name = key.substr(0, bracket_pos);
-
-        if (!res.empty())
-            res += ' ';
-
-        res += key_name + ' ' + config.getString(config_root + "." + key);
-    }
-
-    return res;
-}
-
-
-String LibraryDictionarySource::getDictAttributesString()
-{
-    std::string res;
-    for (const auto & attr : dict_struct.attributes)
-    {
-        if (!res.empty())
-            res += ',';
-        res += attr.name;
-    }
-
-    return res;
-}
-
-
-String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids)
-{
-    std::string res;
-    for (const auto & id : ids)
-    {
-        if (!res.empty())
-            res += ',';
-        res += std::to_string(id);
-    }
-
-    return res;
+    bridge_helper->cloneLibrary(other.dictionary_id);
 }
 
 
@@ -208,6 +158,58 @@ DictionarySourcePtr LibraryDictionarySource::clone() const
 std::string LibraryDictionarySource::toString() const
 {
     return path;
+}
+
+
+String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
+{
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_root, config_keys);
+    std::string res;
+
+    for (const auto & key : config_keys)
+    {
+        std::string key_name = key;
+        auto bracket_pos = key.find('[');
+
+        if (bracket_pos != std::string::npos && bracket_pos > 0)
+            key_name = key.substr(0, bracket_pos);
+
+        if (!res.empty())
+            res += ' ';
+
+        res += key_name + ' ' + config.getString(config_root + "." + key);
+    }
+
+    return res;
+}
+
+
+String LibraryDictionarySource::getDictAttributesString()
+{
+    std::string res;
+    for (const auto & attr : dict_struct.attributes)
+    {
+        if (!res.empty())
+            res += ' ';
+        res += attr.name;
+    }
+
+    return res;
+}
+
+
+String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids)
+{
+    std::string res;
+    for (const auto & id : ids)
+    {
+        if (!res.empty())
+            res += ' ';
+        res += std::to_string(id);
+    }
+
+    return res;
 }
 
 

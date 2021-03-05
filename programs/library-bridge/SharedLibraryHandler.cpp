@@ -8,10 +8,15 @@
 namespace DB
 {
 
-SharedLibraryHandler::SharedLibraryHandler(const std::string & dictionary_id_)
-  : log(&Poco::Logger::get("SharedLibraryHandler"))
-  , dictionary_id(dictionary_id_)
+SharedLibraryHandler::SharedLibraryHandler(const SharedLibraryHandler & other)
+    : library_path{other.library_path}
+    , library{other.library}
+    , settings_holder{other.settings_holder}
 {
+    if (auto lib_clone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
+        lib_data = lib_clone(other.lib_data);
+    else if (auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings_holder->strings), decltype(&ClickHouseLibrary::log))>("ClickHouseDictionary_v3_libNew"))
+        lib_data = lib_new(&settings_holder->strings, ClickHouseLibrary::log);
 }
 
 
@@ -65,19 +70,11 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
     return true;
 }
 
-//void SharedLibraryHandler::libCloneOrNew()
-//{
-//    if (auto lib_clone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
-//        lib_data = lib_clone(other.lib_data);
-//    else if (auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>("ClickHouseDictionary_v3_libNew"))
-//        lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
-//}
-
 
 BlockInputStreamPtr SharedLibraryHandler::loadAll(const std::string & attributes_string, const Block & sample_block)
 {
     std::vector<std::string> dict_attributes;
-    boost::split(dict_attributes, attributes_string, [](char c) { return c == ','; });
+    boost::split(dict_attributes, attributes_string, [](char c) { return c == ' '; });
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_attributes.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_attributes.size()};
@@ -105,7 +102,7 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll(const std::string & attributes
 BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes_string, const std::string & ids_string, const Block & sample_block)
 {
     std::vector<std::string> dict_string_ids;
-    boost::split(dict_string_ids, ids_string, [](char c) { return c == ','; });
+    boost::split(dict_string_ids, ids_string, [](char c) { return c == ' '; });
     std::vector<UInt64> dict_ids;
     for (const auto & id : dict_string_ids)
         dict_ids.push_back(parseFromString<UInt64>(id));

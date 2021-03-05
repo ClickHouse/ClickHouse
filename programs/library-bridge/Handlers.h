@@ -10,8 +10,7 @@ namespace DB
 {
 
 
-/** Handler for requests to Library Dictionary Source, returns response in RowBinary format
-  */
+/// Handler for requests to Library Dictionary Source, returns response in RowBinary format
 class LibraryRequestHandler : public HTTPRequestHandler
 {
 public:
@@ -42,7 +41,25 @@ private:
 };
 
 
-/// Simple ping handler, answers "Ok." to GET request
+class LibraryErrorResponseHandler : public HTTPRequestHandler
+{
+public:
+    explicit LibraryErrorResponseHandler(std::string message_)
+        : log(&Poco::Logger::get("LibraryErrorResponseHandler"))
+        , message(message_)
+    {
+    }
+
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+
+private:
+    Poco::Logger * log;
+
+    const std::string message;
+};
+
+
+/// Handler to send error responce.
 class PingHandler : public HTTPRequestHandler
 {
 public:

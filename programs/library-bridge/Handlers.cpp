@@ -41,7 +41,6 @@ namespace
 
 void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    LOG_TRACE(log, "Dictionary ID: {}", library_handler->getDictID());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     HTMLForm params(request);
@@ -81,9 +80,9 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             library_handler->libNew(library_path, library_settings);
             writeStringBinary("1", out);
         }
-        else if (method == "libDelete")
+        else if (method == "libClone")
         {
-            //library_handler->libDelete();
+            /// libClone was already called, only need to send the responce.
             writeStringBinary("1", out);
         }
         else if (method == "isModified")
@@ -200,6 +199,17 @@ void LibraryRequestHandler::processError(HTTPServerResponse & response, const st
         *response.send() << message << std::endl;
 
     LOG_WARNING(log, message);
+}
+
+
+void LibraryErrorResponseHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
+{
+    response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+
+    if (!response.sent())
+        *response.send() << message << std::endl;
+
+    LOG_ERROR(log, message);
 }
 
 
