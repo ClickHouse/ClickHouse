@@ -527,11 +527,13 @@ ActionsDAGPtr ActionsDAG::clone() const
     return actions;
 }
 
+#if USE_EMBEDDED_COMPILER
 void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression)
 {
     compileFunctions(min_count_to_compile_expression);
     removeUnusedActions();
 }
+#endif
 
 // void ActionsDAG::transformHeader(Block & block)
 // {
