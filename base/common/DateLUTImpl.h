@@ -406,7 +406,9 @@ public:
             time += lut[index].amount_of_offset_change();
 
         unsigned res = time / 3600;
-        return res <= 23 ? res : 0;
+
+        /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
+        return res <= 23 ? res : 23;
     }
 
     /** Calculating offset from UTC in seconds.
@@ -456,28 +458,35 @@ public:
         if (offset_is_whole_number_of_hours_everytime && t >= 0)
             return (t / 60) % 60;
 
-        /// To consider the DST changing situation within this day.
-        /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account
-        LUTIndex index = findIndex(t);
-        UInt32 res = t - lut[index].date;
-        if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
-            res += lut[index].amount_of_offset_change();
+        /// To consider the DST changing situation within this day
+        /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
 
-        return res / 60 % 60;
+        LUTIndex index = findIndex(t);
+        UInt32 time = t - lut[index].date;
+
+        if (time >= lut[index].time_at_offset_change())
+            time += lut[index].amount_of_offset_change();
+
+        return time / 60 % 60;
     }
 
+    /// NOTE: These functions are wrong for negative time_t.
+    /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
     inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
+
+    /// NOTE: This most likely wrong for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
     inline time_t toStartOfTenMinutes(time_t t) const { return t / 600 * 600; }
 
+    /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
     inline time_t toStartOfHour(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
+        if (offset_is_whole_number_of_hours_everytime && t >= 0)
             return t / 3600 * 3600;
 
-        UInt32 date = find(t).date;
-        return date + (UInt32(t) - date) / 3600 * 3600;
+        Int64 date = find(t).date;
+        return date + (t - date) / 3600 * 3600;
     }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
@@ -757,6 +766,7 @@ public:
     /// We count all hour-length intervals, unrelated to offset changes.
     inline time_t toRelativeHourNum(time_t t) const
     {
+        /// NOTE: This is also wrong for negative time_t.
         if (offset_is_whole_number_of_hours_everytime)
             return t / 3600;
 
@@ -771,6 +781,7 @@ public:
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
+    /// NOTE: This is wrong for negative time_t.
     inline time_t toRelativeMinuteNum(time_t t) const
     {
         return t / 60;
@@ -829,7 +840,10 @@ public:
         if (hours == 1)
             return toStartOfHour(t);
         UInt64 seconds = hours * 3600;
+
+        /// NOTE: This is wrong for negative time_t.
         t = t / seconds * seconds;
+
         if (offset_is_whole_number_of_hours_everytime)
             return t;
         return toStartOfHour(t);
@@ -840,6 +854,8 @@ public:
         if (minutes == 1)
             return toStartOfMinute(t);
         UInt64 seconds = 60 * minutes;
+
+        /// NOTE: This is wrong for negative time_t.
         return t / seconds * seconds;
     }
 
@@ -847,6 +863,8 @@ public:
     {
         if (seconds == 1)
             return t;
+
+        /// NOTE: This is wrong for negative time_t.
         return t / seconds * seconds;
     }
 

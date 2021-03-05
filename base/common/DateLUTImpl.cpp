@@ -69,8 +69,11 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     {
         cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
 
-        /// Ambiguity is possible.
-        start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);
+        /// Ambiguity is possible if time was changed backwards at the midnight
+        /// (or after midnight time has been changed to the previous day, for example two hours backwards at 01:00).
+        /// Then midnight appears twice. Usually time change happens exactly at 00:00.
+        /// Then we should use the second midnight as the start of the day.
+        start_of_day = std::chrono::system_clock::to_time_t(lookup.post);
 
         Values & values = lut[i];
         values.year = date.year();
@@ -105,7 +108,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         /// If UTC offset was changed this day.
         /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
         cctz::time_zone::civil_transition transition{};
-        if (cctz_time_zone.next_transition(lookup.pre, &transition)
+        if (cctz_time_zone.next_transition(lookup.post, &transition)
             && transition.from.year() == date.year()
             && transition.from.month() == date.month()
             && transition.from.day() == date.day()
