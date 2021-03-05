@@ -6552,7 +6552,7 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
 bool StorageReplicatedMergeTree::tryToFetchIfShared(
     const IMergeTreeDataPart & part,
     const DiskPtr & disk,
-    const String & path) const
+    const String & path)
 {
     const auto data_settings = getSettings();
     if (!data_settings->allow_s3_zero_copy_replication)
@@ -6567,10 +6567,7 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
     if (replica.empty())
         return false;
 
-    /// TODO: Fix const usage
-    StorageReplicatedMergeTree * replicated_storage_nc = const_cast<StorageReplicatedMergeTree *>(this);
-
-    return replicated_storage_nc->executeFetchShared(replica, part.name, disk, path);
+    return executeFetchShared(replica, part.name, disk, path);
 }
 
 

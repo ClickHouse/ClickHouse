@@ -1174,10 +1174,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
         disk->removeRecursive(path_to_clone + relative_path + '/');
     }
     disk->createDirectories(path_to_clone);
-
-    bool is_fetched = storage.tryToFetchIfShared(*this, disk, path_to_clone + "/" + name);
-    if (!is_fetched)
-        volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
+    volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
     volume->getDisk()->removeFileIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 

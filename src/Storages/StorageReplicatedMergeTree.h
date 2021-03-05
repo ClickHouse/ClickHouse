@@ -224,7 +224,7 @@ public:
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
 
     /// Fetch part only if some replica has it on shared storage like S3
-    bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) const override;
+    bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on S3
     String getSharedDataReplica(const IMergeTreeDataPart & part) const;
