@@ -5,7 +5,7 @@ toc_title: DETACH
 
 # DETACH Statement {#detach}
 
-Deletes information about the `name` table from the server. The server stops knowing about the table’s existence.
+Deletes information about the table or view from the server. The server stops knowing about their existence.
 
 Syntax:
 
