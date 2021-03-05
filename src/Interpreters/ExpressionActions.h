@@ -140,16 +140,21 @@ struct ExpressionActionsChain
     struct Step
     {
         virtual ~Step() = default;
-        explicit Step(Names required_output_) : required_output(std::move(required_output_)) {}
+        explicit Step(Names required_output_)
+        {
+            for (const auto & name : required_output_)
+                required_output[name] = true;
+        }
 
         /// Columns were added to the block before current step in addition to prev step output.
         NameSet additional_input;
         /// Columns which are required in the result of current step.
-        Names required_output;
-        /// True if column from required_output is needed only for current step and not used in next actions
+        /// Flag is true if column from required_output is needed only for current step and not used in next actions
         /// (and can be removed from block). Example: filter column for where actions.
         /// If not empty, has the same size with required_output; is filled in finalize().
-        std::vector<bool> can_remove_required_output;
+        std::unordered_map<std::string, bool> required_output;
+
+        void addRequiredOutput(const std::string & name) { required_output[name] = true; }
 
         virtual NamesAndTypesList getRequiredColumns() const = 0;
         virtual ColumnsWithTypeAndName getResultColumns() const = 0;

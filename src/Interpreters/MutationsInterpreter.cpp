@@ -694,7 +694,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
-        actions_chain.getLastStep().required_output.assign(stage.output_columns.begin(), stage.output_columns.end());
+        for (const auto & name : stage.output_columns)
+            actions_chain.getLastStep().addRequiredOutput(name);
         actions_chain.getLastActions();
 
         actions_chain.finalize();
