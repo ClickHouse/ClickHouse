@@ -14,6 +14,7 @@ class IColumn;
 class IDataType;
 class WriteBuffer;
 struct FormatSettings;
+class MySQLSession;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
@@ -34,6 +35,7 @@ public:
 private:
     void initialize();
 
+private:
     bool initialized = false;
     uint32_t client_capabilities = 0;
     uint8_t * sequence_id = nullptr;
