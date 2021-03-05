@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
+#include <Interpreters/TableJoin.h>
 #include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -31,7 +32,7 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const;
+    HashJoinPtr getJoinLocked(JoinInfo join_info) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -62,9 +63,8 @@ private:
     ASTTableJoin::Strictness strictness;        /// ANY | ALL
     bool overwrite;
 
-    std::shared_ptr<TableJoin> table_join;
     HashJoinPtr join;
-
+    JoinInfo join_info;
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
     mutable std::shared_mutex rwlock;

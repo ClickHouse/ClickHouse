@@ -95,6 +95,17 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
+bool allowMergeJoin(ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness)
+{
+    bool is_any = (strictness == ASTTableJoin::Strictness::Any);
+    bool is_all = (strictness == ASTTableJoin::Strictness::All);
+    bool is_semi = (strictness == ASTTableJoin::Strictness::Semi);
+
+    bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
+    bool special_left = isLeft(kind) && (is_any || is_semi);
+    return all_join || special_left;
+}
+
 }
 
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
@@ -720,14 +731,14 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
     return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & left_actions, ActionsDAGPtr & right_actions)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns);
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, left_actions, right_actions);
 
-    if (syntax->analyzed_join->needConvert())
+    if (left_actions)
     {
-        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(syntax->analyzed_join->leftConvertingActions()));
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(left_actions));
         chain.addStep();
     }
 
@@ -741,7 +752,7 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 {
     if (auto * table = analyzed_join->joined_storage.get())
         if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoinLocked(analyzed_join);
+            return storage_join->getJoinLocked(analyzed_join->getJoinInfo());
     return {};
 }
 
@@ -752,7 +763,7 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
-static bool allowDictJoin(StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
+static bool allowDictJoin(const StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
 {
     const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
     if (!dict)
@@ -772,33 +783,39 @@ static bool allowDictJoin(StoragePtr joined_storage, const Context & context, St
     return false;
 }
 
-static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, const Context & context)
+/// HashJoin with Dictionary optimisation
+static std::shared_ptr<IJoin> tryMakeDictJoin(const TableJoin & analyzed_join, const Block & sample_block, const Context & context)
 {
-    bool allow_merge_join = analyzed_join->allowMergeJoin();
-
-    /// HashJoin with Dictionary optimisation
     String dict_name;
     String key_name;
-    if (analyzed_join->joined_storage && allowDictJoin(analyzed_join->joined_storage, context, dict_name, key_name))
+    if (analyzed_join.joined_storage && allowDictJoin(analyzed_join.joined_storage, context, dict_name, key_name))
     {
         Names original_names;
         NamesAndTypesList result_columns;
-        if (analyzed_join->allowDictJoin(key_name, sample_block, original_names, result_columns))
+        if (analyzed_join.allowDictJoin(key_name, sample_block, original_names, result_columns))
         {
-            analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(dict_name, original_names, result_columns, context);
-            return std::make_shared<HashJoin>(analyzed_join, sample_block);
+            auto dictionary_reader = std::make_shared<DictionaryReader>(dict_name, original_names, result_columns, context);
+            return std::make_shared<HashJoin>(analyzed_join.getJoinInfo(), sample_block, dictionary_reader);
         }
     }
+    return {};
+}
 
-    if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
-    else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
-        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+static std::shared_ptr<IJoin> makeJoin(const TableJoin & analyzed_join, const Block & sample_block)
+{
+    auto join_info = analyzed_join.getJoinInfo();
+    bool allow_merge_join = allowMergeJoin(join_info.kind, join_info.strictness);
+
+    if (join_info.forceHashJoin() || (join_info.preferMergeJoin() && !allow_merge_join))
+        return std::make_shared<HashJoin>(std::move(join_info), sample_block);
+    else if (join_info.forceMergeJoin() || (join_info.preferMergeJoin() && allow_merge_join))
+        return std::make_shared<MergeJoin>(std::move(join_info), sample_block, analyzed_join.getTemporaryVolume());
+    return std::make_shared<JoinSwitcher>(std::move(join_info), sample_block, analyzed_join.getTemporaryVolume());
 }
 
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
-    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
+    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns,
+    ActionsDAGPtr & left_converting_actions, ActionsDAGPtr & right_converting_actions)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -818,8 +835,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         Names original_right_columns;
         if (!subquery_for_join.source)
         {
-            NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
-                joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
+            NamesWithAliases required_columns_with_aliases
+                = analyzedJoin().getRequiredColumns(joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
             for (auto & pr : required_columns_with_aliases)
                 original_right_columns.push_back(pr.first);
 
@@ -837,11 +854,15 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
 
         const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
-        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
-        if (need_convert)
-            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
 
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
+        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(
+            left_sample_columns, right_sample_columns, left_converting_actions, right_converting_actions);
+        if (need_convert)
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(right_converting_actions));
+
+        subquery_for_join.join = tryMakeDictJoin(*syntax->analyzed_join, subquery_for_join.sample_block, context);
+        if (!subquery_for_join.join)
+            subquery_for_join.join = makeJoin(*syntax->analyzed_join, subquery_for_join.sample_block);
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
@@ -1436,8 +1457,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
             before_join = chain.getLastActions();
-            join = query_analyzer.appendJoin(chain);
-            converting_join_columns = query_analyzer.analyzedJoin().leftConvertingActions();
+            join = query_analyzer.appendJoin(chain, converting_join_left_columns, converting_join_right_columns);
             chain.addStep();
         }
 

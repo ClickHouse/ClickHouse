@@ -53,6 +53,12 @@ struct NotProcessedCrossJoin : public ExtraBlock
     size_t right_block;
 };
 
+struct DictJoinData
+{
+    std::shared_ptr<DictionaryReader> dictionary_reader;
+    bool nullable_right;
+};
+
 }
 
 namespace JoinStuff
@@ -175,34 +181,37 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
-    : table_join(table_join_)
-    , kind(table_join->kind())
-    , strictness(table_join->strictness())
-    , key_names_right(table_join->keyNamesRight())
-    , nullable_right_side(table_join->forceNullableRight())
-    , nullable_left_side(table_join->forceNullableLeft())
+HashJoin::HashJoin(JoinInfo join_info_, const Block & right_sample_block_,
+                   std::shared_ptr<DictionaryReader> dictionary_reader_,
+                   bool any_take_last_row_)
+    : join_info(join_info_)
+    , kind(join_info_.kind)
+    , strictness(join_info_.strictness)
     , any_take_last_row(any_take_last_row_)
-    , asof_inequality(table_join->getAsofInequality())
+    , dictionary_reader(dictionary_reader_)
     , data(std::make_shared<RightTableData>())
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
-    LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
-
-    table_join->splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
-    required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
+    JoinCommon::splitAdditionalColumns(join_info.key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
+    required_right_keys = JoinCommon::getRequiredRightKeys(
+        join_info.key_names_left, join_info.key_names_right, join_info.required_right_keys, right_table_keys, required_right_keys_sources);
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
 
+    LOG_DEBUG(log, "Right sample block: {}, join on keys: {}. Left keys: {}",
+              right_sample_block.dumpStructure(),
+              fmt::join(key_names_right, ", "),
+              fmt::join(key_names_left, ", "));
+
     ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
-    if (nullable_right_side)
+    if (join_info.forceNullableRight())
         JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
 
-    if (table_join->dictionary_reader)
+    if (dictionary_reader)
     {
         data->type = Type::DICT;
         std::get<MapsOne>(data->maps).create(Type::DICT);
@@ -323,17 +332,16 @@ public:
         : key_columns(key_columns_)
     {}
 
-    FindResult findKey(const TableJoin & table_join, size_t row, const Arena &)
+    FindResult findKey(const DictJoinData & join_data, size_t row, const Arena &)
     {
-        const DictionaryReader & reader = *table_join.dictionary_reader;
         if (!read_result)
         {
-            reader.readKeys(*key_columns[0], read_result, found, positions);
+            join_data.dictionary_reader->readKeys(*key_columns[0], read_result, found, positions);
             result.block = &read_result;
 
-            if (table_join.forceNullableRight())
+            if (join_data.nullable_right)
                 for (auto & column : read_result)
-                    if (table_join.rightBecomeNullable(column.type))
+                    if (column.type->canBeInsideNullable())
                         JoinCommon::convertColumnToNullable(column);
         }
 
@@ -423,7 +431,7 @@ bool HashJoin::empty() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    return isInnerOrRight(getKind()) && data->empty && !overDictionary();
+    return isInnerOrRight(join_info.kind) && data->empty && !overDictionary();
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -571,7 +579,7 @@ namespace
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind);
+    bool save_key_columns = !join_info.forceHashJoin() || isRightOrFull(kind);
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -586,7 +594,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     for (auto & column : sample_block_with_columns_to_add)
         saved_block_sample.insert(column);
 
-    if (nullable_right_side)
+    if (join_info.forceNullableRight())
         JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) ? right_table_keys.columns() : 0));
 }
 
@@ -670,7 +678,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         total_bytes = getTotalByteCount();
     }
 
-    return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return join_info.size_limits.check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
@@ -984,7 +992,7 @@ IColumn::Filter switchJoinRightColumns(
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
-IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
+IColumn::Filter dictionaryJoinRightColumns(const DictJoinData & join_data, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
 {
     if constexpr (KIND == ASTTableJoin::Kind::Left &&
         (STRICTNESS == ASTTableJoin::Strictness::Any ||
@@ -992,7 +1000,7 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
         STRICTNESS == ASTTableJoin::Strictness::Anti))
     {
         JoinStuff::JoinUsedFlags flags;
-        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(table_join, added_columns, null_map, flags);
+        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(join_data, added_columns, null_map, flags);
     }
 
     throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);
@@ -1004,7 +1012,7 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
 void HashJoin::joinBlockImpl(
     Block & block,
-    const Names & key_names_left,
+    const Names & key_names,
     const Block & block_with_columns_to_add,
     const Maps & maps_) const
 {
@@ -1023,7 +1031,7 @@ void HashJoin::joinBlockImpl(
     constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-    Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
+    Columns materialized_keys = JoinCommon::materializeColumns(block, key_names);
     ColumnRawPtrs left_key_columns = JoinCommon::getRawPointers(materialized_keys);
 
     /// Keys with NULL value in any column won't join to anything.
@@ -1040,7 +1048,7 @@ void HashJoin::joinBlockImpl(
     {
         materializeBlockInplace(block);
 
-        if (nullable_left_side)
+        if (join_info.forceNullableLeft())
             JoinCommon::convertColumnsToNullable(block);
     }
 
@@ -1055,7 +1063,7 @@ void HashJoin::joinBlockImpl(
     added_columns.need_filter = need_filter || has_required_right_keys;
 
     IColumn::Filter row_filter = overDictionary() ?
-        dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join, added_columns, null_map) :
+        dictionaryJoinRightColumns<KIND, STRICTNESS>({dictionary_reader, join_info.forceNullableRight()}, added_columns, null_map) :
         switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, null_map, used_flags);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
@@ -1080,7 +1088,7 @@ void HashJoin::joinBlockImpl(
                 continue;
 
             const auto & col = block.getByName(left_name);
-            bool is_nullable = nullable_right_side || right_key.type->isNullable();
+            bool is_nullable = join_info.forceNullableRight() || right_key.type->isNullable();
             block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
         }
     }
@@ -1103,7 +1111,7 @@ void HashJoin::joinBlockImpl(
                 continue;
 
             const auto & col = block.getByName(left_name);
-            bool is_nullable = nullable_right_side || right_key.type->isNullable();
+            bool is_nullable = join_info.forceNullableRight() || right_key.type->isNullable();
 
             ColumnPtr thin_column = filterWithBlanks(col.column, filter);
             block.insert(correctNullability({thin_column, col.type, right_key.name}, is_nullable, null_map_filter));
@@ -1129,7 +1137,7 @@ void HashJoin::joinBlockImpl(
 
 void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const
 {
-    size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
+    size_t max_joined_block_rows = join_info.max_joined_block_rows;
     size_t start_left_row = 0;
     size_t start_right_block = 0;
     if (not_processed)
@@ -1263,7 +1271,6 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    const Names & key_names_left = table_join->keyNamesLeft();
     JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
     if (overDictionary())
@@ -1311,7 +1318,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, join_info, block);
 }
 
 
@@ -1359,7 +1366,7 @@ class NonJoinedBlockInputStream : private NotJoined, public IBlockInputStream
 {
 public:
     NonJoinedBlockInputStream(const HashJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
-        : NotJoined(*parent_.table_join,
+        : NotJoined(parent_.join_info,
                     parent_.savedBlockSample(),
                     parent_.right_sample_block,
                     result_sample_block_)
@@ -1492,11 +1499,11 @@ private:
 
 BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
 {
-    if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
-        table_join->strictness() == ASTTableJoin::Strictness::Semi)
+    if (join_info.strictness == ASTTableJoin::Strictness::Asof ||
+        join_info.strictness == ASTTableJoin::Strictness::Semi)
         return {};
 
-    if (isRightOrFull(table_join->kind()))
+    if (isRightOrFull(join_info.kind))
         return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
     return {};
 }

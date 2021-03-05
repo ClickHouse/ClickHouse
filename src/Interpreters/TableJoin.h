@@ -32,6 +32,67 @@ struct Settings;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
+struct JoinInfo
+{
+    JoinInfo() = default;
+
+    JoinInfo(const ASTTableJoin & table_join_ast, const Settings & settings);
+
+    JoinInfo(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+        : kind(kind_), strictness(strictness_), join_use_nulls(use_nulls), join_algorithm(JoinAlgorithm::HASH), size_limits(limits)
+    {
+    }
+
+    /// for StorageJoin
+    JoinInfo(
+        SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, const Names & key_names_right_)
+        : kind(kind_)
+        , strictness(strictness_)
+        , key_names_right(key_names_right_)
+        , join_use_nulls(use_nulls)
+        , join_algorithm(JoinAlgorithm::HASH)
+        , size_limits(limits)
+    {
+    }
+
+    enum class MatchExpressionType
+    {
+        JoinUsing,
+        JoinOn
+    };
+
+    ASTTableJoin::Kind kind;
+    ASTTableJoin::Strictness strictness;
+
+    MatchExpressionType match_expression;
+
+    Names key_names_left;
+    Names key_names_right;
+
+    NameSet required_right_keys;
+
+    const bool join_use_nulls = false;
+    JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
+    ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
+
+    /// Settings
+    const size_t max_joined_block_rows = 0;
+    const bool partial_merge_join_optimizations = false;
+    const size_t partial_merge_join_rows_in_right_blocks = 0;
+    const size_t partial_merge_join_left_table_buffer_bytes = 0;
+    const size_t max_files_to_merge = 0;
+    SizeLimits size_limits;
+
+    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind); }
+    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind); }
+    bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
+    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
+    bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
+
+    bool hasUsing() const { return match_expression == JoinInfo::MatchExpressionType::JoinUsing; }
+    bool hasOn() const { return match_expression == JoinInfo::MatchExpressionType::JoinOn; }
+};
+
 class TableJoin
 {
 
@@ -53,24 +114,13 @@ private:
 
     friend class TreeRewriter;
 
-    const SizeLimits size_limits;
-    const size_t default_max_bytes = 0;
-    const bool join_use_nulls = false;
-    const size_t max_joined_block_rows = 0;
-    JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
-    const bool partial_merge_join_optimizations = false;
-    const size_t partial_merge_join_rows_in_right_blocks = 0;
-    const size_t partial_merge_join_left_table_buffer_bytes = 0;
-    const size_t max_files_to_merge = 0;
-    const String temporary_files_codec = "LZ4";
+    JoinInfo join_info;
 
     Names key_names_left;
-
     Names key_names_right; /// Duplicating names are qualified.
+
     ASTs key_asts_left;
     ASTs key_asts_right;
-    ASTTableJoin table_join;
-    ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -82,70 +132,32 @@ private:
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
 
-    ActionsDAGPtr left_converting_actions;
-    ActionsDAGPtr right_converting_actions;
-
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only renamed columns.
     std::unordered_map<String, String> renames;
 
+    const String temporary_files_codec = "LZ4";
     VolumePtr tmp_volume;
 
     Names requiredJoinedNames() const;
 
-    /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
-
 public:
     TableJoin() = default;
-    TableJoin(const Settings &, VolumePtr tmp_volume);
-
-    /// for StorageJoin
-    TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
-                 const Names & key_names_right_)
-        : size_limits(limits)
-        , default_max_bytes(0)
-        , join_use_nulls(use_nulls)
-        , join_algorithm(JoinAlgorithm::HASH)
-        , key_names_right(key_names_right_)
-    {
-        table_join.kind = kind;
-        table_join.strictness = strictness;
-    }
+    TableJoin(const ASTTableJoin & table_join_ast, const Settings & settings, VolumePtr tmp_volume_);
 
     StoragePtr joined_storage;
     std::shared_ptr<DictionaryReader> dictionary_reader;
 
-    ASTTableJoin::Kind kind() const { return table_join.kind; }
-    ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
-    const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
-    bool allowMergeJoin() const;
+    std::pair<VolumePtr, String> getTemporaryVolume() const { return std::make_pair(tmp_volume, temporary_files_codec) ; }
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
-    bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
-    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
-    bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
-
-    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
-    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
-    size_t defaultMaxBytes() const { return default_max_bytes; }
-    size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
-    size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
-    size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
-    size_t maxFilesToMerge() const { return max_files_to_merge; }
-    const String & temporaryFilesCodec() const { return temporary_files_codec; }
-    bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
     bool needStreamWithNonJoinedRows() const;
 
-    void resetCollected();
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
-    bool hasUsing() const { return table_join.using_expression_list != nullptr; }
-    bool hasOn() const { return table_join.on_expression != nullptr; }
+    bool hasOn() const { return join_info.hasOn(); }
 
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
@@ -154,8 +166,6 @@ public:
     size_t rightKeyInclusion(const String & name) const;
     NameSet requiredRightKeys() const;
 
-    bool leftBecomeNullable(const DataTypePtr & column_type) const;
-    bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
 
     void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
@@ -164,25 +174,19 @@ public:
     /// Calculates common supertypes for corresponding join key columns.
     bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
 
-    /// Calculate converting actions, rename key columns in required
-    /// For `USING` join we will convert key columns inplace and affect into types in the result table
-    /// For `JOIN ON` we will create new columns with converted keys to join by.
-    bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
+    bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns,
+                                        const ColumnsWithTypeAndName & right_sample_columns,
+                                        ActionsDAGPtr & left_converting_actions,
+                                        ActionsDAGPtr & right_converting_actions);
 
-    bool needConvert() const { return !left_type_map.empty(); }
+    JoinInfo getJoinInfo() const;
 
-    /// Key columns should be converted before join.
-    ActionsDAGPtr leftConvertingActions() const { return left_converting_actions; }
-    ActionsDAGPtr rightConvertingActions() const { return right_converting_actions; }
-
-    void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
-    ASOF::Inequality getAsofInequality() { return asof_inequality; }
+    void setAsofInequality(ASOF::Inequality inequality) { join_info.asof_inequality = inequality; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
     const Names & keyNamesLeft() const { return key_names_left; }
-    const Names & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     Names columnsAddedByJoin() const
     {
@@ -191,13 +195,6 @@ public:
             res.push_back(col.name);
         return res;
     }
-
-    /// StorageJoin overrides key names (cause of different names qualification)
-    void setRightKeys(const Names & keys) { key_names_right = keys; }
-
-    /// Split key and other columns by keys name list
-    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
-    Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 };
 
 }

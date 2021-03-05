@@ -13,6 +13,7 @@ namespace DB
 class ASTFunction;
 struct ASTTablesInSelectQueryElement;
 class TableJoin;
+class JoinedTables;
 class Context;
 struct Settings;
 struct SelectQueryOptions;
@@ -112,9 +113,8 @@ public:
         ASTPtr & query,
         TreeRewriterResult && result,
         const SelectQueryOptions & select_options = {},
-        const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
         const Names & required_result_columns = {},
-        std::shared_ptr<TableJoin> table_join = {}) const;
+        const JoinedTables * joined_tables = nullptr) const;
 
 private:
     const Context & context;

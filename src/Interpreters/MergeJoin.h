@@ -8,6 +8,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SortedBlocksWriter.h>
 #include <DataStreams/SizeLimits.h>
+#include <Interpreters/TableJoin.h>
 
 namespace DB
 {
@@ -21,7 +22,9 @@ class RowBitmaps;
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
+    using TemporaryVolumeSettings =  std::pair<VolumePtr, String>;
+
+    MergeJoin(JoinInfo join_info_, const Block & right_sample_block, const TemporaryVolumeSettings & temp_vol_settings_);
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
@@ -66,7 +69,7 @@ private:
     using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
     mutable std::shared_mutex rwlock;
-    std::shared_ptr<TableJoin> table_join;
+    JoinInfo join_info;
     SizeLimits size_limits;
     SortDescription left_sort_description;
     SortDescription right_sort_description;
@@ -95,9 +98,9 @@ private:
     const bool is_right;
     const bool is_full;
     static constexpr const bool skip_not_intersected = true; /// skip index for right blocks
-    const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
-    const size_t max_files_to_merge;
+
+    TemporaryVolumeSettings temp_vol_settings;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

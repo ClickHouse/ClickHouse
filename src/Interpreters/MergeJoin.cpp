@@ -418,24 +418,22 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
-    : table_join(table_join_)
-    , size_limits(table_join->sizeLimits())
+MergeJoin::MergeJoin(JoinInfo join_info_, const Block & right_sample_block_, const TemporaryVolumeSettings & temp_vol_settings_)
+    : join_info(join_info_)
     , right_sample_block(right_sample_block_)
-    , nullable_right_side(table_join->forceNullableRight())
-    , nullable_left_side(table_join->forceNullableLeft())
-    , is_any_join(table_join->strictness() == ASTTableJoin::Strictness::Any)
-    , is_all_join(table_join->strictness() == ASTTableJoin::Strictness::All)
-    , is_semi_join(table_join->strictness() == ASTTableJoin::Strictness::Semi)
-    , is_inner(isInner(table_join->kind()))
-    , is_left(isLeft(table_join->kind()))
-    , is_right(isRight(table_join->kind()))
-    , is_full(isFull(table_join->kind()))
-    , max_joined_block_rows(table_join->maxJoinedBlockRows())
-    , max_rows_in_right_block(table_join->maxRowsInRightBlock())
-    , max_files_to_merge(table_join->maxFilesToMerge())
+    , nullable_right_side(join_info.forceNullableRight())
+    , nullable_left_side(join_info.forceNullableLeft())
+    , is_any_join(join_info.strictness == ASTTableJoin::Strictness::Any)
+    , is_all_join(join_info.strictness == ASTTableJoin::Strictness::All)
+    , is_semi_join(join_info.strictness == ASTTableJoin::Strictness::Semi)
+    , is_inner(isInner(join_info.kind))
+    , is_left(isLeft(join_info.kind))
+    , is_right(isRight(join_info.kind))
+    , is_full(isFull(join_info.kind))
+    , max_rows_in_right_block(join_info.partial_merge_join_rows_in_right_blocks)
+    , temp_vol_settings(temp_vol_settings_)
 {
-    switch (table_join->strictness())
+    switch (join_info.strictness)
     {
         case ASTTableJoin::Strictness::All:
             break;
@@ -452,23 +450,20 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     if (!max_rows_in_right_block)
         throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    if (max_files_to_merge < 2)
+    if (join_info.max_files_to_merge < 2)
         throw Exception("max_files_to_merge cannot be less than 2", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    if (!size_limits.hasLimits())
+    if (!join_info.size_limits.hasLimits())
     {
-        size_limits.max_bytes = table_join->defaultMaxBytes();
-        if (!size_limits.max_bytes)
-            throw Exception("No limit for MergeJoin (max_rows_in_join, max_bytes_in_join or default_max_bytes_in_join have to be set)",
-                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception("No limit for MergeJoin (max_rows_in_join, max_bytes_in_join or default_max_bytes_in_join have to be set)",
+                        ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
+    JoinCommon::splitAdditionalColumns(join_info.key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
 
-    const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
-        if (required_right_keys.count(column.name))
+        if (join_info.required_right_keys.count(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
 
     JoinCommon::createMissedColumns(right_columns_to_add);
@@ -476,12 +471,12 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(right_columns_to_add);
 
-    makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
-    makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+    makeSortAndMerge(join_info.key_names_left, left_sort_description, left_merge_description);
+    makeSortAndMerge(join_info.key_names_right, right_sort_description, right_merge_description);
 
     /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
-    if (table_join->enablePartialMergeJoinOptimizations())
-        if (size_t max_bytes = table_join->maxBytesInLeftBuffer())
+    if (join_info.partial_merge_join_optimizations)
+        if (size_t max_bytes = join_info.partial_merge_join_left_table_buffer_bytes)
             left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
 }
 
@@ -496,7 +491,7 @@ void MergeJoin::setTotals(const Block & totals_block)
 
 void MergeJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
+    JoinCommon::joinTotals(totals, right_columns_to_add, join_info, block);
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -522,7 +517,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
     pipeline.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
+    pipeline.addTransform(
+        std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
@@ -590,7 +586,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight());
+    JoinCommon::removeLowCardinalityInplace(block, join_info.key_names_right);
     return block;
 }
 
@@ -606,9 +602,9 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     if (block)
     {
-        JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+        JoinCommon::checkTypesOfKeys(block, join_info.key_names_left, right_table_keys, join_info.key_names_right);
         materializeBlockInplace(block);
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
+        JoinCommon::removeLowCardinalityInplace(block, join_info.key_names_left, false);
 
         sortBlock(block, left_sort_description);
 
@@ -679,7 +675,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], join_info.key_names_right);
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -713,7 +709,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], join_info.key_names_right);
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -784,7 +780,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         {
             right_block_info.setUsed(range.right_start, range.right_length);
 
-            size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
+            size_t max_rows = maxRangeRows(left_columns[0]->size(), join_info.max_joined_block_rows);
 
             if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
             {
@@ -832,7 +828,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
         right_block_info.setUsed(range.right_start, range.right_length);
 
-        size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
+        size_t max_rows = maxRangeRows(left_columns[0]->size(), join_info.max_joined_block_rows);
 
         if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
         {
@@ -942,9 +938,9 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
-                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
-                    table_join->temporaryFilesCodec());
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, temp_vol_settings.first,
+                    right_sample_block, right_sort_description, max_rows_in_right_block, join_info.max_files_to_merge,
+                    temp_vol_settings.second);
     disk_writer->addBlocks(right_blocks);
     right_blocks.clear();
 }
@@ -954,7 +950,7 @@ class NonMergeJoinedBlockInputStream : private NotJoined, public IBlockInputStre
 {
 public:
     NonMergeJoinedBlockInputStream(const MergeJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
-        : NotJoined(*parent_.table_join,
+        : NotJoined(parent_.join_info,
                     parent_.modifyRightBlock(parent_.right_sample_block),
                     parent_.right_sample_block,
                     result_sample_block_)
@@ -1041,7 +1037,7 @@ private:
 
 BlockInputStreamPtr MergeJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
 {
-    if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
+    if (join_info.strictness == ASTTableJoin::Strictness::All && (is_right || is_full))
         return std::make_shared<NonMergeJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
     return {};
 }

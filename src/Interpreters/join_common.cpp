@@ -254,20 +254,23 @@ void createMissedColumns(Block & block)
 }
 
 /// Append totals from right to left block, correct types if needed
-void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block)
+void joinTotals(const Block & totals, const Block & columns_to_add, const JoinInfo & join_info, Block & block)
 {
-    if (table_join.forceNullableLeft())
+    if (join_info.forceNullableLeft())
         convertColumnsToNullable(block);
 
     if (Block totals_without_keys = totals)
     {
-        for (const auto & name : table_join.keyNamesRight())
+        for (const auto & name : join_info.key_names_right)
             totals_without_keys.erase(totals_without_keys.getPositionByName(name));
 
-        for (auto & col : totals_without_keys)
+        if (join_info.forceNullableRight())
         {
-            if (table_join.rightBecomeNullable(col.type))
-                JoinCommon::convertColumnToNullable(col);
+            for (auto & col : totals_without_keys)
+            {
+                if (col.type->canBeInsideNullable())
+                    JoinCommon::convertColumnToNullable(col);
+            }
         }
 
         for (size_t i = 0; i < totals_without_keys.columns(); ++i)
@@ -302,10 +305,77 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
+ActionsDAGPtr applyKeyConvertToTable(
+    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, bool replace_columns, Names & names_to_rename)
+{
+    ColumnsWithTypeAndName cols_dst = cols_src;
+    for (auto & col : cols_dst)
+    {
+        if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+        {
+            col.type = it->second;
+            col.column = nullptr;
+        }
+    }
+
+    NameToNameMap key_column_rename;
+    /// Returns converting actions for tables that need to be performed before join
+    auto dag = ActionsDAG::makeConvertingActions(
+        cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !replace_columns, &key_column_rename);
+
+    for (auto & name : names_to_rename)
+    {
+        const auto it = key_column_rename.find(name);
+        if (it != key_column_rename.end())
+            name = it->second;
+    }
+    return dag;
+}
+
+void splitAdditionalColumns(const Names & key_names_right, const Block & sample_block, Block & block_keys, Block & block_others)
+{
+    block_others = materializeBlock(sample_block);
+
+    for (const String & column_name : key_names_right)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
+}
+
+Block getRequiredRightKeys(
+    const Names & left_keys,
+    const Names & right_keys,
+    const NameSet & required_keys,
+    const Block & right_table_keys,
+    std::vector<String> & keys_sources)
+{
+    Block required_right_keys;
+
+    for (size_t i = 0; i < right_keys.size(); ++i)
+    {
+        const String & right_key_name = right_keys[i];
+
+        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        {
+            const auto & right_key = right_table_keys.getByName(right_key_name);
+            required_right_keys.insert(right_key);
+            keys_sources.push_back(left_keys[i]);
+        }
+    }
+
+    return required_right_keys;
+}
+
 }
 
 
-NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
+NotJoined::NotJoined(const JoinInfo & join_info, const Block & saved_block_sample_, const Block & right_sample_block,
                      const Block & result_sample_block_)
     : saved_block_sample(saved_block_sample_)
     , result_sample_block(materializeBlock(result_sample_block_))
@@ -313,17 +383,19 @@ NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sam
     std::vector<String> tmp;
     Block right_table_keys;
     Block sample_block_with_columns_to_add;
-    table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
-    Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
+    JoinCommon::splitAdditionalColumns(join_info.key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
+
+    Block required_right_keys = JoinCommon::getRequiredRightKeys(
+        join_info.key_names_left, join_info.key_names_right, join_info.required_right_keys, right_table_keys, tmp);
 
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
-    if (table_join.hasUsing())
+    if (join_info.hasUsing())
     {
-        for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+        for (size_t i = 0; i < join_info.key_names_left.size(); ++i)
         {
-            const String & left_key_name = table_join.keyNamesLeft()[i];
-            const String & right_key_name = table_join.keyNamesRight()[i];
+            const String & left_key_name = join_info.key_names_left[i];
+            const String & right_key_name = join_info.key_names_right[i];
 
             size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
             size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
