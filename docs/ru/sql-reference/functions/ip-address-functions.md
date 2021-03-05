@@ -121,12 +121,53 @@ LIMIT 10
 └────────────────────────────┴────────┘
 ```
 
-## IPv6StringToNum(s) {#ipv6stringtonums}
+## IPv6StringToNum {#ipv6stringtonums}
 
-Функция, обратная к IPv6NumToString. Если IPv6 адрес в неправильном формате, то возвращает строку из нулевых байт.
+Функция, обратная к [IPv6NumToString](#ipv6numtostringx). Если IPv6 адрес передан в неправильном формате, то возвращает строку из нулевых байт.
+
+Если IP адрес является корректным IPv4 адресом, функция возвращает его IPv6 эквивалент.
+
 HEX может быть в любом регистре.
 
-Alias: `INET6_ATON`.
+Синоним: `INET6_ATON`.
+
+**Синтаксис**
+
+``` sql
+IPv6StringToNum(string)
+```
+
+**Аргумент** 
+
+-   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Адрес IPv6 в двоичном представлении.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
+```
+
+Результат:
+
+``` text
+┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
+│ notaddress │ ::                                   │
+│ 127.0.0.1  │ ::ffff:127.0.0.1                     │
+│ 1111::ffff │ 1111::ffff                           │
+└────────────┴──────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+-   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
@@ -221,36 +262,60 @@ SELECT
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-## toIPv6(string) {#toipv6string}
+## toIPv6 {#toipv6string}
 
-Псевдоним функции `IPv6StringToNum()` которая принимает строку с адресом IPv6 и возвращает значение типа [IPv6](../../sql-reference/functions/ip-address-functions.md), которое равно значению, возвращаемому функцией `IPv6StringToNum()`.
+Приводит строку с адресом в формате IPv6 к типу [IPv6](../../sql-reference/data-types/domains/ipv6.md). Возвращает пустое значение, если входящая строка не является корректным IP адресом.
+Похоже на функцию [IPv6StringToNum](#ipv6stringtonums), которая представляет адрес IPv6 в двоичном виде.
 
-``` sql
-WITH
-    '2001:438:ffff::407d:1bc1' as IPv6_string
-SELECT
-    toTypeName(IPv6StringToNum(IPv6_string)),
-    toTypeName(toIPv6(IPv6_string))
+Если входящая строка содержит корректный IPv4 адрес, функция возвращает его IPv6 эквивалент.
+
+**Синтаксис**
+
+```sql
+toIPv6(string)
 ```
 
-``` text
-┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
-│ FixedString(16)                          │ IPv6                            │
-└──────────────────────────────────────────┴─────────────────────────────────┘
-```
+**Аргумент**
+
+-   `string` — IP адрес. [String](../../sql-reference/data-types/string.md)
+
+**Возвращаемое значение**
+
+-   IP адрес. 
+
+Тип: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
+
+**Примеры**
+
+Запрос:
 
 ``` sql
-WITH
-    '2001:438:ffff::407d:1bc1' as IPv6_string
+WITH '2001:438:ffff::407d:1bc1' AS IPv6_string
 SELECT
     hex(IPv6StringToNum(IPv6_string)),
-    hex(toIPv6(IPv6_string))
+    hex(toIPv6(IPv6_string));
 ```
+
+Результат:
 
 ``` text
 ┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
 │ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
 └───────────────────────────────────┴──────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT toIPv6('127.0.0.1');
+```
+
+Результат:
+
+``` text
+┌─toIPv6('127.0.0.1')─┐
+│ ::ffff:127.0.0.1    │
+└─────────────────────┘
 ```
 
 ## isIPv4String {#isipv4string}
