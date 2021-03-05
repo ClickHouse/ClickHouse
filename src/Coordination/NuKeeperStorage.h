@@ -115,11 +115,6 @@ public:
         return container.begin();
     }
 
-    Container::const_iterator getSnapshotIteratorEnd() const
-    {
-        return container.end();
-    }
-
     void clearGarbageAfterSnapshot()
     {
         container.clearOutdatedNodes();
