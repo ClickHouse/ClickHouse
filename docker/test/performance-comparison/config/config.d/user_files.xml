@@ -4,4 +4,6 @@
 
     <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
     <users_config>users.xml</users_config>
+
+    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
 </yandex>

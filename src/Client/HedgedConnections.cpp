@@ -383,7 +383,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             {
                 /// If we are allowed to change replica until the first data packet,
                 /// just restart timeout (if it hasn't expired yet). Otherwise disable changing replica with this offset.
-                if (settings.allow_changeing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
+                if (settings.allow_changing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
                     replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
                 else
                     disableChangingReplica(replica_location);
