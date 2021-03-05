@@ -45,6 +45,10 @@ void TableJoin::resetCollected()
     columns_added_by_join.clear();
     original_names.clear();
     renames.clear();
+    left_type_map.clear();
+    right_type_map.clear();
+    left_converting_actions = nullptr;
+    right_converting_actions = nullptr;
 }
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
