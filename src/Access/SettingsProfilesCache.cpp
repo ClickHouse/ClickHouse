@@ -120,7 +120,6 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
     }
 }
 
-
 void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const
 {
     SettingsProfileElements merged_settings;
@@ -142,12 +141,22 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     merged_settings.merge(enabled.params.settings_from_enabled_roles);
     merged_settings.merge(enabled.params.settings_from_user);
 
+    std::vector<UUID> current_profiles;
+    current_profiles.reserve(merged_settings.size());
+    for (const auto & setting_element : merged_settings)
+    {
+        if (setting_element.parent_profile)
+            current_profiles.push_back(*setting_element.parent_profile);
+    }
+
     substituteProfiles(merged_settings);
 
     auto settings = merged_settings.toSettings();
     auto constraints = merged_settings.toSettingsConstraints(manager);
-    enabled.setSettingsAndConstraints(
-        std::make_shared<Settings>(std::move(settings)), std::make_shared<SettingsConstraints>(std::move(constraints)));
+    enabled.setSettingsAndConstraintsAndProfiles(
+        std::make_shared<Settings>(std::move(settings)),
+        std::make_shared<SettingsConstraints>(std::move(constraints)),
+        std::move(current_profiles));
 }
 
 
@@ -235,6 +244,14 @@ std::shared_ptr<const SettingsChanges> SettingsProfilesCache::getProfileSettings
     auto res = std::make_shared<const SettingsChanges>(elements.toSettingsChanges());
     settings_for_profiles.emplace(profile_id, res);
     return res;
+}
+
+String SettingsProfilesCache::getProfileName(const UUID & profile_id) const
+{
+    if (const auto p = all_profiles.find(profile_id); p != all_profiles.end())
+        return p->second->getName();
+
+    throw Exception("Settings profile " + toString(profile_id) + " not found", ErrorCodes::THERE_IS_NO_PROFILE);
 }
 
 

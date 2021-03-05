@@ -6,6 +6,7 @@
 #include <Access/SettingsProfileElement.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
+#include <vector>
 
 
 namespace DB
@@ -40,17 +41,23 @@ public:
     /// and the roles passed in the constructor.
     std::shared_ptr<const SettingsConstraints> getConstraints() const;
 
+    std::vector<UUID> getCurrentProfiles() const;
+
 private:
     friend class SettingsProfilesCache;
     EnabledSettings(const Params & params_);
 
-    void setSettingsAndConstraints(
-        const std::shared_ptr<const Settings> & settings_, const std::shared_ptr<const SettingsConstraints> & constraints_);
+    void setSettingsAndConstraintsAndProfiles(
+        const std::shared_ptr<const Settings> & settings_,
+        const std::shared_ptr<const SettingsConstraints> & constraints_,
+        std::vector<UUID> current_profiles_
+    );
 
     const Params params;
     SettingsProfileElements settings_from_enabled;
     std::shared_ptr<const Settings> settings;
     std::shared_ptr<const SettingsConstraints> constraints;
+    std::vector<UUID> current_profiles;
     mutable std::mutex mutex;
 };
 }

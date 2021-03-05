@@ -33,6 +33,7 @@ public:
         const SettingsProfileElements & settings_from_enabled_roles_);
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name);
+    String getProfileName(const UUID & profile_id) const;
 
 private:
     void ensureAllProfilesRead();

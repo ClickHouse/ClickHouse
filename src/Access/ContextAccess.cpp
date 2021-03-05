@@ -346,6 +346,22 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
     return nothing_granted;
 }
 
+Strings ContextAccess::getCurrentProfileNames() const
+{
+    std::lock_guard lock{mutex};
+    Strings result;
+    if (!enabled_settings)
+        return result;
+
+    const auto & profiles = enabled_settings->getCurrentProfiles();
+    Strings profile_names;
+    profile_names.reserve(profiles.size());
+
+    for (const auto & profile_id : profiles)
+        profile_names.emplace_back(manager->getProfileName(profile_id));
+
+    return profile_names;
+}
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
 bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const

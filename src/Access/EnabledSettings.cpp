@@ -25,13 +25,21 @@ std::shared_ptr<const SettingsConstraints> EnabledSettings::getConstraints() con
     return constraints;
 }
 
+std::vector<UUID> EnabledSettings::getCurrentProfiles() const
+{
+    return current_profiles;
+}
 
-void EnabledSettings::setSettingsAndConstraints(
-    const std::shared_ptr<const Settings> & settings_, const std::shared_ptr<const SettingsConstraints> & constraints_)
+
+void EnabledSettings::setSettingsAndConstraintsAndProfiles(
+    const std::shared_ptr<const Settings> & settings_,
+    const std::shared_ptr<const SettingsConstraints> & constraints_,
+    std::vector<UUID> current_profiles_)
 {
     std::lock_guard lock{mutex};
     settings = settings_;
     constraints = constraints_;
+    current_profiles.swap(current_profiles_);
 }
 
 }
