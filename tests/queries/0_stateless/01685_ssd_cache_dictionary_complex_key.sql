@@ -95,3 +95,4 @@ DROP DICTIONARY 01685_database_for_cache_dictionary.cache_dictionary_complex_key
 DROP TABLE 01685_database_for_cache_dictionary.complex_key_complex_attributes_source_table;
 
 DROP DATABASE 01685_database_for_cache_dictionary;
+                                                                                                                                          
