@@ -27,19 +27,7 @@
 namespace DB
 {
 
-/**
-  * When sorting the list of events the EMPTY_EVENTS_BITSET will be moved to the last.
-  * In the case of events,
-  *   dt                  action
-  *   2020-01-01 00:00:01 'D'
-  *   2020-01-01 00:00:01 'A'
-  *   2020-01-01 00:00:01 'B'
-  *   2020-01-01 00:00:01 'C'
-  * The next node of a chain of events 'A' -> 'B' -> 'C' is expected to be the 'D'.
-  * Because EMPTY_EVENTS_BITSET is 0x80000000 the order of the sorted events is ['A", 'B', 'C', 'D']. The result value of this aggregation is 'D'.
-  * If EMPTY_EVENTS_BITSET is 0 hen the order of the sorted events is ['D', 'A', 'B', 'C']. This time, the result value is NULL.
-  */
-static const UInt32 EMPTY_EVENTS_BITSET = 0x80000000;
+const UInt32 MAX_EVENTS_SIZE = 64;
 
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node>
@@ -48,9 +36,7 @@ struct NodeBase
     UInt64 size; /// size of payload
 
     DataTypeDateTime::FieldType event_time;
-    UInt32 events_bitset; /// Bitsets of UInt32 are easy to compare. (< operator on bitsets)
-                          /// Nodes in the list must be sorted in order to find a chain of events at the method getNextNodeIndex().
-                          /// While sorting, events_bitset is one of sorting criteria.
+    std::bitset<MAX_EVENTS_SIZE> events_bitset;
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
@@ -68,7 +54,8 @@ struct NodeBase
         buf.write(data(), size);
 
         writeBinary(event_time, buf);
-        writeBinary(events_bitset, buf);
+        UInt64 ulong_bitset = events_bitset.to_ulong();
+        writeBinary(ulong_bitset, buf);
     }
 
     static Node * read(ReadBuffer & buf, Arena * arena)
@@ -81,7 +68,9 @@ struct NodeBase
         buf.read(node->data(), size);
 
         readBinary(node->event_time, buf);
-        readBinary(node->events_bitset, buf);
+        UInt64 ulong_bitset;
+        readBinary(ulong_bitset, buf);
+        node->events_bitset = ulong_bitset;
 
         return node;
     }
@@ -130,13 +119,9 @@ struct SequenceNextNodeGeneralData
         bool operator()(const Node * lhs, const Node * rhs) const
         {
             if constexpr (Descending)
-                return lhs->event_time == rhs->event_time ?
-                        (lhs->events_bitset == rhs->events_bitset ? lhs->compare(rhs) : lhs->events_bitset < rhs->events_bitset)
-                        : lhs->event_time > rhs->event_time;
+                return lhs->event_time == rhs->event_time ? !lhs->compare(rhs) : lhs->event_time > rhs->event_time;
             else
-                return lhs->event_time == rhs->event_time ?
-                        (lhs->events_bitset == rhs->events_bitset ? lhs->compare(rhs) : lhs->events_bitset < rhs->events_bitset)
-                        : lhs->event_time < rhs->event_time;
+                return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time < rhs->event_time;
         }
     };
 
@@ -179,7 +164,7 @@ public:
 
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
+        const AggregateFunctionProperties &) const override
     {
         /// This aggregate function sets insertion_requires_nullable_column on.
         /// Even though some values are mapped to aggregating key, it could return nulls for the below case.
@@ -213,14 +198,11 @@ public:
         ///   0x00000000
         /// +          1 (bit of event1)
         /// +          4 (bit of event3)
-        UInt32 events_bitset = 0;
+        node->events_bitset.reset();
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[2 + i])->getData()[row_num])
-                events_bitset += (1 << i);
-        if (events_bitset == 0) events_bitset = EMPTY_EVENTS_BITSET; // Any events are not matched.
-
+                node->events_bitset.set(i);
         node->event_time = timestamp;
-        node->events_bitset = events_bitset;
 
         data(place).value.push_back(node, arena);
     }
@@ -295,7 +277,7 @@ public:
     {
         UInt32 k = 0;
         for (; k < events_size - j; ++k)
-            if (data.value[i - j]->events_bitset & (1 << (events_size - 1 - j - k)))
+            if (data.value[i - j]->events_bitset.test(events_size - 1 - j - k))
                 return k;
         return k;
     }
@@ -322,7 +304,7 @@ public:
             for (; j < events_size; ++j)
                 /// It compares each matched events.
                 /// The lower bitmask is the former matched event.
-                if (!(data.value[i - j]->events_bitset & (1 << (events_size - 1 - j))))
+                if (data.value[i - j]->events_bitset.test(events_size - 1 - j) == false)
                     break;
 
             /// If the chain of events are matched returns the index of result value.
@@ -413,12 +395,11 @@ public:
                 is_first = false;
         }
 
-
         if (is_first)
         {
             Node * node = Node::allocate(*columns[1], row_num, arena);
             node->event_time = timestamp;
-            node->events_bitset = EMPTY_EVENTS_BITSET;
+            node->events_bitset.reset();
 
             data(place).value.push_back(node, arena);
         }
