@@ -19,7 +19,7 @@
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
-#define DATE_LUT_ADD (1970 - DATE_LUT_MIN_YEAR) * 366 * 86400
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366 * 86400)
 
 
 #if defined(__PPC__)
