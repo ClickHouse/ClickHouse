@@ -62,6 +62,7 @@ SRCS(
     XDBCDictionarySource.cpp
     getDictionaryConfigurationFromAST.cpp
     readInvalidateQuery.cpp
+    registerCacheDictionaries.cpp
     registerDictionaries.cpp
     writeParenthesisedString.cpp
 
