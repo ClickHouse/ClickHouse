@@ -37,9 +37,9 @@ SRCS(
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
-    DirectorySyncGuard.cpp
     Dwarf.cpp
     Elf.cpp
+    Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
@@ -84,8 +84,6 @@ SRCS(
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
-    ZooKeeper/TestKeeperStorage.cpp
-    ZooKeeper/TestKeeperStorageDispatcher.cpp
     ZooKeeper/ZooKeeper.cpp
     ZooKeeper/ZooKeeperCommon.cpp
     ZooKeeper/ZooKeeperConstants.cpp

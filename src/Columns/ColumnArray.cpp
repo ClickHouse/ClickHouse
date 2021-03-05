@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
 
 #include <common/unaligned.h>
 #include <common/sort.h>
@@ -369,8 +370,16 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnArray::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnArray>();
+}
+
+namespace
+{
+
 template <bool positive>
-struct ColumnArray::Cmp
+struct Cmp
 {
     const ColumnArray & parent;
     int nan_direction_hint;
@@ -389,6 +398,9 @@ struct ColumnArray::Cmp
         return positive ? res : -res;
     }
 };
+
+}
+
 
 void ColumnArray::reserve(size_t n)
 {
@@ -911,6 +923,21 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool
     else
         updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
 }
+
+ColumnPtr ColumnArray::compress() const
+{
+    ColumnPtr data_compressed = data->compress();
+    ColumnPtr offsets_compressed = offsets->compress();
+
+    size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
+
+    return ColumnCompressed::create(size(), byte_size,
+        [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
+        {
+            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
+        });
+}
+
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {

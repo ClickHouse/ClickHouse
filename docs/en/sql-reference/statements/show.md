@@ -231,7 +231,7 @@ Shows privileges for a user.
 ### Syntax {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]]
 ```
 
 If user is not specified, the query returns privileges for the current user.
@@ -245,7 +245,7 @@ Shows parameters that were used at a [user creation](../../sql-reference/stateme
 ### Syntax {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE USER [name | CURRENT_USER]
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
@@ -255,7 +255,7 @@ Shows parameters that were used at a [role creation](../../sql-reference/stateme
 ### Syntax {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE ROLE name
+SHOW CREATE ROLE name1 [, name2 ...]
 ```
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
@@ -265,7 +265,7 @@ Shows parameters that were used at a [row policy creation](../../sql-reference/s
 ### Syntax {#show-create-row-policy-syntax}
 
 ``` sql
-SHOW CREATE [ROW] POLICY name ON [database.]table
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
@@ -275,7 +275,7 @@ Shows parameters that were used at a [quota creation](../../sql-reference/statem
 ### Syntax {#show-create-quota-syntax}
 
 ``` sql
-SHOW CREATE QUOTA [name | CURRENT]
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
@@ -285,7 +285,7 @@ Shows parameters that were used at a [settings profile creation](../../sql-refer
 ### Syntax {#show-create-settings-profile-syntax}
 
 ``` sql
-SHOW CREATE [SETTINGS] PROFILE name
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
 
 ## SHOW USERS {#show-users-statement}
@@ -307,7 +307,6 @@ Returns a list of [roles](../../operations/access-rights.md#role-management). To
 ``` sql
 SHOW [CURRENT|ENABLED] ROLES
 ```
-
 ## SHOW PROFILES {#show-profiles-statement}
 
 Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
@@ -347,7 +346,15 @@ Returns a [quota](../../operations/quotas.md) consumption for all users or for c
 ``` sql
 SHOW [CURRENT] QUOTA
 ```
+## SHOW ACCESS {#show-access-statement}
 
+Shows all [users](../../operations/access-rights.md#user-account-management), [roles](../../operations/access-rights.md#role-management), [profiles](../../operations/access-rights.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Syntax {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
+```
 ## SHOW CLUSTER(s) {#show-cluster-statement}
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.

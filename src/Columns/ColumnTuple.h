@@ -76,6 +76,7 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
+    bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
@@ -89,6 +90,7 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
+    ColumnPtr compress() const override;
 
     size_t tupleSize() const { return columns.size(); }
 

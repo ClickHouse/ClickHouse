@@ -134,7 +134,7 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 {
     using Base::impls;
 
-    AggregationDataWithNullKeyTwoLevel() {}
+    AggregationDataWithNullKeyTwoLevel() = default;
 
     template <typename Other>
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
@@ -184,7 +184,7 @@ struct AggregationMethodOneNumber
 
     Data data;
 
-    AggregationMethodOneNumber() {}
+    AggregationMethodOneNumber() = default;
 
     template <typename Other>
     AggregationMethodOneNumber(const Other & other) : data(other.data) {}
@@ -199,8 +199,8 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
-        auto key_holder = reinterpret_cast<const char *>(&key);
-        auto column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
+        const auto * key_holder = reinterpret_cast<const char *>(&key);
+        auto * column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
         column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
@@ -216,7 +216,7 @@ struct AggregationMethodString
 
     Data data;
 
-    AggregationMethodString() {}
+    AggregationMethodString() = default;
 
     template <typename Other>
     AggregationMethodString(const Other & other) : data(other.data) {}
@@ -242,7 +242,7 @@ struct AggregationMethodStringNoCache
 
     Data data;
 
-    AggregationMethodStringNoCache() {}
+    AggregationMethodStringNoCache() = default;
 
     template <typename Other>
     AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
@@ -268,7 +268,7 @@ struct AggregationMethodFixedString
 
     Data data;
 
-    AggregationMethodFixedString() {}
+    AggregationMethodFixedString() = default;
 
     template <typename Other>
     AggregationMethodFixedString(const Other & other) : data(other.data) {}
@@ -293,7 +293,7 @@ struct AggregationMethodFixedStringNoCache
 
     Data data;
 
-    AggregationMethodFixedStringNoCache() {}
+    AggregationMethodFixedStringNoCache() = default;
 
     template <typename Other>
     AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
@@ -334,7 +334,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static void insertKeyIntoColumns(const Key & key,
         MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
-        auto col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
+        auto * col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
 
         if constexpr (std::is_same_v<Key, StringRef>)
         {
@@ -360,12 +360,18 @@ struct AggregationMethodKeysFixed
 
     Data data;
 
-    AggregationMethodKeysFixed() {}
+    AggregationMethodKeysFixed() = default;
 
     template <typename Other>
     AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache>;
+    using State = ColumnsHashing::HashMethodKeysFixed<
+        typename Data::value_type,
+        Key,
+        Mapped,
+        has_nullable_keys,
+        has_low_cardinality,
+        use_cache>;
 
     static const bool low_cardinality_optimization = false;
 
@@ -438,7 +444,7 @@ struct AggregationMethodSerialized
 
     Data data;
 
-    AggregationMethodSerialized() {}
+    AggregationMethodSerialized() = default;
 
     template <typename Other>
     AggregationMethodSerialized(const Other & other) : data(other.data) {}
@@ -449,7 +455,7 @@ struct AggregationMethodSerialized
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        auto pos = key.data;
+        const auto * pos = key.data;
         for (auto & column : key_columns)
             pos = column->deserializeAndInsertFromArena(pos);
     }
@@ -783,9 +789,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys128_two_level) \
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
-        M(low_cardinality_key_fixed_string_two_level) \
+        M(low_cardinality_key_fixed_string_two_level)
 
-    bool isLowCardinality()
+    bool isLowCardinality() const
     {
         switch (type)
         {
@@ -972,7 +978,7 @@ public:
 
     /** Set a function that checks whether the current task can be aborted.
       */
-    void setCancellationHook(const CancellationHook cancellation_hook);
+    void setCancellationHook(const CancellationHook & cancellation_hook);
 
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path);

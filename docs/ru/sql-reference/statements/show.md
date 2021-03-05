@@ -249,10 +249,8 @@ SHOW GRANTS [FOR user]
 ### Синтаксис {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE USER [name | CURRENT_USER]
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
-
-
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
@@ -261,10 +259,8 @@ SHOW CREATE USER [name | CURRENT_USER]
 ### Синтаксис {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE ROLE name
+SHOW CREATE ROLE name1 [, name2 ...]
 ```
-
-
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
 
@@ -273,9 +269,8 @@ SHOW CREATE ROLE name
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE [ROW] POLICY name ON [database.]table
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
-
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
 
@@ -284,9 +279,8 @@ SHOW CREATE [ROW] POLICY name ON [database.]table
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE QUOTA [name | CURRENT]
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
-
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
 
@@ -295,9 +289,8 @@ SHOW CREATE QUOTA [name | CURRENT]
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE [SETTINGS] PROFILE name
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
-
 
 ## SHOW USERS {#show-users-statement}
 
@@ -357,6 +350,16 @@ SHOW QUOTAS
 
 ``` sql
 SHOW [CURRENT] QUOTA
+```
+
+## SHOW ACCESS {#show-access-statement}
+
+Выводит список всех [пользователей](../../operations/access-rights.md#user-account-management), [ролей](../../operations/access-rights.md#role-management), [профилей](../../operations/access-rights.md#settings-profiles-management) и пр., а также все [привилегии](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Синтаксис {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->

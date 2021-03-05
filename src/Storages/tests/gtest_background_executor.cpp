@@ -32,7 +32,7 @@ protected:
 
     std::optional<JobAndPool> getBackgroundJob() override
     {
-        return JobAndPool{[] { std::this_thread::sleep_for(1s); counter++; }, PoolType::MERGE_MUTATE};
+        return JobAndPool{[] { std::this_thread::sleep_for(1s); counter++; return true; }, PoolType::MERGE_MUTATE};
     }
 };
 

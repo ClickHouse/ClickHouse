@@ -22,6 +22,7 @@ toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
     -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
+    -   [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)

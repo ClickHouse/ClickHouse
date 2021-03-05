@@ -1,18 +1,20 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
+
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <Disks/SingleDiskVolume.h>
+#include <Disks/createVolume.h>
+#include <IO/HTTPCommon.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Disks/createVolume.h>
-#include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Common/DirectorySyncGuard.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
+
 #include <Poco/File.h>
-#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace CurrentMetrics
@@ -84,7 +86,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
+void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
 {
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
@@ -361,7 +363,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
-    new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
+    new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0);
 
     MergedBlockOutputStream part_out(new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
@@ -398,9 +400,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     disk->createDirectories(part_download_path);
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, part_download_path);
+        sync_guard = disk->getDirectorySyncGuard(part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)

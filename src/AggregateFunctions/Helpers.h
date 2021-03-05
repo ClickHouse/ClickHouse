@@ -31,6 +31,12 @@
     M(Float32) \
     M(Float64)
 
+#define FOR_DECIMAL_TYPES(M) \
+    M(Decimal32) \
+    M(Decimal64) \
+    M(Decimal128)
+
+
 namespace DB
 {
 

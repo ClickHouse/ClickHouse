@@ -32,7 +32,9 @@ wait
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
         SYSTEM SYNC REPLICA r$i;
-        SELECT count(), min(x), max(x), sum(x) FROM r$i;
-        DROP TABLE IF EXISTS r$i;
-"
+        SELECT count(), min(x), max(x), sum(x) FROM r$i;"
+done
+
+for i in $(seq 1 $NUM_REPLICAS); do
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS r$i;"
 done

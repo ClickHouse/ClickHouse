@@ -6,7 +6,9 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLReplication.h>
+#include <Common/DNSResolver.h>
 #include <Poco/String.h>
+
 
 namespace DB
 {

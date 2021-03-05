@@ -28,13 +28,15 @@ class ExternalAuthenticators
 public:
     void reset();
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
-    bool checkLDAPCredentials(const String & server, const String & user_name, const String & password) const;
+    bool checkLDAPCredentials(const String & server, const String & user_name, const String & password,
+        const LDAPSearchParamsList * search_params = nullptr, LDAPSearchResultsList * search_results = nullptr) const;
 
 private:
     struct LDAPCacheEntry
     {
         std::size_t last_successful_params_hash = 0;
         std::chrono::steady_clock::time_point last_successful_authentication_timestamp;
+        LDAPSearchResultsList last_successful_search_results;
     };
 
     using LDAPServerCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry

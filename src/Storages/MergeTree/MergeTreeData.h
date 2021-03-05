@@ -415,7 +415,9 @@ public:
     size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
+    size_t getMaxPartsCountForPartitionWithState(DataPartState state) const;
     size_t getMaxPartsCountForPartition() const;
+    size_t getMaxInactivePartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
@@ -464,9 +466,6 @@ public:
     /// Used in REPLACE PARTITION command;
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
                                                      bool skip_intersecting_parts, DataPartsLock & lock);
-
-    /// Renames the part to detached/<prefix>_<part> and removes it from working set.
-    void removePartsFromWorkingSetAndCloneToDetached(const DataPartsVector & parts, bool clear_without_timeout, const String & prefix = "");
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
@@ -518,7 +517,11 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+
+    /// Checks if the Mutation can be performed.
+    /// (currently no additional checks: always ok)
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
@@ -689,11 +692,16 @@ public:
 
     bool is_custom_partitioned = false;
 
-    ExpressionActionsPtr minmax_idx_expr;
-    Names minmax_idx_columns;
-    DataTypes minmax_idx_column_types;
+    /// Used only for old syntax tables. Never changes after init.
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
+
+    /// Get partition key expression on required columns
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key);
+    /// Get column names required for partition key
+    static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
+    /// Get column types required for partition key
+    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
 
     ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
     ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
@@ -701,6 +709,12 @@ public:
     /// Get compression codec for part according to TTL rules and <compression>
     /// section from config.xml.
     CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
+
+    /// Record current query id where querying the table. Throw if there are already `max_queries` queries accessing the same table.
+    void insertQueryIdOrThrow(const String & query_id, size_t max_queries) const;
+
+    /// Remove current query id after query finished.
+    void removeQueryId(const String & query_id) const;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -910,9 +924,6 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
-    /// Selects parts for move and moves them, used in background process
-    bool selectPartsAndMove();
-
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
@@ -958,6 +969,10 @@ private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
+
+    // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
+    mutable std::set<String> query_id_set;
+    mutable std::mutex query_id_set_mutex;
 };
 
 }
