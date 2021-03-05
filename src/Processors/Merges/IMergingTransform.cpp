@@ -80,9 +80,11 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         auto chunk = input.pull(true);
         if (!chunk.hasRows())
         {
-
             if (!input.isFinished())
+            {
+                input.setNeeded();
                 all_inputs_has_data = false;
+            }
 
             continue;
         }
