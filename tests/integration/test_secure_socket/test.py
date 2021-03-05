@@ -31,6 +31,7 @@ def started_cluster():
 
     NODES['node1'] =  cluster.add_instance('node1', main_configs=main_configs)
     NODES['node2'] =  cluster.add_instance('node2', main_configs=main_configs, user_configs=["configs_secure/users.d/users.xml"])
+
     try:
         cluster.start()
         NODES['node2'].query("CREATE TABLE base_table (x UInt64) ENGINE = MergeTree  ORDER BY x;")
