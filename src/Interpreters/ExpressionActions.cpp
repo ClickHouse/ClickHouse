@@ -48,8 +48,10 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
 {
     actions_dag = actions_dag_->clone();
 
+#if USE_EMBEDDED_COMPILER
     if (settings.compile_expressions)
         actions_dag->compileExpressions(settings.min_count_to_compile_expression);
+#endif
 
     linearizeActions();
 
