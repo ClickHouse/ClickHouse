@@ -1,5 +1,6 @@
 #include <Interpreters/ComparisonGraph.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 
 #include <Poco/Logger.h>
@@ -181,7 +182,7 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
 std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
 {
     const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
-    if (hash_it != std::end(graph.ast_hash_to_component))
+    if (hash_it == std::end(graph.ast_hash_to_component))
         return {};
     const size_t index = hash_it->second;
     if (std::any_of(
@@ -196,6 +197,21 @@ std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
     } else {
         return {};
     }
+}
+
+std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
+{
+    const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
+    if (hash_it == std::end(graph.ast_hash_to_component))
+        return std::nullopt;
+    const size_t index = hash_it->second;
+    for (const auto & term : graph.vertexes[index].asts)
+    {
+        const ASTLiteral * lit = term->as<ASTLiteral>();
+        if (lit)
+            return term;
+    }
+    return std::nullopt;
 }
 
 void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const

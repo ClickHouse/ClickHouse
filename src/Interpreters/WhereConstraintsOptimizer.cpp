@@ -263,6 +263,30 @@ bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const Com
     return false;
 }
 
+void replaceToConstants(ASTPtr & term, const ComparisonGraph & graph)
+{
+    const auto equal_constant = graph.getEqualConst(term);
+    if (equal_constant)
+    {
+        term = (*equal_constant)->clone();
+    }
+    else
+    {
+        for (auto & child : term->children)
+            replaceToConstants(child, graph);
+    }
+}
+
+CNFQuery::AtomicFormula replaceTermsToConstants(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
+{
+    CNFQuery::AtomicFormula result;
+    result.negative = atom.negative;
+    result.ast = atom.ast->clone();
+
+    replaceToConstants(result.ast, graph);
+
+    return result;
+}
 
 void WhereConstraintsOptimizer::perform()
 {
@@ -279,6 +303,9 @@ void WhereConstraintsOptimizer::perform()
             })
             .filterAlwaysFalseAtoms([&constraint_data, &compare_graph](const auto & atom) { /// remove always false atoms from CNF
                 return !checkIfAtomAlwaysFalseFullMatch(atom, constraint_data) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
+            })
+            .transformAtoms([&compare_graph](const auto & atom) {
+                return replaceTermsToConstants(atom, compare_graph);
             })
             .pushNotInFuntions();
 

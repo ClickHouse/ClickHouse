@@ -8,6 +8,10 @@
 namespace DB
 {
 
+/*
+ * Graph of relations between terms in constraints.
+ * Allows to compare terms and get equal terms.
+ */
 class ComparisonGraph
 {
 public:
@@ -28,13 +32,13 @@ public:
     CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
 
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
+    std::optional<ASTPtr> getEqualConst(const ASTPtr & ast) const;
 
     /// Find constants less and greater.
     /// For int and double linear programming can be applied here.
     // TODO: implement
     //ASTPtr getMax(const ASTPtr &) const { return nullptr; } // sup
     //ASTPtr getMin(const ASTPtr &) const { return nullptr; } // inf
-    //ASTPtr getEqualConst(const ASTPtr &) const { return nullptr; } // inf
 
 private:
     /// strongly connected component
