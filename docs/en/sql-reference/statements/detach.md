@@ -10,7 +10,7 @@ Deletes information about the `name` table from the server. The server stops kno
 Syntax:
 
 ``` sql
-DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+DETACH TABLE|VIEW [IF EXISTS] [db.]name [PERMANENTLY] [ON CLUSTER cluster]
 ```
 
 This does not delete the table’s data or metadata. On the next server launch, the server will read the metadata and find out about the table again.
