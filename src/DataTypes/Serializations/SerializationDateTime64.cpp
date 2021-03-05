@@ -18,7 +18,7 @@ namespace DB
 
 SerializationDateTime64::SerializationDateTime64(
     const DateLUTImpl & time_zone_, const DateLUTImpl & utc_time_zone_, UInt32 scale_)
-    : SerializationDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_)
+    : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
     , time_zone(time_zone_), utc_time_zone(utc_time_zone_)
 {
 }
@@ -146,30 +146,6 @@ void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & 
         assertChar(maybe_quote, istr);
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-void SerializationDateTime64::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeDateTime64(assert_cast<const ColumnType &>(column).getData()[row_num], scale));
-}
-
-void SerializationDateTime64::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    DateTime64 t = 0;
-    if (!protobuf.readDateTime64(t, scale))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(t);
-        row_added = true;
-    }
-    else
-        container.back() = t;
 }
 
 }

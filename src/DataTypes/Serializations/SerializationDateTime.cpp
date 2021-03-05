@@ -143,30 +143,4 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-void SerializationDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-
-    // On some platforms `time_t` is `long` but not `unsigned int` (UInt32 that we store in column), hence static_cast.
-    value_index = static_cast<bool>(protobuf.writeDateTime(static_cast<time_t>(assert_cast<const ColumnType &>(column).getData()[row_num])));
-}
-
-void SerializationDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    time_t t;
-    if (!protobuf.readDateTime(t))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(t);
-        row_added = true;
-    }
-    else
-        container.back() = t;
-}
-
 }

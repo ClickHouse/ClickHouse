@@ -62,16 +62,6 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
-
-    void serializeProtobuf(const IColumn & column,
-            size_t row_num,
-            ProtobufWriter & protobuf,
-            size_t & value_index) const override;
-
-    void deserializeProtobuf(IColumn & column,
-            ProtobufReader & protobuf,
-            bool allow_add_row,
-            bool & row_added) const override;
 };
 
 ColumnPtr arrayOffsetsToSizes(const IColumn & column);

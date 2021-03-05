@@ -7,7 +7,7 @@ toc_title: "\u30C7\u30FC\u30BF\u30D0\u30C3\u30AF\u30A2"
 
 # データバックア {#data-backup}
 
-ながら [複製](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50Gbを超えるデータを含むMergeTreeのようなエンジンでは、テーブルを削除することはできません](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). しかし、これらの保障措置がカバーしないすべてのケースで回避.
+ながら [複製](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50Gbを超えるデータを含むMergeTreeのようなエンジンでは、テーブルを削除することはできません](server-configuration-parameters/settings.md#max-table-size-to-drop). しかし、これらの保障措置がカバーしないすべてのケースで回避.
 
 ヒューマンエラーを効果的に軽減するには、データのバックアップと復元のための戦略を慎重に準備する必要があります **事前に**.
 

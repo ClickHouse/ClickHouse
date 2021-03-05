@@ -82,16 +82,6 @@ void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr
     nested_serialization->deserializeBinary(column, istr);
 }
 
-void SerializationWrapper::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    nested_serialization->serializeProtobuf(column, row_num, protobuf, value_index);
-}
-
-void SerializationWrapper::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    nested_serialization->deserializeProtobuf(column, protobuf, allow_add_row, row_added);
-}
-
 void SerializationWrapper::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     nested_serialization->serializeTextEscaped(column, row_num, ostr, settings);

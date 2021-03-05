@@ -106,34 +106,6 @@ void SerializationEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & 
     }
 }
 
-template <typename Type>
-void SerializationEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    protobuf.prepareEnumMapping(this->getValues());
-    value_index = static_cast<bool>(protobuf.writeEnum(assert_cast<const ColumnType &>(column).getData()[row_num]));
-}
-
-template<typename Type>
-void SerializationEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    protobuf.prepareEnumMapping(this->getValues());
-    row_added = false;
-    Type value;
-    if (!protobuf.readEnum(value))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(value);
-        row_added = true;
-    }
-    else
-        container.back() = value;
-}
-
 template class SerializationEnum<Int8>;
 template class SerializationEnum<Int16>;
 

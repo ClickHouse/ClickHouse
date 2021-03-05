@@ -205,6 +205,11 @@ public:
                                                     compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return this->template hasEqualValuesImpl<Self>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
@@ -315,6 +320,8 @@ public:
         return res;
     }
 
+    ColumnPtr compress() const override;
+
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
@@ -361,5 +368,22 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     return res;
 }
+
+/// Prevent implicit template instantiation of ColumnVector for common types
+
+extern template class ColumnVector<UInt8>;
+extern template class ColumnVector<UInt16>;
+extern template class ColumnVector<UInt32>;
+extern template class ColumnVector<UInt64>;
+extern template class ColumnVector<UInt128>;
+extern template class ColumnVector<UInt256>;
+extern template class ColumnVector<Int8>;
+extern template class ColumnVector<Int16>;
+extern template class ColumnVector<Int32>;
+extern template class ColumnVector<Int64>;
+extern template class ColumnVector<Int128>;
+extern template class ColumnVector<Int256>;
+extern template class ColumnVector<Float32>;
+extern template class ColumnVector<Float64>;
 
 }

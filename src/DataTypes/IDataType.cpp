@@ -187,7 +187,6 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
 // static
 SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const IDataType::StreamExistenceCallback & callback)
 {
-    std::cerr << "getSerialization for: " << column.name << ' ' << column.getSubcolumnName() << "\n";
     auto base_serialization = column.type->getSerialization(column.name, callback);
     // if (column.isSubcolumn())
     //     return column.getTypeInStorage()->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization);

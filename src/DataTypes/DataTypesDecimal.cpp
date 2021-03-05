@@ -5,8 +5,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
@@ -101,7 +99,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    UInt64 precision = DecimalUtils::maxPrecision<T>();
+    UInt64 precision = DecimalUtils::max_precision<T>;
     UInt64 scale = scale_arg->value.get<UInt64>();
 
     return createDecimal<DataTypeDecimal>(precision, scale);

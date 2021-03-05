@@ -415,7 +415,9 @@ public:
     size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
+    size_t getMaxPartsCountForPartitionWithState(DataPartState state) const;
     size_t getMaxPartsCountForPartition() const;
+    size_t getMaxInactivePartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
@@ -464,9 +466,6 @@ public:
     /// Used in REPLACE PARTITION command;
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
                                                      bool skip_intersecting_parts, DataPartsLock & lock);
-
-    /// Renames the part to detached/<prefix>_<part> and removes it from working set.
-    void removePartsFromWorkingSetAndCloneToDetached(const DataPartsVector & parts, bool clear_without_timeout, const String & prefix = "");
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
@@ -518,7 +517,11 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+
+    /// Checks if the Mutation can be performed.
+    /// (currently no additional checks: always ok)
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
@@ -689,11 +692,16 @@ public:
 
     bool is_custom_partitioned = false;
 
-    ExpressionActionsPtr minmax_idx_expr;
-    Names minmax_idx_columns;
-    DataTypes minmax_idx_column_types;
+    /// Used only for old syntax tables. Never changes after init.
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
+
+    /// Get partition key expression on required columns
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key);
+    /// Get column names required for partition key
+    static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
+    /// Get column types required for partition key
+    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
 
     ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
     ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
@@ -915,9 +923,6 @@ protected:
     virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
-
-    /// Selects parts for move and moves them, used in background process
-    bool selectPartsAndMove();
 
 
 private:

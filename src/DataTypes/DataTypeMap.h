@@ -48,6 +48,7 @@ public:
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
+    const DataTypePtr & getNestedType() const { return nested; }
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

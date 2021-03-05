@@ -467,33 +467,6 @@ void SerializationNullable::serializeTextXML(const IColumn & column, size_t row_
         nested->serializeTextXML(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-    if (!col.isNullAt(row_num))
-        nested->serializeProtobuf(col.getNestedColumn(), row_num, protobuf, value_index);
-}
-
-void SerializationNullable::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    IColumn & nested_column = col.getNestedColumn();
-    size_t old_size = nested_column.size();
-    try
-    {
-        nested->deserializeProtobuf(nested_column, protobuf, allow_add_row, row_added);
-        if (row_added)
-            col.getNullMapData().push_back(0);
-    }
-    catch (...)
-    {
-        nested_column.popBack(nested_column.size() - old_size);
-        col.getNullMapData().resize_assume_reserved(old_size);
-        row_added = false;
-        throw;
-    }
-}
-
 template bool SerializationNullable::deserializeWholeTextImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
 template bool SerializationNullable::deserializeTextEscapedImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
 template bool SerializationNullable::deserializeTextQuotedImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);

@@ -286,6 +286,10 @@
          In bytes. Cache is single for server. Memory is allocated only on demand.
          Cache is used when 'use_uncompressed_cache' user setting turned on (off by default).
          Uncompressed cache is advantageous only for very short queries and in rare cases.
+
+         Note: uncompressed cache can be pointless for lz4, because memory bandwidth
+         is slower than multi-core decompression on some server configurations.
+         Enabling it can sometimes paradoxically make queries slower.
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
@@ -423,8 +427,14 @@
     <!-- Comma-separated list of prefixes for user-defined settings. -->
     <custom_settings_prefixes></custom_settings_prefixes>
 
-    <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distributed DDL worker and so on). -->
+    <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
+
+    <!-- Buffer profile of settings.
+         This settings are used by Buffer storage to flush data to the underlying table.
+         Default: used from system_profile directive.
+    -->
+    <!-- <buffer_profile>default</buffer_profile> -->
 
     <!-- Default database. -->
     <default_database>default</default_database>
@@ -884,6 +894,19 @@
 
         <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
         <!-- <pool_size>1</pool_size> -->
+
+        <!--
+             Cleanup settings (active tasks will not be removed)
+        -->
+
+        <!-- Controls task TTL (default 1 week) -->
+        <!-- <task_max_lifetime>604800</task_max_lifetime> -->
+
+        <!-- Controls how often cleanup should be performed (in seconds) -->
+        <!-- <cleanup_delay_period>60</cleanup_delay_period> -->
+
+        <!-- Controls how many tasks could be in the queue -->
+        <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

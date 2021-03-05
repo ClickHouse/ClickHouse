@@ -110,19 +110,17 @@ void SerializationFixedString::serializeTextEscaped(const IColumn & column, size
 }
 
 
-static inline void alignStringLength(const SerializationFixedString & serialization,
-                                     ColumnFixedString::Chars & data,
-                                     size_t string_start)
+void SerializationFixedString::alignStringLength(size_t n, ColumnFixedString::Chars & data, size_t string_start)
 {
     size_t length = data.size() - string_start;
-    if (length < serialization.getN())
+    if (length < n)
     {
-        data.resize_fill(string_start + serialization.getN());
+        data.resize_fill(string_start + n);
     }
-    else if (length > serialization.getN())
+    else if (length > n)
     {
         data.resize_assume_reserved(string_start);
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large value for FixedString({})", serialization.getN());
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large value for FixedString({})", n);
     }
 }
 
@@ -134,7 +132,7 @@ static inline void read(const SerializationFixedString & self, IColumn & column,
     try
     {
         reader(data);
-        alignStringLength(self, data, prev_size);
+        SerializationFixedString::alignStringLength(self.getN(), data, prev_size);
     }
     catch (...)
     {
@@ -201,51 +199,5 @@ void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer &
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
 }
 
-
-void SerializationFixedString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    value_index = static_cast<bool>(protobuf.writeString(StringRef(pos, n)));
-}
-
-
-void SerializationFixedString::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    auto & column_string = assert_cast<ColumnFixedString &>(column);
-    ColumnFixedString::Chars & data = column_string.getChars();
-    size_t old_size = data.size();
-    try
-    {
-        if (allow_add_row)
-        {
-            if (protobuf.readStringInto(data))
-            {
-                alignStringLength(*this, data, old_size);
-                row_added = true;
-            }
-            else
-                data.resize_assume_reserved(old_size);
-        }
-        else
-        {
-            ColumnFixedString::Chars temp_data;
-            if (protobuf.readStringInto(temp_data))
-            {
-                alignStringLength(*this, temp_data, 0);
-                column_string.popBack(1);
-                old_size = data.size();
-                data.insertSmallAllowReadWriteOverflow15(temp_data.begin(), temp_data.end());
-            }
-        }
-    }
-    catch (...)
-    {
-        data.resize_assume_reserved(old_size);
-        throw;
-    }
-}
 
 }

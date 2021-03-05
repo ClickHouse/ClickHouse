@@ -128,7 +128,8 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 
         // Check that all columns now have the same size.
         size_t new_size = column.size();
-        for (auto i : ext::range(1, ext::size(elems)))
+
+        for (auto i : ext::range(0, ext::size(elems)))
         {
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
@@ -145,6 +146,7 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
         for (const auto & i : ext::range(0, ext::size(elems)))
         {
             auto & element_column = extractElementColumn(column, i);
+
             if (element_column.size() > old_size)
                 element_column.popBack(1);
         }

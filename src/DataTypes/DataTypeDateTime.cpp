@@ -6,8 +6,6 @@
 #include <common/DateLUT.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>

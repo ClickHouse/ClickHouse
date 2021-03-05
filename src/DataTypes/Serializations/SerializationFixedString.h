@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -40,8 +41,10 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+    /// Makes sure that the length of a newly inserted string to `chars` is equal to getN().
+    /// If the length is less than getN() the function will add zero characters up to getN().
+    /// If the length is greater than getN() the function will throw an exception.
+    static void alignStringLength(size_t n, PaddedPODArray<UInt8> & chars, size_t old_size);
 };
 
 }

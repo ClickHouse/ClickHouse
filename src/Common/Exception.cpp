@@ -458,23 +458,15 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
-ParsingException::ParsingException()
-{
-    Exception::message(Exception::message() + "{}");
-}
-
+ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
 {
-    Exception::message(Exception::message() + "{}");
 }
-
 ParsingException::ParsingException(int code, const std::string & message)
     : Exception(message, code)
 {
-    Exception::message(Exception::message() + "{}");
 }
-
 
 /// We use additional field formatted_message_ to make this method const.
 std::string ParsingException::displayText() const
@@ -482,9 +474,9 @@ std::string ParsingException::displayText() const
     try
     {
         if (line_number_ == -1)
-            formatted_message_ = fmt::format(message(), "");
+            formatted_message_ = message();
         else
-            formatted_message_ = fmt::format(message(), fmt::format(": (at row {})\n", line_number_));
+            formatted_message_ = message() + fmt::format(": (at row {})\n", line_number_);
     }
     catch (...)
     {}

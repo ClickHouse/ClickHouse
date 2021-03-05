@@ -288,14 +288,4 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
 }
 
-void SerializationMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
-}
-
-void SerializationMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
-}
-
 }

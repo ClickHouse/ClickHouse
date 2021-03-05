@@ -102,7 +102,7 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         /// TODO Do positions need to be 1-based for this function?
         size_t position = columns[1]->getUInt(row_num);
@@ -126,7 +126,7 @@ public:
         columns[0]->get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;
@@ -139,7 +139,7 @@ public:
                 arr_lhs[i] = arr_rhs[i];
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const Array & arr = data(place).value;
         size_t size = arr.size();
@@ -159,7 +159,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -179,7 +179,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & to_array = assert_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();

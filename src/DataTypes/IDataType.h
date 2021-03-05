@@ -26,9 +26,6 @@ class Field;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
-class ProtobufReader;
-class ProtobufWriter;
-
 struct NameAndTypePair;
 class SerializationInfo;
 

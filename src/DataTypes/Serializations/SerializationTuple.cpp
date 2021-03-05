@@ -396,33 +396,6 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
 }
 
-void SerializationTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    for (; value_index < elems.size(); ++value_index)
-    {
-        size_t stored = 0;
-        elems[value_index]->serializeProtobuf(extractElementColumn(column, value_index), row_num, protobuf, stored);
-        if (!stored)
-            break;
-    }
-}
-
-void SerializationTuple::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    bool all_elements_get_row = true;
-    addElementSafe(elems.size(), column, [&]
-    {
-        for (const auto & i : ext::range(0, ext::size(elems)))
-        {
-            bool element_row_added;
-            elems[i]->deserializeProtobuf(extractElementColumn(column, i), protobuf, allow_add_row, element_row_added);
-            all_elements_get_row &= element_row_added;
-        }
-    });
-    row_added = all_elements_get_row;
-}
-
 size_t SerializationTuple::getPositionByName(const String & name) const
 {
     size_t size = elems.size();

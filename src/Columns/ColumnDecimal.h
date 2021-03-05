@@ -50,6 +50,14 @@ private:
     UInt32 scale;
 };
 
+/// Prevent implicit template instantiation of DecimalPaddedPODArray for common decimal types
+
+extern template class DecimalPaddedPODArray<Decimal32>;
+extern template class DecimalPaddedPODArray<Decimal64>;
+extern template class DecimalPaddedPODArray<Decimal128>;
+extern template class DecimalPaddedPODArray<Decimal256>;
+extern template class DecimalPaddedPODArray<DateTime64>;
+
 /// A ColumnVector for Decimals
 template <typename T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
@@ -128,6 +136,7 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
+    bool hasEqualValues() const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
@@ -136,7 +145,7 @@ public:
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n].value); }
-    Int64 getInt(size_t n) const override { return Int64(data[n].value * scale); }
+    Int64 getInt(size_t n) const override { return Int64(data[n].value) * scale; }
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
@@ -163,6 +172,8 @@ public:
             return scale == rhs_concrete->scale;
         return false;
     }
+
+    ColumnPtr compress() const override;
 
 
     void insertValue(const T value) { data.push_back(value); }
@@ -214,5 +225,15 @@ ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size
 
     return res;
 }
+
+
+/// Prevent implicit template instantiation of ColumnDecimal for common decimal types
+
+extern template class ColumnDecimal<Decimal32>;
+extern template class ColumnDecimal<Decimal64>;
+extern template class ColumnDecimal<Decimal128>;
+extern template class ColumnDecimal<Decimal256>;
+extern template class ColumnDecimal<DateTime64>;
+
 
 }

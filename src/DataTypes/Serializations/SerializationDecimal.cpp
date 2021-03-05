@@ -66,33 +66,6 @@ void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & 
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-template <typename T>
-void SerializationDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], this->scale));
-}
-
-
-template <typename T>
-void SerializationDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    T decimal;
-    if (!protobuf.readDecimal(decimal, this->precision, this->scale))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(decimal);
-        row_added = true;
-    }
-    else
-        container.back() = decimal;
-}
-
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;
 template class SerializationDecimal<Decimal128>;

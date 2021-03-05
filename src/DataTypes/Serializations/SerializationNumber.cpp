@@ -197,32 +197,6 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
 }
 
-template <typename T>
-void SerializationNumber<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeNumber(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]));
-}
-
-template <typename T>
-void SerializationNumber<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    T value;
-    if (!protobuf.readNumber(value))
-        return;
-
-    auto & container = typeid_cast<ColumnVector<T> &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(value);
-        row_added = true;
-    }
-    else
-        container.back() = value;
-}
-
 template class SerializationNumber<UInt8>;
 template class SerializationNumber<UInt16>;
 template class SerializationNumber<UInt32>;
