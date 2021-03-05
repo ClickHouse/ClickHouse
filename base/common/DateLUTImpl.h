@@ -17,6 +17,10 @@
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
 
+/// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
+/// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
+#define DATE_LUT_ADD (1970 - DATE_LUT_MIN_YEAR) * 366 * 86400
+
 
 #if defined(__PPC__)
 #if !__clang__
@@ -110,26 +114,6 @@ private:
     friend inline LUTIndex operator/(const T v, const LUTIndex & index)
     {
         return LUTIndex{(v / index.toUnderType()) & date_lut_mask};
-    }
-
-    /// Remainder of division in the sense of modular arithmetic:
-    /// the difference between x and the maximal divisible number not greater than x.
-    /// Example: -1 % 10 = 9, because -10 is the maximal number not greater than -1 that is divisible by 10.
-    /// Why do we need this:
-    /// - because the unix timestamp -1 is 1969-12-31 23:59:59 in UTC.
-    template <typename T, typename U>
-    static constexpr inline auto mod(T x, U divisor)
-    {
-        /// This is the C++ way of modulo of division:
-        /// x % y is the number that: (x / y) * y + x % y == x
-        /// For example, -1 % 10 = -1
-        /// Note that both variants are "correct" in the mathematical sense. They are just different operations.
-        auto res = x % divisor;
-
-        if (unlikely(res < 0))
-            res += divisor;
-
-        return res;
     }
 
 public:
@@ -450,13 +434,13 @@ public:
       */
     inline unsigned toSecond(time_t t) const
     {
-        return mod(t, 60);
+        return (t + DATE_LUT_ADD) % 60;
     }
 
     inline unsigned toMinute(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime && t >= 0)
-            return (t / 60) % 60;
+        if (offset_is_whole_number_of_hours_everytime)
+            return ((t + DATE_LUT_ADD) / 60) % 60;
 
         /// To consider the DST changing situation within this day
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
@@ -470,20 +454,19 @@ public:
         return time / 60 % 60;
     }
 
-    /// NOTE: These functions are wrong for negative time_t.
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
-    inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
-    inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
-    inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
+    inline time_t toStartOfMinute(time_t t) const { return (t + DATE_LUT_ADD) / 60 * 60 - DATE_LUT_ADD; }
+    inline time_t toStartOfFiveMinute(time_t t) const { return (t + DATE_LUT_ADD) / 300 * 300 - DATE_LUT_ADD; }
+    inline time_t toStartOfFifteenMinutes(time_t t) const { return (t + DATE_LUT_ADD) / 900 * 900 - DATE_LUT_ADD; }
 
     /// NOTE: This most likely wrong for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
-    inline time_t toStartOfTenMinutes(time_t t) const { return t / 600 * 600; }
+    inline time_t toStartOfTenMinutes(time_t t) const { return (t + DATE_LUT_ADD) / 600 * 600 - DATE_LUT_ADD; }
 
     /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
     inline time_t toStartOfHour(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime && t >= 0)
-            return t / 3600 * 3600;
+        if (offset_is_whole_number_of_hours_everytime)
+            return (t + DATE_LUT_ADD) / 3600 * 3600 - DATE_LUT_ADD;
 
         Int64 date = find(t).date;
         return date + (t - date) / 3600 * 3600;
@@ -766,13 +749,12 @@ public:
     /// We count all hour-length intervals, unrelated to offset changes.
     inline time_t toRelativeHourNum(time_t t) const
     {
-        /// NOTE: This is also wrong for negative time_t.
         if (offset_is_whole_number_of_hours_everytime)
-            return t / 3600;
+            return (t + DATE_LUT_ADD) / 3600 - (DATE_LUT_ADD / 3600);
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
-        return (t + 86400 - offset_at_start_of_epoch) / 3600;
+        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -781,10 +763,9 @@ public:
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    /// NOTE: This is wrong for negative time_t.
     inline time_t toRelativeMinuteNum(time_t t) const
     {
-        return t / 60;
+        return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
 
     template <typename DateOrTime>
@@ -841,8 +822,7 @@ public:
             return toStartOfHour(t);
         UInt64 seconds = hours * 3600;
 
-        /// NOTE: This is wrong for negative time_t.
-        t = t / seconds * seconds;
+        t = (t + DATE_LUT_ADD) / seconds * seconds - DATE_LUT_ADD;
 
         if (offset_is_whole_number_of_hours_everytime)
             return t;
@@ -855,8 +835,7 @@ public:
             return toStartOfMinute(t);
         UInt64 seconds = 60 * minutes;
 
-        /// NOTE: This is wrong for negative time_t.
-        return t / seconds * seconds;
+        return (t + DATE_LUT_ADD) / seconds * seconds - DATE_LUT_ADD;
     }
 
     inline time_t toStartOfSecondInterval(time_t t, UInt64 seconds) const
@@ -864,8 +843,7 @@ public:
         if (seconds == 1)
             return t;
 
-        /// NOTE: This is wrong for negative time_t.
-        return t / seconds * seconds;
+        return (t + DATE_LUT_ADD) / seconds * seconds - DATE_LUT_ADD;
     }
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
