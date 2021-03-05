@@ -124,4 +124,6 @@ public:
     static ASTPtr fromCNF(const CNFQuery & cnf);
 };
 
+void pushNotIn(CNFQuery::AtomicFormula & atom);
+
 }
