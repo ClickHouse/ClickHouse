@@ -80,13 +80,7 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
         out_port = static_cast<UInt16>(port);
     }
     else
-    {
-        struct servent * se = getservbyname(port_str.c_str(), nullptr);
-        if (se)
-            out_port = ntohs(static_cast<UInt16>(se->s_port));
-        else
-            throw Exception("Service not found", ErrorCodes::BAD_ARGUMENTS);
-    }
+        throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
 }
 
 static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)

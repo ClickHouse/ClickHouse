@@ -12,7 +12,7 @@ class Context;
 class AccessRightsElements;
 
 
-class InterpreterKillQueryQuery : public IInterpreter
+class InterpreterKillQueryQuery final : public IInterpreter
 {
 public:
     InterpreterKillQueryQuery(const ASTPtr & query_ptr_, Context & context_)

@@ -111,8 +111,6 @@ MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 
 bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
-    /// TODO: constraints graph
-
     /// TODO: this is temporary; need to write more effective search
     /// TODO: go deeper into asts (a < b, a = b,...) with z3 or some visitor
     for (const auto & constraint : constraints) /// one constraint in group is enough,

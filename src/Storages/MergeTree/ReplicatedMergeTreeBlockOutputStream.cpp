@@ -254,6 +254,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             part->info.min_block = block_number;
             part->info.max_block = block_number;
             part->info.level = 0;
+            part->info.mutation = 0;
 
             part->name = part->getNewName(part->info);
 

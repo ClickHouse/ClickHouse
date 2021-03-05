@@ -53,6 +53,13 @@ struct TreeRewriterResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
+    /// Whether the query contains explicit columns like "SELECT column1 + column2 FROM table1".
+    /// Queries like "SELECT count() FROM table1", "SELECT 1" don't contain explicit columns.
+    bool has_explicit_columns = false;
+
+    /// Whether it's possible to use the trivial count optimization,
+    /// i.e. use a fast call of IStorage::totalRows() (or IStorage::totalRowsByPartitionPredicate())
+    /// instead of actual retrieving columns and counting rows.
     bool optimize_trivial_count = false;
 
     /// Cache isRemote() call for storage, because it may be too heavy.
@@ -70,6 +77,7 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    NameSet getArrayJoinSourceNameSet() const;
     const Scalars & getScalars() const { return scalars; }
 };
 

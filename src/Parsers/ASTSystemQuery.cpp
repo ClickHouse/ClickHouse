@@ -22,6 +22,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "SHUTDOWN";
         case Type::KILL:
             return "KILL";
+        case Type::SUSPEND:
+            return "SUSPEND";
         case Type::DROP_DNS_CACHE:
             return "DROP DNS CACHE";
         case Type::DROP_MARK_CACHE:
@@ -146,7 +148,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
 
     auto print_on_volume = [&]
     {
-        settings.ostr << " ON VOLUME "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON VOLUME "
                       << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(storage_policy)
                       << (settings.hilite ? hilite_none : "")
                       << "."
@@ -182,9 +184,20 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         print_database_table();
     }
     else if (type == Type::RELOAD_DICTIONARY)
+    {
         print_database_dictionary();
+    }
     else if (type == Type::DROP_REPLICA)
+    {
         print_drop_replica();
+    }
+    else if (type == Type::SUSPEND)
+    {
+         settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
+            << (settings.hilite ? hilite_none : "") << seconds
+            << (settings.hilite ? hilite_keyword : "") << " SECOND"
+            << (settings.hilite ? hilite_none : "");
+    }
 }
 
 

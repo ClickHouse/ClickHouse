@@ -1,10 +1,14 @@
 #pragma once
 
 #include <vector>
-#include <Columns/IColumn.h>
+
 #include <common/types.h>
+
 #include <Poco/File.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -16,13 +20,18 @@ class Context;
 
 /// Write keys to block output stream.
 
+void formatBlock(BlockOutputStreamPtr & out, const Block & block);
+
 /// For simple key
-void formatIDs(BlockOutputStreamPtr & out, const std::vector<UInt64> & ids);
+
+Block blockForIds(
+    const DictionaryStructure & dict_struct,
+    const std::vector<UInt64> & ids);
 
 /// For composite key
-void formatKeys(
+
+Block blockForKeys(
     const DictionaryStructure & dict_struct,
-    BlockOutputStreamPtr & out,
     const Columns & key_columns,
     const std::vector<size_t> & requested_rows);
 
@@ -36,4 +45,5 @@ void applySettingsToContext(
     const std::string & config_prefix,
     Context & context,
     const Poco::Util::AbstractConfiguration & config);
+
 }

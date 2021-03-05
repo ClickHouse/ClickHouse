@@ -9,7 +9,7 @@ bool CompressedReadBuffer::nextImpl()
 {
     size_t size_decompressed;
     size_t size_compressed_without_checksum;
-    size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
+    size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
     if (!size_compressed)
         return false;
 
@@ -40,7 +40,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
         size_t size_decompressed;
         size_t size_compressed_without_checksum;
 
-        if (!readCompressedData(size_decompressed, size_compressed_without_checksum))
+        if (!readCompressedData(size_decompressed, size_compressed_without_checksum, false))
             return bytes_read;
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();

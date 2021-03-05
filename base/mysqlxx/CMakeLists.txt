@@ -3,7 +3,6 @@ add_library (mysqlxx
     Exception.cpp
     Query.cpp
     ResultBase.cpp
-    StoreQueryResult.cpp
     UseQueryResult.cpp
     Row.cpp
     Value.cpp

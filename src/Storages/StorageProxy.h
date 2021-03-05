@@ -25,7 +25,6 @@ public:
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
-    bool supportsSettings() const override { return getNested()->supportsSettings(); }
     bool noPushingToViews() const override { return getNested()->noPushingToViews(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
 
@@ -98,9 +97,9 @@ public:
         IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override
     {
-        getNested()->checkAlterIsPossible(commands, settings);
+        getNested()->checkAlterIsPossible(commands, context);
     }
 
     Pipe alterPartition(

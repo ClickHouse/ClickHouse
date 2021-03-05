@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import random
+import time
 
 from multiprocessing.dummy import Pool
 from testflows.core import *
@@ -27,6 +28,7 @@ servers = {
 
 @TestStep(When)
 @Name("I login as {username} and execute query")
+@Args(format_name=True)
 def login_and_execute_query(self, username, password, exitcode=None, message=None, steps=True):
     """Execute query as some user.
     """
@@ -474,6 +476,470 @@ def empty_username_and_empty_password(self, server=None, rbac=False):
     """
     login_and_execute_query(username="", password="")
 
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Default("1.0")
+)
+def default_verification_cooldown_value(self, server, rbac=False, timeout=20):
+    """Check that the default value (0) for the verification cooldown parameter
+    disables caching and forces contacting the LDAP server for each
+    authentication request.
+    """
+
+    error_message = "DB::Exception: testVCD: Authentication failed: password is incorrect or there is no user with such name"
+    error_exitcode = 4
+    user = None
+
+    with Given("I have an LDAP configuration that uses the default verification_cooldown value (0)"):
+        servers = {"openldap1": {"host": "openldap1", "port": "389", "enable_tls": "no",
+            "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com"
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    try:
+        with Given("I add user to LDAP"):
+            user = {"cn": "testVCD", "userpassword": "testVCD"}
+            user = add_user_to_ldap(**user)
+
+        with ldap_servers(servers):
+            with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml"):
+                with When("I login and execute a query"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("I change user password in LDAP"):
+                    change_user_password_in_ldap(user, "newpassword")
+
+                with Then("when I try to login immediately with the old user password it should fail"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                        exitcode=error_exitcode, message=error_message)
+
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown("1.0")
+)
+def valid_verification_cooldown_value_cn_change(self, server, rbac=False, timeout=20):
+    """Check that we can perform requests without contacting the LDAP server
+    after successful authentication when the verification_cooldown parameter
+    is set and the user cn is changed.
+    """
+
+    error_message = "DB::Exception: testVCD: Authentication failed: password is incorrect or there is no user with such name"
+    error_exitcode = 4
+    user = None
+    new_user = None
+
+    with Given("I have an LDAP configuration that sets verification_cooldown parameter to 2 sec"):
+        servers = { "openldap1": {
+            "host": "openldap1",
+            "port": "389",
+            "enable_tls": "no",
+            "auth_dn_prefix": "cn=",
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "2"
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    try:
+        with Given("I add user to LDAP"):
+            user = {"cn": "testVCD", "userpassword": "testVCD"}
+            user = add_user_to_ldap(**user)
+
+        with ldap_servers(servers):
+            with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml"):
+                with When("I login and execute a query"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("I change user cn in LDAP"):
+                    new_user = change_user_cn_in_ldap(user, "testVCD2")
+
+                with Then("when I try to login again with the old user cn it should work"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("when I sleep for 2 seconds and try to log in, it should fail"):
+                    time.sleep(2)
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                        exitcode=error_exitcode, message=error_message)
+
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if new_user is not None:
+                delete_user_from_ldap(new_user, exitcode=None)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown("1.0")
+)
+def valid_verification_cooldown_value_password_change(self, server, rbac=False, timeout=20):
+    """Check that we can perform requests without contacting the LDAP server
+    after successful authentication when the verification_cooldown parameter
+    is set and the user password is changed.
+    """
+
+    error_message = "DB::Exception: testVCD: Authentication failed: password is incorrect or there is no user with such name"
+    error_exitcode = 4
+    user = None
+
+    with Given("I have an LDAP configuration that sets verification_cooldown parameter to 2 sec"):
+        servers = { "openldap1": {
+            "host": "openldap1",
+            "port": "389",
+            "enable_tls": "no",
+            "auth_dn_prefix": "cn=",
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "2"
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    try:
+        with Given("I add user to LDAP"):
+            user = {"cn": "testVCD", "userpassword": "testVCD"}
+            user = add_user_to_ldap(**user)
+
+        with ldap_servers(servers):
+            with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml"):
+                with When("I login and execute a query"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("I change user password in LDAP"):
+                    change_user_password_in_ldap(user, "newpassword")
+
+                with Then("when I try to login again with the old password it should work"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("when I sleep for 2 seconds and try to log in, it should fail"):
+                    time.sleep(2)
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                        exitcode=error_exitcode, message=error_message)
+
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown("1.0")
+)
+def valid_verification_cooldown_value_ldap_unavailable(self, server, rbac=False, timeout=20):
+    """Check that we can perform requests without contacting the LDAP server
+    after successful authentication when the verification_cooldown parameter
+    is set, even when the LDAP server is offline.
+    """
+
+    error_message = "DB::Exception: testVCD: Authentication failed: password is incorrect or there is no user with such name"
+    error_exitcode = 4
+    user = None
+
+    with Given("I have an LDAP configuration that sets verification_cooldown parameter to 2 sec"):
+        servers = { "openldap1": {
+            "host": "openldap1",
+            "port": "389",
+            "enable_tls": "no",
+            "auth_dn_prefix": "cn=",
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "2"
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    try:
+        with Given("I add a new user to LDAP"):
+            user = {"cn": "testVCD", "userpassword": "testVCD"}
+            user = add_user_to_ldap(**user)
+
+        with ldap_servers(servers):
+            with ldap_authenticated_users({"username": user["cn"], "server": server},
+                config_file=f"ldap_users_{getuid()}.xml"):
+
+                with When("I login and execute a query"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                try:
+                    with And("then I stop the ldap server"):
+                        self.context.ldap_node.stop()
+
+                    with Then("when I try to login again with the server offline it should work"):
+                        login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                    with And("when I sleep for 2 seconds and try to log in, it should fail"):
+                        time.sleep(2)
+                        login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                            exitcode=error_exitcode, message=error_message)
+
+                finally:
+                    with Finally("I start the ldap server back up"):
+                        self.context.ldap_node.start()
+
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
+
+@TestOutline
+def repeat_requests(self, server, iterations, vcd_value, rbac=False):
+    """Run repeated requests from some user to the LDAP server.
+    """
+
+    user = None
+
+    with Given(f"I have an LDAP configuration that sets verification_cooldown parameter to {vcd_value} sec"):
+        servers = { "openldap1": {
+            "host": "openldap1",
+            "port": "389",
+            "enable_tls": "no",
+            "auth_dn_prefix": "cn=",
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": vcd_value
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    try:
+        with And("I add a new user to LDAP"):
+            user = {"cn": "testVCD", "userpassword": "testVCD"}
+            user = add_user_to_ldap(**user)
+
+        with ldap_servers(servers):
+            with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml"):
+                with When(f"I login and execute some query {iterations} times"):
+                    start_time = time.time()
+                    r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT 1\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done")
+                    end_time = time.time()
+
+                    return end_time - start_time
+
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Performance("1.0")
+)
+def verification_cooldown_performance(self, server, rbac=False, iterations=5000):
+    """Check that login performance is better when the verification cooldown
+    parameter is set to a positive value when comparing to the case when
+    the verification cooldown parameter is turned off.
+    """
+
+    vcd_time = 0
+    no_vcd_time = 0
+
+    with Example(f"Repeated requests with verification cooldown parameter set to 600 seconds, {iterations} iterations"):
+        vcd_time = repeat_requests(server=server, iterations=iterations, vcd_value="600", rbac=rbac)
+        metric("login_with_vcd_value_600", units="seconds", value=vcd_time)
+
+    with Example(f"Repeated requests with verification cooldown parameter set to 0 seconds, {iterations} iterations"):
+        no_vcd_time = repeat_requests(server=server, iterations=iterations, vcd_value="0", rbac=rbac)
+        metric("login_with_vcd_value_0", units="seconds", value=no_vcd_time)
+
+    with Then("The performance with verification cooldown parameter set is better than the performance with no verification cooldown parameter."):
+        assert no_vcd_time > vcd_time, error()
+
+    with And("Log the performance improvement as a percentage."):
+        metric("percentage_improvement", units="%", value=100*(no_vcd_time - vcd_time)/vcd_time)
+
+@TestOutline
+def check_verification_cooldown_reset_on_core_server_parameter_change(self, server,
+        parameter_name, parameter_value, rbac=False):
+    """Check that the LDAP login cache is reset for all the LDAP authentication users
+    when verification_cooldown parameter is set after one of the core server
+    parameters is changed in the LDAP server configuration.
+    """
+
+    config_d_dir="/etc/clickhouse-server/config.d"
+    config_file="ldap_servers.xml"
+    error_message = "DB::Exception: {user}: Authentication failed: password is incorrect or there is no user with such name"
+    error_exitcode = 4
+    user = None
+    config=None
+    updated_config=None
+
+    with Given("I have an LDAP configuration that sets verification_cooldown parameter to 600 sec"):
+        servers = { "openldap1": {
+            "host": "openldap1",
+            "port": "389",
+            "enable_tls": "no",
+            "auth_dn_prefix": "cn=",
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "600"
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    with And("LDAP authenticated user"):
+        users = [
+            {"cn": f"testVCD_0", "userpassword": "testVCD_0"},
+            {"cn": f"testVCD_1", "userpassword": "testVCD_1"}
+        ]
+
+    with And("I create LDAP servers configuration file"):
+        config = create_ldap_servers_config_content(servers, config_d_dir, config_file)
+
+    with ldap_users(*users) as users:
+        with ldap_servers(servers, restart=True):
+            with ldap_authenticated_users(*[{"username": user["cn"], "server": server} for user in users]):
+                with When("I login and execute a query"):
+                    for user in users:
+                        with By(f"as user {user['cn']}"):
+                            login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("I change user password in LDAP"):
+                    for user in users:
+                        with By(f"for user {user['cn']}"):
+                            change_user_password_in_ldap(user, "newpassword")
+
+                with And(f"I change the server {parameter_name} core parameter", description=f"{parameter_value}"):
+                    servers["openldap1"][parameter_name] = parameter_value
+
+                with And("I create an updated the config file that has a different server host name"):
+                    updated_config = create_ldap_servers_config_content(servers, config_d_dir, config_file)
+
+                with modify_config(updated_config, restart=False):
+                    with Then("when I try to log in it should fail as cache should have been reset"):
+                        for user in users:
+                            with By(f"as user {user['cn']}"):
+                                login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                                    exitcode=error_exitcode, message=error_message.format(user=user["cn"]))
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_ChangeInCoreServerParameters("1.0")
+)
+def verification_cooldown_reset_on_server_host_parameter_change(self, server, rbac=False):
+    """Check that the LDAP login cache is reset for all the LDAP authentication users
+    when verification_cooldown parameter is set after server host name
+    is changed in the LDAP server configuration.
+    """
+
+    check_verification_cooldown_reset_on_core_server_parameter_change(server=server,
+        parameter_name="host", parameter_value="openldap2", rbac=rbac)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_ChangeInCoreServerParameters("1.0")
+)
+def verification_cooldown_reset_on_server_port_parameter_change(self, server, rbac=False):
+    """Check that the LDAP login cache is reset for all the LDAP authentication users
+    when verification_cooldown parameter is set after server port is changed in the
+    LDAP server configuration.
+    """
+
+    check_verification_cooldown_reset_on_core_server_parameter_change(server=server,
+        parameter_name="port", parameter_value="9006", rbac=rbac)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_ChangeInCoreServerParameters("1.0")
+)
+def verification_cooldown_reset_on_server_auth_dn_prefix_parameter_change(self, server, rbac=False):
+    """Check that the LDAP login cache is reset for all the LDAP authentication users
+    when verification_cooldown parameter is set after server auth_dn_prefix
+    is changed in the LDAP server configuration.
+    """
+
+    check_verification_cooldown_reset_on_core_server_parameter_change(server=server,
+        parameter_name="auth_dn_prefix", parameter_value="cxx=", rbac=rbac)
+
+@TestScenario
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_ChangeInCoreServerParameters("1.0")
+)
+def verification_cooldown_reset_on_server_auth_dn_suffix_parameter_change(self, server, rbac=False):
+    """Check that the LDAP login cache is reset for all the LDAP authentication users
+    when verification_cooldown parameter is set after server auth_dn_suffix
+    is changed in the LDAP server configuration.
+    """
+
+    check_verification_cooldown_reset_on_core_server_parameter_change(server=server,
+        parameter_name="auth_dn_suffix",
+        parameter_value=",ou=company,dc=users,dc=com", rbac=rbac)
+
+
+@TestScenario
+@Name("verification cooldown reset when invalid password is provided")
+@Tags("verification_cooldown")
+@Requirements(
+    RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_InvalidPassword("1.0")
+)
+def scenario(self, server, rbac=False):
+    """Check that cached bind requests for the user are discarded when
+    the user provides invalid login credentials.
+    """
+
+    user = None
+    error_exitcode = 4
+    error_message = "DB::Exception: testVCD: Authentication failed: password is incorrect or there is no user with such name"
+
+    with Given("I have an LDAP configuration that sets verification_cooldown parameter to 600 sec"):
+        servers = { "openldap1": {
+            "host": "openldap1",
+            "port": "389",
+            "enable_tls": "no",
+            "auth_dn_prefix": "cn=",
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "600"
+        }}
+
+        self.context.ldap_node = self.context.cluster.node(server)
+
+    try:
+        with Given("I add a new user to LDAP"):
+            user = {"cn": "testVCD", "userpassword": "testVCD"}
+            user = add_user_to_ldap(**user)
+
+        with ldap_servers(servers):
+            with ldap_authenticated_users({"username": user["cn"], "server": server},
+                config_file=f"ldap_users_{getuid()}.xml"):
+
+                with When("I login and execute a query"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("I change user password in LDAP"):
+                    change_user_password_in_ldap(user, "newpassword")
+
+                with Then("When I try to log in with the cached password it should work"):
+                    login_and_execute_query(username=user["cn"], password=user["userpassword"])
+
+                with And("When I try to log in with an incorrect password it should fail"):
+                    login_and_execute_query(username=user["cn"], password="incorrect", exitcode=error_exitcode,
+                        message=error_message)
+
+                with And("When I try to log in with the cached password it should fail"):
+                    login_and_execute_query(username=user["cn"], password="incorrect", exitcode=error_exitcode,
+                        message=error_message)
+
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
+
+@TestFeature
+def verification_cooldown(self, rbac, servers=None, node="clickhouse1"):
+    """Check verification cooldown parameter functionality.
+    """
+    for scenario in loads(current_module(), Scenario, filter=has.tag("verification_cooldown")):
+        scenario(server="openldap1", rbac=rbac)
+
+
 @TestOutline(Feature)
 @Name("user authentications")
 @Requirements(
@@ -493,5 +959,11 @@ def feature(self, rbac, servers=None, node="clickhouse1"):
         servers = globals()["servers"]
 
     with ldap_servers(servers):
-        for scenario in loads(current_module(), Scenario):
+        for scenario in loads(current_module(), Scenario, filter=~has.tag("verification_cooldown")):
             scenario(server="openldap1", rbac=rbac)
+
+    Feature(test=verification_cooldown)(rbac=rbac, servers=servers, node=node)
+
+
+
+
