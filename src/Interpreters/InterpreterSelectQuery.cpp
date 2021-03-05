@@ -493,7 +493,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
-        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
+        query_analyzer->getSubqueriesForSets().clear();
+        subquery_for_sets = SubqueriesForSets();
+
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
         analyze(/* try_move_to_prewhere = */ false);
