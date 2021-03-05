@@ -187,12 +187,6 @@ For example,
 SELECT map(1,2) AS m, m[1024]
 ```
 
-SHALL have the following output 
-
-```bash
-Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Illegal types of arguments: Map(UInt8,UInt8), UInt16 for function : While processing {1, 2} AS m, m[1024]. 
-```
-
 Exceptions:
 
 * when key is `NULL` the return value SHALL be `NULL`
@@ -202,12 +196,7 @@ Exceptions:
 #### RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyNotFound
 version: 1.0
 
-[ClickHouse] SHALL return
-
-* zeros for [Integer] values
-* empty strings for [String] values
-* empty for [Array] values
-
+[ClickHouse] SHALL return default value for the data type of the value
 when there's no corresponding `key` defined in the `Map(key, value)` data type. 
 
 
@@ -257,19 +246,18 @@ SELECT CAST(([(1,2),(3)]), 'Map(UInt8, UInt8)') AS map
 version: 1.0
 
 [ClickHouse] SHALL return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`
-when [Tuple] is invalid such as when it is not a [Tuple] with two elements.
 
-For example,
+* when element is not a [Tuple]
 
-```sql
-SELECT CAST(([(1,2),(3)]), 'Map(UInt8, UInt8)') AS map
-```
+  ```sql
+  SELECT CAST(([(1,2),(3)]), 'Map(UInt8, UInt8)') AS map
+  ```
 
-or 
+* when [Tuple] does not contain two elements
 
-```sql
-SELECT CAST(([(1,2),(3,)]), 'Map(UInt8, UInt8)') AS map
-```
+  ```sql
+  SELECT CAST(([(1,2),(3,)]), 'Map(UInt8, UInt8)') AS map
+  ```
 
 ### Keys and Values Subcolumns
 
