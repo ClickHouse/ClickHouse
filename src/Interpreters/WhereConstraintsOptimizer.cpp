@@ -1,6 +1,8 @@
 #include <Interpreters/WhereConstraintsOptimizer.h>
 
 #include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/ComparisonGraph.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -9,6 +11,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
+
 std::vector<std::vector<CNFQuery::AtomicFormula>> getConstraintData(const StorageMetadataPtr & metadata_snapshot)
 {
     std::vector<std::vector<CNFQuery::AtomicFormula>> constraint_data;
@@ -31,7 +40,7 @@ std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData(const StorageMetada
         metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
-            .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
+            .pullNotOutFunctions();
         for (const auto & group : cnf.getStatements()) {
             if (group.size() == 1)
                 constraint_data.push_back(*group.begin());
@@ -41,20 +50,27 @@ std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData(const StorageMetada
     return constraint_data;
 }
 
-std::vector<std::pair<ASTPtr, ASTPtr>> getEqualConstraintData(const StorageMetadataPtr & metadata_snapshot)
+ComparisonGraph getComparisonGraph(const StorageMetadataPtr & metadata_snapshot)
 {
-    std::vector<std::pair<ASTPtr, ASTPtr>> equal_constraints;
+    static const std::set<std::string> relations = {
+        "equals", "less", "lessOrEquals", "greaterOrEquals", "greater"};
+
+    std::vector<ASTPtr> constraints_for_graph;
+    auto atomic_formulas = getAtomicConstraintData(metadata_snapshot);
     const std::vector<CNFQuery::AtomicFormula> atomic_constraints = getAtomicConstraintData(metadata_snapshot);
-    for (const auto & constraint : atomic_constraints) {
-        auto * func = constraint.ast->as<ASTFunction>();
-        if (func && (func->name == "equal" && !constraint.negative))
+    for (auto & atomic_formula : atomic_formulas)
+    {
+        pushNotIn(atomic_formula);
+        auto * func = atomic_formula.ast->as<ASTFunction>();
+        if (func && relations.count(func->name))
         {
-            equal_constraints.emplace_back(
-                func->arguments->children[0],
-                func->arguments->children[1]);
+            if (atomic_formula.negative)
+                throw Exception(": ", ErrorCodes::LOGICAL_ERROR);
+            constraints_for_graph.push_back(atomic_formula.ast);
         }
     }
-    return equal_constraints;
+
+    return ComparisonGraph(constraints_for_graph);
 }
 
 WhereConstraintsOptimizer::WhereConstraintsOptimizer(
@@ -93,7 +109,7 @@ MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
     return MatchState::NONE;
 }
 
-bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
+bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
     /// TODO: constraints graph
 
@@ -106,9 +122,9 @@ bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<s
         for (const auto & constraint_ast : constraint)
         {
             bool found_match = false;
-            for (const auto & group_ast : group)
+            for (const auto & atom_ast : group)
             {
-                const auto match_result = match(constraint_ast, group_ast);
+                const auto match_result = match(constraint_ast, atom_ast);
 
                 if (match_result == MatchState::FULL_MATCH)
                 {
@@ -129,7 +145,61 @@ bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<s
     return false;
 }
 
-bool checkIfAtomAlwaysFalse(const CNFQuery::AtomicFormula & atom, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
+ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula & atom)
+{
+    static const std::map<std::string, std::string> inverse_relations = {
+        {"equals", "notEquals"},
+        {"less", "greaterOrEquals"},
+        {"lessOrEquals", "greater"},
+        {"notEquals", "equals"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+    };
+
+    static const std::map<std::string, ComparisonGraph::CompareResult> relation_to_compare = {
+        {"equals", ComparisonGraph::CompareResult::EQUAL},
+        {"less", ComparisonGraph::CompareResult::LESS},
+        {"lessOrEquals", ComparisonGraph::CompareResult::LESS_OR_EQUAL},
+        {"notEquals", ComparisonGraph::CompareResult::UNKNOWN},
+        {"greaterOrEquals", ComparisonGraph::CompareResult::GREATER_OR_EQUAL},
+        {"greater", ComparisonGraph::CompareResult::GREATER},
+    };
+
+
+    const auto * func = atom.ast->as<ASTFunction>();
+    if (func && inverse_relations.count(func->name))
+    {
+        std::string function_name = func->name;
+        if (atom.negative)
+        {
+            function_name = inverse_relations.at(func->name);
+        }
+        return relation_to_compare.at(function_name);
+    }
+    return ComparisonGraph::CompareResult::UNKNOWN;
+}
+
+
+bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const ComparisonGraph & graph)
+{
+    for (const auto & atom : group)
+    {
+        const auto * func = atom.ast->as<ASTFunction>();
+        if (func && func->arguments->children.size() == 2)
+        {
+            const auto expected = getExpectedCompare(atom);
+            const auto result = graph.compare(func->arguments->children[0], func->arguments->children[1]);
+            Poco::Logger::get("GRAPH REASON").information("neg: " + std::to_string(atom.negative));
+            Poco::Logger::get("GRAPH REASON").information(atom.ast->dumpTree());
+            Poco::Logger::get("GRAPH REASON").information(std::to_string(static_cast<int>(expected)) + " " + std::to_string(static_cast<int>(result)));
+            return expected != ComparisonGraph::CompareResult::UNKNOWN && expected == result;
+        }
+    }
+    return false;
+}
+
+
+bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
     /// TODO: more efficient matching
 
@@ -155,15 +225,16 @@ void WhereConstraintsOptimizer::perform()
     if (select_query->where() && metadata_snapshot)
     {
         const auto constraint_data = getConstraintData(metadata_snapshot);
+        const auto compare_graph = getComparisonGraph(metadata_snapshot);
         Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());
         cnf.pullNotOutFunctions()
-            .filterAlwaysTrueGroups([&constraint_data](const auto & group) { /// remove always true groups from CNF
-                return !checkIfGroupAlwaysTrue(group, constraint_data);
+            .filterAlwaysTrueGroups([&constraint_data, &compare_graph](const auto & group) { /// remove always true groups from CNF
+                return !checkIfGroupAlwaysTrueFullMatch(group, constraint_data) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
             })
             .filterAlwaysFalseAtoms([&constraint_data](const auto & atom) { /// remove always false atoms from CNF
-                return !checkIfAtomAlwaysFalse(atom, constraint_data);
+                return !checkIfAtomAlwaysFalseFullMatch(atom, constraint_data);
             })
             .pushNotInFuntions();
 

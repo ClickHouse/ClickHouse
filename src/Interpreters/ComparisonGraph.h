@@ -22,20 +22,20 @@ public:
         EQUAL,
         GREATER_OR_EQUAL,
         GREATER,
-        //NOT_EQUAL,
         UNKNOWN,
     };
 
-    // TODO: implement
-    CompareResult compare(const ASTPtr & /*left*/, const ASTPtr & /*right*/) const { return CompareResult::UNKNOWN; }
+    CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
+    CompareResult getExpectedCompare(const ASTPtr & ast) const;
 
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
 
     /// Find constants less and greater.
     /// For int and double linear programming can be applied here.
     // TODO: implement
-    ASTPtr getMax(const ASTPtr &) const { return nullptr; } // sup
-    ASTPtr getMin(const ASTPtr &) const { return nullptr; } // inf
+    //ASTPtr getMax(const ASTPtr &) const { return nullptr; } // sup
+    //ASTPtr getMin(const ASTPtr &) const { return nullptr; } // inf
+    //ASTPtr getEqualConst(const ASTPtr &) const { return nullptr; } // inf
 
 private:
     /// strongly connected component
@@ -58,17 +58,29 @@ private:
         };
 
         Type type;
-        EqualComponent to;
+        size_t to;
     };
 
     struct Graph
     {
-        std::unordered_map<UInt64, size_t> ast_hash_to_component;
+        struct ASTHash {
+            size_t operator() (const IAST::Hash & hash) const {
+                return hash.first;
+            }
+        };
+
+        std::unordered_map<IAST::Hash, size_t, ASTHash> ast_hash_to_component;
         std::vector<EqualComponent> vertexes;
         std::vector<std::vector<Edge>> edges;
     };
 
-    Graph BuildGraphFromAsts(const Graph & asts_graph);
+    ASTPtr normalizeAtom(const ASTPtr & atom) const;
+    Graph BuildGraphFromAstsGraph(const Graph & asts_graph) const;
+
+    Graph reverseGraph(const Graph & asts_graph) const;
+    void dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const;
+    void dfsComponents(
+            const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component) const;
 
     Graph graph;
 };
