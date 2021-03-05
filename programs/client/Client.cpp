@@ -1317,7 +1317,10 @@ private:
 
                 auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
-                // Debug AST cloning errors.
+                // Check that the source AST didn't change after fuzzing. This
+                // helps debug AST cloning errors, where the cloned AST doesn't
+                // clone all its children, and erroneously points to some source
+                // child elements.
                 if (base_before_fuzz != base_after_fuzz)
                 {
                     fmt::print(stderr,
@@ -1334,7 +1337,7 @@ private:
 
                     fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
-                    assert(false);
+                    exit(1);
                 }
 
                 auto fuzzed_text = ast_to_process->formatForErrorMessage();
@@ -1342,6 +1345,29 @@ private:
                 {
                     fmt::print(stderr, "Got boring AST\n");
                     continue;
+                }
+
+                // Check that the query is formatted properly and we can parse
+                // it back and format again and get the same result. Unfortunately
+                // we can't compare the ASTs, which would be more sensitive to
+                // errors. This double formatting check doesn't catch all errors,
+                // e.g. we can format query incorrectly, but to a valid SQL that
+                // we can then parse and format into the same SQL.
+                {
+                    const auto * tmp_pos = fuzzed_text.c_str();
+                    auto parsed_formatted_query = parseQuery(tmp_pos,
+                        tmp_pos + fuzzed_text.size(),
+                        false /* allow_multi_statements */);
+                    const auto formatted_twice
+                        = parsed_formatted_query->formatForErrorMessage();
+
+                    if (formatted_twice != fuzzed_text)
+                    {
+                        fmt::print(stderr, "The query formatting is broken. Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
+                            formatted_twice, fuzzed_text);
+
+                        exit(1);
+                    }
                 }
 
                 parsed_query = ast_to_process;
