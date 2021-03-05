@@ -11,11 +11,12 @@ namespace DB
 {
 
 using ResponsesQueue = ThreadSafeQueue<NuKeeperStorage::ResponseForSession>;
+using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(ResponsesQueue & responses_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
+    NuKeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
 
     void init();
 
@@ -72,6 +73,8 @@ private:
     NuKeeperSnapshotManager snapshot_manager;
 
     ResponsesQueue & responses_queue;
+
+    SnapshotsQueue & snapshots_queue;
     /// Mutex for snapshots
     std::mutex snapshots_lock;
 

@@ -238,7 +238,6 @@ NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, con
 
 NuKeeperStorageSnapshot::~NuKeeperStorageSnapshot()
 {
-    storage->clearGarbageAfterSnapshot();
     storage->disableSnapshotMode();
 }
 

@@ -1030,6 +1030,7 @@ TEST(CoordinationTest, TestStorageSnapshotMode)
     }
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
     EXPECT_EQ(storage.container.size(), 26);
+    storage.clearGarbageAfterSnapshot();
     EXPECT_EQ(storage.container.snapshotSize(), 26);
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1097,7 +1098,8 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, size
     ChangelogDirTest logs("./logs");
 
     ResponsesQueue queue;
-    auto state_machine = std::make_shared<NuKeeperStateMachine>(queue, "./snapshots", settings);
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<NuKeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();
     DB::NuKeeperLogStore changelog("./logs", settings->rotate_log_storage_interval, true);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
@@ -1120,6 +1122,9 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, size
             };
 
             state_machine->create_snapshot(s, when_done);
+            CreateSnapshotTask snapshot_task;
+            snapshots_queue.pop(snapshot_task);
+            snapshot_task.create_snapshot(snapshot_task.snapshot);
         }
         if (snapshot_created)
         {
@@ -1130,7 +1135,8 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, size
         }
     }
 
-    auto restore_machine = std::make_shared<NuKeeperStateMachine>(queue, "./snapshots", settings);
+    SnapshotsQueue snapshots_queue1{1};
+    auto restore_machine = std::make_shared<NuKeeperStateMachine>(queue, snapshots_queue1, "./snapshots", settings);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
