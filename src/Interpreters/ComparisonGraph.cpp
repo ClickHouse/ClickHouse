@@ -102,6 +102,38 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
     graph = BuildGraphFromAstsGraph(g);
 }
 
+std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t finish) const
+{
+    // min path : < = -1, =< = 0
+    const auto inf = std::numeric_limits<int64_t>::max();
+    const size_t n = graph.vertexes.size();
+    std::vector<int64_t> dist(n, inf);
+    dist[start] = 0;
+    for (size_t k = 0; k < n; ++k)
+    {
+        bool has_relaxation = false;
+        for (size_t v = 0; v < n; ++v)
+        {
+            if (dist[v] == inf)
+                continue;
+
+            for (const auto & edge : graph.edges[v])
+            {
+                const int64_t weight = edge.type == Edge::Type::LESS ? -1 : 0;
+                if (dist[edge.to] > dist[v] + weight)
+                {
+                    dist[edge.to] = dist[v] + weight;
+                    has_relaxation = true;
+                }
+            }
+        }
+
+        if (has_relaxation)
+            break;
+    }
+    return {dist[finish] != inf, dist[finish] < 0};
+}
+
 ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, const ASTPtr & right) const
 {
     size_t start = 0;
@@ -132,8 +164,17 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     if (start == finish)
         return CompareResult::EQUAL;
 
-    /// TODO: precalculate in O(n^3) using Floyd–Warshall algorithm where < = -1 and =< = 0.
+    /// TODO: precalculate using Floyd–Warshall O(n^3) algorithm where < = -1 and =< = 0.
     /// TODO: use it for less, greater and so on
+
+    auto [has_path, is_strict] = findPath(start, finish);
+    if (has_path)
+        return is_strict ? CompareResult::GREATER : CompareResult::GREATER_OR_EQUAL;
+
+    auto [has_path_r, is_strict_r] = findPath(finish, start);
+    if (has_path_r)
+        return is_strict_r ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
+
     return CompareResult::UNKNOWN;
 }
 
