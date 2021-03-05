@@ -623,11 +623,10 @@ void ExpressionActionsChain::finalize()
     /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
-        Names required_output = steps[i]->required_output;
-        std::unordered_map<String, size_t> required_output_indexes;
-        for (size_t j = 0; j < required_output.size(); ++j)
-            required_output_indexes[required_output[j]] = j;
-        auto & can_remove_required_output = steps[i]->can_remove_required_output;
+        auto & required_output = steps[i]->required_output;
+        Names required_names;
+        for (const auto & output : required_output)
+            required_names.push_back(output.first);
 
         if (i + 1 < static_cast<int>(steps.size()))
         {
@@ -636,15 +635,15 @@ void ExpressionActionsChain::finalize()
             {
                 if (additional_input.count(it.name) == 0)
                 {
-                    auto iter = required_output_indexes.find(it.name);
-                    if (iter == required_output_indexes.end())
-                        required_output.push_back(it.name);
-                    else if (!can_remove_required_output.empty())
-                        can_remove_required_output[iter->second] = false;
+                    auto iter = required_output.find(it.name);
+                    if (iter == required_output.end())
+                        required_names.push_back(it.name);
+                    else
+                        iter->second = false;
                 }
             }
         }
-        steps[i]->finalize(required_output);
+        steps[i]->finalize(required_names);
     }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
@@ -668,8 +667,8 @@ std::string ExpressionActionsChain::dumpChain() const
     {
         ss << "step " << i << "\n";
         ss << "required output:\n";
-        for (const std::string & name : steps[i]->required_output)
-            ss << name << "\n";
+        for (const auto & it : steps[i]->required_output)
+            ss << it.first << "\n";
         ss << "\n" << steps[i]->dump() << "\n";
     }
 

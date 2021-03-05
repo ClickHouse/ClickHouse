@@ -246,7 +246,9 @@ public:
     // static std::vector<ssize_t> getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping);
     // void transformBlock(Block & block, std::vector<ssize_t> inputs_pos, ColumnsWithTypeAndName result_columns) const;
 
+#if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression);
+#endif
 
     ActionsDAGPtr clone() const;
 
@@ -328,7 +330,9 @@ private:
     void removeUnusedActions(bool allow_remove_inputs = true);
     void addAliases(const NamesWithAliases & aliases, bool project);
 
+#if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression);
+#endif
 
     ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction);
 };

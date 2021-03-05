@@ -701,7 +701,7 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAGPtr 
         /// Assign new names to columns, if needed.
         if (result_source.first != result_source.second)
         {
-            const auto & index = actions->getIndex();
+            auto & index = actions->getIndex();
             auto it = index.begin();
             for (; it != index.end(); ++it)
                 if ((*it)->result_name == result_source.second)
@@ -710,7 +710,7 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAGPtr 
             if (it == index.end())
                 throw Exception("Unknown identifier: '" + result_source.second + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
 
-            actions->addAlias(**it, result_source.first);
+            index.push_back(&actions->addAlias(**it, result_source.first));
         }
 
         /// Make ARRAY JOIN (replace arrays with their insides) for the columns in these new names.
@@ -888,8 +888,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     auto & step = chain.lastStep(sourceColumns());
     getRootActions(select_query->prewhere(), only_types, step.actions());
     String prewhere_column_name = select_query->prewhere()->getColumnName();
-    step.required_output.push_back(prewhere_column_name);
-    step.can_remove_required_output.push_back(true);
+    step.addRequiredOutput(prewhere_column_name);
 
     const auto & index = step.actions()->getIndex();
     auto it = index.begin();
@@ -919,10 +918,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         for (const auto & column : additional_required_columns)
         {
             if (required_source_columns.count(column))
-            {
-                step.required_output.push_back(column);
-                step.can_remove_required_output.push_back(true);
-            }
+                step.addRequiredOutput(column);
         }
 
         auto names = step.actions()->getNames();
@@ -979,8 +975,7 @@ void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsCha
     // FIXME: assert(filter_info);
     auto * expression_step = typeid_cast<ExpressionActionsChain::ExpressionActionsStep *>(&step);
     expression_step->actions_dag = std::move(actions_dag);
-    step.required_output.push_back(std::move(column_name));
-    step.can_remove_required_output = {true};
+    step.addRequiredOutput(column_name);
 
     chain.addStep();
 }
@@ -997,8 +992,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     getRootActions(select_query->where(), only_types, step.actions());
 
     auto where_column_name = select_query->where()->getColumnName();
-    step.required_output.push_back(where_column_name);
-    step.can_remove_required_output = {true};
+    step.addRequiredOutput(where_column_name);
 
     const auto & index = step.actions()->getIndex();
     auto it = index.begin();
@@ -1030,7 +1024,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ASTs asts = select_query->groupBy()->children;
     for (const auto & ast : asts)
     {
-        step.required_output.emplace_back(ast->getColumnName());
+        step.addRequiredOutput(ast->getColumnName());
         getRootActions(ast, only_types, step.actions());
     }
 
@@ -1055,7 +1049,7 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 
     for (const auto & desc : aggregate_descriptions)
         for (const auto & name : desc.argument_names)
-            step.required_output.emplace_back(name);
+            step.addRequiredOutput(name);
 
     /// Collect aggregates removing duplicates by node.getColumnName()
     /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
@@ -1112,14 +1106,14 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             // (2b) Required function argument columns.
             for (const auto & a : f.function_node->arguments->children)
             {
-                step.required_output.push_back(a->getColumnName());
+                step.addRequiredOutput(a->getColumnName());
             }
         }
 
         // (2a) Required PARTITION BY and ORDER BY columns.
         for (const auto & c : w.full_sort_description)
         {
-            step.required_output.push_back(c.column_name);
+            step.addRequiredOutput(c.column_name);
         }
     }
 }
@@ -1134,7 +1128,7 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
-    step.required_output.push_back(select_query->having()->getColumnName());
+    step.addRequiredOutput(select_query->having()->getColumnName());
 
     return true;
 }
@@ -1158,7 +1152,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
             continue;
         }
 
-        step.required_output.push_back(child->getColumnName());
+        step.addRequiredOutput(child->getColumnName());
     }
 }
 
@@ -1186,7 +1180,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         if (!ast || ast->children.empty())
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
-        step.required_output.push_back(order_expression->getColumnName());
+        step.addRequiredOutput(order_expression->getColumnName());
 
         if (ast->with_fill)
             with_fill = true;
@@ -1230,7 +1224,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     NameSet aggregated_names;
     for (const auto & column : aggregated_columns)
     {
-        step.required_output.push_back(column.name);
+        step.addRequiredOutput(column.name);
         aggregated_names.insert(column.name);
     }
 
@@ -1238,7 +1232,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     {
         auto child_name = child->getColumnName();
         if (!aggregated_names.count(child_name))
-            step.required_output.push_back(std::move(child_name));
+            step.addRequiredOutput(std::move(child_name));
     }
 
     return true;
@@ -1286,7 +1280,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
             }
 
             result_columns.emplace_back(source_name, result_name);
-            step.required_output.push_back(result_columns.back().second);
+            step.addRequiredOutput(result_columns.back().second);
         }
     }
 
@@ -1300,7 +1294,7 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
 {
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
     getRootActions(expr, only_types, step.actions());
-    step.required_output.push_back(expr->getColumnName());
+    step.addRequiredOutput(expr->getColumnName());
 }
 
 
@@ -1413,7 +1407,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (!finalized)
         {
-            finalize(chain, where_step_num);
+            finalize(chain, where_step_num, query);
             finalized = true;
         }
 
@@ -1586,11 +1580,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
-                step.required_output.push_back(child->getColumnName());
+                step.addRequiredOutput(child->getColumnName());
             }
         }
 
-        selected_columns = chain.getLastStep().required_output;
+        selected_columns.clear();
+        selected_columns.reserve(chain.getLastStep().required_output.size());
+        for (const auto & it : chain.getLastStep().required_output)
+            selected_columns.emplace_back(it.first);
 
         has_order_by = query.orderBy() != nullptr;
         before_order_by = query_analyzer.appendOrderBy(
@@ -1616,18 +1613,19 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     checkActions();
 }
 
-void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
+void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query)
 {
     if (hasPrewhere())
     {
         const ExpressionActionsChain::Step & step = *chain.steps.at(0);
-        prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
 
         NameSet columns_to_remove;
-        for (size_t i = 1; i < step.required_output.size(); ++i)
+        for (const auto & [name, can_remove] : step.required_output)
         {
-            if (step.can_remove_required_output[i])
-                columns_to_remove.insert(step.required_output[i]);
+            if (name == prewhere_info->prewhere_column_name)
+                prewhere_info->remove_prewhere_column = can_remove;
+            else if (can_remove)
+                columns_to_remove.insert(name);
         }
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
@@ -1635,10 +1633,13 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
     else if (hasFilter())
     {
         /// Can't have prewhere and filter set simultaneously
-        filter_info->do_remove_column = chain.steps.at(0)->can_remove_required_output.at(0);
+        filter_info->do_remove_column = chain.steps.at(0)->required_output.find(filter_info->column_name)->second;
     }
     if (hasWhere())
-        remove_where_filter = chain.steps.at(where_step_num)->can_remove_required_output.at(0);
+    {
+        auto where_column_name = query.where()->getColumnName();
+        remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
+    }
 }
 
 void ExpressionAnalysisResult::removeExtraColumns() const
