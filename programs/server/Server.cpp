@@ -47,6 +47,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Session.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -1428,7 +1429,7 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
-        global_context->enableNamedSessions();
+        Session::enableNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");

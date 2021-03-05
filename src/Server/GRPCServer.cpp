@@ -11,6 +11,7 @@
 #include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Session.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/ConcatReadBuffer.h>
@@ -560,7 +561,7 @@ namespace
         IServer & iserver;
         Poco::Logger * log = nullptr;
 
-        std::shared_ptr<NamedSession> session;
+        std::shared_ptr<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
@@ -690,30 +691,28 @@ namespace
         }
 
         /// Create context.
-        query_context = Context::createCopy(iserver.context());
-
+        session = std::make_shared<Session>(iserver.context(), ClientInfo::Interface::GRPC);
         /// Authentication.
-        query_context->setUser(user, password, user_address);
-        query_context->setCurrentQueryId(query_info.query_id());
+        session->setUser(user, password, user_address);
         if (!quota_key.empty())
-            query_context->setQuotaKey(quota_key);
+            session->setQuotaKey(quota_key);
 
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
         {
-            session = query_context->acquireNamedSession(
-                query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
-            query_context = Context::createCopy(session->context);
-            query_context->setSessionContext(session->context);
+            session->promoteToNamedSession(
+                query_info.session_id(),
+                getSessionTimeout(query_info, iserver.config()),
+                query_info.session_check());
         }
 
+        query_context = session->makeQueryContext(query_info.query_id());
         query_scope.emplace(query_context);
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
         client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-        client_info.interface = ClientInfo::Interface::GRPC;
         client_info.initial_user = client_info.current_user;
         client_info.initial_query_id = client_info.current_query_id;
         client_info.initial_address = client_info.current_address;
@@ -1254,8 +1253,6 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
-        if (session)
-            session->release();
         session.reset();
     }
 
