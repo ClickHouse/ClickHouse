@@ -192,7 +192,19 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
             Poco::Logger::get("GRAPH REASON").information("neg: " + std::to_string(atom.negative));
             Poco::Logger::get("GRAPH REASON").information(atom.ast->dumpTree());
             Poco::Logger::get("GRAPH REASON").information(std::to_string(static_cast<int>(expected)) + " " + std::to_string(static_cast<int>(result)));
-            return expected != ComparisonGraph::CompareResult::UNKNOWN && expected == result;
+
+            if (expected == ComparisonGraph::CompareResult::UNKNOWN)
+                return false;
+
+            if (expected == result)
+                return true;
+            if (result == ComparisonGraph::CompareResult::EQUAL &&
+                (expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL || expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL))
+                return true;
+            if (result == ComparisonGraph::CompareResult::LESS && expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL)
+                return true;
+            if (result == ComparisonGraph::CompareResult::GREATER && expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL)
+                return true;
         }
     }
     return false;
