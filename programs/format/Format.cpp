@@ -155,9 +155,26 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         std::cout << "\n;\n";
                     std::cout << std::endl;
                 }
-                /// skip spaces to avoid throw exception after last query
-                while (pos != end && std::isspace(*pos))
-                    ++pos;
+
+                do
+                {
+                    /// skip spaces to avoid throw exception after last query
+                    while (pos != end && std::isspace(*pos))
+                        ++pos;
+
+                    /// for skip comment after the last query and to not throw exception
+                    if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+                    {
+                        pos += 2;
+                        /// skip until the end of the line
+                        while (pos != end && *pos != '\n')
+                            ++pos;
+                    }
+                    /// need to parse next sql
+                    else
+                        break;
+                } while (pos != end);
+
             } while (multiple && pos != end);
         }
     }
