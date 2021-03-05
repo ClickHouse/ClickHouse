@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int TOO_SMALL_BUFFER_SIZE;
     extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
@@ -24,10 +25,12 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
 
     const size_t size = config.getUInt64(dictionary_configuration_prefix + "size_in_cells");
     if (size == 0)
-        throw Exception{full_name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
+            "({}: cache dictionary cannot have 0 cells",
+            full_name);
 
-    const size_t strict_max_lifetime_seconds
-        = config.getUInt64(dictionary_configuration_prefix + "strict_max_lifetime_seconds", static_cast<size_t>(dict_lifetime.max_sec));
+    size_t dict_lifetime_seconds = static_cast<size_t>(dict_lifetime.max_sec);
+    const size_t strict_max_lifetime_seconds = config.getUInt64(dictionary_configuration_prefix + "strict_max_lifetime_seconds", dict_lifetime_seconds);
 
     size_t rounded_size = roundUpToPowerOfTwoOrZero(size);
 
@@ -65,20 +68,29 @@ SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const size_t block_size = config.getInt64(dictionary_configuration_prefix + "block_size", DEFAULT_SSD_BLOCK_SIZE_BYTES);
     const size_t file_size = config.getInt64(dictionary_configuration_prefix + "file_size", DEFAULT_FILE_SIZE_BYTES);
     if (file_size % block_size != 0)
-        throw Exception{full_name + ": file_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): file_size must be a multiple of block_size",
+            full_name);
 
     const size_t read_buffer_size = config.getInt64(dictionary_configuration_prefix + "read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
     if (read_buffer_size % block_size != 0)
-        throw Exception{full_name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): read_buffer_size must be a multiple of block_size",
+            full_name);
 
     const size_t write_buffer_size
         = config.getInt64(dictionary_configuration_prefix + "write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
     if (write_buffer_size % block_size != 0)
-        throw Exception{full_name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): write_buffer_size must be a multiple of block_size",
+            full_name);
 
     auto directory_path = config.getString(dictionary_configuration_prefix + "path");
     if (directory_path.empty())
-        throw Exception{full_name + ": dictionary of layout 'ssd_cache' cannot have empty path", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): ssd cache dictionary cannot have empty path",
+            full_name);
+
     if (directory_path.at(0) != '/')
         directory_path = std::filesystem::path{config.getString("path")}.concat(directory_path).string();
 
@@ -108,14 +120,14 @@ CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfigura
     const String & layout_prefix,
     DictionaryKeyType key_type)
 {
-    String type = key_type == DictionaryKeyType::complex ? "complex_key_cache" : "cache";
+    String layout_type = key_type == DictionaryKeyType::complex ? "complex_key_cache" : "cache";
 
     const size_t max_update_queue_size = config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
     if (max_update_queue_size == 0)
         throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
             "({}): dictionary of layout '({})' cannot have empty update queue of size 0",
             full_name,
-            type);
+            layout_type);
 
     const size_t update_queue_push_timeout_milliseconds
         = config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
@@ -123,13 +135,16 @@ CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfigura
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "({}): dictionary of layout '({})' have too little update_queue_push_timeout",
             full_name,
-            type);
+            layout_type);
 
     const size_t query_wait_timeout_milliseconds = config.getUInt64(layout_prefix + ".cache.query_wait_timeout_milliseconds", 60000);
 
     const size_t max_threads_for_updates = config.getUInt64(layout_prefix + ".max_threads_for_updates", 4);
     if (max_threads_for_updates == 0)
-        throw Exception{full_name + ": dictionary of layout'" + type + "'cannot have zero threads for updates.", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): dictionary of layout) '({})' cannot have zero threads for updates",
+            full_name,
+            layout_type);
 
     CacheDictionaryUpdateQueueConfiguration update_queue_configuration{
         max_update_queue_size, max_threads_for_updates, update_queue_push_timeout_milliseconds, query_wait_timeout_milliseconds};
@@ -150,25 +165,25 @@ DictionaryPtr createCacheDictionaryLayout(
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'cache'");
     }
     else if constexpr (dictionary_key_type == DictionaryKeyType::complex)
     {
         if (dict_struct.id)
-            throw Exception{"'id' is not supported for dictionary of layout 'complex_key_cache'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for dictionary of layout 'complex_key_cache'");
     }
 
     if (dict_struct.range_min || dict_struct.range_max)
-        throw Exception{
-            full_name
-                + ": elements .structure.range_min and .structure.range_max should be defined only "
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): elements .structure.range_min and .structure.range_max should be defined only "
                   "for a dictionary of layout 'range_hashed'",
-            ErrorCodes::BAD_ARGUMENTS};
+            full_name);
 
     const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
     if (require_nonempty)
-        throw Exception{
-            full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): cache dictionary of layout cannot have 'require_nonempty' attribute set",
+            full_name);
 
     const auto & layout_prefix = config_prefix + ".layout";
 
@@ -202,25 +217,25 @@ DictionaryPtr createSSDCacheDictionaryLayout(
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'ssd_cache'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'ssd_cache'");
     }
     else if constexpr (dictionary_key_type == DictionaryKeyType::complex)
     {
         if (dict_struct.id)
-            throw Exception{"'id' is not supported for dictionary of layout 'complex_key_ssd_cache'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for dictionary of layout 'complex_key_ssd_cache'");
     }
 
     if (dict_struct.range_min || dict_struct.range_max)
-        throw Exception{
-            full_name
-                + ": elements .structure.range_min and .structure.range_max should be defined only "
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): elements .structure.range_min and .structure.range_max should be defined only "
                   "for a dictionary of layout 'range_hashed'",
-            ErrorCodes::BAD_ARGUMENTS};
+            full_name);
 
     const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
     if (require_nonempty)
-        throw Exception{
-            full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "({}): cache dictionary of layout cannot have 'require_nonempty' attribute set",
+            full_name);
 
     const auto & layout_prefix = config_prefix + ".layout";
 

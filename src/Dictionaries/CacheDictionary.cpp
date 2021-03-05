@@ -40,9 +40,7 @@ namespace ErrorCodes
 {
     extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int TYPE_MISMATCH;
-    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int TOO_SMALL_BUFFER_SIZE;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -431,9 +429,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     *
     * 1. Get fetch result from storage
     * 2. If all keys are found in storage and not expired and there are no default keys return that we have all keys.
-    * Othewise set allow_expired_keys_during_aggregation and go to step 5.
+    * Otherwise set allow_expired_keys_during_aggregation and go to step 5.
     * 3. If all keys are found in storage and some of them are expired and allow_read_expired keys is true return that we have all keys.
-    * Othewise set allow_expired_keys_during_aggregation and go to step 5.
+    * Otherwise set allow_expired_keys_during_aggregation and go to step 5.
     * 4. If not all keys are found in storage start sync update from source.
     * 5. Start aggregation of keys from source and storage.
     * If we allow read expired keys from step 2 or 3 then count them as founded in storage.
