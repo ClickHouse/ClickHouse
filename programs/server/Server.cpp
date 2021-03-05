@@ -1017,17 +1017,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
-    if (has_zookeeper && config().has("distributed_ddl"))
-    {
-        /// DDL worker should be started after all tables were loaded
-        String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        int pool_size = config().getInt("distributed_ddl.pool_size", 1);
-        if (pool_size < 1)
-            throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
-                                                                 "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
-    }
-
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
     if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
     {
@@ -1309,6 +1298,37 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 std::thread::hardware_concurrency());
         }
 
+        /// try to load dictionaries immediately, throw on error and die
+        ext::scope_guard dictionaries_xmls, models_xmls;
+        try
+        {
+            if (!config().getBool("dictionaries_lazy_load", true))
+            {
+                global_context->tryCreateEmbeddedDictionaries();
+                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
+            }
+            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        if (has_zookeeper && config().has("distributed_ddl"))
+        {
+            /// DDL worker should be started after all tables were loaded
+            String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+            int pool_size = config().getInt("distributed_ddl.pool_size", 1);
+            if (pool_size < 1)
+                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+        }
+
         LOG_INFO(log, "Ready for connections.");
 
         SCOPE_EXIT({
@@ -1357,26 +1377,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 _exit(Application::EXIT_OK);
             }
         });
-
-        /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls, models_xmls;
-        try
-        {
-            if (!config().getBool("dictionaries_lazy_load", true))
-            {
-                global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-            }
-            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
-            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
-            throw;
-        }
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
