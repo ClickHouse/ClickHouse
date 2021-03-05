@@ -2,7 +2,7 @@
 SET log_comment='system.query_log logging test';
 
 SELECT 'DROP queries and also a cleanup before the test';
-DROP DATABASE IF EXISTS sqllt;
+DROP DATABASE IF EXISTS sqllt SYNC;
 DROP USER IF EXISTS sqllt_user;
 DROP ROLE IF EXISTS sqllt_role;
 DROP POLICY IF EXISTS sqllt_policy ON sqllt.table, sqllt.view, sqllt.dictionary;
@@ -124,6 +124,7 @@ ATTACH TABLE sqllt.table;
 RENAME TABLE sqllt.table TO sqllt.table_new;
 RENAME TABLE sqllt.table_new TO sqllt.table;
 TRUNCATE TABLE sqllt.table;
+DROP TABLE sqllt.table SYNC;
 
 ---------------------------------------------------------------------------------------------------
 -- Now get all logs related to this test

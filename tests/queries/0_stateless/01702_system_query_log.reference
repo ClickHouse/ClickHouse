@@ -34,12 +34,13 @@ Create	CREATE TABLE sqllt.table\n(\n    i UInt8, s String\n)\nENGINE = MergeTree
 Create	CREATE VIEW sqllt.view AS SELECT i, s FROM sqllt.table;
 	DESCRIBE TABLE sqllt.table FORMAT Null;
 Drop	DETACH TABLE sqllt.table;
-Drop	DROP DATABASE IF EXISTS sqllt;
+Drop	DROP DATABASE IF EXISTS sqllt SYNC;
 	DROP POLICY IF EXISTS sqllt_policy ON sqllt.table, sqllt.view, sqllt.dictionary;
 	DROP QUOTA IF EXISTS sqllt_quota;
 	DROP ROLE IF EXISTS sqllt_role;
 	DROP ROW POLICY IF EXISTS sqllt_row_policy ON sqllt.table, sqllt.view, sqllt.dictionary;
 	DROP SETTINGS PROFILE IF EXISTS sqllt_settings_profile;
+Drop	DROP TABLE sqllt.table SYNC;
 	DROP USER IF EXISTS sqllt_user;
 Grant	GRANT DROP ON sqllt.view TO sqllt_user;
 Grant	GRANT SELECT ON sqllt.table TO sqllt_user;
