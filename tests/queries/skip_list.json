@@ -261,7 +261,8 @@
         "00116_storage_set",
         "00083_create_merge_tree_zookeeper",
         "00062_replicated_merge_tree_alter_zookeeper",
-        "01720_constraints_complex_types"
+        "01720_constraints_complex_types",
+        "01747_alter_partition_key_enum_zookeeper"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -748,6 +749,7 @@
         "01676_dictget_in_default_expression",
         "01700_system_zookeeper_path_in",
         "01715_background_checker_blather_zookeeper",
+        "01747_alter_partition_key_enum_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
