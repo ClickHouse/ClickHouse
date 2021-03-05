@@ -216,20 +216,14 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
         return bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end();
     };
 
-    std::cerr << "has_column_files, name: " << column.name << "\n";
-
     bool res = true;
     auto serialization = IDataType::getSerialization(column, check_stream_exists);
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        std::cerr << "path: " << substream_path.toString() << "\n";
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
-        std::cerr << "file_name: " << file_name << "\n";
         if (!check_stream_exists(file_name))
             res = false;
     });
-
-    std::cerr << "has_column_files, name: " << column.name << ", has: " << res << "\n";
 
     return res;
 }

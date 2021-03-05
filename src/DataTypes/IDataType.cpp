@@ -176,7 +176,6 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
 {
-    std::cerr << "non_default: " << settings.num_non_default_rows << ", num_rows: " << settings.num_rows << ", ratio: " << settings.min_ratio_for_dense_serialization << "\n";
     // if (settings.num_non_default_rows * settings.min_ratio_for_dense_serialization < settings.num_rows)
     //     return getSparseSerialization();
 

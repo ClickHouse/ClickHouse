@@ -40,8 +40,6 @@ String NameAndTypePair::getSubcolumnName() const
     if (!subcolumn_delimiter_position)
         return "";
 
-    std::cerr << "name: " << name << ", delimiter: " << *subcolumn_delimiter_position << "\n";
-
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
 }
 

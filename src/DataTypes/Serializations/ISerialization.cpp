@@ -103,36 +103,6 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-
-// void ISerialization::deserializeBinaryBulkWithMultipleStreams(
-//     ColumnPtr & column,
-//     size_t limit,
-//     DeserializeBinaryBulkSettings & settings,
-//     DeserializeBinaryBulkStatePtr & state,
-//     SubstreamsCache * cache) const
-// {
-//     /// Do not cache complex type, because they can be constructed
-//     /// from their subcolumns, which are in cache.
-//     // if (!haveSubtypes())
-//     // {
-//     //     auto cached_column = getFromSubstreamsCache(cache, settings.path);
-//     //     if (cached_column)
-//     //     {
-//     //         column = cached_column;
-//     //         return;
-//     //     }
-//     // }
-
-//     UNUSED(cache);
-
-//     auto mutable_column = column->assumeMutable();
-//     deserializeBinaryBulkWithMultipleStreamsImpl(*mutable_column, limit, settings, state, cache);
-//     column = std::move(mutable_column);
-
-//     // if (!haveSubtypes())
-//     //     addToSubstreamsCache(cache, settings.path, column);
-// }
-
 static String getNameForSubstreamPath(
     String stream_name,
     const ISerialization::SubstreamPath & path,

@@ -96,8 +96,6 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (column_streams.count(stream_name))
             return;
 
-        // std::cerr << "adding stream_name: " << stream_name << "\n";
-
         CompressionCodecPtr compression_codec;
         /// If we can use special codec then just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
@@ -132,8 +130,6 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.count(stream_name))
             return nullptr;
-
-        // std::cerr << "getting stream_name: " << stream_name << "\n";
 
         return &column_streams.at(stream_name)->compressed;
     };
@@ -275,8 +271,6 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
 
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-
-        std::cerr << "stream_name: " << stream_name << "\n";
 
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.count(stream_name))
