@@ -1954,7 +1954,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     }
 
     /// Forcibly remove parts from ZooKeeper
-    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+    removePartsFromZooKeeperWithRetries(parts_to_remove);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -2047,7 +2047,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     if (parts_to_add.empty())
     {
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
-        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+        removePartsFromZooKeeperWithRetries(parts_to_remove);
         return true;
     }
 
@@ -2284,7 +2284,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         throw;
     }
 
-    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+    removePartsFromZooKeeperWithRetries(parts_to_remove);
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
@@ -2408,7 +2408,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
         }
     }
-    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
+    removePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
     auto local_active_parts = getDataParts();
     DataPartsVector parts_to_remove_from_working_set;
@@ -5470,16 +5470,16 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 }
 
 
-bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries)
+void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries)
 {
     Strings part_names_to_remove;
     for (const auto & part : parts)
         part_names_to_remove.emplace_back(part->name);
 
-    return tryRemovePartsFromZooKeeperWithRetries(part_names_to_remove, max_retries);
+    return removePartsFromZooKeeperWithRetries(part_names_to_remove, max_retries);
 }
 
-bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries)
+void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries)
 {
     size_t num_tries = 0;
     bool success = false;
@@ -5544,7 +5544,8 @@ bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const St
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
-    return success;
+    if (!success)
+        throw Exception(ErrorCodes::UNFINISHED, "Failed to remove parts from ZooKeeper after {} retries", num_tries);
 }
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(
@@ -5843,7 +5844,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         lock.assumeUnlocked();
 
     /// Forcibly remove replaced parts from ZooKeeper
-    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+    removePartsFromZooKeeperWithRetries(parts_to_remove);
 
     /// Speedup removing of replaced parts from filesystem
     parts_to_remove.clear();
@@ -6028,7 +6029,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     for (auto & lock : ephemeral_locks)
         lock.assumeUnlocked();
 
-    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+    removePartsFromZooKeeperWithRetries(parts_to_remove);
 
     parts_to_remove.clear();
     cleanup_thread.wakeup();
