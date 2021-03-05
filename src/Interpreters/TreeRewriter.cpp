@@ -16,7 +16,6 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/JoinedTables.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
@@ -362,17 +361,21 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     }
 }
 
-std::pair<ASTTableJoin::Kind, ASTTableJoin::Strictness>
-getJoinStrictness(ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness, JoinStrictness join_default_strictness, bool old_any)
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, ASTTableJoin & out_table_join)
 {
+    const ASTTablesInSelectQueryElement * node = select_query.join();
+    if (!node)
+        return;
 
-    if (strictness == ASTTableJoin::Strictness::Unspecified &&
-        kind != ASTTableJoin::Kind::Cross)
+    auto & table_join = const_cast<ASTTablesInSelectQueryElement *>(node)->table_join->as<ASTTableJoin &>();
+
+    if (table_join.strictness == ASTTableJoin::Strictness::Unspecified &&
+        table_join.kind != ASTTableJoin::Kind::Cross)
     {
         if (join_default_strictness == JoinStrictness::ANY)
-            strictness = ASTTableJoin::Strictness::Any;
+            table_join.strictness = ASTTableJoin::Strictness::Any;
         else if (join_default_strictness == JoinStrictness::ALL)
-            strictness = ASTTableJoin::Strictness::All;
+            table_join.strictness = ASTTableJoin::Strictness::All;
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
                             DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
@@ -380,22 +383,24 @@ getJoinStrictness(ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness, 
 
     if (old_any)
     {
-        if (strictness == ASTTableJoin::Strictness::Any && kind == ASTTableJoin::Kind::Inner)
+        if (table_join.strictness == ASTTableJoin::Strictness::Any &&
+            table_join.kind == ASTTableJoin::Kind::Inner)
         {
-            strictness = ASTTableJoin::Strictness::Semi;
-            kind = ASTTableJoin::Kind::Left;
+            table_join.strictness = ASTTableJoin::Strictness::Semi;
+            table_join.kind = ASTTableJoin::Kind::Left;
         }
 
-        if (strictness == ASTTableJoin::Strictness::Any)
-            strictness = ASTTableJoin::Strictness::RightAny;
+        if (table_join.strictness == ASTTableJoin::Strictness::Any)
+            table_join.strictness = ASTTableJoin::Strictness::RightAny;
     }
     else
     {
-        if (strictness == ASTTableJoin::Strictness::Any)
-            if (kind == ASTTableJoin::Kind::Full)
+        if (table_join.strictness == ASTTableJoin::Strictness::Any)
+            if (table_join.kind == ASTTableJoin::Kind::Full)
                 throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
     }
-    return std::make_pair(kind, strictness);
+
+    out_table_join = table_join;
 }
 
 /// Find the columns that are obtained by JOIN.
@@ -770,14 +775,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
     TreeRewriterResult && result,
     const SelectQueryOptions & select_options,
+    const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
     const Names & required_result_columns,
-    const JoinedTables * joined_tables) const
+    std::shared_ptr<TableJoin> table_join) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception("Select analyze for not select ASTs.", ErrorCodes::LOGICAL_ERROR);
-
-    const auto & tables_with_columns = joined_tables ? joined_tables->tablesWithColumns() : std::vector<TableWithColumnNamesAndTypes>{};
+        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
@@ -786,8 +790,23 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     const NameSet & source_columns_set = result.source_columns_set;
 
+    if (table_join)
+    {
+        result.analyzed_join = table_join;
+        result.analyzed_join->resetCollected();
+    }
+    else /// TODO: remove. For now ExpressionAnalyzer expects some not empty object here
+        result.analyzed_join = std::make_shared<TableJoin>();
+
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
+
+    if (tables_with_columns.size() > 1)
+    {
+        result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
+        result.analyzed_join->deduplicateAndQualifyColumnNames(
+            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
+    }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
@@ -810,24 +829,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-    if (const ASTTablesInSelectQueryElement * join_node = select_query->join())
-    {
-        auto & table_join_ast = join_node->table_join->as<ASTTableJoin &>();
-        std::tie(table_join_ast.kind, table_join_ast.strictness) = getJoinStrictness(
-            table_join_ast.kind, table_join_ast.strictness, settings.join_default_strictness, settings.any_join_distinct_right_table_keys);
-    }
-
-    if (joined_tables)
-        result.analyzed_join = joined_tables->makeTableJoin(*select_query);
-    else
-        result.analyzed_join = std::make_shared<TableJoin>();
-
-    if (tables_with_columns.size() > 1)
-    {
-        result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
-        result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
-    }
+    setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
+                        result.analyzed_join->table_join);
 
     ASTPtr new_where_condition = nullptr;
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases, new_where_condition);
@@ -849,7 +852,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&
             !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
-            (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->join_info.kind));
+            (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
     return std::make_shared<const TreeRewriterResult>(result);
 }

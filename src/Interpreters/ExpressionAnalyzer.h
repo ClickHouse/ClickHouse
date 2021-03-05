@@ -200,8 +200,7 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ActionsDAGPtr before_join;
-    ActionsDAGPtr converting_join_left_columns;
-    ActionsDAGPtr converting_join_right_columns;
+    ActionsDAGPtr converting_join_columns;
     JoinPtr join;
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
@@ -318,9 +317,7 @@ private:
 
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,
-        const ColumnsWithTypeAndName & left_sample_columns,
-        ActionsDAGPtr & left_converting_actions,
-        ActionsDAGPtr & right_converting_actions);
+        const ColumnsWithTypeAndName & left_sample_columns);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -341,7 +338,7 @@ private:
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & left_actions, ActionsDAGPtr & right_actions);
+    JoinPtr appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();

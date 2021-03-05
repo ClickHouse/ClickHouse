@@ -35,28 +35,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-bool sameStrictnessAndKind(ASTTableJoin::Strictness strictness_left, ASTTableJoin::Kind kind_left,
-                           ASTTableJoin::Strictness strictness_right, ASTTableJoin::Kind kind_right)
-{
-    if (strictness_right == strictness_left && kind_right == kind_left)
-        return true;
-
-    /// Compatibility: old ANY INNER == new SEMI LEFT
-    if (strictness_right == ASTTableJoin::Strictness::Semi && isLeft(kind_right) &&
-        strictness_left == ASTTableJoin::Strictness::RightAny && isInner(kind_left))
-        return true;
-    if (strictness_left == ASTTableJoin::Strictness::Semi && isLeft(kind_left) &&
-        strictness_right == ASTTableJoin::Strictness::RightAny && isInner(kind_right))
-        return true;
-
-    return false;
-}
-
-}
-
 StorageJoin::StorageJoin(
     DiskPtr disk_,
     const String & relative_path_,
@@ -77,14 +55,14 @@ StorageJoin::StorageJoin(
     , kind(kind_)
     , strictness(strictness_)
     , overwrite(overwrite_)
-    , join_info(limits, use_nulls, kind, strictness, key_names)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     for (const auto & key : key_names)
         if (!metadata_snapshot->getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    join = std::make_shared<HashJoin>(join_info, metadata_snapshot->getSampleBlock().sortColumns(), nullptr, overwrite);
+    table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
+    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
@@ -97,26 +75,27 @@ void StorageJoin::truncate(
     disk->createDirectories(path + "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(join_info, metadata_snapshot->getSampleBlock().sortColumns(), nullptr, overwrite);
+    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(JoinInfo info) const
+
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    if (!sameStrictnessAndKind(info.strictness, info.kind, strictness, kind))
+    if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
-    if ((info.forceNullableRight() && !use_nulls) ||
-        (!info.forceNullableRight() && isLeftOrFull(info.kind) && use_nulls))
+    if ((analyzed_join->forceNullableRight() && !use_nulls) ||
+        (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
         throw Exception("Table " + getStorageID().getNameForLogs() + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
                         ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     /// TODO: check key columns
 
     /// Some HACK to remove wrong names qualifiers: table.column -> column.
-    info.key_names_right = key_names;
+    analyzed_join->setRightKeys(key_names);
 
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(std::move(info), metadata_snapshot->getSampleBlock().sortColumns());
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
     join_clone->setLock(rwlock);
     join_clone->reuseJoinedData(*join);
 

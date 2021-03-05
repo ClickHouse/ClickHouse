@@ -10,7 +10,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
-#include <Interpreters/TableJoin.h>
 
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
@@ -28,6 +27,7 @@
 namespace DB
 {
 
+class TableJoin;
 class DictionaryReader;
 
 namespace JoinStuff
@@ -132,9 +132,7 @@ public:
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(JoinInfo join_info_, const Block & right_sample_block_,
-              std::shared_ptr<DictionaryReader> dictionary_reader_ = nullptr,
-             bool any_take_last_row_ = false);
+    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -173,8 +171,10 @@ public:
 
     bool alwaysReturnsEmptySet() const final;
 
+    ASTTableJoin::Kind getKind() const { return kind; }
+    ASTTableJoin::Strictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
-    ASOF::Inequality getAsofInequality() const { return join_info.asof_inequality; }
+    ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const
@@ -338,18 +338,18 @@ private:
     friend class NonJoinedBlockInputStream;
     friend class JoinSource;
 
-    JoinInfo join_info;
+    std::shared_ptr<TableJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
-    const Names key_names_left;
-    const Names key_names_right;
+    const Names & key_names_right;
 
+    bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
+    bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
-
-    std::shared_ptr<DictionaryReader> dictionary_reader;
+    ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     std::shared_ptr<RightTableData> data;
