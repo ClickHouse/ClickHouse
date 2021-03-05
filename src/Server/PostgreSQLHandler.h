@@ -18,6 +18,8 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class Session;
+
 /** PostgreSQL wire protocol implementation.
  * For more info see https://www.postgresql.org/docs/current/protocol.html
  */
@@ -37,7 +39,6 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
-    ContextMutablePtr connection_context;
     bool ssl_enabled = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;
@@ -56,7 +57,7 @@ private:
 
     void changeIO(Poco::Net::StreamSocket & socket);
 
-    bool startup();
+    bool startup(Session & session);
 
     void establishSecureConnection(Int32 & payload_size, Int32 & info);
 
@@ -64,11 +65,11 @@ private:
 
     void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message);
 
-    void cancelRequest();
+    void cancelRequest(Session & session);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
-    void processQuery();
+    void processQuery(DB::Session & session);
 
     static bool isEmptyQuery(const String & query);
 };

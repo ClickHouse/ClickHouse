@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Session.h>
 #include <Interpreters/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Server/HTTPHandlerFactory.h>
@@ -275,7 +276,6 @@ HTTPHandler::~HTTPHandler()
 
 
 bool HTTPHandler::authenticateUser(
-    ContextMutablePtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response)
@@ -352,7 +352,7 @@ bool HTTPHandler::authenticateUser(
     else
     {
         if (!request_credentials)
-            request_credentials = request_context->makeGSSAcceptorContext();
+            request_credentials = request_session->sessionContext()->makeGSSAcceptorContext();
 
         auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(request_credentials.get());
         if (!gss_acceptor_context)
@@ -379,9 +379,8 @@ bool HTTPHandler::authenticateUser(
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
 
-    ClientInfo & client_info = context->getClientInfo();
+    ClientInfo & client_info = request_session->getClientInfo();
     client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-    client_info.interface = ClientInfo::Interface::HTTP;
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -396,7 +395,7 @@ bool HTTPHandler::authenticateUser(
 
     try
     {
-        context->setUser(*request_credentials, request.clientAddress());
+        request_session->setUser(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -413,7 +412,7 @@ bool HTTPHandler::authenticateUser(
     }
     catch (const Authentication::Require<GSSAcceptorContext> & required_credentials)
     {
-        request_credentials = request_context->makeGSSAcceptorContext();
+        request_credentials = request_session->sessionContext()->makeGSSAcceptorContext();
 
         if (required_credentials.getRealm().empty())
             response.set("WWW-Authenticate", "Negotiate");
@@ -428,7 +427,7 @@ bool HTTPHandler::authenticateUser(
     request_credentials.reset();
 
     if (!quota_key.empty())
-        context->setQuotaKey(quota_key);
+        request_session->setQuotaKey(quota_key);
 
     /// Query sent through HTTP interface is initial.
     client_info.initial_user = client_info.current_user;
@@ -439,7 +438,6 @@ bool HTTPHandler::authenticateUser(
 
 
 void HTTPHandler::processQuery(
-    ContextMutablePtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response,
@@ -450,13 +448,11 @@ void HTTPHandler::processQuery(
 
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
-    if (!authenticateUser(context, request, params, response))
+    if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
-
-    std::shared_ptr<NamedSession> session;
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -467,16 +463,11 @@ void HTTPHandler::processQuery(
         session_id = params.get("session_id");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
-
-        session = context->acquireNamedSession(session_id, session_timeout, session_check == "1");
-
-        context->copyFrom(session->context);  /// FIXME: maybe move this part to HandleRequest(), copyFrom() is used only here.
-        context->setSessionContext(session->context);
+        request_session->promoteToNamedSession(session_id, session_timeout, session_check == "1");
     }
 
     SCOPE_EXIT({
-        if (session)
-            session->release();
+        request_session->releaseNamedSession();
     });
 
     // Parse the OpenTelemetry traceparent header.
@@ -485,9 +476,10 @@ void HTTPHandler::processQuery(
 #if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
+        ClientInfo & client_info = request_session->getClientInfo();
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context->getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!client_info.client_trace_context.parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -495,12 +487,12 @@ void HTTPHandler::processQuery(
                 opentelemetry_traceparent, error);
         }
 
-        context->getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 
     // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    auto context = request_session->makeQueryContext(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
     ClientInfo & client_info = context->getClientInfo();
     client_info.initial_query_id = client_info.current_query_id;
@@ -866,16 +858,16 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     SCOPE_EXIT({
         // If there is no request_credentials instance waiting for the next round, then the request is processed,
-        // so no need to preserve request_context either.
+        // so no need to preserve request_session either.
         // Needs to be performed with respect to the other destructors in the scope though.
         if (!request_credentials)
-            request_context.reset();
+            request_session.reset();
     });
 
-    if (!request_context)
+    if (!request_session)
     {
         // Context should be initialized before anything, for correct memory accounting.
-        request_context = Context::createCopy(server.context());
+        request_session = std::make_shared<Session>(server.context(), ClientInfo::Interface::HTTP);
         request_credentials.reset();
     }
 
@@ -894,7 +886,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params(request_context->getSettingsRef(), request);
+        HTMLForm params(request_session->getSettings(), request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// FIXME: maybe this check is already unnecessary.
@@ -906,7 +898,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                 ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(request_context, request, params, response, used_output, query_scope);
+        processQuery(request, params, response, used_output, query_scope);
         LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
     }
     catch (...)

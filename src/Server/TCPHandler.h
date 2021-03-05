@@ -11,7 +11,7 @@
 #include <IO/TimeoutSetter.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include "IServer.h"
 
@@ -26,6 +26,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class Session;
 class ColumnsDescription;
 
 /// State of query processing.
@@ -132,7 +133,7 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    ContextMutablePtr connection_context;
+    std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
 
     size_t unknown_packet_in_send_data = 0;

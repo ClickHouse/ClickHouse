@@ -8,6 +8,7 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
@@ -70,7 +71,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
-    , connection_context(Context::createCopy(server.context()))
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
@@ -87,11 +87,13 @@ void MySQLHandler::run()
 {
     setThreadName("MySQLHandler");
     ThreadStatus thread_status;
-    connection_context->makeSessionContext();
-    connection_context->getClientInfo().interface = ClientInfo::Interface::MYSQL;
-    connection_context->setDefaultFormat("MySQLWire");
-    connection_context->getClientInfo().connection_id = connection_id;
-    connection_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+
+    session = std::make_shared<Session>(server.context(), ClientInfo::Interface::MYSQL, "MySQLWire");
+    auto & session_client_info = session->getClientInfo();
+
+    session_client_info.current_address = socket().peerAddress();
+    session_client_info.connection_id = connection_id;
+    session_client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -125,14 +127,12 @@ void MySQLHandler::run()
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
-        connection_context->getClientInfo().initial_user = handshake_response.username;
+        session_client_info.initial_user = handshake_response.username;
 
         try
         {
             if (!handshake_response.database.empty())
-                connection_context->setCurrentDatabase(handshake_response.database);
-            connection_context->setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
-
+                session->setCurrentDatabase(handshake_response.database);
         }
         catch (const Exception & exc)
         {
@@ -246,25 +246,26 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
 
 void MySQLHandler::authenticate(const String & user_name, const String & auth_plugin_name, const String & initial_auth_response)
 {
+    // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
+    DB::Authentication::Type user_auth_type;
     try
     {
-        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        auto user = connection_context->getAccessControlManager().read<User>(user_name);
-        const DB::Authentication::Type user_auth_type = user->authentication.getType();
-        if (user_auth_type == DB::Authentication::SHA256_PASSWORD)
-        {
-            authPluginSSL();
-        }
-
-        std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
-        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_endpoint, secure_connection, socket().peerAddress());
+        user_auth_type = session->getUserAuthentication(user_name).getType();
     }
-    catch (const Exception & exc)
+    catch (const std::exception & e)
     {
-        LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
+        session->onLogInFailure(user_name, e);
         throw;
     }
+
+    if (user_auth_type == DB::Authentication::SHA256_PASSWORD)
+    {
+        authPluginSSL();
+    }
+
+    std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
+    auth_plugin->authenticate(user_name, auth_response, *session, packet_endpoint, secure_connection, socket().peerAddress());
+
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
 }
 
@@ -273,7 +274,7 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    connection_context->setCurrentDatabase(database);
+    session->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1), true);
 }
 
@@ -281,8 +282,9 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
     packet.readPayloadWithUnpacked(payload);
-    String database = connection_context->getCurrentDatabase();
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
+    const auto session_context = session->sessionContext();
+    String database = session_context->getCurrentDatabase();
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
@@ -329,7 +331,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         ReadBufferFromString replacement(replacement_query);
 
-        auto query_context = Context::createCopy(connection_context);
+        auto query_context = session->makeQueryContext(Poco::format("mysql:%lu", connection_id));
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();

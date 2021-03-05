@@ -20,9 +20,11 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/PushingToSinkBlockOutputStream.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/Session.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -88,11 +90,11 @@ TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket
     , server(server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
-    , connection_context(Context::createCopy(server.context()))
     , query_context(Context::createCopy(server.context()))
     , server_display_name(std::move(server_display_name_))
 {
 }
+
 TCPHandler::~TCPHandler()
 {
     try
@@ -112,13 +114,14 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    connection_context = Context::createCopy(server.context());
-    connection_context->makeSessionContext();
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP);
+    const auto session_context = session->sessionContext();
 
     /// These timeouts can be changed after receiving query.
+    const auto & settings = session->getSettings();
 
-    auto global_receive_timeout = connection_context->getSettingsRef().receive_timeout;
-    auto global_send_timeout = connection_context->getSettingsRef().send_timeout;
+    auto global_receive_timeout = settings.receive_timeout;
+    auto global_send_timeout = settings.send_timeout;
 
     socket().setReceiveTimeout(global_receive_timeout);
     socket().setSendTimeout(global_send_timeout);
@@ -159,7 +162,7 @@ void TCPHandler::runImpl()
         try
         {
             /// We try to send error information to the client.
-            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
+            sendException(e, session->getSettings().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -173,20 +176,19 @@ void TCPHandler::runImpl()
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, getExceptionMessage(e, true));
-            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
+            sendException(e, settings.calculate_text_stack_trace);
             return;
         }
 
-        connection_context->setCurrentDatabase(default_database);
+        session->setCurrentDatabase(default_database);
     }
 
-    Settings connection_settings = connection_context->getSettings();
-    UInt64 idle_connection_timeout = connection_settings.idle_connection_timeout;
-    UInt64 poll_interval = connection_settings.poll_interval;
+    UInt64 idle_connection_timeout = settings.idle_connection_timeout;
+    UInt64 poll_interval = settings.poll_interval;
 
     sendHello();
 
-    connection_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    session->mutableSessionContext()->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
     while (true)
     {
@@ -209,7 +211,8 @@ void TCPHandler::runImpl()
             break;
 
         /// Set context of request.
-        query_context = Context::createCopy(connection_context);
+        /// TODO (nemkov): create query later in receiveQuery
+        query_context = session->makeQueryContext(std::string{}); // proper query_id is set later in receiveQuery
 
         Stopwatch watch;
         state.reset();
@@ -241,9 +244,9 @@ void TCPHandler::runImpl()
              *  So, update some other connection settings, for flexibility.
              */
             {
-                const Settings & settings = query_context->getSettingsRef();
-                idle_connection_timeout = settings.idle_connection_timeout;
-                poll_interval = settings.poll_interval;
+                const Settings & query_settings = query_context->getSettingsRef();
+                idle_connection_timeout = query_settings.idle_connection_timeout;
+                poll_interval = query_settings.poll_interval;
             }
 
             /** If part_uuids got received in previous packet, trying to read again.
@@ -266,13 +269,13 @@ void TCPHandler::runImpl()
                 CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
-            query_context->setExternalTablesInitializer([&connection_settings, this] (ContextPtr context)
+            query_context->setExternalTablesInitializer([&settings, this] (ContextPtr context)
             {
                 if (context != query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
                 /// Get blocks of temporary tables
-                readData(connection_settings);
+                readData(settings);
 
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
@@ -303,14 +306,14 @@ void TCPHandler::runImpl()
                 sendData(state.input_header);
             });
 
-            query_context->setInputBlocksReaderCallback([&connection_settings, this] (ContextPtr context) -> Block
+            query_context->setInputBlocksReaderCallback([&settings, this] (ContextPtr context) -> Block
             {
                 if (context != query_context)
                     throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
                 size_t poll_interval_ms;
                 int receive_timeout;
-                std::tie(poll_interval_ms, receive_timeout) = getReadTimeouts(connection_settings);
+                std::tie(poll_interval_ms, receive_timeout) = getReadTimeouts(settings);
                 if (!readDataNext(poll_interval_ms, receive_timeout))
                 {
                     state.block_in.reset();
@@ -342,7 +345,7 @@ void TCPHandler::runImpl()
             if (state.io.out)
             {
                 state.need_receive_data_for_insert = true;
-                processInsertQuery(connection_settings);
+                processInsertQuery(settings);
             }
             else if (state.need_receive_data_for_input) // It implies pipeline execution
             {
@@ -752,12 +755,13 @@ void TCPHandler::processTablesStatusRequest()
 {
     TablesStatusRequest request;
     request.read(*in, client_tcp_protocol_version);
+    const auto session_context = session->sessionContext();
 
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
-        auto resolved_id = connection_context->tryResolveStorageID({table_name.database, table_name.table});
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, connection_context);
+        auto resolved_id = session_context->tryResolveStorageID({table_name.database, table_name.table});
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, session_context);
         if (!table)
             continue;
 
@@ -924,7 +928,7 @@ bool TCPHandler::receiveProxyHeader()
     }
 
     LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    connection_context->getClientInfo().forwarded_for = forwarded_address;
+    session->getClientInfo().forwarded_for = forwarded_address;
     return true;
 }
 
@@ -975,7 +979,15 @@ void TCPHandler::receiveHello()
 
     if (user != USER_INTERSERVER_MARKER)
     {
-        connection_context->setUser(user, password, socket().peerAddress());
+        auto & client_info = session->getClientInfo();
+        client_info.interface = ClientInfo::Interface::TCP;
+        client_info.client_name = client_name;
+        client_info.client_version_major = client_version_major;
+        client_info.client_version_minor = client_version_minor;
+        client_info.client_version_patch = client_version_patch;
+        client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+
+        session->setUser(user, password, socket().peerAddress());
     }
     else
     {
@@ -1136,7 +1148,7 @@ void TCPHandler::receiveClusterNameAndSalt()
         try
         {
             /// We try to send error information to the client.
-            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
+            sendException(e, session->getSettings().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -1151,6 +1163,7 @@ void TCPHandler::receiveQuery()
 
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
+//    query_context = session->makeQueryContext(state.query_id);
 
     /// Client info
     ClientInfo & client_info = query_context->getClientInfo();
@@ -1450,7 +1463,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            !connection_context->getSettingsRef().low_cardinality_allow_in_native_format);
+            !session->getSettings().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -1463,7 +1476,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            !connection_context->getSettingsRef().low_cardinality_allow_in_native_format);
+            !session->getSettings().low_cardinality_allow_in_native_format);
     }
 }
 
