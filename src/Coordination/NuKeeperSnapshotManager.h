@@ -37,6 +37,9 @@ public:
     SessionAndTimeout session_and_timeout;
 };
 
+using NuKeeperStorageSnapshotPtr = std::shared_ptr<NuKeeperStorageSnapshot>;
+using CreateSnapshotCallback = std::function<void(const NuKeeperStorageSnapshotPtr &)>;
+
 class NuKeeperSnapshotManager
 {
 public:
@@ -71,6 +74,12 @@ private:
     const std::string snapshots_path;
     const size_t snapshots_to_keep;
     std::map<size_t, std::string> existing_snapshots;
+};
+
+struct CreateSnapshotTask
+{
+    NuKeeperStorageSnapshotPtr snapshot;
+    CreateSnapshotCallback create_snapshot;
 };
 
 }
