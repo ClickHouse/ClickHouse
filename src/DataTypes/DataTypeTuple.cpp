@@ -262,6 +262,9 @@ auto DataTypeTuple::getSubcolumnEntity(const String & subcolumn_name,
 
 DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) const
 {
+    if (subcolumn_name == MAIN_SUBCOLUMN_NAME)
+        return shared_from_this();
+
     auto on_success = [&](size_t pos) { return createOneElementTuple(elems[pos], names[pos]); };
     auto on_continue = [&](size_t pos, const String & next_subcolumn)
     {
