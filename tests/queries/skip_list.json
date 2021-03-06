@@ -95,7 +95,8 @@
         "01370_client_autocomplete_word_break_characters",
         "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
-        "01455_time_zones"
+        "01455_time_zones",
+        "01755_client_highlight_multi_line_comment_regression"
     ],
     "release-build": [
     ],

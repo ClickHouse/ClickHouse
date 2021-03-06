@@ -212,3 +212,4 @@
 01017_uniqCombined_memory_usage
 01747_join_view_filter_dictionary
 01748_dictionary_table_dot
+01755_client_highlight_multi_line_comment_regression
