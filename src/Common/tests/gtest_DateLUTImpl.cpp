@@ -416,11 +416,11 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
             has_transition = true;
         }
 
-        if (has_transition && (transition.from.second() != 0 || transition.from.minute() % 900 != 0))
+        if (has_transition && (transition.from.second() != 0 || transition.from.minute() % 15 != 0))
         {
             std::cerr << "Skipping " << timezone_name << " " << tz_time
                 << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
-                << " (not divisable by 15 minutes)\n";
+                << " (not divisible by 15 minutes)\n";
             continue;
         }
 
@@ -436,8 +436,7 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
 
         /// To large transition.
         if (has_transition
-            && cctz::civil_day(transition.from) != cctz::civil_day(transition.to)
-            && cctz::civil_day(transition.from) != cctz::civil_day(transition.to) + 1)
+            && std::abs(transition.from - transition.to) > 3600 * 3)
         {
             std::cerr << "Skipping " << timezone_name << " " << tz_time
                 << " because of unsupported timezone transition from " << transition.from << " to " << transition.to

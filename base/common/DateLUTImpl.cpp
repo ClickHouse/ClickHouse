@@ -112,9 +112,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
         cctz::time_zone::civil_transition transition{};
         if (cctz_time_zone.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition)
-            && transition.from.year() == date.year()
-            && transition.from.month() == date.month()
-            && transition.from.day() == date.day()
+            && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
             && transition.from != transition.to)
         {
             values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
