@@ -296,6 +296,80 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${C
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
+# Configure interprocedural/link-time optimization (IPO/LTO).
+set (CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+if (ENABLE_TESTS OR SANITIZE)
+    # We cannot afford to use LTO when compiling unit tests, and it's not enough to
+    # only supply -fno-lto at the final linking stage. So we disable it completely.
+    if (ENABLE_IPO OR ENABLE_THINLTO)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable IPO/LTO when building with sanitizers or tests")
+    endif ()
+else ()
+    option (ENABLE_IPO "Enable interprocedural/link-time optimization (IPO/LTO) for non-Debug builds" ON)
+
+    if (COMPILER_CLANG)
+        option (ENABLE_THINLTO "Use ThinLTO when IPO is enabled and used and the compiler is Clang" ON)
+    elseif (ENABLE_THINLTO)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
+    endif ()
+
+    if (ENABLE_IPO)
+        set (CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+        cmake_policy (SET CMP0069 NEW)
+
+        include (CheckIPOSupported OPTIONAL RESULT_VARIABLE _CheckIPOSupported_included)
+
+        if (_CheckIPOSupported_included)
+            check_ipo_supported (RESULT _ipo_supported LANGUAGES C CXX)
+
+            if (_ipo_supported)
+                set (CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+                set (CMAKE_INTERPROCEDURAL_OPTIMIZATION_DEBUG OFF)
+
+                if (COMPILER_CLANG)
+                    # These are undocumented internal variables...
+                    if (ENABLE_THINLTO)
+                        set(CMAKE_C_COMPILE_OPTIONS_IPO "-flto=thin")
+                        set(CMAKE_CXX_COMPILE_OPTIONS_IPO "-flto=thin")
+                    else ()
+                        set(CMAKE_C_COMPILE_OPTIONS_IPO "-flto=full")
+                        set(CMAKE_CXX_COMPILE_OPTIONS_IPO "-flto=full" "-fwhole-program-vtables")
+                    endif ()
+                endif ()
+            else ()
+                message (${RECONFIGURE_MESSAGE_LEVEL} "IPO/LTO is not supported by the compiler")
+            endif ()
+        else ()
+            if (COMPILER_CLANG)
+                if (ENABLE_THINLTO)
+                    set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -flto=thin")
+                    set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto=thin")
+                    set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto=thin")
+                    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
+                    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
+                    set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+                else ()
+                    set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -flto=full")
+                    set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto=full -fwhole-program-vtables")
+                    set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto=full -fwhole-program-vtables")
+                    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=full")
+                    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=full -fwhole-program-vtables")
+                    set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=full -fwhole-program-vtables")
+                endif ()
+            elseif (COMPILER_GCC)
+                set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -flto -fno-fat-lto-objects")
+                set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto -fno-fat-lto-objects")
+                set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto -fno-fat-lto-objects")
+                set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto -fno-fat-lto-objects")
+                set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto -fno-fat-lto-objects")
+                set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto -fno-fat-lto-objects")
+            else ()
+                message (${RECONFIGURE_MESSAGE_LEVEL} "Enabling IPO/LTO is not implemented for the compiler")
+            endif ()
+        endif ()
+    endif ()
+endif ()
+
 if (COMPILER_CLANG)
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -306,29 +380,10 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    if (NOT ENABLE_TESTS AND NOT SANITIZE)
-        # https://clang.llvm.org/docs/ThinLTO.html
-        # Applies to clang only.
-        # Disabled when building with tests or sanitizers.
-        option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
-    endif()
-
     # Set new experimental pass manager, it's a performance, build time and binary size win.
     # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
-
-    # We cannot afford to use LTO when compiling unit tests, and it's not enough
-    # to only supply -fno-lto at the final linking stage. So we disable it
-    # completely.
-    if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
-        # Link time optimization
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
-    elseif (ENABLE_THINLTO)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
-    endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
     find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
@@ -337,7 +392,7 @@ if (COMPILER_CLANG)
         message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
         set (CMAKE_AR ${LLVM_AR_PATH})
     else ()
-        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
+        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It may not work with LTO/ThinLTO.")
     endif ()
 
     find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
@@ -346,11 +401,8 @@ if (COMPILER_CLANG)
         message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
         set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
     else ()
-        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
+        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It may not work with LTO/ThinLTO.")
     endif ()
-
-elseif (ENABLE_THINLTO)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
 
 # Turns on all external libs like s3, kafka, ODBC, ...

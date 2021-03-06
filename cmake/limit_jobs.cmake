@@ -41,7 +41,7 @@ endif ()
 # But use 2 parallel jobs, since:
 # - this is what llvm does
 # - and I've verfied that lld-11 does not use all available CPU time (in peak) while linking one binary
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
+if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND COMPILER_CLANG AND ENABLE_IPO AND ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
     message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 2.")
     set (PARALLEL_LINK_JOBS 2)
 endif()

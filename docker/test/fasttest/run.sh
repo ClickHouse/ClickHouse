@@ -194,7 +194,7 @@ function run_cmake
         "-DENABLE_TESTS=0"
         "-DENABLE_UTILS=0"
         "-DENABLE_EMBEDDED_COMPILER=0"
-        "-DENABLE_THINLTO=0"
+        "-DENABLE_IPO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
     )
