@@ -525,11 +525,11 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
 {
-    if (prewhere_)
+    if (prewhere_info_)
     {
-        Poco::Logger::get("PREWHERE").information(prewhere_->prewhere_column_name);
-        Poco::Logger::get("PREWHERE").information(prewhere_->prewhere_actions->dumpActions());
-        Poco::Logger::get("PREWHERE rm?").information(std::to_string(prewhere_->remove_prewhere_column));
+        Poco::Logger::get("PREWHERE").information(prewhere_info_->prewhere_column_name);
+        Poco::Logger::get("PREWHERE").information(prewhere_info_->prewhere_actions->dumpActions());
+        Poco::Logger::get("PREWHERE rm?").information(std::to_string(prewhere_info_->remove_prewhere_column));
     }
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
