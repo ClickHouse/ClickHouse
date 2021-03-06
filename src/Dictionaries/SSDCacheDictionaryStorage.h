@@ -1244,7 +1244,7 @@ private:
                         auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
-                        /// If there are not key to update or key to update not in memory
+                        /// If there are no key to update or key to update not in memory
                         if (!it || it->getMapped().state != Cell::in_memory)
                             continue;
 
