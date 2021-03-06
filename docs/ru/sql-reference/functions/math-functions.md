@@ -433,8 +433,6 @@ sign(x)
 SELECT sign(0);
 ```
 
-Результат:
-
 ``` text
 ┌─sign(0)─┐
 │       0 │
@@ -447,8 +445,6 @@ SELECT sign(0);
 SELECT sign(1);
 ```
 
-Результат:
-
 ``` text
 ┌─sign(1)─┐
 │       1 │
@@ -460,8 +456,6 @@ SELECT sign(1);
 ``` sql
 SELECT sign(-1);
 ```
-
-Результат:
 
 ``` text
 ┌─sign(-1)─┐
