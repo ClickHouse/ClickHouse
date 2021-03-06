@@ -369,7 +369,7 @@ SHOW ACCESS
 **Синтаксис**
 
 ```sql
-SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>;
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
 ```
 
 **Секции**
