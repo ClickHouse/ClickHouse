@@ -23,7 +23,9 @@ More text (Optional).
 
 **Returned value(s)**
 
--   Returned values list. Type: [Type name](relative/path/to/type/dscr.md#type).
+-   Returned values list. 
+
+Type: [Type name](relative/path/to/type/dscr.md#type).
 
 **Example**
 
