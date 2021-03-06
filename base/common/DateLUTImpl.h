@@ -5,7 +5,9 @@
 #include "types.h"
 
 #include <ctime>
+#include <cassert>
 #include <string>
+#include <type_traits>
 
 
 #define DATE_LUT_MIN_YEAR 1925 /// 1925 since wast majority of timezones changed to 15-minute aligned offsets somewhere in 1924 or earlier.
@@ -229,6 +231,21 @@ private:
     inline const Values & find(DateOrTime v) const
     {
         return lut[toLUTIndex(v)];
+    }
+
+    template <typename T, typename Divisor>
+    static inline T roundDown(T x, Divisor divisor)
+    {
+        static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
+        assert(divisor > 0);
+
+        if (likely(x >= 0))
+            return x / divisor * divisor;
+
+        /// Integer division for negative numbers rounds them towards zero (up).
+        /// We will shift the number so it will be rounded towards -inf (down).
+
+        return (x + 1 - divisor) / divisor * divisor;
     }
 
 public:
@@ -822,10 +839,12 @@ public:
             return toStartOfHour(t);
         UInt64 seconds = hours * 3600;
 
-        t = (t + DATE_LUT_ADD) / seconds * seconds - DATE_LUT_ADD;
+        t = roundDown(t, seconds);
 
         if (offset_is_whole_number_of_hours_everytime)
             return t;
+
+        /// TODO check if it's correct.
         return toStartOfHour(t);
     }
 
@@ -833,9 +852,9 @@ public:
     {
         if (minutes == 1)
             return toStartOfMinute(t);
-        UInt64 seconds = 60 * minutes;
 
-        return (t + DATE_LUT_ADD) / seconds * seconds - DATE_LUT_ADD;
+        UInt64 seconds = 60 * minutes;
+        return roundDown(t, seconds);
     }
 
     inline time_t toStartOfSecondInterval(time_t t, UInt64 seconds) const
@@ -843,7 +862,7 @@ public:
         if (seconds == 1)
             return t;
 
-        return (t + DATE_LUT_ADD) / seconds * seconds - DATE_LUT_ADD;
+        return roundDown(t, seconds);
     }
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
