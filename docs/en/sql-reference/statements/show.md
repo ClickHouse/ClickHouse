@@ -435,7 +435,7 @@ Returns a list of system settings and their values. Selects data from the [syste
 **Syntax**
 
 ```sql
-SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>;
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
 ```
 
 **Clauses**
