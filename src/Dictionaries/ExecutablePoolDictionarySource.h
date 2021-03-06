@@ -26,10 +26,20 @@ using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
 class ExecutablePoolDictionarySource final : public IDictionarySource
 {
 public:
+    struct Configuration
+    {
+        const String command;
+        const String format;
+        const size_t pool_size;
+        const String update_field;
+        const bool implicit_key;
+        const size_t command_termination_timeout;
+        const size_t max_command_execution_time;
+    };
+
     ExecutablePoolDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
+        const Configuration & configuration_,
         Block & sample_block_,
         const Context & context_);
 
@@ -64,12 +74,7 @@ private:
     Poco::Logger * log;
     time_t update_time = 0;
     const DictionaryStructure dict_struct;
-    bool implicit_key;
-    const std::string command;
-    const std::string update_field;
-    const std::string format;
-    const size_t pool_size;
-    const size_t command_termination_timeout;
+    const Configuration configuration;
 
     Block sample_block;
     Context context;

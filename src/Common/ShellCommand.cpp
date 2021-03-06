@@ -94,47 +94,40 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     wait_called = true;
     struct timespec interval {.tv_sec = 1, .tv_nsec = 0};
 
-    try
+    in.close();
+    out.close();
+    err.close();
+
+    if (timeout_in_seconds == 0)
     {
-        in.close();
-        out.close();
-        err.close();
+        /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
+        /// signal if process is already terminated normally finished.
 
-        if (timeout_in_seconds == 0)
-        {
-            /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
-            /// signal if process is already terminated normally finished.
-
-            int waitpid_res = waitpid(pid, &status, WNOHANG);
-            bool process_terminated_normally = (waitpid_res == pid);
-            return process_terminated_normally;
-        }
-
-        /// If timeout is positive try waitpid without block in loop until
-        /// process is normally terminated or waitpid return error
-
-        while (timeout_in_seconds != 0)
-        {
-            int waitpid_res = waitpid(pid, &status, WNOHANG);
-
-            bool process_terminated_normally = (waitpid_res == pid);
-
-            if (process_terminated_normally)
-                return true;
-            else if (waitpid_res == 0)
-            {
-                --timeout_in_seconds;
-                nanosleep(&interval, nullptr);
-
-                continue;
-            }
-            else if (waitpid_res == -1 && errno != EINTR)
-                return false;
-        }
+        int waitpid_res = waitpid(pid, &status, WNOHANG);
+        bool process_terminated_normally = (waitpid_res == pid);
+        return process_terminated_normally;
     }
-    catch (...)
+
+    /// If timeout is positive try waitpid without block in loop until
+    /// process is normally terminated or waitpid return error
+
+    while (timeout_in_seconds != 0)
     {
-        return false;
+        int waitpid_res = waitpid(pid, &status, WNOHANG);
+
+        bool process_terminated_normally = (waitpid_res == pid);
+
+        if (process_terminated_normally)
+            return true;
+        else if (waitpid_res == 0)
+        {
+            --timeout_in_seconds;
+            nanosleep(&interval, nullptr);
+
+            continue;
+        }
+        else if (waitpid_res == -1 && errno != EINTR)
+            return false;
     }
 
     return false;

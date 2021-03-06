@@ -269,13 +269,13 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (check_config)
-            throw Exception("Dictionaries with executable dictionary source from DDL are not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
 
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
