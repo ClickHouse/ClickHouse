@@ -724,11 +724,13 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 Обязательные параметры:
+
 -   `endpoint` — URL конечной точки S3 в запросах `path` или `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). URL конечной точки должен содержать сегмент (bucket) и путь к корневой директории на сервере, где хранятся данные.
 -   `access_key_id` — id ключа доступа к S3. 
 -   `secret_access_key` — секретный ключ доступа к S3.
 
 Необязательные параметры:   
+
 -   `use_environment_credentials` — признак, нужно ли считывать учетные данные AWS из переменных окружения AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY и AWS_SESSION_TOKEN, если они есть. Значение по умолчанию: `false`.
 -   `proxy` — конфигурация прокси-сервера для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси-сервера. 
 -   `connect_timeout_ms` — таймаут подключения к сокету в миллисекундах. Значение по умолчанию: 10 секунд. 
@@ -743,6 +745,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 
 Диск S3 может быть сконфигурирован как `main` или `cold`:
+
 ``` xml
 <storage_configuration>
     ...
