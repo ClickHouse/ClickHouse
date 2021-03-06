@@ -723,6 +723,3 @@ Setting fields:
 -   `table` – Name of the table.
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-
-
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
