@@ -38,23 +38,6 @@ private:
 };
 
 
-class LibraryErrorResponseHandler : public HTTPRequestHandler
-{
-public:
-    explicit LibraryErrorResponseHandler(std::string message_)
-        : log(&Poco::Logger::get("LibraryErrorResponseHandler"))
-        , message(message_)
-    {
-    }
-
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
-
-private:
-    Poco::Logger * log;
-    const std::string message;
-};
-
-
 /// Handler to send error responce.
 class PingHandler : public HTTPRequestHandler
 {

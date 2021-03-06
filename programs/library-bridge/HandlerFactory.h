@@ -30,15 +30,9 @@ public:
 
 private:
     Poco::Logger * log;
-
     std::string name;
-
     size_t keep_alive_timeout;
-
     Context & context;
-
-    /// Map dictionary_id -> SharedLibraryHandler
-    std::unordered_map<std::string, SharedLibraryHandlerPtr> library_handlers;
 };
 
 }

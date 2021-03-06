@@ -229,17 +229,6 @@ void LibraryRequestHandler::processError(HTTPServerResponse & response, const st
 }
 
 
-void LibraryErrorResponseHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
-{
-    response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-
-    if (!response.sent())
-        *response.send() << message << std::endl;
-
-    LOG_ERROR(log, message);
-}
-
-
 void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
 {
     try
