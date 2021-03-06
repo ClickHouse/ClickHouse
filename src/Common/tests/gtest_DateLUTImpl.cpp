@@ -407,22 +407,49 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
         /// Sun Nov  7 00:00:30 ADT 2010
         /// Sat Nov  6 23:01:00 AST 2010
         /// Sat Nov  6 23:01:30 AST 2010
+
+        bool has_transition = false;
         cctz::time_zone::civil_transition transition{};
         if (tz.next_transition(std::chrono::system_clock::from_time_t(expected_time_t), &transition)
-            && transition.from.day() == tz_time.day()
-            && (transition.from.second() != 0 || transition.from.minute() % 900 != 0
-                || (transition.from.day() != transition.to.day()
-                    && (transition.from.hour() != 0 && transition.from.minute() != 0 && transition.from.second() != 0))))
+            && (transition.from.day() == tz_time.day() || transition.to.day() == tz_time.day()))
+        {
+            has_transition = true;
+        }
+
+        if (has_transition && (transition.from.second() != 0 || transition.from.minute() % 900 != 0))
         {
             std::cerr << "Skipping " << timezone_name << " " << tz_time
-                << " because of unsupported timezone transition from " << transition.from << " to " << transition.to << "\n";
+                << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
+                << " (not divisable by 15 minutes)\n";
+            continue;
+        }
+
+        /// Transition to previous day, but not from midnight.
+        if (has_transition && cctz::civil_day(transition.from) == cctz::civil_day(transition.to) + 1
+            && transition.from != cctz::civil_day(transition.from))
+        {
+            std::cerr << "Skipping " << timezone_name << " " << tz_time
+                << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
+                << " (to previous day but not at midnight)\n";
+            continue;
+        }
+
+        /// To large transition.
+        if (has_transition
+            && cctz::civil_day(transition.from) != cctz::civil_day(transition.to)
+            && cctz::civil_day(transition.from) != cctz::civil_day(transition.to) + 1)
+        {
+            std::cerr << "Skipping " << timezone_name << " " << tz_time
+                << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
+                << " (it is too large)\n";
             continue;
         }
 
         EXPECT_EQ(tz_time.year(), lut.toYear(expected_time_t));
         EXPECT_EQ(tz_time.month(), lut.toMonth(expected_time_t));
         EXPECT_EQ(tz_time.day(), lut.toDayOfMonth(expected_time_t));
-        EXPECT_EQ(static_cast<int>(cctz::get_weekday(tz_time)) + 1, lut.toDayOfWeek(expected_time_t)); // tm.tm_wday Sunday is 0, while for DateLUTImpl it is 7
+        /// tm.tm_wday Sunday is 0, while for DateLUTImpl it is 7
+        EXPECT_EQ(static_cast<int>(cctz::get_weekday(tz_time)) + 1, lut.toDayOfWeek(expected_time_t));
         EXPECT_EQ(cctz::get_yearday(tz_time), lut.toDayOfYear(expected_time_t));
         EXPECT_EQ(tz_time.hour(), lut.toHour(expected_time_t));
         EXPECT_EQ(tz_time.minute(), lut.toMinute(expected_time_t));
