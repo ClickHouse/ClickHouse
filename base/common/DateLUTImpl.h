@@ -472,18 +472,25 @@ public:
     }
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
-    inline time_t toStartOfMinute(time_t t) const { return (t + DATE_LUT_ADD) / 60 * 60 - DATE_LUT_ADD; }
-    inline time_t toStartOfFiveMinute(time_t t) const { return (t + DATE_LUT_ADD) / 300 * 300 - DATE_LUT_ADD; }
-    inline time_t toStartOfFifteenMinutes(time_t t) const { return (t + DATE_LUT_ADD) / 900 * 900 - DATE_LUT_ADD; }
+    inline time_t toStartOfMinute(time_t t) const { return roundDown(t, 60); }
+    inline time_t toStartOfFiveMinute(time_t t) const { return roundDown(t, 300); }
+    inline time_t toStartOfFifteenMinutes(time_t t) const { return roundDown(t, 900); }
 
-    /// NOTE: This most likely wrong for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
-    inline time_t toStartOfTenMinutes(time_t t) const { return (t + DATE_LUT_ADD) / 600 * 600 - DATE_LUT_ADD; }
+    inline time_t toStartOfTenMinutes(time_t t) const
+    {
+        if (offset_is_whole_number_of_hours_everytime)
+            return roundDown(t, 600);
+
+        /// More complex logic is for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
+        Int64 date = find(t).date;
+        return date + (t - date) / 600 * 600;
+    }
 
     /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
     inline time_t toStartOfHour(time_t t) const
     {
         if (offset_is_whole_number_of_hours_everytime)
-            return (t + DATE_LUT_ADD) / 3600 * 3600 - DATE_LUT_ADD;
+            return roundDown(t, 3600);
 
         Int64 date = find(t).date;
         return date + (t - date) / 3600 * 3600;

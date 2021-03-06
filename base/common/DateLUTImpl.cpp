@@ -69,10 +69,18 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
 
         /// Ambiguity is possible if time was changed backwards at the midnight
-        /// (or after midnight time has been changed to the previous day, for example two hours backwards at 01:00).
-        /// Then midnight appears twice. Usually time change happens exactly at 00:00.
-        /// Then we should use the second midnight as the start of the day.
-        start_of_day = std::chrono::system_clock::to_time_t(lookup.post);
+        /// or after midnight time has been changed back to midnight, for example one hour backwards at 01:00
+        /// or after midnight time has been changed to the previous day, for example two hours backwards at 01:00
+        /// Then midnight appears twice. Usually time change happens exactly at 00:00 or 01:00.
+
+        /// If transition did not involve previous day, we should use the first midnight as the start of the day,
+        /// otherwise it's better to use the second midnight.
+
+        std::chrono::time_point start_of_day_time_point = lookup.trans < lookup.post
+            ? lookup.post /* Second midnight appears after transition, so there was a piece of previous day after transition */
+            : lookup.pre;
+
+        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
 
         Values & values = lut[i];
         values.year = date.year();
@@ -97,17 +105,13 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.time_at_offset_change_value = 0;
         values.amount_of_offset_change_value = 0;
 
-        /// TODO: This partially ignores fractional offsets,
-        /// which may cause incorrect toRelativeHourNum() results for some timezones, namelly Europe/Minsk
-        /// when pre-May 2 1924 it had an offset of UTC+1:50, and after it was UTC+2h.
-        /// https://www.timeanddate.com/time/zone/belarus/minsk?syear=1900
-        if (start_of_day > 0 && start_of_day % 3600)
+        if (offset_is_whole_number_of_hours_everytime && start_of_day > 0 && start_of_day % 3600)
             offset_is_whole_number_of_hours_everytime = false;
 
         /// If UTC offset was changed this day.
         /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
         cctz::time_zone::civil_transition transition{};
-        if (cctz_time_zone.next_transition(lookup.post, &transition)
+        if (cctz_time_zone.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition)
             && transition.from.year() == date.year()
             && transition.from.month() == date.month()
             && transition.from.day() == date.day()
@@ -116,8 +120,8 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
             values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
             values.amount_of_offset_change_value = (transition.to - transition.from) / Values::OffsetChangeFactor;
 
-//            std::cerr << time_zone << ", " << date << ": change from " << transition.from << " to " << transition.to << "\n";
-//            std::cerr << time_zone << ", " << date << ": change at " << values.time_at_offset_change() << " with " << values.amount_of_offset_change() << "\n";
+            std::cerr << time_zone << ", " << date << ": change from " << transition.from << " to " << transition.to << "\n";
+            std::cerr << time_zone << ", " << date << ": change at " << values.time_at_offset_change() << " with " << values.amount_of_offset_change() << "\n";
 
             /// We don't support too large changes.
             if (values.amount_of_offset_change_value > 24 * 4)
