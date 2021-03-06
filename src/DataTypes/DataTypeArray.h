@@ -57,7 +57,7 @@ public:
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
     SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const SerializationPtr & base_serialization) const override;
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -70,7 +70,7 @@ private:
     ColumnPtr getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const;
     DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
     SerializationPtr getSubcolumnSerializationImpl(
-        const String & subcolumn_name, const SerializationPtr & base_serialization, size_t level) const;
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter, size_t level) const;
 };
 
 }

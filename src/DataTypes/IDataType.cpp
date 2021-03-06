@@ -153,7 +153,7 @@ SerializationPtr IDataType::getSparseSerialization() const
     return std::make_shared<SerializationSparse>(getDefaultSerialization());
 }
 
-SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr &) const
+SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const BaseSerializationGetter &) const
 {
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
@@ -195,11 +195,18 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
 // static
 SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const IDataType::StreamExistenceCallback & callback)
 {
-    auto base_serialization = column.type->getSerialization(column.name, callback);
-    // if (column.isSubcolumn())
-    //     return column.getTypeInStorage()->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization);
+    if (column.isSubcolumn())
+    {
+        auto base_serialization_getter = [&](const IDataType & subcolumn_type)
+        {
+            return subcolumn_type.getSerialization(column.name, callback);
+        };
 
-    return base_serialization;
+        auto type_in_storage = column.getTypeInStorage();
+        return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
+    }
+
+    return column.type->getSerialization(column.name, callback);
 }
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const

@@ -45,14 +45,10 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_seriali
 
 void SerializationSparse::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    nested_serialization->enumerateStreams(callback, path);
-
     path.push_back(Substream::SparseOffsets);
     callback(path);
-
     path.back() = Substream::SparseElements;
     nested_serialization->enumerateStreams(callback, path);
-
     path.pop_back();
 }
 

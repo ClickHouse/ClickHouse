@@ -43,7 +43,8 @@ public:
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serialization) const override;
+    SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 private:

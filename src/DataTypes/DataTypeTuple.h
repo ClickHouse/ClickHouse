@@ -59,7 +59,7 @@ public:
     SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const override;
 
     SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const SerializationPtr & base_serializaiton) const override;
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 

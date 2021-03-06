@@ -68,9 +68,16 @@ public:
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
 
+    /// Asks wether the stream with given name exists in table.
+    /// If callback returned true for all streams, which are required for
+    /// one of serialization types, that serialization will be chosen for reading.
+    /// If callback always returned false, the default serialization will be chosen.
     using StreamExistenceCallback = std::function<bool(const String &)>;
+    using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
+
     virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
-    virtual SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serializaiton) const;
+    virtual SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
     static SerializationPtr getSerialization(const NameAndTypePair & column, const StreamExistenceCallback & callback);
 

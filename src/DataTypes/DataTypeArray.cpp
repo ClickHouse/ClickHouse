@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeOneElementTuple.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationTupleElement.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -62,7 +61,7 @@ DataTypePtr DataTypeArray::tryGetSubcolumnType(const String & subcolumn_name) co
 DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const
 {
     if (subcolumn_name == "size" + std::to_string(level))
-        return createOneElementTuple(std::make_shared<DataTypeUInt64>(), subcolumn_name, false);
+        return std::make_shared<DataTypeUInt64>();
 
     DataTypePtr subcolumn;
     if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
@@ -97,24 +96,24 @@ ColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, const I
 }
 
 SerializationPtr DataTypeArray::getSubcolumnSerialization(
-    const String & subcolumn_name, const SerializationPtr & base_serialization) const
+    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
 {
-    return getSubcolumnSerializationImpl(subcolumn_name, base_serialization, 0);
+    return getSubcolumnSerializationImpl(subcolumn_name, base_serialization_getter, 0);
 }
 
 SerializationPtr DataTypeArray::getSubcolumnSerializationImpl(
-    const String & subcolumn_name, const SerializationPtr & base_serialization, size_t level) const
+    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter, size_t level) const
 {
     if (subcolumn_name == "size" + std::to_string(level))
-        return std::make_shared<SerializationTupleElement>(base_serialization, subcolumn_name, false);
+        return std::make_shared<SerializationTupleElement>(base_serialization_getter(DataTypeUInt64()), subcolumn_name, false);
 
     SerializationPtr subcolumn;
     if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
-        subcolumn = nested_array->getSubcolumnSerializationImpl(subcolumn_name, base_serialization, level + 1);
+        subcolumn = nested_array->getSubcolumnSerializationImpl(subcolumn_name, base_serialization_getter, level + 1);
     else
-        subcolumn = nested->getSubcolumnSerialization(subcolumn_name, base_serialization);
+        subcolumn = nested->getSubcolumnSerialization(subcolumn_name, base_serialization_getter);
 
-    return base_serialization;
+    return std::make_shared<SerializationArray>(subcolumn);
 }
 
 SerializationPtr DataTypeArray::doGetDefaultSerialization() const

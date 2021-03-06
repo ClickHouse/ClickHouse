@@ -166,7 +166,7 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = type->getDefaultSerialization();
+    auto serialization = IDataType::getSerialization(name_and_type, [](const String &) { return false; });
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
@@ -338,7 +338,8 @@ void TinyLogBlockOutputStream::writeSuffix()
         if (it != serialize_states.end())
         {
             settings.getter = createStreamGetter(NameAndTypePair(column.name, column.type), written_streams);
-            column.type->getDefaultSerialization()->serializeBinaryBulkStateSuffix(settings, it->second);
+            auto serialization = column.type->getDefaultSerialization();
+            serialization->serializeBinaryBulkStateSuffix(settings, it->second);
         }
     }
 
@@ -438,7 +439,8 @@ void StorageTinyLog::addFiles(const NameAndTypePair & column)
     };
 
     ISerialization::SubstreamPath substream_path;
-    type->getDefaultSerialization()->enumerateStreams(stream_callback, substream_path);
+    auto serialization = type->getDefaultSerialization();
+    serialization->enumerateStreams(stream_callback, substream_path);
 }
 
 

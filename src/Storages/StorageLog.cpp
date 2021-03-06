@@ -87,6 +87,8 @@ private:
     size_t rows_read = 0;
     size_t max_read_buffer_size;
 
+    std::unordered_map<String, SerializationPtr> serializations;
+
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
@@ -166,7 +168,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = type->getDefaultSerialization();
+    auto serialization = IDataType::getSerialization(name_and_type, [](const String &) { return false; });
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {
@@ -332,7 +334,8 @@ void LogBlockOutputStream::writeSuffix()
         if (it != serialize_states.end())
         {
             settings.getter = createStreamGetter(NameAndTypePair(column.name, column.type), written_streams);
-            column.type->getDefaultSerialization()->serializeBinaryBulkStateSuffix(settings, it->second);
+            auto serialization = column.type->getDefaultSerialization();
+            serialization->serializeBinaryBulkStateSuffix(settings, it->second);
         }
     }
 
@@ -518,7 +521,8 @@ void StorageLog::addFiles(const NameAndTypePair & column)
         }
     };
 
-    column.type->getDefaultSerialization()->enumerateStreams(stream_callback);
+    auto serialization = column.type->getDefaultSerialization();
+    serialization->enumerateStreams(stream_callback);
 }
 
 
@@ -609,7 +613,8 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     ISerialization::SubstreamPath substream_root_path;
-    column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    auto serialization = column.type->getDefaultSerialization();
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = ISerialization::getFileNameForStream(column, substream_path);

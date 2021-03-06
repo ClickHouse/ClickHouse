@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeOneElementTuple.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationTupleElement.h>
@@ -265,12 +264,8 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
     if (subcolumn_name == MAIN_SUBCOLUMN_NAME)
         return shared_from_this();
 
-    auto on_success = [&](size_t pos) { return createOneElementTuple(elems[pos], names[pos]); };
-    auto on_continue = [&](size_t pos, const String & next_subcolumn)
-    {
-        auto next_type = elems[pos]->tryGetSubcolumnType(next_subcolumn);
-        return next_type ? createOneElementTuple(next_type, names[pos]) : nullptr;
-    };
+    auto on_success = [&](size_t pos) { return elems[pos]; };
+    auto on_continue = [&](size_t pos, const String & next_subcolumn) { return elems[pos]->tryGetSubcolumnType(next_subcolumn); };
 
     return getSubcolumnEntity(subcolumn_name, on_success, on_continue);
 }
@@ -290,16 +285,16 @@ ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColu
 }
 
 SerializationPtr DataTypeTuple::getSubcolumnSerialization(
-    const String & subcolumn_name, const SerializationPtr & base_serializaiton) const
+    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
 {
     auto on_success = [&](size_t pos)
     {
-        return std::make_shared<SerializationTupleElement>(base_serializaiton, names[pos]);
+        return std::make_shared<SerializationTupleElement>(base_serialization_getter(*elems[pos]), names[pos]);
     };
 
     auto on_continue = [&](size_t pos, const String & next_subcolumn)
     {
-        auto next_serialization = elems[pos]->getSubcolumnSerialization(next_subcolumn, base_serializaiton);
+        auto next_serialization = elems[pos]->getSubcolumnSerialization(next_subcolumn, base_serialization_getter);
         return std::make_shared<SerializationTupleElement>(next_serialization, names[pos]);
     };
 

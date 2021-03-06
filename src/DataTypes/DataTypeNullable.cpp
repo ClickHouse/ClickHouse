@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeOneElementTuple.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationTupleElement.h>
 #include <Columns/ColumnNullable.h>
@@ -67,7 +66,7 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
 DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
 {
     if (subcolumn_name == "null")
-        return createOneElementTuple(std::make_shared<DataTypeUInt8>(), subcolumn_name, false);
+        return std::make_shared<DataTypeUInt8>();
 
     return nested_data_type->tryGetSubcolumnType(subcolumn_name);
 }
@@ -81,12 +80,13 @@ ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IC
     return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
 }
 
-SerializationPtr DataTypeNullable::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serialization) const
+SerializationPtr DataTypeNullable::getSubcolumnSerialization(
+    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
 {
     if (subcolumn_name == "null")
-        return std::make_shared<SerializationTupleElement>(base_serialization, subcolumn_name, false);
+        return std::make_shared<SerializationTupleElement>(base_serialization_getter(DataTypeUInt8()), subcolumn_name, false);
 
-    return nested_data_type->getSubcolumnSerialization(subcolumn_name, base_serialization);
+    return nested_data_type->getSubcolumnSerialization(subcolumn_name, base_serialization_getter);
 }
 
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const

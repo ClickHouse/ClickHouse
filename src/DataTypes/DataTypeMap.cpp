@@ -70,9 +70,10 @@ ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn
     return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
 }
 
-SerializationPtr DataTypeMap::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & base_serialization) const
+SerializationPtr DataTypeMap::getSubcolumnSerialization(
+    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
 {
-    return nested->getSubcolumnSerialization(subcolumn_name, base_serialization);
+    return nested->getSubcolumnSerialization(subcolumn_name, base_serialization_getter);
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const
