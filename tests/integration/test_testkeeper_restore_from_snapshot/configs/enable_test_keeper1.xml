@@ -20,7 +20,7 @@
                 <hostname>node1</hostname>
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
-                <priority>3</priority>
+                <priority>70</priority>
             </server>
             <server>
                 <id>2</id>
@@ -28,7 +28,7 @@
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
-                <priority>2</priority>
+                <priority>20</priority>
             </server>
             <server>
                 <id>3</id>
@@ -36,7 +36,7 @@
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
-                <priority>1</priority>
+                <priority>10</priority>
             </server>
         </raft_configuration>
     </test_keeper_server>

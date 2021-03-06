@@ -62,11 +62,11 @@ def test_recover_from_snapshot(started_cluster):
 
         node3.stop_clickhouse(kill=True)
 
-        # at least we will have 4 snapshots
-        for i in range(435):
+        # at least we will have 2 snapshots
+        for i in range(235):
             node1_zk.create("/test_snapshot_multinode_recover" + str(i), ("somedata" + str(i)).encode())
 
-        for i in range(435):
+        for i in range(235):
             if i % 10 == 0:
                 node1_zk.delete("/test_snapshot_multinode_recover" + str(i))
 
@@ -91,7 +91,7 @@ def test_recover_from_snapshot(started_cluster):
         assert node2_zk.get("/test_snapshot_multinode_recover")[0] == b"somedata"
         assert node3_zk.get("/test_snapshot_multinode_recover")[0] == b"somedata"
 
-        for i in range(435):
+        for i in range(235):
             if i % 10 != 0:
                 assert node1_zk.get("/test_snapshot_multinode_recover" + str(i))[0] == ("somedata" + str(i)).encode()
                 assert node2_zk.get("/test_snapshot_multinode_recover" + str(i))[0] == ("somedata" + str(i)).encode()
