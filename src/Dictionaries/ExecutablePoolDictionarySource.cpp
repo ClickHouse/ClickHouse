@@ -25,32 +25,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
+    const Configuration & configuration_,
     Block & sample_block_,
     const Context & context_)
     : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
     , dict_struct{dict_struct_}
-    , implicit_key{config.getBool(config_prefix + ".implicit_key", false)}
-    , command{config.getString(config_prefix + ".command")}
-    , update_field{config.getString(config_prefix + ".update_field", "")}
-    , format{config.getString(config_prefix + ".format")}
-    , pool_size(config.getUInt64(config_prefix + ".size"))
-    , command_termination_timeout(config.getUInt64(config_prefix + ".command_termination_timeout", 10))
+    , configuration{configuration_}
     , sample_block{sample_block_}
-    , context(context_)
+    , context{context_}
     /// If pool size == 0 then there is no size restrictions. Poco max size of semaphore is integer type.
-    , process_pool(std::make_shared<ProcessPool>(pool_size == 0 ? std::numeric_limits<int>::max() : pool_size))
+    , process_pool{std::make_shared<ProcessPool>(configuration.pool_size == 0 ? std::numeric_limits<int>::max() : configuration.pool_size)}
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
     /// Implicit key means that the source script will return only values,
     /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
-    if (implicit_key)
+    if (configuration.implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
 
@@ -66,15 +62,10 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
-    , implicit_key{other.implicit_key}
-    , command{other.command}
-    , update_field{other.update_field}
-    , format{other.format}
-    , pool_size{other.pool_size}
-    , command_termination_timeout{other.command_termination_timeout}
+    , configuration{other.configuration}
     , sample_block{other.sample_block}
-    , context(other.context)
-    , process_pool(std::make_shared<ProcessPool>(pool_size))
+    , context{other.context}
+    , process_pool{std::make_shared<ProcessPool>(configuration.pool_size)}
 {
 }
 
@@ -115,9 +106,9 @@ namespace
                 {
                     send_data(command->in);
                 }
-                catch (const std::exception & ex)
+                catch (...)
                 {
-                    LOG_ERROR(log, "Error during write into process input stream: ({})", ex.what());
+                    tryLogCurrentException(log);
                     error_during_write = true;
                 }
             })
@@ -142,8 +133,9 @@ namespace
         {
             if (error_during_write)
             {
+
                 command = nullptr;
-                return Block();
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error during write in command process");
             }
 
             if (current_read_rows == rows_to_read)
@@ -156,10 +148,11 @@ namespace
                 block = stream->read();
                 current_read_rows += block.rows();
             }
-            catch (const std::exception & ex)
+            catch (...)
             {
-                LOG_ERROR(log, "Error during read from process output stream: ({})", ex.what());
+                tryLogCurrentException(log);
                 command = nullptr;
+                throw;
             }
 
             return block;
@@ -168,20 +161,25 @@ namespace
         void readPrefix() override
         {
             if (error_during_write)
-                return;
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error during write in command process");
+            }
 
             stream->readPrefix();
         }
 
         void readSuffix() override
         {
-            if (error_during_write)
-                command = nullptr;
-            else
-                stream->readSuffix();
-
             if (thread.joinable())
                 thread.join();
+
+            if (error_during_write)
+            {
+                command = nullptr;
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error during write in command process");
+            }
+            else
+                stream->readSuffix();
         }
 
         String getName() const override { return "PoolWithBackgroundThread"; }
@@ -218,26 +216,29 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key
 BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     std::unique_ptr<ShellCommand> process;
-    process_pool->borrowObject(process, [this]()
+    bool result = process_pool->tryBorrowObject(process, [this]()
     {
         bool terminate_in_destructor = true;
-        ShellCommandDestructorStrategy strategy { terminate_in_destructor, command_termination_timeout };
-        auto shell_command = ShellCommand::execute(command, false, strategy);
+        ShellCommandDestructorStrategy strategy { terminate_in_destructor, configuration.command_termination_timeout };
+        auto shell_command = ShellCommand::execute(configuration.command, false, strategy);
         return shell_command;
-    });
+    }, configuration.max_command_execution_time * 10000);
+
+    if (!result)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Could not get process from pool, max command execution timeout exceeded");
 
     size_t rows_to_read = block.rows();
-    auto read_stream = context.getInputFormat(format, process->out, sample_block, rows_to_read);
+    auto read_stream = context.getInputFormat(configuration.format, process->out, sample_block, rows_to_read);
 
     auto stream = std::make_unique<PoolBlockInputStreamWithBackgroundThread>(
         process_pool, std::move(process), std::move(read_stream), rows_to_read, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
+            auto output_stream = context.getOutputStream(configuration.format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
         });
 
-    if (implicit_key)
+    if (configuration.implicit_key)
         return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
     else
         return std::shared_ptr<PoolBlockInputStreamWithBackgroundThread>(stream.release());
@@ -255,7 +256,7 @@ bool ExecutablePoolDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutablePoolDictionarySource::hasUpdateField() const
 {
-    return !update_field.empty();
+    return !configuration.update_field.empty();
 }
 
 DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
@@ -265,7 +266,7 @@ DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
 
 std::string ExecutablePoolDictionarySource::toString() const
 {
-    return "ExecutablePool size: " + std::to_string(pool_size) + " command: " + command;
+    return "ExecutablePool size: " + std::to_string(configuration.pool_size) + " command: " + configuration.command;
 }
 
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
@@ -279,24 +280,43 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `executable_pool` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable_pool` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (check_config)
-            throw Exception("Dictionaries with executable pool dictionary source are not allowed to be created from DDL query", ErrorCodes::DICTIONARY_ACCESS_DENIED);
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
+        /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+         *  so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+         */
         auto settings_no_parallel_parsing = context_local_copy.getSettings();
         settings_no_parallel_parsing.input_format_parallel_parsing = false;
-
         context_local_copy.setSettings(settings_no_parallel_parsing);
 
-        return std::make_unique<ExecutablePoolDictionarySource>(
-            dict_struct, config, config_prefix + ".executable_pool",
-            sample_block, context_local_copy);
+        String configuration_config_prefix = config_prefix + ".executable_pool";
+
+        size_t max_command_execution_time = config.getUInt64(configuration_config_prefix + ".max_command_execution_time", 10);
+
+        size_t max_execution_time_seconds = static_cast<size_t>(context.getSettings().max_execution_time.totalSeconds());
+        if (max_command_execution_time > max_execution_time_seconds)
+            max_command_execution_time = max_execution_time_seconds;
+
+        ExecutablePoolDictionarySource::Configuration configuration
+        {
+            .command = config.getString(configuration_config_prefix + ".command"),
+            .format = config.getString(configuration_config_prefix + ".format"),
+            .pool_size = config.getUInt64(configuration_config_prefix + ".size"),
+            .update_field = config.getString(configuration_config_prefix + ".update_field", ""),
+            .implicit_key = config.getBool(configuration_config_prefix + ".implicit_key", false),
+            .command_termination_timeout = config.getUInt64(configuration_config_prefix + ".command_termination_timeout", 10),
+            .max_command_execution_time = max_command_execution_time
+        };
+
+        return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
     };
 
     factory.registerSource("executable_pool", create_table_source);

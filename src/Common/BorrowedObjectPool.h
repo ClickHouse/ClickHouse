@@ -15,12 +15,12 @@
   * and have to be initialized on demand.
   * Two main properties of pool are allocated objects size and borrowed objects size.
   * Allocated objects size is size of objects that are currently allocated by the pool.
-  * Borrowed objects size is size of objects that are borrowed from clients.
+  * Borrowed objects size is size of objects that are borrowed by clients.
   * If max_size == 0 then pool has unlimited size and objects will be allocated without limit.
   *
   * Pool provides following strategy for borrowing object:
   * If max_size == 0 then pool has unlimited size and objects will be allocated without limit.
-  * 1. If pool has objects that can be increase borrowed objects size and return it.
+  * 1. If pool has objects that can be borrowed increase borrowed objects size and return it.
   * 2. If pool allocatedObjectsSize is lower than max objects size or pool has unlimited size
   * allocate new object, increase borrowed objects size and return it.
   * 3. If pool is full wait on condition variable with or without timeout until some object
@@ -41,7 +41,7 @@ public:
 
         if (!objects.empty())
         {
-            dest = borrowFromObjects();
+            dest = borrowFromObjects(lock);
             return;
         }
 
@@ -49,12 +49,12 @@ public:
 
         if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
         {
-            dest = allocateObjectForBorrowing(std::forward<FactoryFunc>(func));
+            dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
             return;
         }
 
         condition_variable.wait(lock, [this] { return !objects.empty(); });
-        dest = borrowFromObjects();
+        dest = borrowFromObjects(lock);
     }
 
     /// Same as borrowObject function, but wait with timeout.
@@ -66,7 +66,7 @@ public:
 
         if (!objects.empty())
         {
-            dest = borrowFromObjects();
+            dest = borrowFromObjects(lock);
             return true;
         }
 
@@ -74,20 +74,20 @@ public:
 
         if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
         {
-            dest = allocateObjectForBorrowing(std::forward<FactoryFunc>(func));
+            dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
             return true;
         }
 
         bool wait_result = condition_variable.wait_for(lock, std::chrono::milliseconds(timeout_in_milliseconds), [this] { return !objects.empty(); });
 
         if (wait_result)
-            dest = borrowFromObjects();
+            dest = borrowFromObjects(lock);
 
         return wait_result;
     }
 
     /// Return object into pool. Client must return same object that was borrowed.
-    ALWAYS_INLINE inline void returnObject(T && object_to_return)
+    inline void returnObject(T && object_to_return)
     {
         std::unique_lock<std::mutex> lck(objects_mutex);
 
@@ -98,20 +98,20 @@ public:
     }
 
     /// Max pool size
-    ALWAYS_INLINE inline size_t maxSize() const
+    inline size_t maxSize() const
     {
         return max_size;
     }
 
     /// Allocated objects size by the pool. If allocatedObjectsSize == maxSize then pool is full.
-    ALWAYS_INLINE inline size_t allocatedObjectsSize() const
+    inline size_t allocatedObjectsSize() const
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
         return allocated_objects_size;
     }
 
     /// Returns allocatedObjectsSize == maxSize
-    ALWAYS_INLINE inline bool isFull() const
+    inline bool isFull() const
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
         return allocated_objects_size == max_size;
@@ -119,7 +119,7 @@ public:
 
     /// Borrowed objects size. If borrowedObjectsSize == allocatedObjectsSize and pool is full.
     /// Then client will wait during borrowObject function call.
-    ALWAYS_INLINE inline size_t borrowedObjectsSize() const
+    inline size_t borrowedObjectsSize() const
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
         return borrowed_objects_size;
@@ -128,7 +128,7 @@ public:
 private:
 
     template <typename FactoryFunc>
-    ALWAYS_INLINE inline T allocateObjectForBorrowing(FactoryFunc && func)
+    inline T allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, FactoryFunc && func)
     {
         ++allocated_objects_size;
         ++borrowed_objects_size;
@@ -136,7 +136,7 @@ private:
         return std::forward<FactoryFunc>(func)();
     }
 
-    ALWAYS_INLINE inline T borrowFromObjects()
+    inline T borrowFromObjects(const std::unique_lock<std::mutex> &)
     {
         T dst;
         detail::moveOrCopyIfThrow(std::move(objects.back()), dst);
@@ -145,11 +145,6 @@ private:
         ++borrowed_objects_size;
 
         return dst;
-    }
-
-    ALWAYS_INLINE inline bool hasUnlimitedSize() const
-    {
-        return max_size == 0;
     }
 
     size_t max_size;
