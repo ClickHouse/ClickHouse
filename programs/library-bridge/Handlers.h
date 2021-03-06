@@ -18,11 +18,11 @@ public:
     LibraryRequestHandler(
         size_t keep_alive_timeout_,
         Context & context_,
-        SharedLibraryHandlerPtr library_handler_)
+        const std::string & dictionary_id_)
         : log(&Poco::Logger::get("LibraryRequestHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
         , context(context_)
-        , library_handler(library_handler_)
+        , dictionary_id(dictionary_id_)
     {
     }
 
@@ -32,12 +32,9 @@ private:
     void processError(HTTPServerResponse & response, const std::string & message);
 
     Poco::Logger * log;
-
     size_t keep_alive_timeout;
-
     Context & context;
-
-    SharedLibraryHandlerPtr library_handler;
+    const std::string dictionary_id;
 };
 
 
@@ -54,7 +51,6 @@ public:
 
 private:
     Poco::Logger * log;
-
     const std::string message;
 };
 

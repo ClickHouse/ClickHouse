@@ -14,13 +14,11 @@ class SharedLibraryHandler
 {
 
 public:
-    SharedLibraryHandler() {}
+    SharedLibraryHandler(const std::string & library_path_, const std::string & library_settings);
 
     SharedLibraryHandler(const SharedLibraryHandler & other);
 
     ~SharedLibraryHandler();
-
-    void libNew(const std::string & path, const std::string & settings);
 
     BlockInputStreamPtr loadAll(const std::string & attributes_string, const Block & sample_block);
 

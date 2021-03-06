@@ -5,6 +5,7 @@ set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     Handlers.cpp
     HandlerFactory.cpp
     SharedLibraryHandler.cpp
+    SharedLibraryHandlerFactory.cpp
 )
 
 if (OS_LINUX)
