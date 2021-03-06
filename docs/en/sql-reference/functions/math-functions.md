@@ -441,6 +441,8 @@ Sign for the zero value:
 SELECT sign(0);
 ```
 
+Result:
+
 ``` text
 ┌─sign(0)─┐
 │       0 │
@@ -453,6 +455,8 @@ Sign for the positive value:
 SELECT sign(1);
 ```
 
+Result:
+
 ``` text
 ┌─sign(1)─┐
 │       1 │
@@ -464,6 +468,8 @@ Sign for the negative value:
 ``` sql
 SELECT sign(-1);
 ```
+
+Result:
 
 ``` text
 ┌─sign(-1)─┐
