@@ -56,13 +56,13 @@ ORDER BY expr
 
     ClickHouse использует ключ сортировки в качестве первичного ключа, если первичный ключ не задан в секции `PRIMARY KEY`.
 
-    Чтобы отключить сортировку, используйте синтаксис `ORDER BY tuple()`. Смотрите [выбор первичного ключа](#vybor-pervichnogo-kliucha).    
+    Чтобы отключить сортировку, используйте синтаксис `ORDER BY tuple()`. Смотрите [выбор первичного ключа](#primary-keys-and-indexes-in-queries).    
 
 -   `PARTITION BY` — [ключ партиционирования](custom-partitioning-key.md). Необязательный параметр.
 
     Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](../../../engines/table-engines/mergetree-family/mergetree.md). В этом случае имена партиций имеют формат `"YYYYMM"`.
 
--   `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](#pervichnyi-kliuch-otlichnyi-ot-kliucha-sortirovki). Необязательный параметр.
+-   `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](#choosing-a-primary-key-that-differs-from-the-sorting-key). Необязательный параметр.
     
     По умолчанию первичный ключ совпадает с ключом сортировки (который задаётся секцией `ORDER BY`.) Поэтому в большинстве случаев секцию `PRIMARY KEY` отдельно указывать не нужно.
 
