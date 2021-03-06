@@ -54,43 +54,6 @@ SELECT skewSamp(value) FROM series_with_value_column
 ```
 
 
-## uniqHLL12 {#agg_function-uniqhll12}
-
-计算不同参数值的近似数量，使用 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) 算法。
-
-``` sql
-uniqHLL12(x[, ...])
-```
-
-**参数**
-
-该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
-
-**返回值**
-
--   A [UInt64](../../sql-reference/data-types/int-uint.md)-键入号码。
-
-**实现细节**
-
-功能:
-
--   计算聚合中所有参数的哈希值，然后在计算中使用它。
-
--   使用HyperLogLog算法来近似不同参数值的数量。
-
-        212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
-
--   提供确定结果（它不依赖于查询处理顺序）。
-
-我们不建议使用此功能。 在大多数情况下，使用 [uniq](#agg_function-uniq) 或 [uniqCombined](#agg_function-uniqcombined) 功能。
-
-**另请参阅**
-
--   [uniq](#agg_function-uniq)
--   [uniqCombined](#agg_function-uniqcombined)
--   [uniqExact](#agg_function-uniqexact)
-
-
 ## quantileExact {#quantileexact}
 
 准确计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。

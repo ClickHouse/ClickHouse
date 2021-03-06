@@ -4,35 +4,39 @@ toc_priority: 194
 
 # uniqHLL12 {#agg_function-uniqhll12}
 
-Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
+计算不同参数值的近似数量，使用 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) 算法。
+
+**语法**
 
 ``` sql
 uniqHLL12(x[, ...])
 ```
 
-**Parameters**
+**参数**
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
 
-**Returned value**
+**返回值**
 
--   A [UInt64](../../../sql-reference/data-types/int-uint.md)-type number.
+**返回值**
 
-**Implementation details**
+-   一个[UInt64](../../../sql-reference/data-types/int-uint.md)类型的数字。
 
-Function:
+**实现细节**
 
--   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+功能:
 
--   Uses the HyperLogLog algorithm to approximate the number of different argument values.
+-   计算聚合中所有参数的哈希值，然后在计算中使用它。
 
-        212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+-   使用 HyperLogLog 算法来近似不同参数值的数量。
 
--   Provides the determinate result (it doesn’t depend on the query processing order).
+        使用2^12个5比特单元。 状态的大小略大于2.5KB。 对于小数据集（<10K元素），结果不是很准确（误差高达10%）。 但是, 对于高基数数据集（10K-100M），结果相当准确，最大误差约为1.6%。Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
-We don’t recommend using this function. In most cases, use the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) or [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) function.
+-   提供确定结果（它不依赖于查询处理顺序）。
 
-**See Also**
+我们不建议使用此函数。 在大多数情况下, 使用 [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) 或 [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) 函数。
+
+**参见**
 
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
