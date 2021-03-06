@@ -8,6 +8,29 @@
 namespace DB
 {
 
+SharedLibraryHandler::SharedLibraryHandler(
+    const std::string & library_path_,
+    const std::string & library_settings)
+    : library_path(library_path_)
+{
+    library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY
+#if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
+    | RTLD_DEEPBIND
+#endif
+    );
+
+    std::vector<std::string> lib_settings;
+    boost::split(lib_settings, library_settings, [](char c) { return c == ' '; });
+    settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(lib_settings));
+
+    auto lib_new = library->tryGet<decltype(lib_data) (*)(
+            decltype(&settings_holder->strings), decltype(&ClickHouseLibrary::log))>("ClickHouseDictionary_v3_libNew");
+
+    if (lib_new)
+        lib_data = lib_new(&settings_holder->strings, ClickHouseLibrary::log);
+}
+
+
 SharedLibraryHandler::SharedLibraryHandler(const SharedLibraryHandler & other)
     : library_path{other.library_path}
     , library{other.library}
@@ -26,28 +49,6 @@ SharedLibraryHandler::~SharedLibraryHandler()
 
     if (lib_delete)
         lib_delete(lib_data);
-}
-
-
-void SharedLibraryHandler::libNew(const std::string & path, const std::string & settings)
-{
-    library_path = path;
-
-    library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY
-#if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
-    | RTLD_DEEPBIND
-#endif
-    );
-
-    std::vector<std::string> lib_settings;
-    boost::split(lib_settings, settings, [](char c) { return c == ' '; });
-    settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(lib_settings));
-
-    auto lib_new = library->tryGet<decltype(lib_data) (*)(
-            decltype(&settings_holder->strings), decltype(&ClickHouseLibrary::log))>("ClickHouseDictionary_v3_libNew");
-
-    if (lib_new)
-        lib_data = lib_new(&settings_holder->strings, ClickHouseLibrary::log);
 }
 
 

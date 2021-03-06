@@ -1,4 +1,5 @@
 #include "Handlers.h"
+#include "SharedLibraryHandlerFactory.h"
 
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -77,22 +78,37 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, library_settings);
 
-            library_handler->libNew(library_path, library_settings);
-            writeStringBinary("1", out);
+            bool res = SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings);
+            writeStringBinary(std::to_string(res), out);
         }
         else if (method == "libClone")
         {
-            /// libClone was already called, only need to send the responce.
-            writeStringBinary("1", out);
+            if (!params.has("from_dictionary_id"))
+            {
+                processError(response, "No 'from_dictionary_id' in request URL");
+                return;
+            }
+
+            std::string from_dictionary_id = params.get("from_dictionary_id");
+            LOG_TRACE(log, "Calling libClone from {} to {}", from_dictionary_id, dictionary_id);
+            bool res = SharedLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
+            writeStringBinary(std::to_string(res), out);
+        }
+        else if (method == "libDelete")
+        {
+            bool res = SharedLibraryHandlerFactory::instance().remove(dictionary_id);
+            writeStringBinary(std::to_string(res), out);
         }
         else if (method == "isModified")
         {
-            auto res = library_handler->isModified();
+            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            bool res = library_handler->isModified();
             writeStringBinary(std::to_string(res), out);
         }
         else if (method == "supportsSelectiveLoad")
         {
-            auto res = library_handler->supportsSelectiveLoad();
+            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            bool res = library_handler->supportsSelectiveLoad();
             writeStringBinary(std::to_string(res), out);
         }
         else if (method == "loadAll")
@@ -118,6 +134,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             auto input = library_handler->loadAll(attributes, *sample_block);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
 
@@ -154,10 +171,20 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             auto input = library_handler->loadIds(attributes, ids, *sample_block);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
 
             copyData(*input, *output);
+        }
+        else if (method == "loadKeys")
+        {
+            if (!params.has("query"))
+            {
+                processError(response, "No 'query' in request URL");
+                return;
+            }
+            processError(response, "KSSENII SUCCESS!");
         }
     }
     catch (...)
