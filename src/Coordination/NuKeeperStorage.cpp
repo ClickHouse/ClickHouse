@@ -632,6 +632,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
         zxid = *new_last_zxid;
     }
 
+    session_expiry_queue.update(session_id, session_and_timeout[session_id]);
     if (zk_request->getOpNum() == Coordination::OpNum::Close)
     {
         auto it = ephemerals.find(session_id);
@@ -657,7 +658,6 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat)
     {
-        session_expiry_queue.update(session_id, session_and_timeout[session_id]);
         NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
         response->xid = zk_request->xid;
