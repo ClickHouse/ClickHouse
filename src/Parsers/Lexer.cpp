@@ -275,7 +275,8 @@ Token Lexer::nextTokenImpl()
                         else
                             ++pos;
                     }
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
+                    pos = end;
+                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
                 }
             }
             return Token(TokenType::Slash, token_begin, pos);
