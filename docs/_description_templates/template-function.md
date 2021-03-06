@@ -19,7 +19,7 @@ More text (Optional).
 
 **Parameters** (Optional, only for parametric aggregate functions)
 
--   `z` — Description. Optional (only for optional parameters). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
+-   `z` — Description. Optional (only for optional parameters). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
 
 **Returned value(s)**
 
