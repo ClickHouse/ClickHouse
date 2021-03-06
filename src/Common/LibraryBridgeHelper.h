@@ -35,6 +35,8 @@ public:
 
     BlockInputStreamPtr loadIds(const std::string attributes_string, const std::string ids_string, const Block & sample_block);
 
+    BlockInputStreamPtr loadKeys();
+
     bool isModified();
 
     bool supportsSelectiveLoad();
@@ -49,6 +51,7 @@ public:
     static constexpr inline auto LIB_DELETE_METHOD = "libDelete";
     static constexpr inline auto LOAD_ALL_METHOD = "loadAll";
     static constexpr inline auto LOAD_IDS_METHOD = "loadIds";
+    static constexpr inline auto LOAD_KEYS_METHOD = "loadKeys";
     static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
     static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
 

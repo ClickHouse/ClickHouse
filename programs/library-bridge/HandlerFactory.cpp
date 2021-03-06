@@ -23,6 +23,6 @@ namespace DB
             return std::make_unique<LibraryRequestHandler>(keep_alive_timeout, context, dictionary_id);
         }
 
-        return std::make_unique<LibraryErrorResponseHandler>("Unknown request");
+        return nullptr;
     }
 }

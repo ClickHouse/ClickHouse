@@ -29,16 +29,11 @@ public:
     bool supportsSelectiveLoad();
 
 private:
-    void libDelete();
-
     Block dataToBlock(const Block & sample_block, const void * data);
 
     std::string library_path;
-
     SharedLibraryPtr library;
-
     std::shared_ptr<CStringsHolder> settings_holder;
-
     void * lib_data;
 };
 

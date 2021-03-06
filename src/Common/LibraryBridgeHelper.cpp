@@ -83,7 +83,7 @@ bool LibraryBridgeHelper::cloneLibrary(const std::string & other_dictionary_id)
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LIB_CLONE_METHOD);
-    uri.addQueryParameter("other_dictionary_id", other_dictionary_id);
+    uri.addQueryParameter("from_dictionary_id", other_dictionary_id);
 
     ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
     bool res;
@@ -94,16 +94,15 @@ bool LibraryBridgeHelper::cloneLibrary(const std::string & other_dictionary_id)
 
 bool LibraryBridgeHelper::removeLibrary()
 {
-//    startLibraryBridgeSync();
-//
-//    auto uri = getDictionaryURI();
-//    uri.addQueryParameter("method", LIB_DELETE_METHOD);
-//
-//    ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
-//    bool res;
-//    readBoolText(res, buf);
-//    return res;
-    return true;
+    startLibraryBridgeSync();
+
+    auto uri = getDictionaryURI();
+    uri.addQueryParameter("method", LIB_DELETE_METHOD);
+
+    ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+    bool res;
+    readBoolText(res, buf);
+    return res;
 }
 
 
@@ -177,6 +176,28 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_st
     auto block = reader->read();
 
     return std::make_shared<OneBlockInputStream>(block);
+}
+
+
+BlockInputStreamPtr LibraryBridgeHelper::loadKeys()
+{
+    startLibraryBridgeSync();
+
+    auto uri = getDictionaryURI();
+
+    uri.addQueryParameter("method", LOAD_KEYS_METHOD);
+
+    std::function<void(std::ostream &)> callback = [](std::ostream & os)
+    {
+        auto query = "KSSENII";
+        os << "query=" << query;
+    };
+
+    ReadWriteBufferFromHTTP read_buf(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, {});
+    bool res;
+    readBoolText(res, read_buf);
+
+    return {};
 }
 
 

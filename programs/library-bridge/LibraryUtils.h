@@ -44,7 +44,6 @@ public:
 
 private:
     std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
-
     Container strings_holder;
 };
 
