@@ -108,8 +108,8 @@ namespace
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log);
-                    error_during_write = true;
+                    std::lock_guard<std::mutex> lck(exception_during_read_lock);
+                    exception_during_read = std::current_exception();
                 }
             })
         {}
@@ -131,12 +131,7 @@ namespace
     private:
         Block readImpl() override
         {
-            if (error_during_write)
-            {
-
-                command = nullptr;
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error during write in command process");
-            }
+            rethrowExceptionDuringReadIfNeeded();
 
             if (current_read_rows == rows_to_read)
                 return Block();
@@ -160,26 +155,28 @@ namespace
 
         void readPrefix() override
         {
-            if (error_during_write)
-            {
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error during write in command process");
-            }
-
+            rethrowExceptionDuringReadIfNeeded();
             stream->readPrefix();
         }
 
         void readSuffix() override
         {
+            rethrowExceptionDuringReadIfNeeded();
+
             if (thread.joinable())
                 thread.join();
 
-            if (error_during_write)
+            stream->readSuffix();
+        }
+
+        void rethrowExceptionDuringReadIfNeeded()
+        {
+            std::lock_guard<std::mutex> lck(exception_during_read_lock);
+            if (exception_during_read)
             {
                 command = nullptr;
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error during write in command process");
+                std::rethrow_exception(exception_during_read);
             }
-            else
-                stream->readSuffix();
         }
 
         String getName() const override { return "PoolWithBackgroundThread"; }
@@ -192,7 +189,8 @@ namespace
         std::function<void(WriteBufferFromFile &)> send_data;
         ThreadFromGlobalPool thread;
         size_t current_read_rows = 0;
-        std::atomic<bool> error_during_write = false;
+        std::mutex exception_during_read_lock;
+        std::exception_ptr exception_during_read;
     };
 
 }
