@@ -400,6 +400,11 @@ SELECT log1p(0);
 │        0 │
 └──────────┘
 ```
+
+**Смотрите также**
+
+-   [log(x)](../../sql-reference/functions/math-functions.md#logx)
+
 ## sign(x) {#signx}
 
 Выделяет знак действительного числа.
@@ -463,9 +468,5 @@ SELECT sign(-1);
 │       -1 │
 └──────────┘
 ```
-
-**Смотрите также**
-
--   [log(x)](../../sql-reference/functions/math-functions.md#logx)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/math_functions/) <!--hide-->
