@@ -84,6 +84,14 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
+DataTypePtr IDataType::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    if (subcolumn_name == MAIN_SUBCOLUMN_NAME)
+        return shared_from_this();
+
+    return nullptr;
+}
+
 DataTypePtr IDataType::getSubcolumnType(const String & subcolumn_name) const
 {
     auto subcolumn_type = tryGetSubcolumnType(subcolumn_name);
@@ -210,9 +218,9 @@ DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath &
 {
     auto type = tryGetSubcolumnType(ISerialization::getSubcolumnNameForStream(substream_path));
     if (type)
-        return type;
+        return type->getSubcolumnType(MAIN_SUBCOLUMN_NAME);
 
-    return shared_from_this();
+    return getSubcolumnType(MAIN_SUBCOLUMN_NAME);
 }
 
 void IDataType::enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const

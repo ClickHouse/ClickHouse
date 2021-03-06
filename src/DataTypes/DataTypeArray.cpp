@@ -70,7 +70,10 @@ DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name
     else
         subcolumn = nested->tryGetSubcolumnType(subcolumn_name);
 
-    return (subcolumn ? std::make_shared<DataTypeArray>(std::move(subcolumn)) : subcolumn);
+    if (subcolumn && subcolumn_name != MAIN_SUBCOLUMN_NAME)
+        subcolumn = std::make_shared<DataTypeArray>(std::move(subcolumn));
+
+    return subcolumn;
 }
 
 ColumnPtr DataTypeArray::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
