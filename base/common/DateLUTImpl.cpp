@@ -59,7 +59,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     offset_at_start_of_epoch = cctz_time_zone.lookup(cctz_time_zone.lookup(epoch).pre).offset;
     offset_at_start_of_lut = cctz_time_zone.lookup(cctz_time_zone.lookup(lut_start).pre).offset;
-    offset_is_whole_number_of_hours_everytime = true;
+    offset_is_whole_number_of_hours_during_epoch = true;
 
     cctz::civil_day date = lut_start;
 
@@ -105,8 +105,8 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.time_at_offset_change_value = 0;
         values.amount_of_offset_change_value = 0;
 
-        if (offset_is_whole_number_of_hours_everytime && start_of_day > 0 && start_of_day % 3600)
-            offset_is_whole_number_of_hours_everytime = false;
+        if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
+            offset_is_whole_number_of_hours_during_epoch = false;
 
         /// If UTC offset was changed this day.
         /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST

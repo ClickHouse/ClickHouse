@@ -297,7 +297,6 @@ TEST_P(DateLUTWithTimeZone, VaidateTimeComponentsAroundEpoch)
                 << "\n\tTimezone: " << timezone_name
                 << "\n\ttimestamp: " << i
                 << "\n\t offset at start of epoch                  : " << lut.getOffsetAtStartOfEpoch()
-                << "\n\t offset_is_whole_number_of_hours_everytime : " << lut.getOffsetIsWholNumberOfHoursEveryWhere()
                 << "\n\t offset_at_start_of_lut                    : " << lut.getTimeOffsetAtStartOfLUT());
 
         EXPECT_GE(24, lut.toHour(i));
@@ -336,7 +335,7 @@ INSTANTIATE_TEST_SUITE_P(ExoticTimezones,
     })
 );
 
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimeZones,
+INSTANTIATE_TEST_SUITE_P(AllTimeZones,
     DateLUTWithTimeZone,
     ::testing::ValuesIn(allTimezones())
 );
@@ -391,11 +390,15 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
     {
         SCOPED_TRACE(expected_time_t);
 
-        const auto tz_time = cctz::convert(std::chrono::system_clock::from_time_t(expected_time_t), tz);
+        const cctz::civil_second tz_time = cctz::convert(std::chrono::system_clock::from_time_t(expected_time_t), tz);
 
         /// Weird offset, not supported.
         /// Example: Africa/Monrovia has offset UTC-0:44:30 in year 1970.
-        if (tz.lookup(std::chrono::system_clock::from_time_t(expected_time_t)).offset % 900)
+
+        auto timestamp_current_day_pre = std::chrono::system_clock::to_time_t(tz.lookup(cctz::civil_day(tz_time)).pre);
+        auto timestamp_current_day_post = std::chrono::system_clock::to_time_t(tz.lookup(cctz::civil_day(tz_time) + 1).post);
+
+        if (timestamp_current_day_pre % 900 || timestamp_current_day_post % 900)
             continue;
 
         /// Unsupported timezone transitions - not in 15-minute time point or to different day.
@@ -410,7 +413,7 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
 
         bool has_transition = false;
         cctz::time_zone::civil_transition transition{};
-        if (tz.next_transition(std::chrono::system_clock::from_time_t(expected_time_t), &transition)
+        if (tz.next_transition(std::chrono::system_clock::from_time_t(expected_time_t - 1), &transition)
             && (transition.from.day() == tz_time.day() || transition.to.day() == tz_time.day()))
         {
             has_transition = true;
@@ -418,9 +421,9 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
 
         if (has_transition && (transition.from.second() != 0 || transition.from.minute() % 15 != 0))
         {
-            std::cerr << "Skipping " << timezone_name << " " << tz_time
+            /*std::cerr << "Skipping " << timezone_name << " " << tz_time
                 << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
-                << " (not divisible by 15 minutes)\n";
+                << " (not divisible by 15 minutes)\n";*/
             continue;
         }
 
@@ -428,9 +431,9 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
         if (has_transition && cctz::civil_day(transition.from) == cctz::civil_day(transition.to) + 1
             && transition.from != cctz::civil_day(transition.from))
         {
-            std::cerr << "Skipping " << timezone_name << " " << tz_time
+            /*std::cerr << "Skipping " << timezone_name << " " << tz_time
                 << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
-                << " (to previous day but not at midnight)\n";
+                << " (to previous day but not at midnight)\n";*/
             continue;
         }
 
@@ -438,9 +441,9 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
         if (has_transition
             && std::abs(transition.from - transition.to) > 3600 * 3)
         {
-            std::cerr << "Skipping " << timezone_name << " " << tz_time
+            /*std::cerr << "Skipping " << timezone_name << " " << tz_time
                 << " because of unsupported timezone transition from " << transition.from << " to " << transition.to
-                << " (it is too large)\n";
+                << " (it is too large)\n";*/
             continue;
         }
 
@@ -457,23 +460,14 @@ TEST_P(DateLUTWithTimeZoneAndTimeRange, InRange)
         const auto time_string = cctz::format("%E4Y-%m-%d %H:%M:%S", std::chrono::system_clock::from_time_t(expected_time_t), tz);
         EXPECT_EQ(time_string, lut.timeToString(expected_time_t));
 
-        // it makes sense to let test execute all checks above to simplify debugging,
-        // but once we've found a bad apple, no need to dig deeper.
+        /// It makes sense to let test execute all checks above to simplify debugging,
+        /// but once we've found a bad apple, no need to dig deeper.
         if (countFailures(*test_info->result()).total >= max_failures_per_case)
             break;
     }
 }
 
-/** Next tests are disabled due to following reasons:
- *  1. They are huge and take enormous amount of time to run
- *  2. Current implementation of DateLUTImpl is inprecise and some cases fail and it seems impractical to try to fix those.
- *  3. Many failures (~300) were fixed while refactoring, about ~40 remain the same and 3 new introduced:
- *      "Asia/Gaza"
- *      "Pacific/Enderbury"
- *      "Pacific/Kiritimati"
- *  So it would be tricky to skip knonw failures to allow all unit tests to pass.
- */
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010,
+INSTANTIATE_TEST_SUITE_P(AllTimezones_Year2010,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
@@ -484,7 +478,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010,
         }))
 );
 
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970_WHOLE,
+INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970_WHOLE,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones(false)),
@@ -494,7 +488,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970_WHOLE,
         }))
 );
 
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010_WHOLE,
+INSTANTIATE_TEST_SUITE_P(AllTimezones_Year2010_WHOLE,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones(false)),
@@ -504,7 +498,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2010_WHOLE,
         }))
 );
 
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2020_WHOLE,
+INSTANTIATE_TEST_SUITE_P(AllTimezones_Year2020_WHOLE,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones()),
@@ -514,7 +508,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year2020_WHOLE,
         }))
 );
 
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_PreEpoch,
+INSTANTIATE_TEST_SUITE_P(AllTimezones_PreEpoch,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones(false)),
@@ -524,7 +518,7 @@ INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_PreEpoch,
         }))
 );
 
-INSTANTIATE_TEST_SUITE_P(DISABLED_AllTimezones_Year1970,
+INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
     DateLUTWithTimeZoneAndTimeRange,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones(false)),
