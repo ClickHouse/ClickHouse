@@ -4,32 +4,25 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
+#include <Common/Bridge/IBridgeHelper.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND;
-}
-
-
-class LibraryBridgeHelper
+class LibraryBridgeHelper : public IBridgeHelper
 {
 
 public:
-    LibraryBridgeHelper(
-        const Context & context_,
-        const std::string & dictionary_id_);
+    static constexpr inline size_t DEFAULT_PORT = 9018;
 
-    std::vector<std::pair<std::string, std::string>> getURLParams(const NamesAndTypesList & cols, size_t max_block_size) const;
+    LibraryBridgeHelper(const Context & context_, const std::string & dictionary_id_);
 
     bool initLibrary(const std::string & library_path, const std::string librray_settings);
 
-    bool removeLibrary();
-
     bool cloneLibrary(const std::string & other_dictionary_id);
+
+    bool removeLibrary();
 
     BlockInputStreamPtr loadAll(const std::string attributes_string, const Block & sample_block);
 
@@ -41,11 +34,31 @@ public:
 
     bool supportsSelectiveLoad();
 
-    static constexpr inline size_t DEFAULT_PORT = 9018;
-    static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
 
-    static constexpr inline auto PING_HANDLER = "/ping";
+protected:
+    void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
 
+    const String serviceAlias() const override { return "clickhouse-library-bridge"; }
+
+    const String serviceFileName() const override { return serviceAlias(); }
+
+    size_t getDefaultPort() const override { return DEFAULT_PORT; }
+
+    bool startBridgeManually() const override { return false; }
+
+    const String configPrefix() const override { return "library_bridge"; }
+
+    const Context & getContext() const override { return context; }
+
+    const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
+
+    Poco::Logger * getLog() const override { return log; }
+
+    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+
+    Poco::URI createBaseURI() const override;
+
+private:
     static constexpr inline auto LIB_NEW_METHOD = "libNew";
     static constexpr inline auto LIB_CLONE_METHOD = "libClone";
     static constexpr inline auto LIB_DELETE_METHOD = "libDelete";
@@ -55,32 +68,15 @@ public:
     static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
     static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
 
-    static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
-    static constexpr inline auto PING_OK_ANSWER = "Ok.";
-
-    static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
-    static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
-
-    bool isLibraryBridgeRunning() const;
-
-    void startLibraryBridge() const;
-
-    void startLibraryBridgeSync() const;
-
-private:
     Poco::URI getDictionaryURI() const;
-
-    Poco::URI getPingURI() const;
-
-    Poco::URI getBaseURI() const;
 
     Poco::Logger * log;
     const Context & context;
+    const Poco::Util::AbstractConfiguration & config;
+    const Poco::Timespan http_timeout;
 
     const std::string dictionary_id;
-
     std::string bridge_host;
     size_t bridge_port;
-
 };
 }

@@ -1,4 +1,4 @@
-#include "BridgeHelper.h"
+#include "IBridgeHelper.h"
 
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
@@ -17,12 +17,28 @@ namespace ErrorCodes
 }
 
 
-bool BridgeHelper::checkBridgeIsRunning() const
+Poco::URI IBridgeHelper::getMainURI() const
+{
+    auto uri = createBaseURI();
+    uri.setPath(MAIN_HANDLER);
+    return uri;
+}
+
+
+Poco::URI IBridgeHelper::getPingURI() const
+{
+    auto uri = createBaseURI();
+    uri.setPath(PING_HANDLER);
+    return uri;
+}
+
+
+bool IBridgeHelper::checkBridgeIsRunning() const
 {
     try
     {
         ReadWriteBufferFromHTTP buf(
-            pingURL(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
         return checkString(PING_OK_ANSWER, buf);
     }
     catch (...)
@@ -32,7 +48,7 @@ bool BridgeHelper::checkBridgeIsRunning() const
 }
 
 
-void BridgeHelper::startBridgeSync() const
+void IBridgeHelper::startBridgeSync() const
 {
     if (!checkBridgeIsRunning())
     {
@@ -65,7 +81,7 @@ void BridgeHelper::startBridgeSync() const
 }
 
 
-std::unique_ptr<ShellCommand> BridgeHelper::startBridgeCommand() const
+std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
 {
     if (startBridgeManually())
         throw Exception(serviceAlias() + " is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
@@ -75,16 +91,17 @@ std::unique_ptr<ShellCommand> BridgeHelper::startBridgeCommand() const
     Poco::Path path{config.getString("application.dir", "/usr/bin")};
 
     std::vector<std::string> cmd_args;
-    path.setFileName("clickhouse-odbc-bridge");
+    path.setFileName(serviceFileName());
 
 #if !CLICKHOUSE_SPLIT_BINARY
-    cmd_args.push_back("odbc-bridge");
+    if (serviceFileName() == "clickhouse-odbc-bridge")
+        cmd_args.push_back("odbc-bridge");
 #endif
 
     cmd_args.push_back("--http-port");
     cmd_args.push_back(std::to_string(config.getUInt(configPrefix() + ".port", getDefaultPort())));
     cmd_args.push_back("--listen-host");
-    cmd_args.push_back(config.getString(configPrefix() + ".listen_host", getDefaultHost()));
+    cmd_args.push_back(config.getString(configPrefix() + ".listen_host", DEFAULT_HOST));
     cmd_args.push_back("--http-timeout");
     cmd_args.push_back(std::to_string(getHTTPTimeout().totalMicroseconds()));
     if (config.has("logger." + configPrefix() + "_log"))
