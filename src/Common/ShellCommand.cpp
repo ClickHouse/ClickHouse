@@ -101,7 +101,7 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     if (timeout_in_seconds == 0)
     {
         /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
-        /// signal if process is already terminated normally finished.
+        /// signal if process is already normally terminated.
 
         int waitpid_res = waitpid(pid, &status, WNOHANG);
         bool process_terminated_normally = (waitpid_res == pid);
