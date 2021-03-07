@@ -37,7 +37,15 @@ xfails = {
     "tests/table map select key with key string/Nullable(NULL)":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")],
     "tests/table map select key with key string/LowCardinality:":
-        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")]
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
+    "tests/table map select key with key integer/Int:":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21032")],
+    "tests/table map select key with key integer/UInt256":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21031")],
+    "tests/table map select key with key integer/toNullable":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
+    "tests/table map select key with key integer/toNullable(NULL)":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")]
 }
 
 xflags = {
