@@ -417,7 +417,7 @@ RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Keys_InlineDefinedMap = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not support using inline defined map to get `keys` subcolumn.\n'
+        '[ClickHouse] MAY not support using inline defined map to get `keys` subcolumn.\n'
         '\n'
         'For example,\n'
         '\n'
@@ -479,7 +479,7 @@ RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Values_InlineDefinedMap = Requirem
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not support using inline defined map to get `values` subcolumn.\n'
+        '[ClickHouse] MAY not support using inline defined map to get `values` subcolumn.\n'
         '\n'
         'For example,\n'
         '\n'
@@ -1200,7 +1200,7 @@ SELECT * FROM t_map WHERE has(m.keys, 'a');
 #### RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.InlineDefinedMap
 version: 1.0
 
-[ClickHouse] SHALL not support using inline defined map to get `keys` subcolumn.
+[ClickHouse] MAY not support using inline defined map to get `keys` subcolumn.
 
 For example,
 
@@ -1232,7 +1232,7 @@ SELECT * FROM t_map WHERE has(m.values, 'a');
 #### RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.InlineDefinedMap
 version: 1.0
 
-[ClickHouse] SHALL not support using inline defined map to get `values` subcolumn.
+[ClickHouse] MAY not support using inline defined map to get `values` subcolumn.
 
 For example,
 
