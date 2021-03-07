@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <load_balancing>in_order</load_balancing>
+            <hedged_connection_timeout>100</hedged_connection_timeout>
+            <receive_data_timeout>2</receive_data_timeout>
+        </default>
+    </profiles>
+</yandex>

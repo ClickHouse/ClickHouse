@@ -284,7 +284,7 @@ void SelectStreamFactory::createForShard(
             if (try_results.empty() || local_delay < max_remote_delay)
             {
                 auto plan = createLocalPlan(modified_query_ast, header, context, stage);
-                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline()));
+                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()))));
             }
             else
             {
