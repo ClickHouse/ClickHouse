@@ -161,11 +161,10 @@ namespace
 
         void readSuffix() override
         {
-            rethrowExceptionDuringReadIfNeeded();
-
             if (thread.joinable())
                 thread.join();
 
+            rethrowExceptionDuringReadIfNeeded();
             stream->readSuffix();
         }
 
