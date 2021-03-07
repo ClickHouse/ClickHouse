@@ -6,54 +6,6 @@ toc_title: 参考手册
 # 参考手册 {#aggregate-functions-reference}
 
 
-
-## skewPop {#skewpop}
-
-计算的序列[偏度](https://en.wikipedia.org/wiki/Skewness)。
-
-``` sql
-skewPop(expr)
-```
-
-**参数**
-
-`expr` — [表达式](../syntax.md#syntax-expressions) 返回一个数字。
-
-**返回值**
-
-给定序列的偏度。类型 — [Float64](../../sql-reference/data-types/float.md)
-
-**示例**
-
-``` sql
-SELECT skewPop(value) FROM series_with_value_column
-```
-
-## skewSamp {#skewsamp}
-
-计算 [样品偏度](https://en.wikipedia.org/wiki/Skewness) 的序列。
-
-它表示随机变量的偏度的无偏估计，如果传递的值形成其样本。
-
-``` sql
-skewSamp(expr)
-```
-
-**参数**
-
-`expr` — [表达式](../syntax.md#syntax-expressions) 返回一个数字。
-
-**返回值**
-
-给定序列的偏度。 类型 — [Float64](../../sql-reference/data-types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
-
-**示例**
-
-``` sql
-SELECT skewSamp(value) FROM series_with_value_column
-```
-
-
 ## quantileExact {#quantileexact}
 
 准确计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
