@@ -308,7 +308,7 @@ else ()
     option (ENABLE_IPO "Enable interprocedural/link-time optimization (IPO/LTO) for non-Debug builds" ON)
 
     if (COMPILER_CLANG)
-        option (ENABLE_THINLTO "Use ThinLTO when IPO is enabled and used and the compiler is Clang" ON)
+        option (ENABLE_THINLTO "Use ThinLTO when IPO is enabled and used and the compiler is Clang" OFF)
     elseif (ENABLE_THINLTO)
         message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
     endif ()
