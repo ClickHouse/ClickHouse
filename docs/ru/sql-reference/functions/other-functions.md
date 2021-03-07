@@ -852,6 +852,68 @@ WHERE diff != 1
 
 То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
+
+## runningConcurrency {#runningconcurrency}
+
+Определяет, сколько событий проходят одновременно в моменты начала событий. 
+
+!!! warning "Warning"
+    Функция обрабатывает разные блоки данных независимо.
+
+Результат работы функции зависит от порядка событий в блоке. События должны быть отсортированы по увеличению времени начала.
+
+
+**Syntax**
+
+``` sql
+runningConcurrency(begin, end)
+```
+
+**Arguments**
+
+-   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+Note that two columns `begin` and `end` must have the same type.
+
+**Returned values**
+
+-   The concurrency of events at the data point.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Input table:
+
+``` text
+┌───────────────begin─┬─────────────────end─┐
+│ 2020-12-01 00:00:00 │ 2020-12-01 00:59:59 │
+│ 2020-12-01 00:30:00 │ 2020-12-01 00:59:59 │
+│ 2020-12-01 00:40:00 │ 2020-12-01 01:30:30 │
+│ 2020-12-01 01:10:00 │ 2020-12-01 01:30:30 │
+│ 2020-12-01 01:50:00 │ 2020-12-01 01:59:59 │
+└─────────────────────┴─────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT runningConcurrency(begin, end) FROM example
+```
+
+Result:
+
+``` text
+┌─runningConcurrency(begin, end)─┐
+│                              1 │
+│                              2 │
+│                              3 │
+│                              2 │
+│                              1 │
+└────────────────────────────────┘
+```
+
 ## MACNumToString(num) {#macnumtostringnum}
 
 Принимает число типа UInt64. Интерпретирует его, как MAC-адрес в big endian. Возвращает строку, содержащую соответствующий MAC-адрес в формате AA:BB:CC:DD:EE:FF (числа в шестнадцатеричной форме через двоеточие).
