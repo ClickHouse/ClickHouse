@@ -18,6 +18,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
@@ -31,7 +36,8 @@ public:
         DictionarySourcePtr source_ptr_,
         BlockPtr saved_block_ = nullptr);
 
-    std::string getTypeName() const override {
+    std::string getTypeName() const override
+    {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return "Direct";
         else
