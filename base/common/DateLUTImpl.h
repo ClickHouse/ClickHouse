@@ -442,19 +442,12 @@ public:
     }
 
 
-    /** Only for time zones with/when offset from UTC is multiple of five minutes.
-      * This is true for all time zones: right now, all time zones have an offset that is multiple of 15 minutes.
-      *
-      * "By 1929, most major countries had adopted hourly time zones. Nepal was the last
-      *  country to adopt a standard offset, shifting slightly to UTC+5:45 in 1986."
-      * - https://en.wikipedia.org/wiki/Time_zone#Offsets_from_UTC
-      *
-      * Also please note, that unix timestamp doesn't count "leap seconds":
-      *  each minute, with added or subtracted leap second, spans exactly 60 unix timestamps.
-      */
     inline unsigned toSecond(time_t t) const
     {
-        return (t + DATE_LUT_ADD) % 60;
+        auto res = t % 60;
+        if (likely(res >= 0))
+            return res;
+        return res + 60;
     }
 
     inline unsigned toMinute(time_t t) const
