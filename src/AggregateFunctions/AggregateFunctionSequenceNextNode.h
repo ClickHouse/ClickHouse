@@ -100,7 +100,7 @@ struct NodeString : public NodeBase<NodeString>
     bool compare(const Node * rhs) const
     {
         auto cmp = strncmp(data(), rhs->data(), std::min(size, rhs->size));
-        return (cmp == 0) ? size <= rhs->size : cmp < 0;
+        return (cmp == 0) ? size < rhs->size : cmp < 0;
     }
 };
 
