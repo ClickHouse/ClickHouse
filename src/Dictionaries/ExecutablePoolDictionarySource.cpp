@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
