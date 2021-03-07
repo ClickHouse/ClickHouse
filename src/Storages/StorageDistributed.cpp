@@ -586,7 +586,9 @@ void StorageDistributed::read(
             local_context->getExternalTables());
 
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
-        modified_query_ast, local_context, query_info);
+        modified_query_ast, local_context, query_info,
+        sharding_key_expr, sharding_key_column_name,
+        getCluster());
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
