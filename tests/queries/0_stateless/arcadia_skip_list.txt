@@ -211,3 +211,4 @@
 01686_event_time_microseconds_part_log
 01017_uniqCombined_memory_usage
 01747_join_view_filter_dictionary
+01748_dictionary_table_dot
