@@ -84,3 +84,5 @@ stop
 start
 
 clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt
+
+tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
