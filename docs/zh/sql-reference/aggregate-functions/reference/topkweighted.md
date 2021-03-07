@@ -14,11 +14,11 @@ topKWeighted(N)(x, weight)
 
 **参数**
 
--   `N` — 返回值个数。
+-   `N` — 要返回的元素数。
 
 **参数**
 
--   `x` – 输入值。
+-   `x` – (要计算频次的)值。
 -   `weight` — 权重。 [UInt8](../../../sql-reference/data-types/int-uint.md)类型。
 
 **返回值**

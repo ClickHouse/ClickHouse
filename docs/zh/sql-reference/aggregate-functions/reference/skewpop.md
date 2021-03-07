@@ -4,21 +4,23 @@ toc_priority: 150
 
 # skewPop {#skewpop}
 
-Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+计算给定序列的 [偏度] (https://en.wikipedia.org/wiki/Skewness)。
+
+**语法**
 
 ``` sql
 skewPop(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — [表达式](../../../sql-reference/syntax.md#syntax-expressions) 返回一个数字。
 
-**Returned value**
+**返回值**
 
-The skewness of the given distribution. Type — [Float64](../../../sql-reference/data-types/float.md)
+给定分布的偏度。类型 — [Float64](../../../sql-reference/data-types/float.md)
 
-**Example**
+**示例**
 
 ``` sql
 SELECT skewPop(value) FROM series_with_value_column
