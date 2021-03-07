@@ -185,7 +185,7 @@ private:
     time_t offset_at_start_of_epoch;
     /// UTC offset at the beginning of the first supported year.
     time_t offset_at_start_of_lut;
-    bool offset_is_whole_number_of_hours_everytime;
+    bool offset_is_whole_number_of_hours_during_epoch;
 
     /// Time zone name.
     std::string time_zone;
@@ -193,15 +193,19 @@ private:
     inline LUTIndex findIndex(time_t t) const
     {
         /// First guess.
-        const UInt32 guess = ((t / 86400) + daynum_offset_epoch) & date_lut_mask;
+        UInt32 guess = ((t / 86400) + daynum_offset_epoch) & date_lut_mask;
+
+        /// For negative time_t the integer division was rounded up, so the guess is offset by one.
+        if (unlikely(t < 0))
+            --guess;
 
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
-        if (t >= lut[guess].date && t < lut[UInt32(guess + 1)].date)
+        if (t >= lut[guess].date && t < lut[guess + 1].date)
             return LUTIndex(guess);
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any)
         /// towards increasing UTC offset (example: British Standard Time).
-        if (t >= lut[UInt32(guess + 1)].date)
+        if (t >= lut[guess + 1].date)
             return LUTIndex(guess + 1);
 
         return LUTIndex(guess - 1);
@@ -253,7 +257,6 @@ public:
 
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
-    auto getOffsetIsWholNumberOfHoursEveryWhere() const { return offset_is_whole_number_of_hours_everytime; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
     /// All functions below are thread-safe; arguments are not checked.
@@ -456,8 +459,8 @@ public:
 
     inline unsigned toMinute(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
-            return ((t + DATE_LUT_ADD) / 60) % 60;
+        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
+            return (t / 60) % 60;
 
         /// To consider the DST changing situation within this day
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
@@ -478,8 +481,8 @@ public:
 
     inline time_t toStartOfTenMinutes(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
-            return roundDown(t, 600);
+        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
+            return t / 600 * 600;
 
         /// More complex logic is for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
         Int64 date = find(t).date;
@@ -489,8 +492,8 @@ public:
     /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
     inline time_t toStartOfHour(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
-            return roundDown(t, 3600);
+        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
+            return t / 3600 * 3600;
 
         Int64 date = find(t).date;
         return date + (t - date) / 3600 * 3600;
@@ -773,8 +776,8 @@ public:
     /// We count all hour-length intervals, unrelated to offset changes.
     inline time_t toRelativeHourNum(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
-            return (t + DATE_LUT_ADD) / 3600 - (DATE_LUT_ADD / 3600);
+        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
+            return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
@@ -848,7 +851,7 @@ public:
 
         t = roundDown(t, seconds);
 
-        if (offset_is_whole_number_of_hours_everytime)
+        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t;
 
         /// TODO check if it's correct.
