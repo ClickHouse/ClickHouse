@@ -26,7 +26,7 @@ private:
 
     List list;
     IndexMap map;
-    std::atomic<bool> snapshot_mode{false};
+    bool snapshot_mode{false};
 
 public:
 

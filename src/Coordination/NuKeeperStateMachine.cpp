@@ -26,6 +26,7 @@ NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     Coordination::read(xid, buffer);
 
     Coordination::OpNum opnum;
+
     Coordination::read(opnum, buffer);
 
     request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
@@ -159,7 +160,7 @@ void NuKeeperStateMachine::create_snapshot(
         snapshot_task.snapshot = std::make_shared<NuKeeperStorageSnapshot>(&storage, snapshot_meta_copy);
     }
 
-    snapshot_task.create_snapshot = [this, when_done] (const NuKeeperStorageSnapshotPtr & snapshot)
+    snapshot_task.create_snapshot = [this, when_done] (NuKeeperStorageSnapshotPtr && snapshot)
     {
         auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
         auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
@@ -176,7 +177,9 @@ void NuKeeperStateMachine::create_snapshot(
             std::lock_guard lock(storage_lock);
             storage.clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
+            snapshot.reset();
         }
+
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = true;
         when_done(ret, exception);

@@ -38,7 +38,7 @@ public:
 };
 
 using NuKeeperStorageSnapshotPtr = std::shared_ptr<NuKeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<void(const NuKeeperStorageSnapshotPtr &)>;
+using CreateSnapshotCallback = std::function<void(NuKeeperStorageSnapshotPtr &&)>;
 
 class NuKeeperSnapshotManager
 {
