@@ -42,6 +42,7 @@ SRCS(
     Embedded/RegionsHierarchy.cpp
     Embedded/RegionsNames.cpp
     ExecutableDictionarySource.cpp
+    ExecutablePoolDictionarySource.cpp
     ExternalQueryBuilder.cpp
     FileDictionarySource.cpp
     FlatDictionary.cpp
