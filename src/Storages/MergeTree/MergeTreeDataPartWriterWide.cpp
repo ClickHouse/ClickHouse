@@ -406,6 +406,8 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
     size_t mark_num;
 
+    auto serialization = type.getDefaultSerialization();
+
     for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
         if (mark_num > index_granularity.getMarksCount())
@@ -433,7 +435,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         {
             auto column = type.createColumn();
 
-            type.getDefaultSerialization()->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
+            serialization->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have {} rows in bin stream, last mark #{} index granularity size {}, last rows {}", column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);
@@ -453,7 +455,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
         auto column = type.createColumn();
 
-        type.getDefaultSerialization()->deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
+        serialization->deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
 
         if (bin_in.eof())
         {
@@ -492,7 +494,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     {
         auto column = type.createColumn();
 
-        type.getDefaultSerialization()->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
+        serialization->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have {} rows in bin stream, last mark #{} index granularity size {}, last rows {}", column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);

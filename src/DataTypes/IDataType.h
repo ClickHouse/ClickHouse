@@ -79,7 +79,9 @@ public:
     virtual SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
-    static SerializationPtr getSerialization(const NameAndTypePair & column, const StreamExistenceCallback & callback);
+    static SerializationPtr getSerialization(
+        const NameAndTypePair & column,
+        const StreamExistenceCallback & callback = [](const String &) { return false; });
 
     virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
 

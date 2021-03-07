@@ -120,7 +120,13 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         for (const auto & column : columns_list)
         {
-            column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            auto serialization = IDataType::getSerialization(column,
+                [&](const String & stream_name)
+                {
+                    return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
+                });
+
+            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);

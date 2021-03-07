@@ -30,7 +30,8 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::map<String, size_t> stream_counts;
     for (const NameAndTypePair & column : columns)
     {
-        column.type->getDefaultSerialization()->enumerateStreams(
+        auto serialization = data_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
@@ -57,8 +58,8 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        ISerialization::SubstreamPath stream_path;
-        column_with_type->type->getDefaultSerialization()->enumerateStreams(callback, stream_path);
+        auto serialization = data_part->getSerializationForColumn(*column_with_type);
+        serialization->enumerateStreams(callback);
     }
 
     /// Remove files on disk and checksums

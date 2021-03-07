@@ -48,6 +48,8 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+    static constexpr auto DATA_FILE_EXTENSION = ".bin";
+
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
@@ -362,6 +364,9 @@ public:
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Returns serialization for column according to files in which column is written in part.
+    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
 protected:
 

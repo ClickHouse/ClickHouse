@@ -137,12 +137,6 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    auto serialization = IDataType::getSerialization(name_and_type,
-        [&](const String & stream_name)
-        {
-            return data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION) != 0;
-        });
-
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
@@ -166,8 +160,8 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    ISerialization::SubstreamPath substream_path;
-    serialization->enumerateStreams(callback, substream_path);
+    auto serialization = data_part->getSerializationForColumn(name_and_type);
+    serialization->enumerateStreams(callback);
     serializations.emplace(name_and_type.name, std::move(serialization));
 }
 

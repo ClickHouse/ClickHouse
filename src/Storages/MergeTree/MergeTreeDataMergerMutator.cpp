@@ -1490,7 +1490,8 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     std::map<String, size_t> stream_counts;
     for (const NameAndTypePair & column : source_part->getColumns())
     {
-        column.type->getDefaultSerialization()->enumerateStreams(
+        auto serialization = source_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
@@ -1520,10 +1521,12 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
                 }
             };
 
-            ISerialization::SubstreamPath stream_path;
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-                column->type->getDefaultSerialization()->enumerateStreams(callback, stream_path);
+            {
+                auto serialization = source_part->getSerializationForColumn(*column);
+                serialization->enumerateStreams(callback);
+            }
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
@@ -1543,10 +1546,12 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
                 }
             };
 
-            ISerialization::SubstreamPath stream_path;
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-                column->type->getDefaultSerialization()->enumerateStreams(callback, stream_path);
+            {
+                auto serialization = source_part->getSerializationForColumn(*column);
+                serialization->enumerateStreams(callback);
+            }
         }
     }
 
@@ -1571,8 +1576,8 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
             files_to_skip.insert(stream_name + mrk_extension);
         };
 
-        ISerialization::SubstreamPath stream_path;
-        entry.type->getDefaultSerialization()->enumerateStreams(callback, stream_path);
+        auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
+        serialization->enumerateStreams(callback);
     }
     for (const auto & index : indices_to_recalc)
     {
