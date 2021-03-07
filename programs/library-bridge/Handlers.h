@@ -17,12 +17,10 @@ public:
 
     LibraryRequestHandler(
         size_t keep_alive_timeout_,
-        Context & context_,
-        const std::string & dictionary_id_)
+        Context & context_)
         : log(&Poco::Logger::get("LibraryRequestHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
         , context(context_)
-        , dictionary_id(dictionary_id_)
     {
     }
 
@@ -34,7 +32,6 @@ private:
     Poco::Logger * log;
     size_t keep_alive_timeout;
     Context & context;
-    const std::string dictionary_id;
 };
 
 

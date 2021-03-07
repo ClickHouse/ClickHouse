@@ -17,11 +17,7 @@ namespace DB
             return std::make_unique<PingHandler>(keep_alive_timeout);
 
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        {
-            /// Remove '/' in the beginning.
-            auto dictionary_id = uri.getPath().substr(1);
-            return std::make_unique<LibraryRequestHandler>(keep_alive_timeout, context, dictionary_id);
-        }
+            return std::make_unique<LibraryRequestHandler>(keep_alive_timeout, context);
 
         return nullptr;
     }

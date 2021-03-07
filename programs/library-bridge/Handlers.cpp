@@ -53,10 +53,18 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         return;
     }
 
+    if (!params.has("dictionary_id"))
+    {
+        processError(response, "No 'dictionary_id in request URL");
+        return;
+    }
+
     std::string method = params.get("method");
-    LOG_TRACE(log, "Library method: '{}'", method);
+    std::string dictionary_id = params.get("dictionary_id");
+    LOG_TRACE(log, "Library method: '{}', dictionary id: {}", method, dictionary_id);
 
     WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+
     try
     {
         if (method == "libNew")
@@ -75,7 +83,6 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             std::string library_path = params.get("library_path");
             std::string library_settings = params.get("library_settings");
-
             LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, library_settings);
 
             bool res = SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings);

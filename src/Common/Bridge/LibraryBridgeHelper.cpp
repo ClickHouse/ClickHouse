@@ -32,8 +32,8 @@ LibraryBridgeHelper::LibraryBridgeHelper(
 
 Poco::URI LibraryBridgeHelper::getDictionaryURI() const
 {
-    auto uri = createBaseURI();
-    uri.setPath('/' + dictionary_id);
+    auto uri = getMainURI();
+    uri.addQueryParameter("dictionary_id", dictionary_id);
     return uri;
 }
 
