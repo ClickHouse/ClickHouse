@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Poco/Logger.h>
+#include <common/logger_useful.h>
 #include "SharedLibraryHandler.h"
 
 
@@ -35,7 +35,6 @@ private:
 };
 
 
-/// Handler to send error responce.
 class PingHandler : public HTTPRequestHandler
 {
 public:

@@ -3,7 +3,6 @@
 #include <Common/SharedLibrary.h>
 #include <common/logger_useful.h>
 #include <DataStreams/OneBlockInputStream.h>
-
 #include "LibraryUtils.h"
 
 
@@ -23,6 +22,8 @@ public:
     BlockInputStreamPtr loadAll(const std::string & attributes_string, const Block & sample_block);
 
     BlockInputStreamPtr loadIds(const std::string & ids_string, const std::string & attributes_string, const Block & sample_block);
+
+    /// TODO: loadKeys
 
     bool isModified();
 

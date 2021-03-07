@@ -54,7 +54,6 @@ LibraryDictionarySource::LibraryDictionarySource(
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", Poco::File(path).path());
 
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, dictionary_id);
-
     auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"));
 
     if (!res)
@@ -85,6 +84,18 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
 }
 
 
+bool LibraryDictionarySource::isModified() const
+{
+    return bridge_helper->isModified();
+}
+
+
+bool LibraryDictionarySource::supportsSelectiveLoad() const
+{
+    return bridge_helper->supportsSelectiveLoad();
+}
+
+
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
@@ -99,53 +110,11 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 }
 
 
-BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns &/* key_columns */, const std::vector<std::size_t> & requested_rows)
+/// Not implemented, TODO
+BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & /* key_columns */, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
-    return {};
-    //return bridge_helper->loadIds(getDictAttributesStrig(), getDictIdsString(), escription.sample_block);
-
-    //auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
-    //std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
-
-    //for (size_t i = 0; i < key_columns.size(); ++i)
-    //{
-    //    auto cell_holder = std::make_unique<ClickHouseLibrary::Field[]>(requested_rows.size());
-
-    //    for (size_t j = 0; j < requested_rows.size(); ++j)
-    //    {
-    //        auto data_ref = key_columns[i]->getDataAt(requested_rows[j]);
-    //        cell_holder[j] = ClickHouseLibrary::Field{.data = static_cast<const void *>(data_ref.data), .size = data_ref.size};
-    //    }
-
-    //    holder[i] = ClickHouseLibrary::Row{.data = static_cast<ClickHouseLibrary::Field *>(cell_holder.get()), .size = requested_rows.size()};
-    //    column_data_holders.push_back(std::move(cell_holder));
-    //}
-
-    //ClickHouseLibrary::Table request_cols{.data = static_cast<ClickHouseLibrary::Row *>(holder.get()), .size = key_columns.size()};
-
-    //void * data_ptr = nullptr;
-
-    ///// Get function pointer before dataNew call because library->get may throw.
-    //auto func_load_keys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>("ClickHouseDictionary_v3_loadKeys");
-
-    //data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    //auto * data = func_load_keys(data_ptr, &settings->strings, &request_cols);
-    //auto block = dataToBlock(description.sample_block, data);
-
-    //SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
-}
-
-
-bool LibraryDictionarySource::isModified() const
-{
-    return bridge_helper->isModified();
-}
-
-
-bool LibraryDictionarySource::supportsSelectiveLoad() const
-{
-    return bridge_helper->supportsSelectiveLoad();
+    return bridge_helper->loadKeys();
 }
 
 

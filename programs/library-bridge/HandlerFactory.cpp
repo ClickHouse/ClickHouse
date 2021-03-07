@@ -1,7 +1,6 @@
 #include "HandlerFactory.h"
 
 #include <Poco/Net/HTTPServerRequest.h>
-#include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 #include "Handlers.h"
 

@@ -160,8 +160,6 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_st
     uri.addQueryParameter("ids", ids_string);
     uri.addQueryParameter("columns", sample_block.getNamesAndTypesList().toString());
 
-    /// TODO: timeouts?
-
     ReadWriteBufferFromHTTP read_buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, {});
 
     auto format = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, read_buf, sample_block, context, DEFAULT_BLOCK_SIZE);
@@ -172,24 +170,15 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_st
 }
 
 
+/// Not implemented, TODO
 BlockInputStreamPtr LibraryBridgeHelper::loadKeys()
 {
     startBridgeSync();
 
     auto uri = getDictionaryURI();
-
     uri.addQueryParameter("method", LOAD_KEYS_METHOD);
 
-    std::function<void(std::ostream &)> callback = [](std::ostream & os)
-    {
-        auto query = "KSSENII";
-        os << "query=" << query;
-    };
-
-    ReadWriteBufferFromHTTP read_buf(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, {});
-    bool res;
-    readBoolText(res, read_buf);
-
+    ReadWriteBufferFromHTTP read_buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, {});
     return {};
 }
 

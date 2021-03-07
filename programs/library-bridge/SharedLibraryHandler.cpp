@@ -109,7 +109,7 @@ BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes
         dict_ids.push_back(parseFromString<UInt64>(id));
 
     std::vector<std::string> dict_attributes;
-    boost::split(dict_attributes, attributes_string, [](char c) { return c == ','; });
+    boost::split(dict_attributes, attributes_string, [](char c) { return c == ' '; });
 
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(dict_ids.data()), dict_ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_attributes.size());

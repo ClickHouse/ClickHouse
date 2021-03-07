@@ -1,21 +1,13 @@
 #include "IBridge.h"
-//#include "HandlerFactory.h"
 
-#include <string>
-#include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
-
 #include <Poco/Net/NetException.h>
-#include <Poco/String.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config.h>
 #include <Formats/registerFormats.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
-#include <ext/range.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Server/HTTP/HTTPServer.h>
 
