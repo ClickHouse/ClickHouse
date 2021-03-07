@@ -168,12 +168,38 @@ def select_map_with_key_integer(self, map, output):
     ("Map(Nullable(String), Int8)", "('2020-01-01', map(toNullable('1'),1))", '{"d":"2020-01-01","m":{"1":1}}', Name("Nullable")),
     ("Map(Nullable(String), Int8)", "('2020-01-01', map(toNullable(NULL),1))", '{"d":"2020-01-01","m":{null:1}}', Name("Nullable(NULL)")),
     ("Map(LowCardinality(String), Int8)", "('2020-01-01', map(toLowCardinality('1'),1))", '{"d":"2020-01-01","m":{"1":1}}', Name("LowCardinality(String)")),
-    ("Map(LowCardinality(FixedString(1)), Int8)", "('2020-01-01', map(toLowCardinality(toFixedString('1',1)),1))", '{"d":"2020-01-01","m":{"1":1}}', Name("LowCardinality(FixedString)"))
+    ("Map(LowCardinality(String), Int8)", "('2020-01-01', map('1',1))", '{"d":"2020-01-01","m":{"1":1}}', Name("LowCardinality(String) cast from String")),
+    ("Map(LowCardinality(String), LowCardinality(String))", "('2020-01-01', map('1','1'))", '{"d":"2020-01-01","m":{"1":"1"}}', Name("LowCardinality(String) for key and value")),
+    ("Map(LowCardinality(FixedString(1)), Int8)", "('2020-01-01', map(toLowCardinality(toFixedString('1',1)),1))", '{"d":"2020-01-01","m":{"1":1}}', Name("LowCardinality(FixedString)")),
 ])
 def table_map_with_key_string(self, type, data, output):
     """Check what values we can insert into map type column with key string.
     """
     insert_into_table(type=type, data=data, output=output)
+
+@TestOutline(Scenario)
+@Requirements(
+    RQ_SRS_018_ClickHouse_Map_DataType_Key_String("1.0")
+)
+@Examples("type data output select", [
+    ("Map(String, Int8)", "('2020-01-01', map('',1))", '{"m":1}', "m[''] AS m", Name("empty string")),
+    ("Map(String, Int8)", "('2020-01-01', map('hello',1))", '{"m":1}', "m['hello'] AS m", Name("non-empty string")),
+    ("Map(String, Int8)", "('2020-01-01', map('Gãńdåłf_Thê_Gręât',1))", '{"m":1}', "m['Gãńdåłf_Thê_Gręât'] AS m", Name("utf-8 string")),
+    ("Map(String, Int8)", "('2020-01-01', map('hello there',1))", '{"m":1}', "m['hello there'] AS m", Name("multi word string")),
+    ("Map(String, Int8)", "('2020-01-01', map('hello',1,'there',2))", '{"m":1}', "m['hello'] AS m", Name("multiple keys")),
+    ("Map(String, Int8)", "('2020-01-01', map(toString(1),1))", '{"m":1}', "m['1'] AS m", Name("toString")),
+    ("Map(FixedString(1), Int8)", "('2020-01-01', map(toFixedString('1',1),1))", '{"m":1}', "m['1'] AS m", Name("FixedString")),
+    ("Map(Nullable(String), Int8)", "('2020-01-01', map(toNullable('1'),1))", '{"m":1}}', "m['1'] AS m", Name("Nullable")),
+    ("Map(Nullable(String), Int8)", "('2020-01-01', map(toNullable(NULL),1))", '{"m":1}', "m[null] AS m", Name("Nullable(NULL)")),
+    ("Map(LowCardinality(String), Int8)", "('2020-01-01', map(toLowCardinality('1'),1))", '{"m":1}}', "m['1'] AS m", Name("LowCardinality(String)")),
+    ("Map(LowCardinality(String), Int8)", "('2020-01-01', map('1',1))", '{"m":1}', "m['1'] AS m", Name("LowCardinality(String) cast from String")),
+    ("Map(LowCardinality(String), LowCardinality(String))", "('2020-01-01', map('1','1'))", '{"m":"1"}', "m['1'] AS m", Name("LowCardinality(String) for key and value")),
+    ("Map(LowCardinality(FixedString(1)), Int8)", "('2020-01-01', map(toLowCardinality(toFixedString('1',1)),1))", '{"m":1}', "m['1'] AS m", Name("LowCardinality(FixedString)")),
+])
+def table_map_select_key_with_key_string(self, type, data, output, select):
+    """Check what values we can insert into map type column with key string and if key can be selected.
+    """
+    insert_into_table(type=type, data=data, output=output, select=select)
 
 @TestOutline(Scenario)
 @Requirements(
@@ -190,12 +216,38 @@ def table_map_with_key_string(self, type, data, output):
     ("Map(String, Nullable(String))", "('2020-01-01', map('key',toNullable('1')))", '{"d":"2020-01-01","m":{"key":"1"}}', Name("Nullable")),
     ("Map(String, Nullable(String))", "('2020-01-01', map('key',toNullable(NULL)))", '{"d":"2020-01-01","m":{"key":null}}', Name("Nullable(NULL)")),
     ("Map(String, LowCardinality(String))", "('2020-01-01', map('key',toLowCardinality('1')))", '{"d":"2020-01-01","m":{"key":"1"}}', Name("LowCardinality(String)")),
+    ("Map(String, LowCardinality(String))", "('2020-01-01', map('key','1'))", '{"d":"2020-01-01","m":{"key":"1"}}', Name("LowCardinality(String) cast from String")),
+    ("Map(LowCardinality(String), LowCardinality(String))", "('2020-01-01', map('1','1'))", '{"d":"2020-01-01","m":{"1":"1"}}', Name("LowCardinality(String) for key and value")),
     ("Map(String, LowCardinality(FixedString(1)))", "('2020-01-01', map('key',toLowCardinality(toFixedString('1',1))))", '{"d":"2020-01-01","m":{"key":"1"}}', Name("LowCardinality(FixedString)"))
 ])
 def table_map_with_value_string(self, type, data, output):
     """Check what values we can insert into map type column with value string.
     """
     insert_into_table(type=type, data=data, output=output)
+
+@TestOutline(Scenario)
+@Requirements(
+    RQ_SRS_018_ClickHouse_Map_DataType_Value_String("1.0")
+)
+@Examples("type data output", [
+    ("Map(String, String)", "('2020-01-01', map('key',''))", '{"m":""}', Name("empty string")),
+    ("Map(String, String)", "('2020-01-01', map('key','hello'))", '{"m":"hello"}', Name("non-empty string")),
+    ("Map(String, String)", "('2020-01-01', map('key','Gãńdåłf_Thê_Gręât'))", '{"m":"Gãńdåłf_Thê_Gręât"}', Name("utf-8 string")),
+    ("Map(String, String)", "('2020-01-01', map('key', 'hello there'))", '{"m":"hello there"}', Name("multi word string")),
+    ("Map(String, String)", "('2020-01-01', map('key','hello','key2','there'))", '{"m":"hello"}', Name("multiple keys")),
+    ("Map(String, String)", "('2020-01-01', map('key', toString(1)))", '{"m":"1"}', Name("toString")),
+    ("Map(String, FixedString(1))", "('2020-01-01', map('key',toFixedString('1',1)))", '{"m":"1"}', Name("FixedString")),
+    ("Map(String, Nullable(String))", "('2020-01-01', map('key',toNullable('1')))", '{"m":"1"}', Name("Nullable")),
+    ("Map(String, Nullable(String))", "('2020-01-01', map('key',toNullable(NULL)))", '{"m":null}', Name("Nullable(NULL)")),
+    ("Map(String, LowCardinality(String))", "('2020-01-01', map('key',toLowCardinality('1')))", '{"m":"1"}', Name("LowCardinality(String)")),
+    ("Map(String, LowCardinality(String))", "('2020-01-01', map('key','1'))", '{"m":"1"}', Name("LowCardinality(String) cast from String")),
+    ("Map(LowCardinality(String), LowCardinality(String))", "('2020-01-01', map('key','1'))", '{"m":"1"}', Name("LowCardinality(String) for key and value")),
+    ("Map(String, LowCardinality(FixedString(1)))", "('2020-01-01', map('key',toLowCardinality(toFixedString('1',1))))", '{"m":"1"}', Name("LowCardinality(FixedString)"))
+])
+def table_map_select_key_with_value_string(self, type, data, output):
+    """Check what values we can insert into map type column with value string and if it can be selected by key.
+    """
+    insert_into_table(type=type, data=data, output=output, select="m['key'] AS m")
 
 @TestOutline(Scenario)
 @Requirements(
@@ -284,7 +336,7 @@ def table_with_map_inside_another_type(self, type, data, output, partition_by):
     insert_into_table(type=type, data=data, output=output, partition_by=partition_by)
 
 @TestOutline
-def insert_into_table(self, type, data, output, partition_by="m"):
+def insert_into_table(self, type, data, output, partition_by="m", select="*"):
     """Check we can insert data into a table.
     """
     uid = getuid()
@@ -300,8 +352,8 @@ def insert_into_table(self, type, data, output, partition_by="m"):
         sql = f"INSERT INTO {table} VALUES {data}"
         node.query(sql)
 
-    with And("I select all rows from the table"):
-        r = node.query(f"SELECT * FROM {table} FORMAT JSONEachRow")
+    with And("I select rows from the table"):
+        r = node.query(f"SELECT {select} FROM {table} FORMAT JSONEachRow")
 
     with Then("I expect output to match", description=output):
         assert r.output == output, error()
@@ -861,7 +913,7 @@ def mapcontains(self):
             exitcode=0, message='{null:"c"}')
 
     with Example("select nullable key"):
-        node.query("SELECT map(NULL, 1, 2, 3) AS m, mapContains(m, toNullable(toUInt8(2)))", exitcode=0, message="{2:3}")  
+        node.query("SELECT map(NULL, 1, 2, 3) AS m, mapContains(m, toNullable(toUInt8(2)))", exitcode=0, message="{2:3}")
 
 @TestScenario
 @Requirements(
