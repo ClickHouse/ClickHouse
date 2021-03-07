@@ -28,6 +28,10 @@ SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
     Allocator.cpp
+    Bridge/IBridge.cpp
+    Bridge/IBridgeHelper.cpp
+    Bridge/LibraryBridgeHelper.cpp
+    Bridge/XDBCBridgeHelper.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp

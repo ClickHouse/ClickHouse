@@ -20,7 +20,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
 namespace
 {
     Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port, Poco::Logger * log)
