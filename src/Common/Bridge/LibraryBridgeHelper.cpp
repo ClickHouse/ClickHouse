@@ -1,4 +1,4 @@
-#include <Common/LibraryBridgeHelper.h>
+#include "LibraryBridgeHelper.h"
 
 #include <sstream>
 #include <IO/ReadHelpers.h>
@@ -16,42 +16,29 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
-}
-
-
 LibraryBridgeHelper::LibraryBridgeHelper(
         const Context & context_,
         const std::string & dictionary_id_)
     : log(&Poco::Logger::get("LibraryBridgeHelper"))
     , context(context_)
+    , config(context.getConfigRef())
+    , http_timeout(context.getSettingsRef().http_receive_timeout.value.totalSeconds())
     , dictionary_id(dictionary_id_)
 {
-    const auto & config = context.getConfigRef();
     bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);
     bridge_host = config.getString("library_bridge.host", DEFAULT_HOST);
 }
 
 
-Poco::URI LibraryBridgeHelper::getPingURI() const
-{
-    auto uri = getBaseURI();
-    uri.setPath(PING_HANDLER);
-    return uri;
-}
-
-
 Poco::URI LibraryBridgeHelper::getDictionaryURI() const
 {
-    auto uri = getBaseURI();
+    auto uri = createBaseURI();
     uri.setPath('/' + dictionary_id);
     return uri;
 }
 
 
-Poco::URI LibraryBridgeHelper::getBaseURI() const
+Poco::URI LibraryBridgeHelper::createBaseURI() const
 {
     Poco::URI uri;
     uri.setHost(bridge_host);
@@ -61,9 +48,15 @@ Poco::URI LibraryBridgeHelper::getBaseURI() const
 }
 
 
+void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
+{
+    cmd->wait();
+}
+
+
 bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const std::string library_settings)
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LIB_NEW_METHOD);
@@ -79,7 +72,7 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
 
 bool LibraryBridgeHelper::cloneLibrary(const std::string & other_dictionary_id)
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LIB_CLONE_METHOD);
@@ -94,7 +87,7 @@ bool LibraryBridgeHelper::cloneLibrary(const std::string & other_dictionary_id)
 
 bool LibraryBridgeHelper::removeLibrary()
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LIB_DELETE_METHOD);
@@ -108,7 +101,7 @@ bool LibraryBridgeHelper::removeLibrary()
 
 bool LibraryBridgeHelper::isModified()
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", IS_MODIFIED_METHOD);
@@ -122,7 +115,7 @@ bool LibraryBridgeHelper::isModified()
 
 bool LibraryBridgeHelper::supportsSelectiveLoad()
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", SUPPORTS_SELECTIVE_LOAD_METHOD);
@@ -136,7 +129,7 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 
 BlockInputStreamPtr LibraryBridgeHelper::loadAll(const std::string attributes_string, const Block & sample_block)
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
 
@@ -158,7 +151,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadAll(const std::string attributes_st
 
 BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_string, const std::string ids_string, const Block & sample_block)
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
 
@@ -181,7 +174,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_st
 
 BlockInputStreamPtr LibraryBridgeHelper::loadKeys()
 {
-    startLibraryBridgeSync();
+    startBridgeSync();
 
     auto uri = getDictionaryURI();
 
@@ -198,109 +191,6 @@ BlockInputStreamPtr LibraryBridgeHelper::loadKeys()
     readBoolText(res, read_buf);
 
     return {};
-}
-
-
-bool LibraryBridgeHelper::isLibraryBridgeRunning() const
-{
-    try
-    {
-        ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(context));
-        return checkString(PING_OK_ANSWER, buf);
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-
-void LibraryBridgeHelper::startLibraryBridgeSync() const
-{
-    if (!isLibraryBridgeRunning())
-    {
-        LOG_TRACE(log, "clickhouse-library-bridge is not running, will try to start it");
-        startLibraryBridge();
-
-        bool started = false;
-        uint64_t milliseconds_to_wait = 10; /// Exponential backoff
-        uint64_t counter = 0;
-
-        while (milliseconds_to_wait < 10000)
-        {
-            ++counter;
-            LOG_TRACE(log, "Checking clickhouse-library-bridge is running, try {}", counter);
-
-            if (isLibraryBridgeRunning())
-            {
-                started = true;
-                break;
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds_to_wait));
-            milliseconds_to_wait *= 2;
-        }
-
-        if (!started)
-            throw Exception("LibraryBridgeHelper: clickhouse-library-bridge is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
-    }
-}
-
-
-void LibraryBridgeHelper::startLibraryBridge() const
-{
-    const auto & config = context.getConfigRef();
-    const auto & settings = context.getSettingsRef();
-
-    /// Path to executable folder
-    Poco::Path path{config.getString("application.dir", "/usr/bin")};
-
-    std::vector<std::string> cmd_args;
-    path.setFileName("clickhouse-library-bridge");
-
-    cmd_args.push_back("--http-port");
-    cmd_args.push_back(std::to_string(config.getUInt("library_bridge.port", DEFAULT_PORT)));
-
-    cmd_args.push_back("--listen-host");
-    cmd_args.push_back(config.getString("librray_bridge.listen_host", DEFAULT_HOST));
-
-    cmd_args.push_back("--http-timeout");
-    cmd_args.push_back(std::to_string(settings.http_receive_timeout.value.totalSeconds()));
-
-    if (config.has("logger.library_bridge_log"))
-    {
-        cmd_args.push_back("--log-path");
-        cmd_args.push_back(config.getString("logger.library_bridge_log"));
-    }
-
-    if (config.has("logger.library_bridge_errlog"))
-    {
-        cmd_args.push_back("--err-log-path");
-        cmd_args.push_back(config.getString("logger.library_bridge_errlog"));
-    }
-
-    if (config.has("logger.library_bridge_stdout"))
-    {
-        cmd_args.push_back("--stdout-path");
-        cmd_args.push_back(config.getString("logger.library_bridge_stdout"));
-    }
-
-    if (config.has("logger.library_bridge_stderr"))
-    {
-        cmd_args.push_back("--stderr-path");
-        cmd_args.push_back(config.getString("logger.library_bridge_stderr"));
-    }
-
-    if (config.has("logger.library_level"))
-    {
-        cmd_args.push_back("--log-level");
-        cmd_args.push_back(config.getString("logger.library_bridge_level"));
-    }
-
-    LOG_TRACE(log, "Starting clickhouse-library-bridge");
-
-    auto cmd =ShellCommand::executeDirect(path.toString(), cmd_args, true);
-    cmd->wait();
 }
 
 }

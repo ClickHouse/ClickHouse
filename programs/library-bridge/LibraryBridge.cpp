@@ -180,8 +180,6 @@ int LibraryBridge::main(const std::vector<std::string> & /*args*/)
 {
     registerFormats();
 
-    LOG_INFO(log, "KSSENII Starting up");
-
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, hostname, port, log);
 
