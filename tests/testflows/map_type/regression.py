@@ -27,7 +27,17 @@ xfails = {
     "tests/mapcontains/null key in map":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21028")],
     "tests/mapcontains/select nullable key":
-        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")]
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")],
+    "tests/table map select key with value string/LowCardinality:":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
+    "tests/table map select key with key string/FixedString":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
+    "tests/table map select key with key string/Nullable":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
+    "tests/table map select key with key string/Nullable(NULL)":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")],
+    "tests/table map select key with key string/LowCardinality:":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")]
 }
 
 xflags = {
