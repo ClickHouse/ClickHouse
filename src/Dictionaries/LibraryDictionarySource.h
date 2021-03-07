@@ -69,11 +69,11 @@ public:
     std::string toString() const override;
 
 private:
-    String getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root);
-
     String getDictAttributesString();
 
-    String getDictIdsString(const std::vector<UInt64> & ids);
+    static String getDictIdsString(const std::vector<UInt64> & ids);
+
+    static String getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root);
 
     Poco::Logger * log;
 

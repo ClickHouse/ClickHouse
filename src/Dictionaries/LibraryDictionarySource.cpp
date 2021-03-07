@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
     extern const int EXTERNAL_LIBRARY_ERROR;
     extern const int PATH_ACCESS_DENIED;
@@ -57,7 +56,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"));
 
     if (!res)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create shared library from path: {}", path);
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
 
     description.init(sample_block);
 }

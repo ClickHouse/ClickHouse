@@ -8,6 +8,14 @@
 namespace DB
 {
 
+/// TODO: return error message instead of throwing
+namespace ErrorCodes
+{
+    extern const int EXTERNAL_LIBRARY_ERROR;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+
 SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_path_,
     const std::string & library_settings)
