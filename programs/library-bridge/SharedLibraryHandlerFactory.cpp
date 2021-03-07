@@ -37,10 +37,10 @@ bool SharedLibraryHandlerFactory::clone(const std::string & from_dictionary_id, 
     std::lock_guard lock(mutex);
     auto from_library_handler = library_handlers.find(from_dictionary_id);
 
-    /// This is impossible to happen as libClone is called from copy constructor of LibraryDictionarySource
+    /// This is not supposed to happen as libClone is called from copy constructor of LibraryDictionarySource
     /// object, and shared library handler of from_dictionary is removed only in its destructor.
     /// And if for from_dictionary there was no shared library handler, it would have received and exception in
-    /// its constructor, so no libClone would ever be made for it.
+    /// its constructor, so no libClone would be made from it.
     if (from_library_handler == library_handlers.end())
       return false;
 

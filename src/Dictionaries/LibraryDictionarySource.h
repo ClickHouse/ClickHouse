@@ -75,24 +75,17 @@ private:
 
     String getDictIdsString(const std::vector<UInt64> & ids);
 
-    LocalDateTime getLastModification() const;
-
     Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
-
     const std::string config_prefix;
-
     const std::string path;
-
     const std::string dictionary_id;
 
     Block sample_block;
-
     Context context;
 
     LibraryBridgeHelperPtr bridge_helper;
-
     ExternalResultDescription description;
 
     String createDictID()

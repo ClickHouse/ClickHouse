@@ -2,25 +2,16 @@
 #include "SharedLibraryHandlerFactory.h"
 
 #include <DataStreams/copyData.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromIStream.h>
-
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
-
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-
-#include <mutex>
-#include <memory>
 
 
 namespace DB
@@ -186,18 +177,11 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
         else if (method == "loadKeys")
         {
-            if (!params.has("query"))
-            {
-                processError(response, "No 'query' in request URL");
-                return;
-            }
-            processError(response, "KSSENII SUCCESS!");
+            /// TODO
         }
     }
     catch (...)
     {
-        LOG_TRACE(log, "KSSENII caught an error");
-
         auto message = getCurrentExceptionMessage(true);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
 

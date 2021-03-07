@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
-#include <Poco/Logger.h>
+#include <common/logger_useful.h>
 
 
 namespace DB

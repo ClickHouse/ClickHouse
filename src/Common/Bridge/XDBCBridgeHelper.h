@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-
 /// Class for Helpers for XDBC-bridges, provide utility methods, not main request.
 class IXDBCBridgeHelper : public IBridgeHelper
 {
