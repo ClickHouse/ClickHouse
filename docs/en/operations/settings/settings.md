@@ -1514,6 +1514,14 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
+
+Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
+
+Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
+
+Default value: 1000
+
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
