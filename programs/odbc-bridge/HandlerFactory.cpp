@@ -8,7 +8,7 @@
 namespace DB
 {
 
-std::unique_ptr<HTTPRequestHandler> HandlerFactory::createRequestHandler(const HTTPServerRequest & request)
+std::unique_ptr<HTTPRequestHandler> ODBCBridgeHandlerFactory::createRequestHandler(const HTTPServerRequest & request)
 {
     Poco::URI uri{request.getURI()};
     LOG_TRACE(log, "Request URI: {}", uri.toString());
