@@ -115,9 +115,7 @@ public:
     template <typename ...Args>
     ParsingException(int code, const std::string & fmt, Args&&... args)
         : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
-    {
-        Exception::message(Exception::message() + "{}");
-    }
+    {}
 
 
     std::string displayText() const

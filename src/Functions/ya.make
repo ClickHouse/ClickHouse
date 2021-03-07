@@ -210,6 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
+    connectionID.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -246,6 +247,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -291,7 +293,6 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
-    htmlOrXmlCoarseParse.cpp
     hypot.cpp
     identity.cpp
     if.cpp

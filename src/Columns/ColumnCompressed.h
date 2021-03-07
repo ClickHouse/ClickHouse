@@ -96,6 +96,10 @@ public:
     {
         throwMustBeDecompressed();
     }
+    bool hasEqualValues() const override
+    {
+        throwMustBeDecompressed();
+    }
     void getPermutation(bool, size_t, int, Permutation &) const override { throwMustBeDecompressed(); }
     void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }

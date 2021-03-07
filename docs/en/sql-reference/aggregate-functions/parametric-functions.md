@@ -253,8 +253,8 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 **Parameters**
 
--   `window` — Length of the sliding window. The unit of `window` depends on the timestamp itself and varies. Determined using the expression `timestamp of cond2 <= timestamp of cond1 + window`.
--   `mode` - It is an optional parameter.
+-   `window` — Length of the sliding window. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond2 <= timestamp of cond1 + window`.
+-   `mode` - It is an optional argument.
     -   `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
 
 **Returned value**

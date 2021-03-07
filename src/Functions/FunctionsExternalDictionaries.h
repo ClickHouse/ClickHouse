@@ -358,6 +358,13 @@ public:
         }
         else if (dictionary_key_type == DictionaryKeyType::complex)
         {
+            if (!isTuple(key_col_with_type.type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Third argument of function ({}) must be tuple when dictionary is complex. Actual type ({}).",
+                    getName(),
+                    key_col_with_type.type->getName());
+
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
             ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
 
