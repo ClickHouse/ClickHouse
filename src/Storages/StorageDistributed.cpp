@@ -915,6 +915,11 @@ ClusterPtr StorageDistributed::skipUnusedShards(
         return nullptr;
     }
 
+    // Too huge number of values
+    size_t limit = context.getSettingsRef().optimize_skip_unused_shards_limit;
+    if (limit && blocks->size() > limit)
+        return nullptr;
+
     std::set<int> shards;
 
     for (const auto & block : *blocks)
