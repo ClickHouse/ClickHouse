@@ -169,7 +169,7 @@ RQ_SRS_018_ClickHouse_Map_DataType_DuplicatedKeys = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type with duplicated keys.\n'
+        '[ClickHouse] MAY support `Map(key, value)` data type with duplicated keys.\n'
         '\n'
         ),
     link=None,
@@ -215,7 +215,7 @@ RQ_SRS_018_ClickHouse_Map_DataType_Value_Retrieval = Requirement(
     uid=None,
     description=(
         '[ClickHouse] SHALL support getting the value from a `Map(key, value)` data type using `map[key]` syntax.\n'
-        'If `key` has duplicates then the first `key:value` pair SHALL be returned. \n'
+        'If `key` has duplicates then the first `key:value` pair MAY be returned. \n'
         '\n'
         'For example,\n'
         '\n'
@@ -246,9 +246,9 @@ RQ_SRS_018_ClickHouse_Map_DataType_Value_Retrieval_KeyInvalid = Requirement(
         '\n'
         'Exceptions:\n'
         '\n'
-        '* when key is `NULL` the return value SHALL be `NULL`\n'
-        '* when key has [Integer] type and key is either too large or negative then\n'
-        '  when reading from a table column it SHALL return `zero`.\n'
+        '* when key is `NULL` the return value MAY be `NULL`\n'
+        '* when key value is not valid for the key type, for example it is out of range for [Integer] type, \n'
+        '  when reading from a table column it MAY return the default value for key data type\n'
         '\n'
         ),
     link=None,
@@ -348,7 +348,7 @@ RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_ArrayOfTuplesToMap_Invalid = 
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`\n'
+        '[ClickHouse] MAY return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`\n'
         '\n'
         '* when element is not a [Tuple]\n'
         '\n'
@@ -1059,7 +1059,7 @@ version: 1.0
 #### RQ.SRS-018.ClickHouse.Map.DataType.DuplicatedKeys
 version: 1.0
 
-[ClickHouse] SHALL support `Map(key, value)` data type with duplicated keys.
+[ClickHouse] MAY support `Map(key, value)` data type with duplicated keys.
 
 ### Array of Maps
 
@@ -1081,7 +1081,7 @@ version: 1.0
 version: 1.0
 
 [ClickHouse] SHALL support getting the value from a `Map(key, value)` data type using `map[key]` syntax.
-If `key` has duplicates then the first `key:value` pair SHALL be returned. 
+If `key` has duplicates then the first `key:value` pair MAY be returned. 
 
 For example,
 
@@ -1102,9 +1102,9 @@ SELECT map(1,2) AS m, m[1024]
 
 Exceptions:
 
-* when key is `NULL` the return value SHALL be `NULL`
-* when key has [Integer] type and key is either too large or negative then
-  when reading from a table column it SHALL return `zero`.
+* when key is `NULL` the return value MAY be `NULL`
+* when key value is not valid for the key type, for example it is out of range for [Integer] type, 
+  when reading from a table column it MAY return the default value for key data type
 
 #### RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyNotFound
 version: 1.0
@@ -1158,7 +1158,7 @@ SELECT CAST(([(1,2),(3)]), 'Map(UInt8, UInt8)') AS map
 #### RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap.Invalid
 version: 1.0
 
-[ClickHouse] SHALL return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`
+[ClickHouse] MAY return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`
 
 * when element is not a [Tuple]
 
