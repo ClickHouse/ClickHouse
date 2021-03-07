@@ -193,22 +193,28 @@ private:
     inline LUTIndex findIndex(time_t t) const
     {
         /// First guess.
-        UInt32 guess = ((t / 86400) + daynum_offset_epoch) & date_lut_mask;
+        Int64 guess = (t / 86400) + daynum_offset_epoch;
 
         /// For negative time_t the integer division was rounded up, so the guess is offset by one.
         if (unlikely(t < 0))
             --guess;
 
+        if (guess < 0)
+            return LUTIndex(0);
+        if (guess >= DATE_LUT_SIZE)
+            return LUTIndex(DATE_LUT_SIZE - 1);
+
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
-        if (t >= lut[guess].date && t < lut[guess + 1].date)
-            return LUTIndex(guess);
 
-        /// Time zones that have offset 0 from UTC do daylight saving time change (if any)
-        /// towards increasing UTC offset (example: British Standard Time).
-        if (t >= lut[guess + 1].date)
+        if (t >= lut[guess].date)
+        {
+            if (guess + 1 >= DATE_LUT_SIZE || t < lut[guess + 1].date)
+                return LUTIndex(guess);
+
             return LUTIndex(guess + 1);
+        }
 
-        return LUTIndex(guess - 1);
+        return LUTIndex(guess ? guess - 1 : 0);
     }
 
     inline LUTIndex toLUTIndex(DayNum d) const
