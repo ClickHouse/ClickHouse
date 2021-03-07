@@ -2,38 +2,39 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
-#include <daemon/BaseDaemon.h>
+#include <Common/Bridge/IBridge.h>
+#include "HandlerFactory.h"
+
+#if USE_ODBC
+#    include <Poco/Data/ODBC/Connector.h>
+#endif
+
 
 namespace DB
 {
-/** Class represents clickhouse-odbc-bridge server, which listen
-  * incoming HTTP POST and GET requests on specified port and host.
-  * Has two handlers '/' for all incoming POST requests to ODBC driver
-  * and /ping for GET request about service status
-  */
-class ODBCBridge : public BaseDaemon
+
+class ODBCBridge : public IBridge
 {
-public:
-    void defineOptions(Poco::Util::OptionSet & options) override;
 
 protected:
-    void initialize(Application & self) override;
+    const std::string bridgeName() const override
+    {
+        return "ODBCBridge";
+    }
 
-    void uninitialize() override;
+    HandlerFactoryPtr getHandlerFactoryPtr(Context & context) const override
+    {
+        return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context);
+    }
 
-    int main(const std::vector<std::string> & args) override;
+    void registerODBCConnector() const override
+    {
+#if USE_ODBC
+        // It doesn't make much sense to build this bridge without ODBC, but we
+        // still do this.
+        Poco::Data::ODBC::Connector::registerConnector();
+#endif
+    }
 
-private:
-    void handleHelp(const std::string &, const std::string &);
-
-    bool is_help;
-    std::string hostname;
-    size_t port;
-    size_t http_timeout;
-    std::string log_level;
-    size_t max_server_connections;
-    size_t keep_alive_timeout;
-
-    Poco::Logger * log;
 };
 }
