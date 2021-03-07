@@ -305,14 +305,15 @@ RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_TupleOfArraysMap_Invalid = Re
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when casting [Tuple(Array, Array)] when arguments are invalid\n'
-        'such as when arrays are not of equal size.\n'
+        '[ClickHouse] MAY return an error when casting [Tuple(Array, Array)] to `Map(key, value)`\n'
         '\n'
-        'For example,\n'
+        '* when arrays are not of equal size\n'
         '\n'
-        '```sql\n'
-        "SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10]\n"
-        '```\n'
+        '  For example,\n'
+        '\n'
+        '  ```sql\n'
+        "  SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10]\n"
+        '  ```\n'
         '\n'
         ),
     link=None,
@@ -1133,14 +1134,15 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 #### RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysMap.Invalid
 version: 1.0
 
-[ClickHouse] SHALL return an error when casting [Tuple(Array, Array)] when arguments are invalid
-such as when arrays are not of equal size.
+[ClickHouse] MAY return an error when casting [Tuple(Array, Array)] to `Map(key, value)`
 
-For example,
+* when arrays are not of equal size
 
-```sql
-SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10]
-```
+  For example,
+
+  ```sql
+  SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10]
+  ```
 
 ### Converting Array(Tuple(K,V)) to Map
 
