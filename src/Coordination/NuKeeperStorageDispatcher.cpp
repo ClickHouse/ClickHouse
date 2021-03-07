@@ -82,7 +82,7 @@ void NuKeeperStorageDispatcher::snapshotThread()
 
         try
         {
-            task.create_snapshot(task.snapshot);
+            task.create_snapshot(std::move(task.snapshot));
         }
         catch (...)
         {
@@ -192,9 +192,16 @@ void NuKeeperStorageDispatcher::shutdown()
         NuKeeperStorage::RequestForSession request_for_session;
         while (requests_queue.tryPop(request_for_session))
         {
-            auto response = request_for_session.request->makeResponse();
-            response->error = Coordination::Error::ZSESSIONEXPIRED;
-            setResponse(request_for_session.session_id, response);
+            if (request_for_session.request)
+            {
+                auto response = request_for_session.request->makeResponse();
+                response->error = Coordination::Error::ZSESSIONEXPIRED;
+                setResponse(request_for_session.session_id, response);
+            }
+            else
+            {
+                break;
+            }
         }
         session_to_response_callback.clear();
     }
