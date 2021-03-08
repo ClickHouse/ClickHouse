@@ -19,10 +19,13 @@ struct ExtractBool
 struct NameVisitParamExtractBool   { static constexpr auto name = "visitParamExtractBool"; };
 using FunctionVisitParamExtractBool = FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool>;
 
+struct NameJSONSExtractBool   { static constexpr auto name = "JSONSExtractBool"; };
+using FunctionJSONSExtractBool = FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameJSONSExtractBool>;
 
 void registerFunctionVisitParamExtractBool(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractBool>();
+    factory.registerFunction<FunctionJSONSExtractBool>();
 }
 
 }
