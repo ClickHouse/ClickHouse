@@ -166,6 +166,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     entry.hosts = std::move(hosts);
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
+    entry.setSettingsIfRequired(context);
     String node_path = ddl_worker.enqueueQuery(entry);
 
     return getDistributedDDLStatus(node_path, entry, context);
