@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u0422\u0438\u043F\u044B \u0434\u0430\u043D\u043D\u044B\u0445"
+toc_folder_title: "Типы данных"
 toc_priority: 37
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Типы данных {#data_types}
