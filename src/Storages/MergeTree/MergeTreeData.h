@@ -768,10 +768,10 @@ public:
     bool areBackgroundMovesNeeded() const;
 
     /// Parts that currently submerging (merging to bigger parts) or emerging
-    /// (to be appeared after merging finished). This set have to be used
+    /// (to be appeared after merging finished). These two variables have to be used
     /// with `currently_submerging_emerging_mutex`.
-    DataParts currently_submerging_parts;
-    std::map<String, EmergingPartInfo> currently_emerging_parts;
+    DataParts currently_submerging_big_parts;
+    std::map<String, EmergingPartInfo> currently_emerging_big_parts;
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
@@ -1014,13 +1014,13 @@ private:
 struct CurrentlySubmergingEmergingTagger
 {
     MergeTreeData & storage;
-    String name;
-    MergeTreeData::DataPartsVector parts;
+    String emerging_part_name;
+    MergeTreeData::DataPartsVector submerging_parts;
     Poco::Logger * log;
 
     CurrentlySubmergingEmergingTagger(
         MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, Poco::Logger * log_)
-        : storage(storage_), name(name_), parts(std::move(parts_)), log(log_)
+        : storage(storage_), emerging_part_name(name_), submerging_parts(std::move(parts_)), log(log_)
     {
     }
 
