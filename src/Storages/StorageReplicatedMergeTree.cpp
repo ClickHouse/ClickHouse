@@ -3562,6 +3562,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     }
 
+    std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
     if (part_to_clone)
     {
@@ -3585,9 +3586,18 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
             return fetcher.fetchPart(
-                metadata_snapshot, part_name, source_replica_path,
-                address.host, address.replication_port,
-                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
+                metadata_snapshot,
+                part_name,
+                source_replica_path,
+                address.host,
+                address.replication_port,
+                timeouts,
+                user_password.first,
+                user_password.second,
+                interserver_scheme,
+                to_detached,
+                "",
+                &tagger_ptr);
         };
     }
 
