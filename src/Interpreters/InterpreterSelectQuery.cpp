@@ -493,6 +493,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
+        LOG_TRACE(log, "Running 'analyze' second time");
         query_analyzer->getSubqueriesForSets().clear();
         subquery_for_sets = SubqueriesForSets();
 
