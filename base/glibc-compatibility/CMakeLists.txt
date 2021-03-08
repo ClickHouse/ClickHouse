@@ -30,7 +30,7 @@ if (GLIBC_COMPATIBILITY)
     if (NOT ARCH_ARM)
         # clickhouse_memcpy don't support ARCH_ARM, see https://github.com/ClickHouse/ClickHouse/issues/18951
         add_library (clickhouse_memcpy OBJECT
-            ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.c
+            ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.cpp
         )
     endif()
 
