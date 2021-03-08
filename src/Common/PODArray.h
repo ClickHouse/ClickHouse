@@ -174,7 +174,7 @@ protected:
           * It is not safe to use end == end_of_storage here because left_padding
           * is not always multiple of ELEMENT_SIZE.
           */
-        return c_end + ELEMENT_SIZE >= c_end_of_storage;
+        return (c_end + ELEMENT_SIZE) >= c_end_of_storage;
     }
 
     template <typename ... TAllocatorParams>
