@@ -1,6 +1,5 @@
 ---
-toc_folder_title: "Табличные фу\
-  нкции"
+toc_folder_title: "Табличные функции"
 toc_priority: 34
 toc_title: "Введение"
 ---
