@@ -72,6 +72,7 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
+    bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;

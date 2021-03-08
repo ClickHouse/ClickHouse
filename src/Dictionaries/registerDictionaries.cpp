@@ -18,6 +18,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & source_factory);
 #endif
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
+void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 
@@ -54,6 +55,7 @@ void registerDictionaries()
         registerDictionarySourcePostgreSQL(source_factory);
 #endif
         registerDictionarySourceExecutable(source_factory);
+        registerDictionarySourceExecutablePool(source_factory);
         registerDictionarySourceHTTP(source_factory);
         registerDictionarySourceLibrary(source_factory);
     }

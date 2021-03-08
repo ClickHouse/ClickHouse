@@ -312,6 +312,11 @@ int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs,
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+bool ColumnTuple::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnTuple>();
+}
+
 template <bool positive>
 struct ColumnTuple::Less
 {
