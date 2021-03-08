@@ -30,6 +30,7 @@ namespace ErrorCodes
         Value remote = 0;
         UInt64 last_error_time_ms = 0;
         std::string message;
+        std::string stacktrace;
 
         ValuePair & operator+=(const ValuePair & value);
     };
@@ -53,7 +54,7 @@ namespace ErrorCodes
     ErrorCode end();
 
     /// Add value for specified error_code.
-    void increment(ErrorCode error_code, bool remote, const std::string & message);
+    void increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & stacktrace);
 }
 
 }

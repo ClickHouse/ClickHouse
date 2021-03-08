@@ -11,19 +11,20 @@ namespace DB
 NamesAndTypesList StorageSystemErrors::getNamesAndTypes()
 {
     return {
-        { "name",              std::make_shared<DataTypeString>() },
-        { "code",              std::make_shared<DataTypeInt32>() },
-        { "value",             std::make_shared<DataTypeUInt64>() },
-        { "last_error_time",   std::make_shared<DataTypeDateTime>() },
-        { "last_error_message",std::make_shared<DataTypeString>() },
-        { "remote",            std::make_shared<DataTypeUInt8>() },
+        { "name",                    std::make_shared<DataTypeString>() },
+        { "code",                    std::make_shared<DataTypeInt32>() },
+        { "value",                   std::make_shared<DataTypeUInt64>() },
+        { "last_error_time",         std::make_shared<DataTypeDateTime>() },
+        { "last_error_message",      std::make_shared<DataTypeString>() },
+        { "last_error_stacktrace",   std::make_shared<DataTypeString>() },
+        { "remote",                  std::make_shared<DataTypeUInt8>() },
     };
 }
 
 
 void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    auto add_row = [&](std::string_view name, size_t code, size_t value, UInt64 last_error_time_ms, const std::string & message, bool remote)
+    auto add_row = [&](std::string_view name, size_t code, size_t value, UInt64 last_error_time_ms, const std::string & message, const std::string & stacktrace, bool remote)
     {
         if (value || context.getSettingsRef().system_events_show_zero_values)
         {
@@ -33,6 +34,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &
             res_columns[col_num++]->insert(value);
             res_columns[col_num++]->insert(last_error_time_ms / 1000);
             res_columns[col_num++]->insert(message);
+            res_columns[col_num++]->insert(stacktrace);
             res_columns[col_num++]->insert(remote);
         }
     };
@@ -45,8 +47,8 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &
         if (name.empty())
             continue;
 
-        add_row(name, i, error.local,  error.last_error_time_ms, error.message, 0 /* remote=0 */);
-        add_row(name, i, error.remote, error.last_error_time_ms, error.message, 1 /* remote=1 */);
+        add_row(name, i, error.local,  error.last_error_time_ms, error.message, error.stacktrace, 0 /* remote=0 */);
+        add_row(name, i, error.remote, error.last_error_time_ms, error.message, error.stacktrace, 1 /* remote=1 */);
     }
 }
 
