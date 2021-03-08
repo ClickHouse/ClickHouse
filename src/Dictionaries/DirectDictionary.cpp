@@ -142,7 +142,7 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void DirectDictionary<dictionary_key_type>::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
+void DirectDictionary<dictionary_key_type>::toParent(const PaddedPODArray<Key> & ids [[maybe_unused]], PaddedPODArray<Key> & out [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
@@ -250,7 +250,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
         const std::string & attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
-        const DataTypes & key_types,
+        const DataTypes & key_types [[maybe_unused]],
         const ColumnPtr & default_values_column) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
@@ -345,7 +345,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
@@ -416,7 +416,9 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const
+BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
+    const Columns & key_columns [[maybe_unused]],
+    const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
     size_t requested_keys_size = requested_keys.size();
 
@@ -460,7 +462,7 @@ void DirectDictionary<dictionary_key_type>::setup()
         {
             if constexpr (dictionary_key_type == DictionaryKeyType::complex)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "({}): hierachical attributes are not supported for complex key direct dictionary",
+                    "({}): hierarchical attributes are not supported for complex key direct dictionary",
                     full_name);
 
             hierarchical_attribute = &attribute;
