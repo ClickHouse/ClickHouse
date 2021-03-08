@@ -47,7 +47,7 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
         abort();
     }
 #endif
-    ErrorCodes::increment(code, remote);
+    ErrorCodes::increment(code, remote, msg);
 }
 
 Exception::Exception(const std::string & msg, int code, bool remote_)
