@@ -8,9 +8,7 @@ if (ENABLE_FASTMEMCPY)
     set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy)
 
     set (SRCS
-        ${LIBRARY_DIR}/FastMemcpy.c
-
-        memcpy_wrapper.c
+        memcpy_wrapper.cpp
     )
 
     add_library (FastMemcpy ${SRCS})
