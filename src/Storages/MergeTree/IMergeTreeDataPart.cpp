@@ -57,13 +57,18 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & di
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path)
 {
-    size_t minmax_idx_size = data.minmax_idx_column_types.size();
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
+    size_t minmax_idx_size = minmax_column_types.size();
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
-        String file_name = part_path + "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
+        String file_name = part_path + "minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx";
         auto file = openForReading(disk_, file_name);
-        const DataTypePtr & data_type = data.minmax_idx_column_types[i];
+        const DataTypePtr & data_type = minmax_column_types[i];
 
         Field min_val;
         data_type->deserializeBinary(min_val, *file);
@@ -78,7 +83,13 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
 void IMergeTreeDataPart::MinMaxIndex::store(
     const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & out_checksums) const
 {
-    store(data.minmax_idx_columns, data.minmax_idx_column_types, disk_, part_path, out_checksums);
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
+
+    store(minmax_column_names, minmax_column_types, disk_, part_path, out_checksums);
 }
 
 void IMergeTreeDataPart::MinMaxIndex::store(
@@ -1168,6 +1179,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     const auto & pk = metadata_snapshot->getPrimaryKey();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
     if (!checksums.empty())
     {
         if (!pk.column_names.empty() && !checksums.files.count("primary.idx"))
@@ -1183,7 +1195,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!isEmpty())
             {
-                for (const String & col_name : storage.minmax_idx_columns)
+                for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 {
                     if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
                         throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -1214,7 +1226,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (metadata_snapshot->hasPartitionKey())
                 check_file_not_empty(volume->getDisk(), path + "partition.dat");
 
-            for (const String & col_name : storage.minmax_idx_columns)
+            for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 check_file_not_empty(volume->getDisk(), path + "minmax_" + escapeForFileName(col_name) + ".idx");
         }
     }
