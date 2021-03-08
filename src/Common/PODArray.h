@@ -117,8 +117,11 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
+
+        c_start = allocated + pad_left;
+        c_end = c_start;
+        c_end_of_storage = allocated + bytes - pad_right;
 
         if (pad_left)
             memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
@@ -147,12 +150,12 @@ protected:
 
         ptrdiff_t end_diff = c_end - c_start;
 
-        c_start = reinterpret_cast<char *>(
-                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
-            + pad_left;
+        char * allocated = reinterpret_cast<char *>(
+            TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
+        c_start = allocated + pad_left;
         c_end = c_start + end_diff;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        c_end_of_storage = allocated + bytes - pad_right;
     }
 
     bool isInitialized() const
