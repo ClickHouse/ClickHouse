@@ -25,13 +25,18 @@ namespace ErrorCodes
     std::string_view getName(ErrorCode error_code);
 
     /// ErrorCode identifier -> current value of error_code.
-    extern std::atomic<Value> values[];
+    struct ValuePair
+    {
+        std::atomic<Value> local;
+        std::atomic<Value> remote;
+    };
+    extern ValuePair values[];
 
     /// Get index just after last error_code identifier.
     ErrorCode end();
 
     /// Add value for specified error_code.
-    void increment(ErrorCode error_code);
+    void increment(ErrorCode error_code, bool remote);
 }
 
 }
