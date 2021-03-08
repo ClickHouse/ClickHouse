@@ -858,6 +858,10 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     if (!select_query->prewhere())
         return prewhere_actions;
 
+    Names first_action_names;
+    if (!chain.steps.empty())
+        first_action_names = chain.steps.front()->getRequiredColumns().getNames();
+
     auto & step = chain.lastStep(sourceColumns());
     getRootActions(select_query->prewhere(), only_types, step.actions());
     String prewhere_column_name = select_query->prewhere()->getColumnName();
@@ -882,6 +886,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag);
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
+        required_source_columns.insert(first_action_names.begin(), first_action_names.end());
 
         /// Add required columns to required output in order not to remove them after prewhere execution.
         /// TODO: add sampling and final execution to common chain.
@@ -1340,7 +1345,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         bool first_stage_,
         bool second_stage_,
         bool only_types,
-        const FilterInfoPtr & filter_info_,
+        const FilterDAGInfoPtr & filter_info_,
         const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
@@ -1403,7 +1408,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (storage && filter_info_)
         {
             filter_info = filter_info_;
-            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions_dag, filter_info->column_name);
+            filter_info->do_remove_column = true;
         }
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
@@ -1570,10 +1575,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
 void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
 {
+    size_t next_step_i = 0;
+
     if (hasPrewhere())
     {
-        const ExpressionActionsChain::Step & step = *chain.steps.at(0);
+        const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
         prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
+        prewhere_info->prewhere_actions->projectInput(false);
 
         NameSet columns_to_remove;
         for (size_t i = 1; i < step.required_output.size(); ++i)
@@ -1584,19 +1592,16 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
     }
-    else if (hasFilter())
-    {
-        /// Can't have prewhere and filter set simultaneously
-        filter_info->do_remove_column = chain.steps.at(0)->can_remove_required_output.at(0);
-    }
+
     if (hasWhere())
-        remove_where_filter = chain.steps.at(where_step_num)->can_remove_required_output.at(0);
+    {
+        const ExpressionActionsChain::Step & step = *chain.steps.at(where_step_num);
+        remove_where_filter = step.can_remove_required_output.at(0);
+    }
 }
 
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
-    if (hasFilter())
-        filter_info->actions_dag->projectInput();
     if (hasWhere())
         before_where->projectInput();
     if (hasHaving())
