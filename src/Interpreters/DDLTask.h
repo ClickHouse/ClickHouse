@@ -56,15 +56,16 @@ struct HostID
 
 struct DDLLogEntry
 {
+    UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
+    std::optional<SettingsChanges> settings;
 
-    static constexpr int CURRENT_VERSION = 1;
-
+    void setSettingsIfRequired(const Context & context);
     String toString() const;
-
     void parse(const String & data);
+    void assertVersion() const;
 };
 
 struct DDLTaskBase

@@ -322,10 +322,10 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const 
 
     LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
 
-    /// TODO maybe write current settings to log entry?
     DDLLogEntry entry;
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
+    entry.setSettingsIfRequired(query_context);
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
