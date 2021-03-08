@@ -17,8 +17,8 @@ namespace DB
 namespace ErrorCodes
 {
     /// ErrorCode identifier (index in array).
-    using ErrorCode = size_t;
-    using Value = int;
+    using ErrorCode = int;
+    using Value = size_t;
 
     /// Get name of error_code by identifier.
     /// Returns statically allocated string.
