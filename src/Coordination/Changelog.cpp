@@ -98,6 +98,8 @@ public:
 
         if (sync)
             plain_buf.sync();
+        else
+            plain_buf.next();
         return result;
     }
 

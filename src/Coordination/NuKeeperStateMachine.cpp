@@ -162,26 +162,37 @@ void NuKeeperStateMachine::create_snapshot(
 
     snapshot_task.create_snapshot = [this, when_done] (NuKeeperStorageSnapshotPtr && snapshot)
     {
-        auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-        auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-        {
-            std::lock_guard lock(snapshots_lock);
-            latest_snapshot_buf = snapshot_buf;
-            latest_snapshot_meta = snapshot->snapshot_meta;
-        }
-
-        LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), result_path);
-
-        {
-            /// Must do it with lock (clearing elements from list)
-            std::lock_guard lock(storage_lock);
-            storage.clearGarbageAfterSnapshot();
-            LOG_TRACE(log, "Cleared garbage after snapshot");
-            snapshot.reset();
-        }
-
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = true;
+        try
+        {
+            auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
+            auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+            {
+                std::lock_guard lock(snapshots_lock);
+                latest_snapshot_buf = snapshot_buf;
+                latest_snapshot_meta = snapshot->snapshot_meta;
+            }
+
+            LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), result_path);
+
+            {
+                /// Must do it with lock (clearing elements from list)
+                std::lock_guard lock(storage_lock);
+                storage.clearGarbageAfterSnapshot();
+                /// Destroy snapshot with lock
+                snapshot.reset();
+                LOG_TRACE(log, "Cleared garbage after snapshot");
+
+            }
+        }
+        catch (...)
+        {
+            LOG_TRACE(log, "Exception happened during snapshot");
+            tryLogCurrentException(log);
+            ret = false;
+        }
+
         when_done(ret, exception);
     };
 
