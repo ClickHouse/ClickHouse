@@ -127,10 +127,10 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 
 bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, Block block, ASTPtr & expression_ast)
 {
-    bool ret = true;
+    bool unmodified = true;
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where() && !select.prewhere())
-        return ret;
+        return unmodified;
 
     ASTPtr condition_ast;
     if (select.prewhere() && select.where())
@@ -138,10 +138,11 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, 
     else
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
 
-    // Prepare a block with valid expressions
+    // Prepare a constant block with valid expressions
     for (size_t i = 0; i < block.columns(); ++i)
         block.getByPosition(i).column = block.getByPosition(i).type->createColumnConstWithDefaultValue(1);
 
+    // Collect all expression columns in expression_ast. Constant expressions will have constant columns.
     auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
     PreparedSets prepared_sets;
     SubqueriesForSets subqueries_for_sets;
@@ -152,15 +153,15 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, 
     auto expression_actions = std::make_shared<ExpressionActions>(actions);
     expression_actions->execute(block);
 
-    /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
+    /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
     std::vector<ASTPtr> functions;
     if (select.where())
-        ret &= extractFunctions(select.where(), block, functions);
+        unmodified &= extractFunctions(select.where(), block, functions);
     if (select.prewhere())
-        ret &= extractFunctions(select.prewhere(), block, functions);
+        unmodified &= extractFunctions(select.prewhere(), block, functions);
 
     expression_ast = buildWhereExpression(functions);
-    return ret;
+    return unmodified;
 }
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast)
