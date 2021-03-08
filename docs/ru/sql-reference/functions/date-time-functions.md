@@ -23,8 +23,6 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
-Поддерживаются только часовые пояса, отличающиеся от UTC на целое число часов.
-
 ## toTimeZone {#totimezone}
 
 Переводит дату или дату-с-временем в указанный часовой пояс. Часовой пояс (таймзона) это атрибут типов Date/DateTime, внутреннее значение (количество секунд) поля таблицы или колонки результата не изменяется, изменяется тип поля и автоматически его текстовое отображение.
@@ -446,9 +444,9 @@ date_trunc(unit, value[, timezone])
 
 Синоним: `dateTrunc`. 
 
-**Параметры**
+**Аргументы**
 
--   `unit` — Название части даты или времени. [String](../syntax.md#syntax-string-literal).
+-   `unit` — название части даты или времени. [String Literal](../syntax.md#syntax-string-literal).
     Возможные значения:
 
     - `second`
@@ -460,8 +458,8 @@ date_trunc(unit, value[, timezone])
     - `quarter`
     - `year`
 
--   `value` — Дата и время. [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../../sql-reference/data-types/string.md)
+-   `value` — дата и время. [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../../sql-reference/data-types/string.md)
 
 **Возвращаемое значение**
 
@@ -616,6 +614,57 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 ┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
 │                                                                                     25 │
 └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## date\_sub {#date_sub}
+
+Вычитает интервал времени или даты из указанной даты или даты со временем.
+
+**Синтаксис**
+
+``` sql
+date_sub(unit, value, date)
+```
+
+Синонимы: `dateSub`, `DATE_SUB`.
+
+**Аргументы**
+
+-   `unit` — единица измерения времени, в которой задан интервал для вычитания. [String](../../sql-reference/data-types/string.md).
+    Возможные значения:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+		
+-   `value` — значение интервала для вычитания. [Int](../../sql-reference/data-types/int-uint.md).    
+-   `date` — дата или дата со временем, из которой вычитается `value`. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Возвращаемое значение**
+
+Возвращает дату или дату со временем, полученную в результате вычитания `value`, выраженного в `unit`, из `date`.
+
+Тип: [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT date_sub(YEAR, 3, toDate('2018-01-01'));
+```
+
+Результат:
+
+``` text
+┌─minus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                     2015-01-01 │
+└────────────────────────────────────────────────┘
 ```
 
 ## timeSlot {#timeslot}
