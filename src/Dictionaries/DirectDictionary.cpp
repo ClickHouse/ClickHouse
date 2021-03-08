@@ -334,13 +334,6 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
 
-    Field result_val;
-    for (size_t i = 0; i < result->size(); ++i)
-    {
-        result->get(i, result_val);
-        std::cerr << "I " << i << " dump " << result_val.dump() << std::endl;
-    }
-
     return result;
 }
 
