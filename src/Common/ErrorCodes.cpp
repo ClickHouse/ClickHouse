@@ -598,7 +598,7 @@ namespace ErrorCodes
         ValuePair inc_value{
             !remote,    /* local */
             remote,     /* remote */
-            0,          /* last_error_time_ms */
+            0,          /* error_time_ms */
             message,    /* message */
             stacktrace, /* stacktrace */
         };
@@ -613,7 +613,7 @@ namespace ErrorCodes
         stacktrace = value.stacktrace;
 
         const auto now = std::chrono::system_clock::now();
-        last_error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 
         return *this;
     }

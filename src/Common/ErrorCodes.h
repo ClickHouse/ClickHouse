@@ -28,7 +28,7 @@ namespace ErrorCodes
     {
         Value local = 0;
         Value remote = 0;
-        UInt64 last_error_time_ms = 0;
+        UInt64 error_time_ms = 0;
         std::string message;
         std::string stacktrace;
 
