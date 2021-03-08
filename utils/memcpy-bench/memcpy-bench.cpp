@@ -394,6 +394,18 @@ tail:
     }
     else if (have_avx)
     {
+        if (size <= 32)
+        {
+            __builtin_memcpy(dst, src, 8);
+            __builtin_memcpy(dst + 8, src + 8, 8);
+
+            dst += 16;
+            src += 16;
+            size -= 16;
+
+            goto tail;
+        }
+
         if (size <= 256)
         {
             __asm__(
