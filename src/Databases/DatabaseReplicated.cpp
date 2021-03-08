@@ -313,15 +313,8 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const 
     entry.initiator = ddl_worker->getCommonHostID();
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
-    BlockIO io;
-    if (query_context.getSettingsRef().distributed_ddl_task_timeout == 0)
-        return io;
-
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, query_context, hosts_to_wait);
-    if (query_context.getSettingsRef().database_replicated_ddl_output)
-        io.in = std::move(stream);
-    return io;
+    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, const Context & context)
