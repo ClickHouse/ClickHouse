@@ -69,10 +69,12 @@
     <query>SELECT dictGet('default.simple_direct_dictionary', 'value_string', number) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictGet('default.simple_direct_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictGet('default.simple_direct_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictHas('default.simple_direct_dictionary', number) FROM system.numbers LIMIT 150000;</query>
 
     <query>SELECT dictGet('default.complex_direct_dictionary', 'value_int', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictGet('default.complex_direct_dictionary', 'value_string', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictGet('default.complex_direct_dictionary', 'value_decimal', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictGet('default.complex_direct_dictionary', 'value_string_nullable', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictHas('default.complex_direct_dictionary', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
 
 </test>
