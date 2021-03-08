@@ -23,7 +23,11 @@
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
 
+#if defined(__x86_64__)
 #include <memcpy.h>
+#else
+void init_memcpy() {}
+#endif
 
 
 /// Universal executable for various clickhouse applications
