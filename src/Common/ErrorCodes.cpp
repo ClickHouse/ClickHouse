@@ -562,7 +562,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr Value END = 3000;
+    constexpr ErrorCode END = 3000;
     ValuePair values[END + 1]{};
 
     struct ErrorCodesNames
