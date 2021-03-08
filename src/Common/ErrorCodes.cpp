@@ -563,7 +563,7 @@ namespace ErrorCodes
 #undef M
 
     constexpr Value END = 3000;
-    std::atomic<Value> values[END + 1]{};
+    ValuePair values[END + 1]{};
 
     struct ErrorCodesNames
     {
@@ -585,7 +585,7 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-    void increment(ErrorCode error_code)
+    void increment(ErrorCode error_code, bool remote)
     {
         if (error_code >= end())
         {
@@ -593,7 +593,10 @@ namespace ErrorCodes
             /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
             error_code = end() - 1;
         }
-        values[error_code].fetch_add(1, std::memory_order_relaxed);
+        if (remote)
+            values[error_code].remote.fetch_add(1, std::memory_order_relaxed);
+        else
+            values[error_code].local.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
