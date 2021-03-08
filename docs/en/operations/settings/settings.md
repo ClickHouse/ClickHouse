@@ -1097,14 +1097,25 @@ See the section “WITH TOTALS modifier”.
 
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query. In limited circumstances, this can make a query faster by executing it on more servers. This setting is only useful for replicated tables with a sampling key. There are cases where performance will not improve or even worsen:
+The maximum number of replicas for each shard when executing a query.
 
-- the position of the sampling key in the partitioning key's order doesn't allow efficient range scans
-- adding a sampling key to the table makes filtering by other columns less efficient
-- the sampling key is an expression that is expensive to calculate
-- the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
+Possible values:
 
-In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+-   Positive integer.
+
+Default value: `1`.
+
+**Additional Info** 
+
+This setting is only useful for replicated tables with a sampling key. A query may be executed faster by executing on more servers. But in some cases query performance may even degrade:
+
+- The position of the sampling key in the partitioning key doesn't allow efficient range scans.
+- Adding a sampling key to the table makes filtering by other columns less efficient.
+- The sampling key is an expression that is expensive to calculate.
+- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
+
+!!! warning "Warning"
+    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
