@@ -23,6 +23,8 @@
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
 
+#include <memcpy.h>
+
 
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER
@@ -341,6 +343,8 @@ int main(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
+
+    init_memcpy();
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
