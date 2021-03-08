@@ -6,7 +6,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
+#include <Interpreters/AggregationCommon.h>
+
 
 namespace DB
 {
@@ -259,24 +261,21 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     Arena complex_key_arena;
 
     const DictionaryAttribute & attribute = dict_struct.getAttribute(attribute_name, result_type);
-    auto result = attribute.type->createColumn();
-
     DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
+
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_key_arena);
     const auto & requested_keys = extractor.getKeys();
+
+    HashMap<KeyType, size_t> key_to_fetched_index;
+    key_to_fetched_index.reserve(requested_keys.size());
+
+    auto fetched_from_storage = attribute.type->createColumn();
+    size_t fetched_key_index = 0;
     size_t requested_attribute_index = attribute_index_by_name.find(attribute_name)->second;
 
+    Columns block_key_columns;
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
-    size_t requested_key_index = 0;
-    Field block_column_value;
-
-    /** In result stream keys are returned in same order as they were requested.
-      * For example if we request keys [1, 2, 3, 4] but source has only [2, 3] we need to return to client
-      * [default_value, 2, 3, default_value].
-      * For each key fetched from source current algorithm adds default values until
-      * requested key with requested_key_index match key fetched from source.
-      * At the end we also need to process tail.
-      */
+    block_key_columns.reserve(dictionary_keys_size);
 
     BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
 
@@ -284,9 +283,6 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
 
     while (const auto block = stream->read())
     {
-        Columns block_key_columns;
-        block_key_columns.reserve(dictionary_keys_size);
-
         auto block_columns = block.getColumns();
 
         /// Split into keys columns and attribute columns
@@ -301,35 +297,39 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
         size_t block_keys_size = block_keys.size();
 
         const auto & block_column = block.safeGetByPosition(dictionary_keys_size + requested_attribute_index).column;
+        fetched_from_storage->insertRangeFrom(*block_column, 0, block_keys_size);
 
         for (size_t block_key_index = 0; block_key_index < block_keys_size; ++block_key_index)
         {
-            auto block_key = block_keys[block_key_index];
+            const auto & block_key = block_keys[block_key_index];
 
-            while (requested_key_index < requested_keys.size() &&
-                block_key != requested_keys[requested_key_index])
-            {
-                block_column_value = default_value_provider.getDefaultValue(requested_key_index);
-                result->insert(block_column_value);
-                ++requested_key_index;
-            }
-
-            block_column->get(block_key_index, block_column_value);
-            result->insert(block_column_value);
-            ++requested_key_index;
+            key_to_fetched_index[block_key] = fetched_key_index;
+            ++fetched_key_index;
         }
+
+        block_key_columns.clear();
     }
 
     stream->readSuffix();
 
-    size_t requested_keys_size = requested_keys.size();
+    Field value_to_insert;
 
-    Field default_value;
-    /// Process tail, if source returned keys less keys sizes than we fetched insert default value for tail
-    for (; requested_key_index < requested_keys_size; ++requested_key_index)
+    size_t requested_keys_size = requested_keys.size();
+    auto result = fetched_from_storage->cloneEmpty();
+    result->reserve(requested_keys_size);
+
+
+    for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
     {
-        default_value = default_value_provider.getDefaultValue(requested_key_index);
-        result->insert(default_value);
+        const auto requested_key = requested_keys[requested_key_index];
+        const auto * it = key_to_fetched_index.find(requested_key);
+
+        if (it)
+            fetched_from_storage->get(it->getMapped(), value_to_insert);
+        else
+            value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+
+        result->insert(value_to_insert);
     }
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
@@ -349,17 +349,21 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
     const auto & requested_keys = requested_keys_extractor.getKeys();
     size_t requested_keys_size = requested_keys.size();
 
+    HashMap<KeyType, size_t> requested_key_to_index;
+    requested_key_to_index.reserve(requested_keys_size);
+
+    for (size_t i = 0; i < requested_keys.size(); ++i)
+    {
+        auto requested_key = requested_keys[i];
+        requested_key_to_index[requested_key] = i;
+    }
+
     auto result = ColumnUInt8::create(requested_keys_size, false);
     auto & result_data = result->getData();
 
+    Columns block_key_columns;
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
-    size_t requested_key_index = 0;
-    Field block_column_value;
-
-    /** Algorithm is the same as in getColumn method. There are only 2 details
-      * 1. We does not process tail because result column is created with false default value.
-      * 2. If requested key does not match key from source we set false in requested_key_index.
-      */
+    block_key_columns.reserve(dictionary_keys_size);
 
     BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
 
@@ -368,9 +372,6 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
     while (const auto block = stream->read())
     {
         auto block_columns = block.getColumns();
-
-        Columns block_key_columns;
-        block_key_columns.reserve(dictionary_keys_size);
 
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -381,27 +382,20 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
 
         DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, complex_key_arena);
         const auto & block_keys = block_keys_extractor.getKeys();
-        size_t block_keys_size = block_keys.size();
 
-        for (size_t block_key_index = 0; block_key_index < block_keys_size; ++block_key_index)
+        for (const auto & block_key : block_keys)
         {
-            auto block_key = block_keys[block_key_index];
+            const auto * it = requested_key_to_index.find(block_key);
+            assert(it);
 
-            while (requested_key_index < requested_keys.size() &&
-                block_key != requested_keys[requested_key_index])
-            {
-                result_data[requested_key_index] = false;
-                ++requested_key_index;
-            }
-
-            result_data[requested_key_index] = true;
-            ++requested_key_index;
+            size_t result_data_found_index = it->getMapped();
+            result_data[result_data_found_index] = true;
         }
+
+        block_key_columns.clear();
     }
 
     stream->readSuffix();
-
-    /// We does not add additional code for tail because result was initialized with false values
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
 
