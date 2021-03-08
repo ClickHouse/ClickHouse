@@ -557,12 +557,14 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     auto ast = parseQuery(parser, query, description, 0, global_context.getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || ! create.database.empty())
+    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || !create.database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
+
+    bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
 
     create.database = getDatabaseName();
     create.table = unescapeForFileName(node_name);
-    create.attach = false;
+    create.attach = is_materialized_view_with_inner_table;
 
     return ast;
 }
@@ -598,7 +600,7 @@ void DatabaseReplicated::shutdown()
 void DatabaseReplicated::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
     auto txn = context.getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
