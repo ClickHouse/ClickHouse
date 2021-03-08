@@ -937,9 +937,9 @@ private:
             : key_index(key_index_), offset_in_block(offset_in_block_), is_expired(is_expired_)
         {}
 
-        size_t key_index;
-        size_t offset_in_block;
-        bool is_expired;
+        size_t key_index = 0;
+        size_t offset_in_block = 0;
+        bool is_expired = false;
     };
 
     template <typename Result>
@@ -956,7 +956,7 @@ private:
 
         size_t fetched_columns_index = 0;
 
-        using BlockIndexToKeysMap = absl::flat_hash_map<size_t, PaddedPODArray<KeyToBlockOffset>, DefaultHash<size_t>>;
+        using BlockIndexToKeysMap = std::unordered_map<size_t, std::vector<KeyToBlockOffset>, DefaultHash<size_t>>;
         BlockIndexToKeysMap block_to_keys_map;
         absl::flat_hash_set<size_t, DefaultHash<size_t>> unique_blocks_to_request;
         PaddedPODArray<size_t> blocks_to_request;
@@ -1039,7 +1039,7 @@ private:
 
         file_buffer.fetchBlocks(read_from_file_buffer.m_data, configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
         {
-            PaddedPODArray<KeyToBlockOffset> & keys_in_block = block_to_keys_map[block_index];
+            auto & keys_in_block = block_to_keys_map[block_index];
 
             for (auto & key_in_block : keys_in_block)
             {
@@ -1323,7 +1323,7 @@ private:
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 
-    Memory<Allocator<false>> read_from_file_buffer;
+    Memory<Allocator<true>> read_from_file_buffer;
 
     std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
