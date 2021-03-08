@@ -23,8 +23,9 @@
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
 
-#if defined(__x86_64__)
-#include <memcpy.h>
+/// Custom memcpy - only for x86_64 and not for Arcadia.
+#if defined(__x86_64__) && !defined(ARCADIA_BUILD)
+#include <memcpy.h> // Y_IGNORE
 #else
 void init_memcpy() {}
 #endif
