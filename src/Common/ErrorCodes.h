@@ -28,6 +28,7 @@ namespace ErrorCodes
     {
         Value local = 0;
         Value remote = 0;
+        UInt64 last_error_time_ms = 0;
 
         ValuePair & operator+=(const ValuePair & value);
     };

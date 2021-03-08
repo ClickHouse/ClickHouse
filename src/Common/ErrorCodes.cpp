@@ -1,4 +1,5 @@
 #include <Common/ErrorCodes.h>
+#include <chrono>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -605,6 +606,10 @@ namespace ErrorCodes
     {
         local  += value.local;
         remote += value.remote;
+
+        const auto now = std::chrono::system_clock::now();
+        last_error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
         return *this;
     }
 
