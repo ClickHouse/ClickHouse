@@ -452,13 +452,14 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
         skipWhitespaceIfAny(istr);
 
         const DataTypePtr & type = structure->literals.getByPosition(cur_column).type;
+        auto serialization = type->getDefaultSerialization();
         if (format_settings.values.accurate_types_of_literals && !structure->special_parser[cur_column].useDefaultParser())
         {
             if (!parseLiteralAndAssertType(istr, type.get(), cur_column, settings))
                 return false;
         }
         else
-            type->getDefaultSerialization()->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
+            serialization->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }

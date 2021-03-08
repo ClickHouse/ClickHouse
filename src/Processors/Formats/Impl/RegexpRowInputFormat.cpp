@@ -65,7 +65,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
     try
     {
-        auto serialization = type->getDefaultSerialization();
+        const auto & serialization = serializations[index];
         switch (field_format)
         {
             case ColumnFormat::Escaped:

@@ -28,21 +28,20 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
 }
 
 
-void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeString(fields[field_number], out);
     writeChar(':', out);
 
-    auto serialization = type.getDefaultSerialization();
     if (settings.json.serialize_as_strings)
     {
         WriteBufferFromOwnString buf;
 
-        serialization->serializeText(column, row_num, buf, settings);
+        serialization.serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), out, settings);
     }
     else
-        serialization->serializeTextJSON(column, row_num, out, settings);
+        serialization.serializeTextJSON(column, row_num, out, settings);
 
     ++field_number;
 }

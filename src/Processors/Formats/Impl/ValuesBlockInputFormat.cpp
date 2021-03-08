@@ -41,6 +41,9 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
+    serializations.resize(types.size());
+    for (size_t i = 0; i < types.size(); ++i)
+        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -165,7 +168,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         bool read = true;
         const auto & type = types[column_idx];
-        auto serialization = type->getDefaultSerialization();
+        const auto & serialization = serializations[column_idx];
         if (format_settings.null_as_default && !type->isNullable())
             read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
         else
@@ -313,7 +316,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
-            header.getByPosition(column_idx).type->getDefaultSerialization()->deserializeTextQuoted(column, buf, format_settings);
+            const auto & serialization = serializations[column_idx];
+            serialization->deserializeTextQuoted(column, buf, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(buf);
             if (checkDelimiterAfterValue(column_idx))

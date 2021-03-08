@@ -140,7 +140,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
-        auto serialization = type->getDefaultSerialization();
+        const auto & serialization = serializations[index];
 
         if (yield_strings)
         {

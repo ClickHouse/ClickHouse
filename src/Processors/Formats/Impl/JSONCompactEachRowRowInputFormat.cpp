@@ -202,8 +202,8 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
     {
         read_columns[index] = true;
         const auto & type = data_types[index];
+        const auto & serialization = serializations[index];
 
-        auto serialization = type->getDefaultSerialization();
         if (yield_strings)
         {
             String str;

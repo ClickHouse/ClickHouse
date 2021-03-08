@@ -82,12 +82,12 @@ void XMLRowOutputFormat::writePrefix()
 }
 
 
-void XMLRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void XMLRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeCString("\t\t\t<", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">", *ostr);
-    type.getDefaultSerialization()->serializeTextXML(column, row_num, *ostr, format_settings);
+    serialization.serializeTextXML(column, row_num, *ostr, format_settings);
     writeCString("</", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">\n", *ostr);

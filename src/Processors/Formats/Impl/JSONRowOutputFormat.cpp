@@ -71,42 +71,40 @@ void JSONRowOutputFormat::writePrefix()
 }
 
 
-void JSONRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeCString("\t\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
 
-    auto serialization = type.getDefaultSerialization();
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        serialization->serializeText(column, row_num, buf, settings);
+        serialization.serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        serialization->serializeTextJSON(column, row_num, *ostr, settings);
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
 
     ++field_number;
 }
 
-void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeCString("\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
 
-    auto serialization = type.getDefaultSerialization();
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        serialization->serializeText(column, row_num, buf, settings);
+        serialization.serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        serialization->serializeTextJSON(column, row_num, *ostr, settings);
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
 
     ++field_number;
 }
@@ -161,7 +159,7 @@ void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
         if (i != 0)
             writeTotalsFieldDelimiter();
 
-        writeTotalsField(*columns[i], *types[i], row_num);
+        writeTotalsField(*columns[i], *serializations[i], row_num);
     }
 }
 
@@ -193,7 +191,7 @@ void JSONRowOutputFormat::writeExtremesElement(const char * title, const Columns
         if (i != 0)
             writeFieldDelimiter();
 
-        writeField(*columns[i], *types[i], row_num);
+        writeField(*columns[i], *serializations[i], row_num);
     }
 
     writeChar('\n', *ostr);

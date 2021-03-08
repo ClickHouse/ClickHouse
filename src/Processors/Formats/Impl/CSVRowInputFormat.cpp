@@ -226,7 +226,9 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
         if (table_column)
         {
             skipWhitespacesAndTabs(in);
-            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column], is_last_file_column);
+            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
+                serializations[*table_column], is_last_file_column);
+
             if (!ext.read_columns[*table_column])
                 have_default_columns = true;
             skipWhitespacesAndTabs(in);
@@ -356,10 +358,11 @@ void CSVRowInputFormat::syncAfterError()
 
 void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    if (column_indexes_for_input_fields[file_column])
+    const auto & index = column_indexes_for_input_fields[file_column];
+    if (index)
     {
         const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
-        readField(column, type, is_last_file_column);
+        readField(column, type, serializations[*index], is_last_file_column);
     }
     else
     {
@@ -368,13 +371,11 @@ void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & 
     }
 }
 
-bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
+bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column)
 {
     const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
                                          && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
-
-    auto serialization = type->getDefaultSerialization();
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected

@@ -261,5 +261,6 @@ public:
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 }

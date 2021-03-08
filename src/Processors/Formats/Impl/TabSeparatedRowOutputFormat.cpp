@@ -43,9 +43,9 @@ void TabSeparatedRowOutputFormat::doWritePrefix()
 }
 
 
-void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    type.getDefaultSerialization()->serializeTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextEscaped(column, row_num, out, format_settings);
 }
 
 

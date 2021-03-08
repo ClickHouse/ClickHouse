@@ -173,7 +173,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
         if (row_format.format_idx_to_column_idx[i])
         {
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
-            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], *columns[col_idx], i);
+            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], serializations[col_idx], *columns[col_idx], i);
         }
         else
             skipField(row_format.formats[i]);
@@ -189,14 +189,14 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     return true;
 }
 
-bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
+bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
+    const SerializationPtr & serialization, IColumn & column, size_t file_column)
 {
     ColumnFormat col_format = row_format.formats[file_column];
     bool read = true;
     bool parse_as_nullable = settings.null_as_default && !type->isNullable();
     try
     {
-        auto serialization = type->getDefaultSerialization();
         switch (col_format)
         {
             case ColumnFormat::Escaped:
@@ -413,8 +413,9 @@ void TemplateRowInputFormat::writeErrorStringForWrongDelimiter(WriteBuffer & out
 
 void TemplateRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    if (row_format.format_idx_to_column_idx[file_column])
-        deserializeField(type, column, file_column);
+    const auto & index = row_format.format_idx_to_column_idx[file_column];
+    if (index)
+        deserializeField(type, serializations[*index], column, file_column);
     else
         skipField(row_format.formats[file_column]);
 }
