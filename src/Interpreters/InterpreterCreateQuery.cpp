@@ -817,6 +817,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        if (database->getEngineName() == "Replicated")
+        {
+            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
+            if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            {
+                create.database = database_name;
+                guard->releaseTableLock();
+                return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+            }
+        }
+
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
@@ -890,7 +901,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && database->getEngineName() == "Replicated")
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
-        database = DatabaseCatalog::instance().getDatabase(create.database);
         if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             assertOrSetUUID(create, database);

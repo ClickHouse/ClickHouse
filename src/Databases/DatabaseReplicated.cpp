@@ -18,6 +18,7 @@
 #include <Interpreters/Cluster.h>
 #include <common/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -294,7 +295,11 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const 
 
     /// Replicas will set correct name of current database in query context (database name can be different on replicas)
     if (auto * ddl_query = query->as<ASTQueryWithTableAndOutput>())
+    {
+        if (ddl_query->database != getDatabaseName())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
         ddl_query->database.clear();
+    }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
@@ -303,6 +308,16 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const 
             if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
+    }
+
+    if (auto * query_drop = query->as<ASTDropQuery>())
+    {
+        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context.getSettingsRef().database_replicated_always_detach_permanently)
+            query_drop->permanently = true;
+        if (query_drop->kind == ASTDropQuery::Kind::Detach && !query_drop->permanently)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
+                                                         "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or set "
+                                                         "database_replicated_always_detach_permanently to 1");
     }
 
     LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
