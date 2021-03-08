@@ -4,3 +4,9 @@ SELECT
     sumCount(b).1,
     sumCount(b).2
 FROM fuse_tbl
+---------NOT trigger fuse--------
+210	11.5
+SELECT
+    sum(a),
+    avg(b)
+FROM fuse_tbl
