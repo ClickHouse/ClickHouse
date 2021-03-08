@@ -166,6 +166,17 @@ protected:
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
+    bool shouldReserveForNextSizeBeforeInsert() const
+    {
+        /** end_of_storage = left_padding + (start + elements_size * ELEMENT_SIZE).
+          * end = start + elements_size * ELEMENT_SIZE
+          * We use end + ELEMENT_SIZE >= end_of_storage because it
+          * It is not safe to use end == end_of_storage here because left_padding
+          * is not always multiple of ELEMENT_SIZE.
+          */
+        return c_end + ELEMENT_SIZE >= c_end_of_storage;
+    }
+
     template <typename ... TAllocatorParams>
     void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
@@ -334,7 +345,7 @@ public:
     using const_iterator = const T *;
 
 
-    PODArray() {}
+    PODArray() = default;
 
     PODArray(size_t n)
     {
@@ -430,7 +441,7 @@ public:
     template <typename U, typename ... TAllocatorParams>
     void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->shouldReserveForNextSizeBeforeInsert()))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
@@ -443,7 +454,7 @@ public:
     template <typename... Args>
     void emplace_back(Args &&... args)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->shouldReserveForNextSizeBeforeInsert()))
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
