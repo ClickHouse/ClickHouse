@@ -321,11 +321,9 @@ protected:
 
     T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
     T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
-    T * t_end_of_storage()             { return reinterpret_cast<T *>(this->c_end_of_storage); }
 
     const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); }
     const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); }
-    const T * t_end_of_storage() const { return reinterpret_cast<const T *>(this->c_end_of_storage); }
 
 public:
     using value_type = T;
