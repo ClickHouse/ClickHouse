@@ -4,7 +4,7 @@ toc_priority: 142
 
 # minMap {#agg_functions-minmap}
 
-语法:
+**语法**
 
 ```sql
 `minMap(key, value)`
@@ -18,7 +18,7 @@ toc_priority: 142
 要总计的每一行的 `key` 和 `value` (数组)元素的数量必须相同。
 返回两个数组组成的元组: 排好序的 `key`  和对应 `key` 的 `value` 计算值(最小值)。
 
-示例:
+**示例**
 
 ``` sql
 SELECT minMap(a, b)
