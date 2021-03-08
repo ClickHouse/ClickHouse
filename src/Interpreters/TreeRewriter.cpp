@@ -182,29 +182,53 @@ struct CustomizeAggregateFunctionsMoveSuffixData
     }
 };
 
+struct FuseFunctions
+{
+    std::vector<const ASTFunction *> sums {};
+    std::vector<const ASTFunction *> counts {};
+    std::vector<const ASTFunction *> avgs {};
+
+    void addFuncNode(const ASTFunction * func)
+    {
+        if (func->name == "sum")
+            sums.push_back(func);
+        else if (func->name == "count")
+            counts.push_back(func);
+        else if (func->name == "avg")
+            avgs.push_back(func);
+    }
+
+    bool canBeFused() const
+    {
+        if (sums.empty() && counts.empty())
+            return false;
+        if (sums.empty() && avgs.empty())
+            return false;
+        if (counts.empty() && avgs.empty())
+            return false;
+        return true;
+    }
+};
+
 struct CustomizeFuseAggregateFunctionsData
 {
     using TypeToVisit = ASTFunction;
 
-    std::map<String, UInt8> fuse_info;
-
-    static inline UInt8 bitCount(UInt8 n)
-    {
-        UInt8 c = 0;
-        for (c = 0; n; n >>= 1)
-            c += n & 1;
-        return c;
-    }
+    std::unordered_map<String, DB::FuseFunctions> fuse_map {};
 
     void visit(ASTFunction & func, ASTPtr &) const
     {
         if (func.name == "sum" || func.name == "avg" || func.name == "count")
         {
+            if (func.arguments->children.size() == 0)
+                return;
+
             ASTIdentifier * ident = func.arguments->children.at(0)->as<ASTIdentifier>();
             if (!ident)
                 return;
-            auto column = fuse_info.find(ident->name());
-            if (column != fuse_info.end() && bitCount(column->second) > 1)
+
+            auto it = fuse_map.find(ident->name());
+            if (it != fuse_map.end() && it->second.canBeFused())
             {
                 auto func_base = makeASTFunction("sumCount", func.arguments->children.at(0)->clone());
                 auto exp_list = std::make_shared<ASTExpressionList>();
@@ -251,6 +275,38 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     /// This may happen after expansion of COLUMNS('regexp').
     if (select_query.select()->children.empty())
         throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
+}
+
+void gatherFuseFunctions(std::unordered_map<String, DB::FuseFunctions> &fuse_map, std::vector<const ASTFunction *> &aggregates)
+{
+    for (auto & func : aggregates)
+    {
+        if ((func->name == "sum" || func->name == "avg" || func->name == "count") && func->arguments->children.size() == 1)
+        {
+            if (func->arguments->children.size() == 0)
+                return;
+
+            ASTIdentifier * ident = func->arguments->children.at(0)->as<ASTIdentifier>();
+            if (!ident)
+                return;
+
+            ASTIdentifier * column = (func->arguments->children.at(0))->as<ASTIdentifier>();
+            if (!column)
+                return;
+
+            auto it = fuse_map.find(column->name());
+            if (it != fuse_map.end())
+            {
+                it->second.addFuncNode(func);
+            }
+            else
+            {
+                DB::FuseFunctions funcs{};
+                funcs.addFuncNode(func);
+                fuse_map.emplace(column->name(), funcs);
+            }
+        }
+    }
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -969,19 +1025,21 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
     }
 
-    // Try to fuse sum/avg/count with identical column(at least two functions exist) to sumCount()
+    /// Try to fuse sum/avg/count with identical column(at least two functions exist) to sumCount()
     if (settings.optimize_fuse_sum_count_avg)
     {
-        // Get statistics about sum/avg/count
+        /// Get statistics about sum/avg/count
         GetAggregatesVisitor::Data data;
         GetAggregatesVisitor(data).visit(query);
+        std::unordered_map<String, DB::FuseFunctions> fuse_map;
+        gatherFuseFunctions(fuse_map, data.aggregates);
 
-        // Try to fuse
-        CustomizeFuseAggregateFunctionsVisitor::Data data_fuse{.fuse_info = data.fuse_sum_count_avg};
+        /// Try to fuse
+        CustomizeFuseAggregateFunctionsVisitor::Data data_fuse{.fuse_map = fuse_map};
         CustomizeFuseAggregateFunctionsVisitor(data_fuse).visit(query);
     }
 
-    // Rewrite all aggregate functions to add -OrNull suffix to them
+    /// Rewrite all aggregate functions to add -OrNull suffix to them
     if (settings.aggregate_functions_null_for_empty)
     {
         CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
