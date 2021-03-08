@@ -431,7 +431,7 @@ public:
     template <typename U, typename ... TAllocatorParams>
     void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
@@ -444,7 +444,7 @@ public:
     template <typename... Args>
     void emplace_back(Args &&... args)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
