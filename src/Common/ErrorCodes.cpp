@@ -563,7 +563,7 @@ namespace ErrorCodes
 #undef M
 
     constexpr ErrorCode END = 3000;
-    ValuePair values[END + 1]{};
+    ValuePairHolder values[END + 1]{};
 
     struct ErrorCodesNames
     {
@@ -593,10 +593,30 @@ namespace ErrorCodes
             /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
             error_code = end() - 1;
         }
-        if (remote)
-            values[error_code].remote.fetch_add(1, std::memory_order_relaxed);
-        else
-            values[error_code].local.fetch_add(1, std::memory_order_relaxed);
+
+        ValuePair inc_value{
+            !remote, /* local */
+            remote,  /* remote */
+        };
+        values[error_code].increment(inc_value);
+    }
+
+    ValuePair & ValuePair::operator+=(const ValuePair & value)
+    {
+        local  += value.local;
+        remote += value.remote;
+        return *this;
+    }
+
+    void ValuePairHolder::increment(const ValuePair & value_)
+    {
+        std::lock_guard lock(mutex);
+        value += value_;
+    }
+    ValuePair ValuePairHolder::get()
+    {
+        std::lock_guard lock(mutex);
+        return value;
     }
 }
 

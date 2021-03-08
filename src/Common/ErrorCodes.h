@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <cstdint>
 #include <utility>
-#include <atomic>
+#include <mutex>
 #include <common/types.h>
 #include <string_view>
 
@@ -24,13 +24,28 @@ namespace ErrorCodes
     /// Returns statically allocated string.
     std::string_view getName(ErrorCode error_code);
 
-    /// ErrorCode identifier -> current value of error_code.
     struct ValuePair
     {
-        std::atomic<Value> local;
-        std::atomic<Value> remote;
+        Value local = 0;
+        Value remote = 0;
+
+        ValuePair & operator+=(const ValuePair & value);
     };
-    extern ValuePair values[];
+
+    /// Thread-safe
+    struct ValuePairHolder
+    {
+    public:
+        void increment(const ValuePair & value_);
+        ValuePair get();
+
+    private:
+        ValuePair value;
+        std::mutex mutex;
+    };
+
+    /// ErrorCode identifier -> current value of error_code.
+    extern ValuePairHolder values[];
 
     /// Get index just after last error_code identifier.
     ErrorCode end();
