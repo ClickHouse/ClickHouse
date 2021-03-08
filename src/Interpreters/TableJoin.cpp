@@ -1,5 +1,7 @@
 #include <Interpreters/TableJoin.h>
 
+#include <common/logger_useful.h>
+
 #include <Parsers/ASTExpressionList.h>
 
 #include <Core/Settings.h>
@@ -231,7 +233,7 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
     }
 
     if (rightBecomeNullable(type))
-        type = makeNullable(joined_column.type);
+        type = makeNullable(type);
 
     columns_added_by_join.emplace_back(joined_column.name, type);
 }
@@ -414,6 +416,22 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
                 ErrorCodes::TYPE_MISMATCH);
         }
         left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
+    }
+
+    if (!left_type_map.empty() || !right_type_map.empty())
+    {
+        auto format_type_map = [](NameToTypeMap mapping) -> std::string
+        {
+            std::vector<std::string> text;
+            for (const auto & [k, v] : mapping)
+                text.push_back(k + ": " + v->getName());
+            return fmt::format("{}", fmt::join(text, ", "));
+        };
+        LOG_TRACE(
+            &Poco::Logger::get("TableJoin"),
+            "Infer supertype for joined columns. Left: [{}], Right: [{}]",
+            format_type_map(left_type_map),
+            format_type_map(right_type_map));
     }
 
     return !left_type_map.empty();
