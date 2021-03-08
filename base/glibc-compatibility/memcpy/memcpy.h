@@ -2,6 +2,19 @@
 
 #include <emmintrin.h>
 
+#if defined(__clang__) && defined(__has_feature)
+#    define ch_has_feature __has_feature
+#endif
+#if !defined(MEMORY_SANITIZER)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(memory_sanitizer)
+#            define MEMORY_SANITIZER 1
+#        endif
+#    elif defined(__MEMORY_SANITIZER__)
+#        define MEMORY_SANITIZER 1
+#    endif
+#endif
+
 
 extern bool have_avx;
 void init_memcpy();
@@ -34,6 +47,7 @@ tail:
             *dst = *src;
         }
     }
+#if !defined(MEMORY_SANITIZER)  /// Asm code is not instrumented by MSan, skip this branch
     else if (have_avx)
     {
         if (size <= 32)
@@ -120,6 +134,7 @@ tail:
             goto tail;
         }
     }
+#endif
     else
     {
         if (size <= 128)
