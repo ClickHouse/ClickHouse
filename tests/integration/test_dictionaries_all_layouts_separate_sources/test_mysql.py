@@ -26,7 +26,7 @@ def setup_module(module):
 
     cluster = ClickHouseCluster(__file__, name=test_name)
 
-    SOURCE = SourceMySQL("MySQL", "localhost", cluster.mysql_port, cluster.mysql_host, "3306", "root", "clickhouse")
+    SOURCE = SourceMySQL("MySQL", None, cluster.mysql_port, cluster.mysql_host, cluster.mysql_port, "root", "clickhouse")
 
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
@@ -55,7 +55,7 @@ def teardown_module(module):
 def started_cluster():
     try:
         cluster.start()
-
+        
         simple_tester.prepare(cluster)
         complex_tester.prepare(cluster)
         ranged_tester.prepare(cluster)

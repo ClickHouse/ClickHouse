@@ -159,12 +159,12 @@ class _NetworkManager:
 
     def __init__(
             self,
-            container_expire_timeout=50, container_exit_timeout=60):
+            container_expire_timeout=50, container_exit_timeout=60, docker_api_version=os.environ.get("DOCKER_API_VERSION")):
 
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 
-        self._docker_client = docker.from_env(version=os.environ.get("DOCKER_API_VERSION"))
+        self._docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=docker_api_version, timeout=180)
 
         self._container = None
 

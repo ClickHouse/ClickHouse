@@ -79,10 +79,10 @@ class TaskTrivial:
             node.query("DROP TABLE trivial")
 
 
-def execute_task(task, cmd_options):
+def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = started_cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     zk_task_path = task.zk_task_path
@@ -90,7 +90,7 @@ def execute_task(task, cmd_options):
     zk.create(zk_task_path + "/description", task.copier_task_config)
 
     # Run cluster-copier processes on each node
-    docker_api = docker.from_env().api
+    docker_api = started_cluster.docker_client.api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -101,7 +101,7 @@ def execute_task(task, cmd_options):
 
     print(cmd)
 
-    for instance_name, instance in cluster.instances.items():
+    for instance_name, instance in started_cluster.instances.items():
         container = instance.get_docker_handle()
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
         docker_api.exec_start(exec_id, detach=True)
@@ -110,7 +110,7 @@ def execute_task(task, cmd_options):
         print("Copier for {} ({}) has started".format(instance.name, instance.ip_address))
 
     # Wait for copiers stopping and check their return codes
-    for exec_id, instance in zip(copiers_exec_ids, iter(cluster.instances.values())):
+    for exec_id, instance in zip(copiers_exec_ids, iter(started_cluster.instances.values())):
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
@@ -137,10 +137,10 @@ def execute_task(task, cmd_options):
 )
 def test_trivial_copy(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
+        execute_task(started_cluster, TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
     else:
         print("AAAAA")
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
+        execute_task(started_cluster, TaskTrivial(started_cluster, use_sample_offset), [])
 
 
 @pytest.mark.parametrize(
@@ -152,10 +152,10 @@ def test_trivial_copy(started_cluster, use_sample_offset):
 )
 def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
+        execute_task(started_cluster, TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
                                                     '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+        execute_task(started_cluster, TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.parametrize(
@@ -167,10 +167,10 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
 )
 def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
+        execute_task(started_cluster, TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
                                                     '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+        execute_task(started_cluster, TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
 if __name__ == '__main__':
