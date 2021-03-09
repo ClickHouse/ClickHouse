@@ -60,6 +60,27 @@ static Names extractColumnNames(const ASTPtr & node)
     }
 }
 
+/** Is used to order Graphite::Retentions by age and precision descending.
+  * Throws exception if not both age and precision are less or greater then another.
+  */
+static bool compareRetentions(const Graphite::Retention & a, const Graphite::Retention & b)
+{
+    if (a.age > b.age && a.precision > b.precision)
+    {
+        return true;
+    }
+    else if (a.age < b.age && a.precision < b.precision)
+    {
+        return false;
+    }
+    String error_msg = "age and precision should only grow up: "
+        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
+        + std::to_string(b.age) + ":" + std::to_string(b.precision);
+    throw Exception(
+        error_msg,
+        ErrorCodes::BAD_ARGUMENTS);
+}
+
 /** Read the settings for Graphite rollup from config.
   * Example
   *
@@ -157,8 +178,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
 }

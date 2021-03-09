@@ -2,7 +2,6 @@
     <test_keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
-        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
