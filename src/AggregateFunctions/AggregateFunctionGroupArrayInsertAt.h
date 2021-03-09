@@ -154,7 +154,7 @@ public:
             else
             {
                 writeBinary(UInt8(0), buf);
-                type->serializeBinary(elem, buf);
+                type->getDefaultSerialization()->serializeBinary(elem, buf);
             }
         }
     }
@@ -175,7 +175,7 @@ public:
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                type->deserializeBinary(arr[i], buf);
+                type->getDefaultSerialization()->deserializeBinary(arr[i], buf);
         }
     }
 

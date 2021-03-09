@@ -637,7 +637,7 @@ public:
     }
 };
 
-static bool needSyncPart(const size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
+static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
 {
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
@@ -725,6 +725,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             need_remove_expired_values = true;
             force_ttl = true;
         }
+
+        new_data_part->serialization_info.add(part->serialization_info);
     }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
@@ -1488,10 +1490,11 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     std::map<String, size_t> stream_counts;
     for (const NameAndTypePair & column : source_part->getColumns())
     {
-        column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+        auto serialization = source_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
+            [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
+                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
             },
             {});
     }
@@ -1507,9 +1510,9 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
-            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                String stream_name = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                String stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
@@ -1518,19 +1521,21 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
                 }
             };
 
-            IDataType::SubstreamPath stream_path;
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-                column->type->enumerateStreams(callback, stream_path);
+            {
+                auto serialization = source_part->getSerializationForColumn(*column);
+                serialization->enumerateStreams(callback);
+            }
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
             String escaped_name_from = escapeForFileName(command.column_name);
             String escaped_name_to = escapeForFileName(command.rename_to);
 
-            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+            ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                String stream_from = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                String stream_from = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
 
                 String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
 
@@ -1540,10 +1545,13 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
                     rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
                 }
             };
-            IDataType::SubstreamPath stream_path;
+
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-                column->type->enumerateStreams(callback, stream_path);
+            {
+                auto serialization = source_part->getSerializationForColumn(*column);
+                serialization->enumerateStreams(callback);
+            }
         }
     }
 
@@ -1561,15 +1569,15 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     /// Skip updated files
     for (const auto & entry : updated_header)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = IDataType::getFileNameForStream({entry.name, entry.type}, substream_path);
+            String stream_name = ISerialization::getFileNameForStream({entry.name, entry.type}, substream_path);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };
 
-        IDataType::SubstreamPath stream_path;
-        entry.type->enumerateStreams(callback, stream_path);
+        auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
+        serialization->enumerateStreams(callback);
     }
     for (const auto & index : indices_to_recalc)
     {

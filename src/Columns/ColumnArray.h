@@ -139,6 +139,10 @@ public:
         return false;
     }
 
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices) const override;
+
+    size_t getNumberOfNonDefaultValues() const override;
+
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
 private:

@@ -305,6 +305,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     /// Make sequence of tokens and determine IDataType by Field::Types:Which for each literal.
     token_after_literal_idx.reserve(replaced_literals.size());
     special_parser.resize(replaced_literals.size());
+    serializations.resize(replaced_literals.size());
 
     TokenIterator prev_end = expression_begin;
     for (size_t i = 0; i < replaced_literals.size(); ++i)
@@ -325,6 +326,8 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         literals.insert({nullptr, info.type, info.dummy_column_name});
 
         prev_end = info.literal->end.value();
+
+        serializations[i] = info.type->getDefaultSerialization();
     }
 
     while (prev_end < expression_end)
@@ -458,7 +461,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
                 return false;
         }
         else
-            type->deserializeAsTextQuoted(*columns[cur_column], istr, format_settings);
+            structure->serializations[cur_column]->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }

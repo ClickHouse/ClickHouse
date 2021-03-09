@@ -303,6 +303,23 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & offsets) const override
+    {
+        offsets.reserve(data.size());
+        for (size_t i = 0; i < data.size(); ++i)
+            if (data[i] != T{})
+                offsets.push_back(i);
+    }
+
+    size_t getNumberOfNonDefaultValues() const override
+    {
+        size_t res = 0;
+        for (size_t i = 0; i < data.size(); ++i)
+            res += (data[i] != T{});
+
+        return res;
+    }
+
     ColumnPtr compress() const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.

@@ -1,46 +1,41 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
-/// A nullable data type is an ordinary data type provided with a tag
-/// indicating that it also contains the NULL value. The following class
-/// embodies this concept.
-class DataTypeNullable final : public IDataType
+class SerializationNullable : public ISerialization
 {
+private:
+    SerializationPtr nested;
+
 public:
-    static constexpr bool is_parametric = true;
+    SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
-    explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
-    std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
-    const char * getFamilyName() const override { return "Nullable"; }
-    TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
-
-    void serializeBinaryBulkStatePrefixImpl(
+    void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffixImpl(
+    void serializeBinaryBulkStateSuffix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefixImpl(
+    void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreamsImpl(
+    void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
             size_t offset,
             size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
-            IColumn & column,
+    void deserializeBinaryBulkWithMultipleStreams(
+            ColumnPtr & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
@@ -73,52 +68,18 @@ public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    MutableColumnPtr createColumn() const override;
-
-    Field getDefault() const override;
-
-    bool equals(const IDataType & rhs) const override;
-
-    bool isParametric() const override { return true; }
-    bool haveSubtypes() const override { return true; }
-    bool cannotBeStoredInTables() const override { return nested_data_type->cannotBeStoredInTables(); }
-    bool shouldAlignRightInPrettyFormats() const override { return nested_data_type->shouldAlignRightInPrettyFormats(); }
-    bool textCanContainOnlyValidUTF8() const override { return nested_data_type->textCanContainOnlyValidUTF8(); }
-    bool isComparable() const override { return nested_data_type->isComparable(); }
-    bool canBeComparedWithCollation() const override { return nested_data_type->canBeComparedWithCollation(); }
-    bool canBeUsedAsVersion() const override { return false; }
-    bool isSummable() const override { return nested_data_type->isSummable(); }
-    bool canBeUsedInBooleanContext() const override { return nested_data_type->canBeUsedInBooleanContext() || onlyNull(); }
-    bool haveMaximumSizeOfValue() const override { return nested_data_type->haveMaximumSizeOfValue(); }
-    size_t getMaximumSizeOfValueInMemory() const override { return 1 + nested_data_type->getMaximumSizeOfValueInMemory(); }
-    bool isNullable() const override { return true; }
-    size_t getSizeOfValueInMemory() const override;
-    bool onlyNull() const override;
-    bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-
-    const DataTypePtr & getNestedType() const { return nested_data_type; }
-
     /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     /// If ReturnType is void, deserialize Nullable(T)
     template <typename ReturnType = bool>
-    static ReturnType deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    static ReturnType deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
     template <typename ReturnType = bool>
-    static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    static ReturnType deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
     template <typename ReturnType = bool>
-    static ReturnType deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
+    static ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
     template <typename ReturnType = bool>
-    static ReturnType deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    static ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
     template <typename ReturnType = bool>
-    static ReturnType deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
-
-private:
-    DataTypePtr nested_data_type;
+    static ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
 };
-
-
-DataTypePtr makeNullable(const DataTypePtr & type);
-DataTypePtr removeNullable(const DataTypePtr & type);
 
 }

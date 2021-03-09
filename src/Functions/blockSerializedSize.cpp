@@ -44,18 +44,20 @@ public:
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 
-        IDataType::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkSettings settings;
         NullWriteBuffer out;
 
-        settings.getter = [&out](IDataType::SubstreamPath) -> WriteBuffer * { return &out; };
+        settings.getter = [&out](ISerialization::SubstreamPath) -> WriteBuffer * { return &out; };
 
-        IDataType::SerializeBinaryBulkStatePtr state;
+        ISerialization::SerializeBinaryBulkStatePtr state;
 
-        elem.type->serializeBinaryBulkStatePrefix(settings, state);
-        elem.type->serializeBinaryBulkWithMultipleStreams(*full_column,
+        auto serialization = elem.type->getDefaultSerialization();
+
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);
-        elem.type->serializeBinaryBulkStateSuffix(settings, state);
+        serialization->serializeBinaryBulkStateSuffix(settings, state);
 
         return out.count();
     }

@@ -26,6 +26,10 @@ void MySQLOutputFormat::initialize()
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
 
+    serializations.reserve(data_types.size());
+    for (const auto & type : data_types)
+        serializations.emplace_back(type->getDefaultSerialization());
+
     if (header.columns())
     {
         packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()));
@@ -51,7 +55,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
 
     for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
-        ProtocolText::ResultSetRow row_packet(data_types, chunk.getColumns(), i);
+        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
         packet_endpoint->sendPacket(row_packet);
     }
 }
