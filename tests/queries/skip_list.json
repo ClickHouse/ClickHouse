@@ -759,6 +759,7 @@
         "memory_limit",
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
-        "01721_engine_file_truncate_on_insert" // It's ok to execute in parallel but not several instances of the same test.
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01748_dictionary_table_dot" // creates database
     ]
 }
