@@ -27,16 +27,14 @@
 namespace DB
 {
 
-const UInt32 MAX_EVENTS_SIZE = 64;
-
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
-template <typename Node>
+template <typename Node, size_t MaxEventsSize>
 struct NodeBase
 {
     UInt64 size; /// size of payload
 
     DataTypeDateTime::FieldType event_time;
-    std::bitset<MAX_EVENTS_SIZE> events_bitset;
+    std::bitset<MaxEventsSize> events_bitset;
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
@@ -77,9 +75,10 @@ struct NodeBase
 };
 
 /// It stores String, timestamp, bitset of matched events.
-struct NodeString : public NodeBase<NodeString>
+template <size_t MaxEventsSize>
+struct NodeString : public NodeBase<NodeString<MaxEventsSize>, MaxEventsSize>
 {
-    using Node = NodeString;
+    using Node = NodeString<MaxEventsSize>;
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -94,13 +93,13 @@ struct NodeString : public NodeBase<NodeString>
 
     void insertInto(IColumn & column)
     {
-        assert_cast<ColumnString &>(column).insertData(data(), size);
+        assert_cast<ColumnString &>(column).insertData(this->data(), this->size);
     }
 
     bool compare(const Node * rhs) const
     {
-        auto cmp = strncmp(data(), rhs->data(), std::min(size, rhs->size));
-        return (cmp == 0) ? size < rhs->size : cmp < 0;
+        auto cmp = strncmp(this->data(), rhs->data(), std::min(this->size, rhs->size));
+        return (cmp == 0) ? this->size < rhs->size : cmp < 0;
     }
 };
 
