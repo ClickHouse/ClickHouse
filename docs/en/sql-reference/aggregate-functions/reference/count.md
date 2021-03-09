@@ -10,7 +10,7 @@ ClickHouse supports the following syntaxes for `count`:
 - `count(expr)` or `COUNT(DISTINCT expr)`.
 - `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
-**Parameters**
+**Arguments**
 
 The function can take:
 

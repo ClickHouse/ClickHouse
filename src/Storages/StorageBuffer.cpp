@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 
@@ -166,7 +167,7 @@ Pipe StorageBuffer::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 void StorageBuffer::read(
@@ -321,20 +322,36 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                        header, query_info.prewhere_info->prewhere_actions,
-                        query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
-            });
-
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+                    return std::make_shared<ExpressionTransform>(
+                        header,
+                        query_info.prewhere_info->alias_actions);
                 });
             }
+
+            if (query_info.prewhere_info->row_level_filter)
+            {
+                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                            header,
+                            query_info.prewhere_info->row_level_filter,
+                            query_info.prewhere_info->row_level_column_name,
+                            false);
+                });
+            }
+
+            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header,
+                        query_info.prewhere_info->prewhere_actions,
+                        query_info.prewhere_info->prewhere_column_name,
+                        query_info.prewhere_info->remove_prewhere_column);
+            });
         }
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
@@ -910,8 +927,9 @@ void StorageBuffer::reschedule()
     flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
-void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -919,6 +937,17 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
+        if (command.type == AlterCommand::Type::DROP_COLUMN)
+        {
+            const auto & deps_mv = name_deps[command.column_name];
+            if (!deps_mv.empty())
+            {
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+        }
     }
 }
 
@@ -955,7 +984,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) c
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
     auto table_id = getStorageID();
-    checkAlterIsPossible(params, context.getSettingsRef());
+    checkAlterIsPossible(params, context);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     /// Flush all buffers to storages, so that no non-empty blocks of the old

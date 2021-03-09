@@ -266,6 +266,9 @@ public:
                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                                int direction, int nan_direction_hint) const = 0;
 
+    /// Check if all elements in the column have equal values. Return true if column is empty.
+    virtual bool hasEqualValues() const = 0;
+
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
       * reverse - reverse ordering (acsending).
@@ -355,6 +358,21 @@ public:
     virtual bool structureEquals(const IColumn &) const
     {
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Compress column in memory to some representation that allows to decompress it back.
+    /// Return itself if compression is not applicable for this column type.
+    virtual Ptr compress() const
+    {
+        /// No compression by default.
+        return getPtr();
+    }
+
+    /// If it's CompressedColumn, decompress it and return.
+    /// Otherwise return itself.
+    virtual Ptr decompress() const
+    {
+        return getPtr();
     }
 
 
@@ -452,6 +470,9 @@ protected:
                          PaddedPODArray<UInt64> * row_indexes,
                          PaddedPODArray<Int8> & compare_results,
                          int direction, int nan_direction_hint) const;
+
+    template <typename Derived>
+    bool hasEqualValuesImpl() const;
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -460,7 +481,7 @@ using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
-//using MutableColumnRawPtrs = std::vector<IColumn *>;
+
 
 template <typename ... Args>
 struct IsMutableColumns;

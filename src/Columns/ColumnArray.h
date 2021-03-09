@@ -78,6 +78,7 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
+    bool hasEqualValues() const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -122,6 +123,8 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    ColumnPtr compress() const override;
 
     void forEachSubcolumn(ColumnCallback callback) override
     {
@@ -183,9 +186,6 @@ private:
 
     template <typename Comparator>
     void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
-
-    template <bool positive>
-    struct Cmp;
 };
 
 

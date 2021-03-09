@@ -12,7 +12,7 @@ It represents an unbiased estimate of the kurtosis of a random variable if passe
 kurtSamp(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
