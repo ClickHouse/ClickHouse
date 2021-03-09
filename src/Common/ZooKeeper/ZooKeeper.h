@@ -53,8 +53,8 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT_MS,
+              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT,
+              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT,
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper");
   
