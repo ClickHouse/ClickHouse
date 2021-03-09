@@ -151,6 +151,7 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
+            contrib/abseil-cpp
             contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng

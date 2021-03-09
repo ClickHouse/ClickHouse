@@ -7,10 +7,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/obfuscateQueries.h>
+#include <Parsers/parseQuery.h>
+#include <Common/ErrorCodes.h>
 #include <Common/TerminalSize.h>
 
 #include <Interpreters/Context.h>
@@ -27,6 +29,14 @@
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int INVALID_FORMAT_INSERT_QUERY_WITH_DATA;
+}
+}
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
@@ -128,6 +138,14 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             do
             {
                 ASTPtr res = parseQueryAndMovePosition(parser, pos, end, "query", multiple, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
+                /// should throw exception early and make exception message more readable.
+                if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                {
+                    throw Exception(
+                        "Can't format ASTInsertQuery with data, since data will be lost",
+                        DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA);
+                }
                 if (!quiet)
                 {
                     WriteBufferFromOStream res_buf(std::cout, 4096);
@@ -137,6 +155,26 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         std::cout << "\n;\n";
                     std::cout << std::endl;
                 }
+
+                do
+                {
+                    /// skip spaces to avoid throw exception after last query
+                    while (pos != end && std::isspace(*pos))
+                        ++pos;
+
+                    /// for skip comment after the last query and to not throw exception
+                    if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+                    {
+                        pos += 2;
+                        /// skip until the end of the line
+                        while (pos != end && *pos != '\n')
+                            ++pos;
+                    }
+                    /// need to parse next sql
+                    else
+                        break;
+                } while (pos != end);
+
             } while (multiple && pos != end);
         }
     }

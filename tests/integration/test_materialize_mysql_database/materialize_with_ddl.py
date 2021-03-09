@@ -471,12 +471,14 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE db")
     mysql_node.query("CREATE TABLE db.t (a INT PRIMARY KEY, b INT)")
     clickhouse_node.query(
-        "CREATE DATABASE db ENGINE = MaterializeMySQL('{}:3306', 'db', 'root', 'clickhouse')".format(service_name))
+        "CREATE DATABASE db ENGINE = MaterializeMySQL('{}:3306', 'db', 'root', 'clickhouse') SETTINGS max_flush_data_time = 100000".format(service_name))
     check_query(clickhouse_node, "SHOW TABLES FROM db FORMAT TSV", "t\n")
     clickhouse_node.query("SYSTEM STOP MERGES db.t")
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
-    mysql_node.query("DELETE FROM db.t WHERE a=2;")
+    mysql_node.query("DELETE FROM db.t WHERE a = 2;")
+    # We need to execute a DDL for flush data buffer
+    mysql_node.query("CREATE TABLE db.temporary(a INT PRIMARY KEY, b INT)")
 
     optimize_on_insert = clickhouse_node.query("SELECT value FROM system.settings WHERE name='optimize_on_insert'").strip()
     if optimize_on_insert == "0":
