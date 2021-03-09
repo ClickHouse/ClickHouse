@@ -106,7 +106,27 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
 
 ClusterPtr DatabaseReplicated::getCluster() const
 {
-    /// TODO Maintain up-to-date Cluster and allow to use it in Distributed tables
+    {
+        std::lock_guard lock{mutex};
+        if (cluster)
+            return cluster;
+    }
+
+    ClusterPtr new_cluster = getClusterImpl();
+    std::lock_guard lock{mutex};
+    if (!cluster)
+        cluster = std::move(new_cluster);
+    return cluster;
+}
+
+void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
+{
+    std::lock_guard lock{mutex};
+    cluster = std::move(new_cluster);
+}
+
+ClusterPtr DatabaseReplicated::getClusterImpl() const
+{
     Strings hosts;
     Strings host_ids;
 
@@ -254,11 +274,8 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     __builtin_unreachable();
 }
 
-void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
+void DatabaseReplicated::createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper)
 {
-    /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(global_context, db_uuid);
-
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry{};
 
@@ -267,11 +284,20 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     String counter_path = current_zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
     String query_path = query_path_prefix + counter_path.substr(counter_prefix.size());
 
+    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(query_path + "/committed", getFullReplicaName(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
+}
+
+void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
+{
+    /// Write host name to replica_path, it will protect from multiple replicas with the same name
+    auto host_id = getHostID(global_context, db_uuid);
+
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
+    createEmptyLogEntry(ops, current_zookeeper);
     current_zookeeper->multi(ops);
 }
 
@@ -580,8 +606,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 void DatabaseReplicated::drop(const Context & context_)
 {
     auto current_zookeeper = getZooKeeper();
-    current_zookeeper->set(replica_path, DROPPED_MARK);
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeSetRequest(replica_path, DROPPED_MARK, -1));
+    createEmptyLogEntry(ops, current_zookeeper);
+    current_zookeeper->multi(ops);
+
     DatabaseAtomic::drop(context_);
+
     current_zookeeper->tryRemoveRecursive(replica_path);
     /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
     if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)

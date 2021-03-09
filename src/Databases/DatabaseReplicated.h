@@ -77,6 +77,11 @@ private:
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
     String readMetadataFile(const String & table_name) const;
 
+    ClusterPtr getClusterImpl() const;
+    void setCluster(ClusterPtr && new_cluster);
+
+    void createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper);
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -87,6 +92,8 @@ private:
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+
+    mutable ClusterPtr cluster;
 };
 
 }
