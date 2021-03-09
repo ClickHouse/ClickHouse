@@ -220,7 +220,7 @@ struct CustomizeFuseAggregateFunctionsData
     {
         if (func.name == "sum" || func.name == "avg" || func.name == "count")
         {
-            if (func.arguments->children.size() == 0)
+            if (func.arguments->children.empty())
                 return;
 
             ASTIdentifier * ident = func.arguments->children.at(0)->as<ASTIdentifier>();
@@ -283,7 +283,7 @@ void gatherFuseFunctions(std::unordered_map<String, DB::FuseFunctions> &fuse_map
     {
         if ((func->name == "sum" || func->name == "avg" || func->name == "count") && func->arguments->children.size() == 1)
         {
-            if (func->arguments->children.size() == 0)
+            if (func->arguments->children.empty())
                 return;
 
             ASTIdentifier * ident = func->arguments->children.at(0)->as<ASTIdentifier>();
