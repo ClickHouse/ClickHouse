@@ -538,7 +538,7 @@ Result:
 
 ## date\_sub {#date_sub}
 
-Subtracts a time/date interval from the provided date.
+Subtracts the time interval or date interval from the provided date or date with time.
 
 **Syntax**
 
@@ -546,19 +546,30 @@ Subtracts a time/date interval from the provided date.
 date_sub(unit, value, date)
 ```
 
-Aliases: `dateSub`, `DATE_SUB`. 
+Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
 -   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+    Possible values:
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
--   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
--   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md) to subtract value from.
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+		
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).    
+-   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-Returns Date or DateTime with `value` expressed in `unit` subtracted from `date`. 
+Returns the date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
