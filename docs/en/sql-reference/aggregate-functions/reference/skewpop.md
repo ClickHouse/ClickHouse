@@ -10,7 +10,7 @@ Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 skewPop(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 

@@ -1,3 +1,8 @@
+#include <algorithm>
+#include <ctime>
+#include <random>
+#include <thread>
+
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -32,6 +37,19 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & con
                 replicas_by_priority[priority].emplace_back(
                     std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
             }
+        }
+
+        /// PoolWithFailover objects are stored in a cache inside PoolFactory.
+        /// This cache is reset by ExternalDictionariesLoader after every SYSTEM RELOAD DICTIONAR{Y|IES}
+        /// which triggers massive re-constructing of connection pools.
+        /// The state of PRNGs like std::mt19937 is considered to be quite heavy
+        /// thus here we attempt to optimize its construction.
+        static thread_local std::mt19937 rnd_generator(
+                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
+        for (auto & [_, replicas] : replicas_by_priority)
+        {
+            if (replicas.size() > 1)
+                std::shuffle(replicas.begin(), replicas.end(), rnd_generator);
         }
     }
     else

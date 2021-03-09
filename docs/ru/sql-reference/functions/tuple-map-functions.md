@@ -176,4 +176,129 @@ select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/query_language/functions/tuple-map-functions/) <!--hide-->
+## mapContains {#mapcontains}
+
+Определяет, содержит ли контейнер `map` ключ `key`.
+
+**Синтаксис**
+
+``` sql
+mapContains(map, key)
+```
+
+**Параметры** 
+
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
+-   `key` — ключ. Тип соответстует типу ключей параметра  `map`.
+
+**Возвращаемое значение**
+
+-   `1` если `map` включает `key`, иначе `0`.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContains(a, 'name') FROM test;
+
+```
+
+Результат:
+
+```text
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
+```
+
+## mapKeys {#mapkeys}
+
+Возвращает все ключи контейнера `map`.
+
+**Синтаксис**
+
+```sql
+mapKeys(map)
+```
+
+**Параметры**
+
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
+
+**Возвращаемое значение**
+
+-   Массив со всеми ключами контейнера `map`.
+
+Тип: [Array](../../sql-reference/data-types/array.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapKeys(a) FROM test;
+```
+
+Результат:
+
+```text
+┌─mapKeys(a)────────────┐
+│ ['name','age']        │
+│ ['number','position'] │
+└───────────────────────┘
+```
+
+## mapValues {#mapvalues}
+
+Возвращает все значения контейнера `map`.
+
+**Синтаксис**
+
+```sql
+mapKeys(map)
+```
+
+**Параметры**
+
+-   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
+
+**Возвращаемое значение**
+
+-   Массив со всеми значениями контейнера `map`.
+
+Тип: [Array](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapValues(a) FROM test;
+```
+
+Результат:
+
+```text
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/tuple-map-functions/) <!--hide-->
