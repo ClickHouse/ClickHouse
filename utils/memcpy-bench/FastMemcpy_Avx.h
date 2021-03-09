@@ -1,3 +1,5 @@
+#pragma once
+
 //=====================================================================
 //
 // FastMemcpy.c - skywind3000@163.com, 2015
@@ -6,7 +8,6 @@
 // 50% speed up in avg. vs standard memcpy (tested in vc2012/gcc5.1)
 //
 //=====================================================================
-#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,11 +34,11 @@
 #endif
 
 
-
 //---------------------------------------------------------------------
 // fast copy for different sizes
 //---------------------------------------------------------------------
-static INLINE void memcpy_avx_16(void * __restrict dst, const void * __restrict src) {
+static INLINE void memcpy_avx_16(void * __restrict dst, const void * __restrict src)
+{
 #if 1
     __m128i m0 = _mm_loadu_si128(((const __m128i*)src) + 0);
     _mm_storeu_si128(((__m128i*)dst) + 0, m0);
@@ -47,19 +48,22 @@ static INLINE void memcpy_avx_16(void * __restrict dst, const void * __restrict 
 #endif
 }
 
-static INLINE void memcpy_avx_32(void *dst, const void *src) {
+static INLINE void memcpy_avx_32(void *dst, const void *src)
+{
     __m256i m0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
     _mm256_storeu_si256((reinterpret_cast<__m256i*>(dst)) + 0, m0);
 }
 
-static INLINE void memcpy_avx_64(void *dst, const void *src) {
+static INLINE void memcpy_avx_64(void *dst, const void *src)
+{
     __m256i m0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
     __m256i m1 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 1);
     _mm256_storeu_si256((reinterpret_cast<__m256i*>(dst)) + 0, m0);
     _mm256_storeu_si256((reinterpret_cast<__m256i*>(dst)) + 1, m1);
 }
 
-static INLINE void memcpy_avx_128(void *dst, const void *src) {
+static INLINE void memcpy_avx_128(void *dst, const void *src)
+{
     __m256i m0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
     __m256i m1 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 1);
     __m256i m2 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 2);
@@ -70,7 +74,8 @@ static INLINE void memcpy_avx_128(void *dst, const void *src) {
     _mm256_storeu_si256((reinterpret_cast<__m256i*>(dst)) + 3, m3);
 }
 
-static INLINE void memcpy_avx_256(void *dst, const void *src) {
+static INLINE void memcpy_avx_256(void *dst, const void *src)
+{
     __m256i m0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
     __m256i m1 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 1);
     __m256i m2 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 2);
@@ -93,11 +98,13 @@ static INLINE void memcpy_avx_256(void *dst, const void *src) {
 //---------------------------------------------------------------------
 // tiny memory copy with jump table optimized
 //---------------------------------------------------------------------
-static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restrict src, size_t size) {
+static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restrict src, size_t size)
+{
     unsigned char *dd = reinterpret_cast<unsigned char *>(dst) + size;
     const unsigned char *ss = reinterpret_cast<const unsigned char*>(src) + size;
 
-    switch (size) {
+    switch (size)
+    {
     case 128: memcpy_avx_128(dd - 128, ss - 128); [[fallthrough]];
     case 0:  break;
     case 129: memcpy_avx_128(dd - 129, ss - 129); [[fallthrough]];
@@ -372,7 +379,8 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
     size_t padding;
 
     // small memory copy
-    if (size <= 256) {
+    if (size <= 256)
+    {
         memcpy_tiny_avx(dst, src, size);
         _mm256_zeroupper();
         return destination;
@@ -382,7 +390,8 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
     padding = (32 - (((size_t)dst) & 31)) & 31;
 
 #if 0
-    if (padding > 0) {
+    if (padding > 0)
+    {
         __m256i head = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src));
         _mm256_storeu_si256((__m256i*)dst, head);
         dst += padding;
@@ -398,10 +407,12 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
 #endif
 
     // medium size copy
-    if (size <= cachesize) {
+    if (size <= cachesize)
+    {
         __m256i c0, c1, c2, c3, c4, c5, c6, c7;
 
-        for (; size >= 256; size -= 256) {
+        for (; size >= 256; size -= 256)
+        {
             c0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
             c1 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 1);
             c2 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 2);
@@ -422,12 +433,15 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
             dst += 256;
         }
     }
-    else {        // big memory copy
+    else
+    {        // big memory copy
         __m256i c0, c1, c2, c3, c4, c5, c6, c7;
         /* __m256i c0, c1, c2, c3, c4, c5, c6, c7; */
 
-        if ((((size_t)src) & 31) == 0) {    // source aligned
-            for (; size >= 256; size -= 256) {
+        if ((((size_t)src) & 31) == 0)
+        {    // source aligned
+            for (; size >= 256; size -= 256)
+            {
                 c0 = _mm256_load_si256((reinterpret_cast<const __m256i*>(src)) + 0);
                 c1 = _mm256_load_si256((reinterpret_cast<const __m256i*>(src)) + 1);
                 c2 = _mm256_load_si256((reinterpret_cast<const __m256i*>(src)) + 2);
@@ -448,8 +462,10 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
                 dst += 256;
             }
         }
-        else {                            // source unaligned
-            for (; size >= 256; size -= 256) {
+        else
+        {                            // source unaligned
+            for (; size >= 256; size -= 256)
+            {
                 c0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
                 c1 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 1);
                 c2 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 2);
