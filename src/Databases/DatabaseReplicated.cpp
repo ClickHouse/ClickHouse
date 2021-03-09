@@ -178,22 +178,23 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         if (id == DROPPED_MARK)
             continue;
         auto [shard, replica] = parseFullReplicaName(hosts[i]);
-        auto pos = id.find(':');
-        String host = id.substr(0, pos);
+        auto pos = id.rfind(':');
+        String host_port = id.substr(0, pos);
         if (shard != current_shard)
         {
             current_shard = shard;
             if (!shards.back().empty())
                 shards.emplace_back();
         }
-        shards.back().emplace_back(unescapeForFileName(host));
+        shards.back().emplace_back(unescapeForFileName(host_port));
     }
 
-    /// TODO make it configurable
-    String username = "default";
-    String password;
+    String username = db_settings.cluster_username;
+    String password = db_settings.cluster_password;
+    UInt16 default_port = global_context.getTCPPort();
+    bool secure = db_settings.cluster_secure_connection;
 
-    return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, global_context.getTCPPort(), false);
+    return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, default_port, false, secure);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)

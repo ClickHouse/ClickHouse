@@ -107,10 +107,10 @@ def test_alters_from_different_replicas(started_cluster):
     assert "There are 1 unfinished hosts (0 of them are currently active)" in \
         competing_node.query_and_get_error("ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;", settings=settings)
     settings = {"distributed_ddl_task_timeout": 5, "distributed_ddl_output_mode": "null_status_on_timeout"}
-    assert "shard1|replica2\t0\t\\N\t\\N" in \
+    assert "shard1|replica2\t\\N\t\\N" in \
         main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;", settings=settings)
     settings = {"distributed_ddl_task_timeout": 5, "distributed_ddl_output_mode": "never_throw"}
-    assert "shard1|replica2\t0\t\\N\t\\N" in \
+    assert "shard1|replica2\t\\N\t\\N" in \
         competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;", settings=settings)
     dummy_node.start_clickhouse()
     main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;")

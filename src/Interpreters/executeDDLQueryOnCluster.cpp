@@ -228,6 +228,7 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     {
         waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
         by_hostname = false;
+        sample.erase("port");
     }
     else
     {
@@ -306,12 +307,14 @@ Block DDLQueryStatusInputStream::readImpl()
             for (const String & host_id : unfinished_hosts)
             {
                 auto [host, port] = parseHostAndPort(host_id);
-                columns[0]->insert(host);
-                columns[1]->insert(port);
-                columns[2]->insert(Field{});
-                columns[3]->insert(Field{});
-                columns[4]->insert(num_unfinished_hosts);
-                columns[5]->insert(num_active_hosts);
+                size_t num = 0;
+                columns[num++]->insert(host);
+                if (by_hostname)
+                    columns[num++]->insert(port);
+                columns[num++]->insert(Field{});
+                columns[num++]->insert(Field{});
+                columns[num++]->insert(num_unfinished_hosts);
+                columns[num++]->insert(num_active_hosts);
             }
             res = sample.cloneWithColumns(std::move(columns));
             return res;
@@ -353,12 +356,14 @@ Block DDLQueryStatusInputStream::readImpl()
 
             ++num_hosts_finished;
 
-            columns[0]->insert(host);
-            columns[1]->insert(port);
-            columns[2]->insert(status.code);
-            columns[3]->insert(status.message);
-            columns[4]->insert(waiting_hosts.size() - num_hosts_finished);
-            columns[5]->insert(current_active_hosts.size());
+            size_t num = 0;
+            columns[num++]->insert(host);
+            if (by_hostname)
+                columns[num++]->insert(port);
+            columns[num++]->insert(status.code);
+            columns[num++]->insert(status.message);
+            columns[num++]->insert(waiting_hosts.size() - num_hosts_finished);
+            columns[num++]->insert(current_active_hosts.size());
         }
         res = sample.cloneWithColumns(std::move(columns));
     }
