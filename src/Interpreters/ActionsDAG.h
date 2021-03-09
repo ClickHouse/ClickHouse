@@ -233,6 +233,7 @@ public:
     bool projectedOutput() const { return projected_output; }
 
     void removeUnusedActions(const Names & required_names);
+    void removeUnusedActions(const NameSet & required_names);
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
@@ -257,6 +258,8 @@ public:
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
     void addMaterializingOutputActions();
+
+    const Node & materializeNode(const Node & node);
 
     enum class MatchColumnsMode
     {
