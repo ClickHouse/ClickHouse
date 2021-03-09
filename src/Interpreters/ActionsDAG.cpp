@@ -406,6 +406,7 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, bool project)
         names_map.emplace(node->result_name, node);
 
     NodeRawConstPtrs required_nodes;
+    NameSet alias_names;
 
     for (const auto & item : aliases)
     {
@@ -415,10 +416,24 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, bool project)
                             "Unknown column: {}, there are only columns {}", item.first, dumpNames());
 
         required_nodes.push_back(it->second);
+        alias_names.insert(item.second);
     }
 
     if (project)
         index.clear();
+    else
+    {
+        size_t next = 0;
+        for (const auto & node : index)
+        {
+            if (alias_names.count(node->result_name) == 0)
+            {
+                index[next] = node;
+                ++next;
+            }
+        }
+        index.resize(next);
+    }
 
     index.reserve(index.size() + aliases.size());
 
