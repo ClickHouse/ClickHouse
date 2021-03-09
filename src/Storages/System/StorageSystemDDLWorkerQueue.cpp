@@ -4,7 +4,7 @@
 #include "StorageSystemDDLWorkerQueue.h"
 
 #include <Columns/ColumnArray.h>
-#include <Interpreters/DDLTask.h>
+#include <Interpreters/DDLWorker.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>

@@ -152,9 +152,6 @@ public:
         }
     };
 
-    /// NOTE: std::list is an implementation detail.
-    /// It allows to add and remove new nodes inplace without reallocation.
-    /// Raw pointers to nodes remain valid.
     using Nodes = std::list<Node>;
     using Inputs = std::vector<Node *>;
 
@@ -199,19 +196,16 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false, bool add_to_index = true);
+    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
-    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
+    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            const Context & context,
-            bool can_replace = false);
-
-    void addNodeToIndex(const Node * node) { index.insert(const_cast<Node *>(node)); }
+            const Context & context);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -220,12 +214,11 @@ public:
 
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
-    /// Find column in result. Remove it from index.
-    /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
-    /// Return true if column was removed from inputs.
-    bool removeUnusedResult(const std::string & column_name);
+    /// Find column in input. Remove it from input and index.
+    /// Checks that column in inputs and has not dependent nodes.
+    void removeUnusedInput(const std::string & column_name);
 
-    void projectInput(bool project = true) { settings.project_input = project; }
+    void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;
@@ -238,9 +231,6 @@ public:
 
     ActionsDAGPtr clone() const;
 
-    /// For apply materialize() function for every output.
-    /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions();
 
     enum class MatchColumnsMode
     {
@@ -259,39 +249,27 @@ public:
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
 
-    /// Create expression which add const column and then materialize it.
-    static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);
-
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
-    using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
-
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
     /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
     /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
-    SplitResult split(std::unordered_set<const Node *> split_nodes) const;
+    std::pair<ActionsDAGPtr, ActionsDAGPtr> split(std::unordered_set<const Node *> split_nodes) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Index of initial actions must contain column_name.
-    SplitResult splitActionsForFilter(const std::string & column_name) const;
-
-    /// Create actions which may calculate part of filter using only available_inputs.
-    /// If nothing may be calculated, returns nullptr.
-    /// Otherwise, return actions which inputs are from available_inputs.
-    /// Returned actions add single column which may be used for filter.
-    /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
-    ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs);
+    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsForFilter(const std::string & column_name) const;
 
 private:
-    Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
+    Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
 
     Node & addAlias(Node & child, std::string alias, bool can_replace);
@@ -299,8 +277,7 @@ private:
             const FunctionOverloadResolverPtr & function,
             Inputs children,
             std::string result_name,
-            bool can_replace,
-            bool add_to_index = true);
+            bool can_replace);
 
     ActionsDAGPtr cloneEmpty() const
     {
@@ -314,12 +291,10 @@ private:
     }
 
     void removeUnusedActions(const std::vector<Node *> & required_nodes);
-    void removeUnusedActions(bool allow_remove_inputs = true);
+    void removeUnusedActions();
     void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
 
     void compileFunctions();
-
-    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction);
 };
 
 

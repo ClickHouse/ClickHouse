@@ -17,8 +17,7 @@
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
         "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
-        "01641_memory_tracking_insert_optimize", /// INSERT lots of rows is too heavy for TSan
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy for TSan
     ],
     "address-sanitizer": [
         "00877",
@@ -28,8 +27,7 @@
         "01103_check_cpu_instructions_at_startup",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01193_metadata_loading",
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01193_metadata_loading"
     ],
     "ub-sanitizer": [
         "capnproto",
@@ -50,8 +48,7 @@
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01193_metadata_loading",
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01193_metadata_loading"
     ],
     "debug-build": [
         "query_profiler",
@@ -93,7 +90,6 @@
         "01300_client_save_history_when_terminated",
         "orc_output",
         "01370_client_autocomplete_word_break_characters",
-        "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
         "01455_time_zones"
     ],
@@ -265,7 +261,7 @@
         "01747_alter_partition_key_enum_zookeeper"
     ],
     "polymorphic-parts": [
-        "01508_partition_pruning_long", /// bug, shoud be fixed
+        "01508_partition_pruning", /// bug, shoud be fixed
         "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
     ],
     "antlr": [
@@ -283,16 +279,7 @@
         "00746_sql_fuzzy",
         "00763_create_query_as_table_engine_bug",
         "00765_sql_compatibility_aliases",
-        "00825_protobuf_format_array_3dim",
-        "00825_protobuf_format_array_of_arrays",
-        "00825_protobuf_format_enum_mapping",
-        "00825_protobuf_format_map",
-        "00825_protobuf_format_nested_in_nested",
-        "00825_protobuf_format_nested_optional",
-        "00825_protobuf_format_no_length_delimiter",
-        "00825_protobuf_format_persons",
-        "00825_protobuf_format_squares",
-        "00825_protobuf_format_table_default",
+        "00825_protobuf_format_input",
         "00826_cross_to_inner_join",
         "00834_not_between",
         "00909_kill_not_initialized_query",
@@ -323,7 +310,6 @@
         "01015_attach_part",
         "01015_database_bad_tables",
         "01017_uniqCombined_memory_usage",
-        "01018_ddl_dictionaries_concurrent_requrests",  /// Cannot parse ATTACH DICTIONARY IF NOT EXISTS
         "01019_alter_materialized_view_atomic",
         "01019_alter_materialized_view_consistent",
         "01019_alter_materialized_view_query",
@@ -439,7 +425,7 @@
         "01501_clickhouse_client_INSERT_exception",
         "01504_compression_multiple_streams",
         "01508_explain_header",
-        "01508_partition_pruning_long",
+        "01508_partition_pruning",
         "01509_check_parallel_quorum_inserts",
         "01509_parallel_quorum_and_merge",
         "01515_mv_and_array_join_optimisation_bag",
@@ -453,7 +439,7 @@
         "01530_drop_database_atomic_sync",
         "01532_execute_merges_on_single_replica",
         "01532_primary_key_without_order_by_zookeeper",
-        "01541_max_memory_usage_for_user_long",
+        "01541_max_memory_usage_for_user",
         "01551_mergetree_read_in_order_spread",
         "01552_dict_fixedstring",
         "01554_bloom_filter_index_big_integer_uuid",
@@ -484,8 +470,7 @@
         "01643_system_suspend",
         "01655_plan_optimizations",
         "01475_read_subcolumns_storages",
-        "01674_clickhouse_client_query_param_cte",
-        "01666_merge_tree_max_query_limit"
+        "01674_clickhouse_client_query_param_cte"
     ],
     "parallel":
     [
@@ -530,7 +515,6 @@
         "00626_replace_partition_from_table",
         "00626_replace_partition_from_table_zookeeper",
         "00633_materialized_view_and_too_many_parts_zookeeper",
-        "00643_cast_zookeeper",
         "00652_mergetree_mutations",
         "00652_replicated_mutations_zookeeper",
         "00682_empty_parts_merge",
@@ -681,7 +665,6 @@
         "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
         "01294_system_distributed_on_cluster",
         "01296_create_row_policy_in_current_database",
-        "01297_create_quota",
         "01305_replica_create_drop_zookeeper",
         "01307_multiple_leaders_zookeeper",
         "01318_long_unsuccessful_mutation_zookeeper",
@@ -731,7 +714,7 @@
         "01527_clickhouse_local_optimize",
         "01527_dist_sharding_key_dictGet_reload",
         "01530_drop_database_atomic_sync",
-        "01541_max_memory_usage_for_user_long",
+        "01541_max_memory_usage_for_user",
         "01542_dictionary_load_exception_race",
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
@@ -744,10 +727,7 @@
         "01602_show_create_view",
         "01603_rename_overwrite_bug",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
-        "01656_test_query_log_factories_info",
-        "01669_columns_declaration_serde",
         "01676_dictget_in_default_expression",
-        "01700_system_zookeeper_path_in",
         "01715_background_checker_blather_zookeeper",
         "01747_alter_partition_key_enum_zookeeper",
         "attach",
@@ -757,8 +737,6 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts", // they use an explicitly specified database
-        "01658_read_file_to_stringcolumn",
-        "01721_engine_file_truncate_on_insert" // It's ok to execute in parallel but not several instances of the same test.
+        "polygon_dicts" // they use an explicitly specified database
     ]
 }

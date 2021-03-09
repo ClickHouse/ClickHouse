@@ -9,7 +9,6 @@
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
-#include <Storages/RabbitMQ/UVLoop.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -95,9 +94,8 @@ private:
     String address;
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
-    String vhost;
 
-    UVLoop loop;
+    std::unique_ptr<uv_loop_t> loop;
     std::shared_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 

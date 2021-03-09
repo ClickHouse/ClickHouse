@@ -2,7 +2,7 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/RolesOrUsersSet.h>

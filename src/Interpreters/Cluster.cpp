@@ -6,6 +6,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Core/Settings.h>
+#include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>

@@ -30,8 +30,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/Cluster.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -47,7 +46,6 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 
@@ -58,7 +56,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <common/logger_useful.h>
@@ -82,7 +79,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
@@ -150,7 +146,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
-    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated")
+    if (create.storage->engine->name == "Atomic")
     {
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "UUID must be specified for ATTACH. "
@@ -207,12 +203,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception("MaterializeMySQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-    }
-
-    if (create.storage->engine->name == "Replicated" && !context.getSettingsRef().allow_experimental_database_replicated && !internal)
-    {
-        throw Exception("Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", context);
@@ -566,11 +556,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     validateTableStructure(create, properties);
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
-
-    assert(as_database_saved.empty() && as_table_saved.empty());
-    std::swap(create.as_database, as_database_saved);
-    std::swap(create.as_table, as_table_saved);
-
     return properties;
 }
 
@@ -717,12 +702,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && !internal)
-    {
-        if (create.uuid == UUIDHelpers::Nil)
-            throw Exception("Table UUID is not specified in DDL log", ErrorCodes::LOGICAL_ERROR);
-    }
-
     bool from_path = create.attach_from_path.has_value();
 
     if (database->getUUID() != UUIDHelpers::Nil)
@@ -797,11 +776,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String current_database = context.getCurrentDatabase();
-    auto database_name = create.database.empty() ? current_database : create.database;
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
+        auto database_name = create.database.empty() ? current_database : create.database;
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
         bool if_not_exists = create.if_not_exists;
 
@@ -821,30 +800,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.attach_from_path)
     {
+        fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
         fs::path user_files = fs::path(context.getUserFilesPath()).lexically_normal();
+        if (data_path.is_relative())
+            data_path = (user_files / data_path).lexically_normal();
+        if (!startsWith(data_path, user_files))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                            "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+
         fs::path root_path = fs::path(context.getPath()).lexically_normal();
-
-        if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        {
-            fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
-            if (data_path.is_relative())
-                data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
-                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
-
-            /// Data path must be relative to root_path
-            create.attach_from_path = fs::relative(data_path, root_path) / "";
-        }
-        else
-        {
-            fs::path data_path = (root_path / *create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
-                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
-        }
+        /// Data path must be relative to root_path
+        create.attach_from_path = fs::relative(data_path, root_path) / "";
     }
-    else if (create.attach && !create.attach_short_syntax && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    else if (create.attach && !create.attach_short_syntax)
     {
         auto * log = &Poco::Logger::get("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
@@ -868,29 +836,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = setProperties(create);
 
-    DatabasePtr database;
-    bool need_add_to_database = !create.temporary;
-    if (need_add_to_database)
-        database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (need_add_to_database && database->getEngineName() == "Replicated")
-    {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
-        database = DatabaseCatalog::instance().getDatabase(create.database);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-        {
-            assertOrSetUUID(create, database);
-            guard->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
-        }
-    }
-
     if (create.replace_table)
         return doCreateOrReplaceTable(create, properties);
 
     /// Actually creates table
     bool created = doCreateTable(create, properties);
-
     if (!created)   /// Table already exists
         return {};
 
@@ -930,8 +880,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 drop_ast->table = create.table;
                 drop_ast->no_ddl_lock = true;
 
-                Context drop_context = context;
-                InterpreterDropQuery interpreter(drop_ast, drop_context);
+                InterpreterDropQuery interpreter(drop_ast, context);
                 interpreter.execute();
             }
             else
@@ -1088,14 +1037,6 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        if (!create.attach)
-            assertOrSetUUID(create, database);
-        guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
-    }
-
     if (database->isDictionaryExist(dictionary_name))
     {
         /// TODO Check structure of dictionary
@@ -1177,7 +1118,6 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {
@@ -1249,14 +1189,15 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     return required_access;
 }
 
-void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const
+void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
 {
+    const auto & create = ast->as<const ASTCreateQuery &>();
     elem.query_kind = "Create";
-    if (!as_table_saved.empty())
+    if (!create.as_table.empty())
     {
-        String database = backQuoteIfNeed(as_database_saved.empty() ? context.getCurrentDatabase() : as_database_saved);
+        String database = backQuoteIfNeed(create.as_database.empty() ? context.getCurrentDatabase() : create.as_database);
         elem.query_databases.insert(database);
-        elem.query_tables.insert(database + "." + backQuoteIfNeed(as_table_saved));
+        elem.query_tables.insert(database + "." + backQuoteIfNeed(create.as_table));
     }
 }
 

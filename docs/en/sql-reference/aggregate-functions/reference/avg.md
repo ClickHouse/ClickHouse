@@ -9,10 +9,10 @@ Calculates the arithmetic mean.
 **Syntax**
 
 ``` sql
-avg(x)
+avgWeighted(x)
 ```
 
-**Arguments**
+**Parameter**
 
 -   `x` — Values.
 

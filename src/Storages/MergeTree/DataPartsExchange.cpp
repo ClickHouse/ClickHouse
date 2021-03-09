@@ -1,20 +1,17 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
-
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/createVolume.h>
-#include <IO/HTTPCommon.h>
-#include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
+#include <Disks/createVolume.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
-
 #include <Poco/File.h>
+#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace CurrentMetrics
@@ -86,7 +83,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
+void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 

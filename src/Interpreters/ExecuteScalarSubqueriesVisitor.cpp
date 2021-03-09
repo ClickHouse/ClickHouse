@@ -21,7 +21,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -122,10 +122,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             try
             {
-                PullingAsyncPipelineExecutor executor(io.pipeline);
-                while (block.rows() == 0 && executor.pull(block));
-
-                if (block.rows() == 0)
+                PullingPipelineExecutor executor(io.pipeline);
+                if (!executor.pull(block))
                 {
                     /// Interpret subquery with empty result as Null literal
                     auto ast_new = std::make_unique<ASTLiteral>(Null());
@@ -134,13 +132,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     return;
                 }
 
-                if (block.rows() != 1)
-                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-
-                Block tmp_block;
-                while (tmp_block.rows() == 0 && executor.pull(tmp_block));
-
-                if (tmp_block.rows() != 0)
+                if (block.rows() != 1 || executor.pull(block))
                     throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
             catch (const Exception & e)

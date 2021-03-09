@@ -133,7 +133,7 @@ private:
         static_assert(IsDecimalNumber<T>);
         using NativeT = typename T::NativeType;
 
-        if (precision > DecimalUtils::max_precision<T>)
+        if (precision > DecimalUtils::maxPrecision<T>())
             return false;
 
         NativeT pow10 = intExp10OfSize<NativeT>(precision);

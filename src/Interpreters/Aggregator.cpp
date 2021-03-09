@@ -19,6 +19,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/Operators.h>
 
 
@@ -558,7 +559,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     /// Generic case.
 
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+    PODArray<AggregateDataPtr> places(rows);
 
     /// For all rows.
     for (size_t i = 0; i < rows; ++i)
@@ -589,9 +590,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+            inst->batch_that->addBatchArray(rows, places.data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
         else
-            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+            inst->batch_that->addBatch(rows, places.data(), inst->state_offset, inst->batch_arguments, aggregates_pool);
     }
 }
 
