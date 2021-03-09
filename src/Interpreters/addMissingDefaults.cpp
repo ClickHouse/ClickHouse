@@ -75,7 +75,8 @@ ActionsDAGPtr addMissingDefaults(
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
         auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        index.push_back(&actions->addColumn({std::move(new_column), column.type, column.name}));
+        const auto * col = &actions->addColumn({std::move(new_column), column.type, column.name});
+        index.push_back(&actions->materializeNode(*col));
     }
 
     /// Computes explicitly specified values by default and materialized columns.

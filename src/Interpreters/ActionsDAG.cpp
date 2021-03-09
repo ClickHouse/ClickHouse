@@ -292,6 +292,33 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
+void ActionsDAG::removeUnusedActions(const NameSet & required_names)
+{
+    NodeRawConstPtrs required_nodes;
+    required_nodes.reserve(required_names.size());
+
+    NameSet added;
+    for (const auto & node : index)
+    {
+        if (required_names.count(node->result_name) && added.count(node->result_name) == 0)
+        {
+            required_nodes.push_back(node);
+            added.insert(node->result_name);
+        }
+    }
+
+    if (added.size() < required_names.size())
+    {
+        for (const auto & name : required_names)
+            if (added.count(name) == 0)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                "Unknown column: {}, there are only columns {}", name, dumpNames());
+    }
+
+    index.swap(required_nodes);
+    removeUnusedActions();
+}
+
 void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
     NodeRawConstPtrs required_nodes;
@@ -718,17 +745,20 @@ bool ActionsDAG::trivial() const
 
 void ActionsDAG::addMaterializingOutputActions()
 {
+    for (auto & node : index)
+        node = &materializeNode(*node);
+}
+
+const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
+{
     FunctionOverloadResolverPtr func_builder_materialize =
             std::make_shared<FunctionOverloadResolverAdaptor>(
                     std::make_unique<DefaultOverloadResolver>(
                             std::make_shared<FunctionMaterialize>()));
 
-    for (auto & node : index)
-    {
-        auto & name = node->result_name;
-        node = &addFunction(func_builder_materialize, {node}, {});
-        node = &addAlias(*node, name);
-    }
+    const auto & name = node.result_name;
+    const auto * func = &addFunction(func_builder_materialize, {&node}, {});
+    return addAlias(*func, name);
 }
 
 ActionsDAGPtr ActionsDAG::makeConvertingActions(
