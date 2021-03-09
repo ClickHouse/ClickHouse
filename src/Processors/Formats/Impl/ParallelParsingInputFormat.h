@@ -11,18 +11,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
-
-/// I don't know why, but clang warns about static annotations
-/// error: macro name is a reserved identifier [-Werror,-Wreserved-id-macro]
-/// #define THREAD_ANNOTATION_ATTRIBUTE__(x)   __attribute__((x))
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-id-macro"
-#endif
-#include <absl/synchronization/notification.h>
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+#include <Poco/Event.h>
 
 namespace DB
 {
@@ -214,7 +203,7 @@ private:
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
-    absl::Notification first_parser_finished;
+    Poco::Event first_parser_finished;
 
     std::atomic<bool> parsing_finished{false};
 
@@ -269,7 +258,7 @@ private:
         });
         /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
         if (ticket_number == 0)
-            first_parser_finished.WaitForNotification();
+            first_parser_finished.wait();
     }
 
     void finishAndWait()
