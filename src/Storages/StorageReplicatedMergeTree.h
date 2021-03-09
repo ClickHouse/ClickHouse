@@ -532,10 +532,18 @@ private:
         const String & replica_path,
         bool to_detached,
         size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool replace_exists = false,
-        DiskPtr replaced_disk = nullptr,
-        String replaced_part_path = "");
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
+
+    /** Download the specified part from the specified replica.
+      * Used for replace local part on the same s3-shared part in hybrid storage.
+      * Returns false if part is already fetching right now.
+      */
+    bool fetchExistsPart(
+        const String & part_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & replica_path,
+        DiskPtr replaced_disk,
+        String replaced_part_path);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
