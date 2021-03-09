@@ -191,7 +191,6 @@ public:
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
         /// The events_bitset variable stores matched events in the form of bitset.
-        /// It uses UInt32 instead of std::bitset because bitsets of UInt32 are easy to compare. (< operator on bitsets)
         /// Each Nth-bit indicates that the Nth-event are matched.
         /// For example, event1 and event3 is matched then the values of events_bitset is 0x00000005.
         ///   0x00000000
@@ -272,12 +271,23 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
+    /// Calculate position of current event in target chain and shift to corresponding offset
+    /// Lets consider case where we search chain 'ABCD':
+    /// - If current event is 'X' we can skip it and perform next step from position after this 'X'
+    /// - If current event is 'A' we will start from this position
+    /// - If current event is 'B' then second position in our chain should match this 'B'.
+    ///   And we perform next step from position one before 'B'.
+    /// - And so on...
     inline UInt32 calculateJump(const Data & data, const UInt32 i, const UInt32 j) const
     {
-        UInt32 k = 0;
+        /// Fast check if value is zero, not in sequence
+        if (data.value[i - j]->events_bitset.none())
+            return events_size - j;
+
+        UInt32 k = 1;
         for (; k < events_size - j; ++k)
             if (data.value[i - j]->events_bitset.test(events_size - 1 - j - k))
-                return k;
+                break;
         return k;
     }
 
@@ -285,8 +295,7 @@ public:
     /// It is one as referring Boyer-Moore-Algorithm(https://en.wikipedia.org/wiki/Boyer%E2%80%93Moore_string-search_algorithm).
     /// But, there are some differences.
     /// In original Boyer-Moore-Algorithm compares strings, but this algorithm compares events_bits.
-    /// events_bitset consists of events_bits.
-    /// matched events in the chain of events are represented as a bitmask of UInt32.
+    /// Matched events in the chain of events are represented as a bitmask.
     /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
@@ -299,14 +308,16 @@ public:
         while (i < data.value.size())
         {
             UInt32 j = 0;
-            /// It checks whether the chain of events are matched or not.
+            /// Try to match chain of events starting from the end of this chain.
             for (; j < events_size; ++j)
+            {
                 /// It compares each matched events.
                 /// The lower bitmask is the former matched event.
-                if (data.value[i - j]->events_bitset.test(events_size - 1 - j) == false)
+                if (!data.value[i - j]->events_bitset.test(events_size - 1 - j))
                     break;
+            }
 
-            /// If the chain of events are matched returns the index of result value.
+            /// Chain of events are matched, return the index of result value.
             if (j == events_size)
                 return i + 1;
 
