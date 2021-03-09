@@ -118,7 +118,7 @@ struct SequenceNextNodeGeneralData
         bool operator()(const Node * lhs, const Node * rhs) const
         {
             if constexpr (Descending)
-                return lhs->event_time == rhs->event_time ? !lhs->compare(rhs) : lhs->event_time > rhs->event_time;
+                return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time > rhs->event_time;
             else
                 return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time < rhs->event_time;
         }
