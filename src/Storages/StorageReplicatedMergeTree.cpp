@@ -528,6 +528,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
 void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 {
+    auto storage_settings = getSettings();
     auto zookeeper = getZooKeeper();
 
     /// Working with quorum.
@@ -543,6 +544,14 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     /// Mutations
     zookeeper->createIfNotExists(zookeeper_path + "/mutations", String());
     zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
+
+    /// Nodes for zero-copy S3 replication
+    if (storage_settings->allow_s3_zero_copy_replication)
+    {
+        zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3", String());
+        zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3/merged", String());
+        zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3/shared", String());
+    }
 }
 
 
@@ -1541,27 +1550,12 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             auto zookeeper = getZooKeeper();
             String zookeeper_node = zookeeper_path + "/zero_copy_s3/merged/" + entry.new_part_name;
 
-            /// In rare case other replica can remove path between createAncestors and tryCreate
-            /// So we make up to 5 attempts to make a lock
-            for (int attempts = 5; attempts > 0; --attempts)
-            {
-                try
-                {
-                    zookeeper->createAncestors(zookeeper_node);
-                    auto code = zookeeper->tryCreate(zookeeper_node, "lock", zkutil::CreateMode::Ephemeral);
-                    /// Someone else created or started create this merge
-                    if (code == Coordination::Error::ZNODEEXISTS)
-                        return false;
-                    if (code != Coordination::Error::ZNONODE)
-                        break;
-                }
-                catch (const zkutil::KeeperException & e)
-                {
-                    if (e.code == Coordination::Error::ZNONODE)
-                        continue;
-                    throw;
-                }
-            }
+            auto code = zookeeper->tryCreate(zookeeper_node, "lock", zkutil::CreateMode::Ephemeral);
+
+            /// Someone else created or started create this merge,
+            /// so will try to fetch.
+            if (code == Coordination::Error::ZNODEEXISTS)
+                return false;
         }
     }
 
