@@ -720,17 +720,17 @@ void DatabaseReplicated::detachTablePermanently(const Context & context, const S
     DatabaseAtomic::detachTablePermanently(context, table_name);
 }
 
-void DatabaseReplicated::removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path) const
+void DatabaseReplicated::removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path, bool attach) const
 {
     auto txn = context.getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->isInitialQuery() && !txn->isExecuted())
+    if (txn && txn->isInitialQuery() && attach)
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String statement = readMetadataFile(table_name);
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
     }
-    DatabaseAtomic::removeDetachedPermanentlyFlag(context, table_name, table_metadata_path);
+    DatabaseAtomic::removeDetachedPermanentlyFlag(context, table_name, table_metadata_path, attach);
 }
 
 

@@ -46,10 +46,10 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 
 void DDLLogEntry::assertVersion() const
 {
-    constexpr UInt64 MAX_VERSION = 2;
-    if (version == 0 || MAX_VERSION < version)
+    constexpr UInt64 max_version = 2;
+    if (version == 0 || max_version < version)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
-                                                            "Maximum supported version is {}", version, MAX_VERSION);
+                                                            "Maximum supported version is {}", version, max_version);
 }
 
 void DDLLogEntry::setSettingsIfRequired(const Context & context)

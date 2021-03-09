@@ -119,6 +119,8 @@
         "01018_ddl_dictionaries_bad_queries",
         "00955_test_final_mark",
         "00180_attach_materialized_view",
+        "01294_system_distributed_on_cluster",
+        "01294_system_distributed_on_cluster",
         /// Unsupported type of ALTER query
         "01650_fetch_patition_with_macro_in_zk_path",
         "01451_detach_drop_part",
@@ -131,6 +133,7 @@
         "01015_attach_part",
         "00626_replace_partition_from_table_zookeeper",
         "00626_replace_partition_from_table",
+        "00152_insert_different_granularity",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
@@ -627,6 +630,7 @@
         "01601_detach_permanently",
         "01602_show_create_view",
         "01603_rename_overwrite_bug",
+        "01666_blns",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
         "01656_test_query_log_factories_info",
         "01669_columns_declaration_serde",
