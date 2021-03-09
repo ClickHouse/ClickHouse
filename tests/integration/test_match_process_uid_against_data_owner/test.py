@@ -20,7 +20,7 @@ def test_different_user():
 
     cluster.start()
 
-    docker_api = docker.from_env().api
+    docker_api = cluster.docker_client.api
     container = node.get_docker_handle()
     container.stop()
     container.start()

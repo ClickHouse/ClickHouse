@@ -249,7 +249,8 @@ class ClickHouseCluster:
 
         # available when with_mysql8 == True
         self.mysql8_host = "mysql80"
-        self.mysql8_port = get_open_port()
+        self.mysql8_port = 3306
+        self.mysql8_ip = None
         self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
         self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
@@ -281,8 +282,8 @@ class ClickHouseCluster:
     def setup_mysql8_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql8 = True
         env_variables['MYSQL8_HOST'] = self.mysql8_host
-        env_variables['MYSQL8_EXTERNAL_PORT'] = str(self.mysql8_port)
-        env_variables['MYSQL8_INTERNAL_PORT'] = "3306"
+        env_variables['MYSQL8_PORT'] = str(self.mysql8_port)
+        env_variables['MYSQL8_ROOT_HOST'] = '%'
         env_variables['MYSQL8_LOGS'] = self.mysql8_logs_dir
         env_variables['MYSQL8_LOGS_FS'] = "bind"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')])
@@ -578,7 +579,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        start_deadline = time.time() + 20.0  # seconds
+        start_deadline = time.time() + 60.0  # seconds
         node.wait_for_start(start_deadline)
         return node
 
@@ -876,6 +877,8 @@ class ClickHouseCluster:
 
             if self.with_mysql and self.base_mysql_cmd:
                 logging.debug('Setup MySQL')
+                if os.path.exists(self.mysql_dir):
+                    shutil.rmtree(self.mysql_dir)
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
@@ -883,7 +886,10 @@ class ClickHouseCluster:
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug('Setup MySQL 8')
+                if os.path.exists(self.mysql8_dir):
+                    shutil.rmtree(self.mysql8_dir)
                 os.makedirs(self.mysql8_logs_dir)
+                os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start(120)
 
@@ -958,7 +964,7 @@ class ClickHouseCluster:
             subprocess_check_call(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            start_deadline = time.time() + 30.0  # seconds
+            start_deadline = time.time() + 60.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -1372,7 +1378,7 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_latest_version(self, stop_start_wait_sec=15, callback_onstop=None, signal=15):
+    def restart_with_latest_version(self, stop_start_wait_sec=15, callback_onstop=None, signal=60):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')

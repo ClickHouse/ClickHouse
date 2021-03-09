@@ -5,6 +5,7 @@ import math
 import os
 import time
 
+import logging
 import docker
 import pymysql.connections
 import pytest
@@ -36,7 +37,7 @@ def mysql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_client.yml')
     run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
-    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=180).containers.get(cluster.project_name + '_mysql1_1')
+    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=180).containers.get(cluster.project_name + '_mysql1_1')
 
 
 @pytest.fixture(scope='module')
@@ -96,7 +97,7 @@ def test_mysql_client(mysql_client, server_address):
         mysql --protocol tcp -h {host} -P {port} default -u user_with_double_sha1 --password=abacaba
         -e "SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
-
+    logging.debug(f"test_mysql_client code:{code} stdout:{stdout}, stderr:{stderr}")
     assert stdout.decode() == '\n'.join(['1', '1', ''])
 
     code, (stdout, stderr) = mysql_client.exec_run('''

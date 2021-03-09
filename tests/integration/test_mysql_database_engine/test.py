@@ -21,7 +21,7 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=cluster.mysql_port):
+    def __init__(self, user, password, hostname, port):
         self.user = user
         self.port = port
         self.hostname = hostname
@@ -55,7 +55,7 @@ class MySQLNodeInstance:
 
 
 def test_mysql_ddl_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
@@ -89,7 +89,7 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
 
 
 def test_clickhouse_ddl_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             'CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;')
@@ -114,7 +114,7 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
 
 
 def test_clickhouse_dml_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             'CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;')
@@ -132,7 +132,7 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
 
 
 def test_clickhouse_join_for_mysql_database(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query("CREATE TABLE test.t1_mysql_local ("
                          "pays    VARCHAR(55) DEFAULT 'FRA' NOT NULL,"
@@ -155,7 +155,7 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
 
 
 def test_bad_arguments_for_mysql_database_engine(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, port=started_cluster.mysql_port)) as mysql_node:
         with pytest.raises(QueryRuntimeException) as exception:
             mysql_node.query("CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'")
             clickhouse_node.query(
@@ -165,7 +165,7 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
 
 
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
         clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"})
@@ -307,7 +307,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         else:
             return [do_execute(q) for q in query]
 
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=started_cluster.mysql_port)) as mysql_node:
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, port=started_cluster.mysql_port)) as mysql_node:
         execute_query(mysql_node, [
             "DROP DATABASE IF EXISTS ${mysql_db}",
             "CREATE DATABASE ${mysql_db}  DEFAULT CHARACTER SET 'utf8'",

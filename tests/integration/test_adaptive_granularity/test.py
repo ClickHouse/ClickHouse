@@ -268,6 +268,11 @@ def test_version_single_node_update(start_dynamic_cluster, n, tables):
     ]
 )
 def test_mixed_granularity_single_node(start_dynamic_cluster, node):
+    assert node.name == "node9" or node.name == "node10"
+    assert_eq_with_retry(node,
+                        "SELECT value FROM system.merge_tree_settings WHERE name='enable_mixed_granularity_parts'",
+                        '0') # check that enable_mixed_granularity_parts is off by default
+
     node.query(
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
     node.query(
