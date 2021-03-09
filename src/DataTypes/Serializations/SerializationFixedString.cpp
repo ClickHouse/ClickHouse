@@ -1,21 +1,19 @@
+#include <DataTypes/Serializations/SerializationFixedString.h>
+
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
-
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-
 
 namespace DB
 {
@@ -23,19 +21,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-
-std::string DataTypeFixedString::doGetName() const
-{
-    return "FixedString(" + toString(n) + ")";
-}
-
-
-void DataTypeFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const String & s = get<const String &>(field);
     ostr.write(s.data(), std::min(s.size(), n));
@@ -45,7 +34,7 @@ void DataTypeFixedString::serializeBinary(const Field & field, WriteBuffer & ost
 }
 
 
-void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     field = String();
     String & s = get<String &>(field);
@@ -54,13 +43,13 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
 }
 
 
-void DataTypeFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     ostr.write(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n);
 }
 
 
-void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     ColumnFixedString::Chars & data = assert_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();
@@ -77,7 +66,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 }
 
 
-void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void SerializationFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const ColumnFixedString::Chars & data = typeid_cast<const ColumnFixedString &>(column).getChars();
 
@@ -91,7 +80,7 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
 }
 
 
-void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
@@ -108,43 +97,42 @@ void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
 }
 
 
-void DataTypeFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
 }
 
 
-void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeAnyEscapedString<'\''>(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::alignStringLength(PaddedPODArray<UInt8> & chars, size_t old_size) const
+void SerializationFixedString::alignStringLength(size_t n, ColumnFixedString::Chars & data, size_t string_start)
 {
-    size_t length = chars.size() - old_size;
+    size_t length = data.size() - string_start;
     if (length < n)
     {
-        chars.resize_fill(old_size + n);
+        data.resize_fill(string_start + n);
     }
     else if (length > n)
     {
-        chars.resize_assume_reserved(old_size);
-        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
+        data.resize_assume_reserved(string_start);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large value for FixedString({})", n);
     }
 }
 
-
 template <typename Reader>
-static inline void read(const DataTypeFixedString & self, IColumn & column, Reader && reader)
+static inline void read(const SerializationFixedString & self, IColumn & column, Reader && reader)
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
     size_t prev_size = data.size();
     try
     {
         reader(data);
-        self.alignStringLength(data, prev_size);
+        SerializationFixedString::alignStringLength(self.getN(), data, prev_size);
     }
     catch (...)
     {
@@ -154,99 +142,62 @@ static inline void read(const DataTypeFixedString & self, IColumn & column, Read
 }
 
 
-void DataTypeFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
 }
 
 
-void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
-void DataTypeFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringInto(data, istr); });
 }
 
 
-void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeJSONString(pos, pos + n, ostr, settings);
 }
 
 
-void DataTypeFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr); });
 }
 
 
-void DataTypeFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeXMLStringForTextElement(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeCSVString(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
 }
 
-
-MutableColumnPtr DataTypeFixedString::createColumn() const
-{
-    return ColumnFixedString::create(n);
-}
-
-Field DataTypeFixedString::getDefault() const
-{
-    return String();
-}
-
-bool DataTypeFixedString::equals(const IDataType & rhs) const
-{
-    return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
-}
-
-
-static DataTypePtr create(const ASTPtr & arguments)
-{
-    if (!arguments || arguments->children.size() != 1)
-        throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    const auto * argument = arguments->children[0]->as<ASTLiteral>();
-    if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
-        throw Exception("FixedString data type family must have a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-
-    return std::make_shared<DataTypeFixedString>(argument->value.get<UInt64>());
-}
-
-
-void registerDataTypeFixedString(DataTypeFactory & factory)
-{
-    factory.registerDataType("FixedString", create);
-
-    /// Compatibility alias.
-    factory.registerAlias("BINARY", "FixedString", DataTypeFactory::CaseInsensitive);
-}
 
 }

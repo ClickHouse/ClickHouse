@@ -248,9 +248,9 @@ public:
 
         for (const auto & elem : merged_maps)
         {
-            keys_type->serializeBinary(elem.first, buf);
+            keys_type->getDefaultSerialization()->serializeBinary(elem.first, buf);
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_types[col]->serializeBinary(elem.second[col], buf);
+                values_types[col]->getDefaultSerialization()->serializeBinary(elem.second[col], buf);
         }
     }
 
@@ -263,12 +263,12 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_type->deserializeBinary(key, buf);
+            keys_type->getDefaultSerialization()->deserializeBinary(key, buf);
 
             Array values;
             values.resize(values_types.size());
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_types[col]->deserializeBinary(values[col], buf);
+                values_types[col]->getDefaultSerialization()->deserializeBinary(values[col], buf);
 
             if constexpr (IsDecimalNumber<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;

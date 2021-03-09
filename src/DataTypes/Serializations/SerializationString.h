@@ -1,27 +1,13 @@
 #pragma once
 
-#include <ostream>
-
-#include <DataTypes/IDataType.h>
-
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
-class DataTypeString final : public IDataType
+class SerializationString final : public ISerialization
 {
 public:
-    using FieldType = String;
-    static constexpr bool is_parametric = false;
-    static constexpr auto type_id = TypeIndex::String;
-
-    const char * getFamilyName() const override
-    {
-        return "String";
-    }
-
-    TypeIndex getTypeId() const override { return type_id; }
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -46,21 +32,6 @@ public:
 
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    MutableColumnPtr createColumn() const override;
-
-    Field getDefault() const override;
-
-    bool equals(const IDataType & rhs) const override;
-
-    bool isParametric() const override { return false; }
-    bool haveSubtypes() const override { return false; }
-    bool isComparable() const override { return true; }
-    bool canBeComparedWithCollation() const override { return true; }
-    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool isCategorial() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
-    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }

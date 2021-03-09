@@ -344,7 +344,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ReadBufferFromString in_buffer(src.get<String>());
         try
         {
-            type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, FormatSettings{});
         }
         catch (Exception & e)
         {

@@ -198,7 +198,7 @@ public:
         while (it < end && rows_processed < max_block_size)
         {
             WriteBufferFromString wb(serialized_keys[rows_processed]);
-            key_column.type->serializeBinary(*it, wb);
+            key_column.type->getDefaultSerialization()->serializeBinary(*it, wb);
             wb.finalize();
             slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
 
@@ -219,7 +219,7 @@ public:
                 size_t idx = 0;
                 for (const auto & elem : sample_block)
                 {
-                    elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+                    elem.type->getDefaultSerialization()->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
                     ++idx;
                 }
             }

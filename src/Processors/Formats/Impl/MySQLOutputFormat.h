@@ -47,6 +47,7 @@ private:
     std::unique_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
     FormatSettings format_settings;
     DataTypes data_types;
+    Serializations serializations;
 };
 
 }

@@ -432,7 +432,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            data_type.serializeBinary(value, buf);
+            data_type.getDefaultSerialization()->serializeBinary(value, buf);
         }
         else
             writeBinary(false, buf);
@@ -444,7 +444,7 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            data_type.deserializeBinary(value, buf);
+            data_type.getDefaultSerialization()->deserializeBinary(value, buf);
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)

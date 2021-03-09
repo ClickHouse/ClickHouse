@@ -56,8 +56,8 @@ namespace DB
                 {
                     const FormatSettings default_format;
                     WriteBufferFromOwnString buf_begin, buf_end;
-                    arguments[0].type->serializeAsTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
-                    arguments[1].type->serializeAsTextQuoted(*(arguments[1].column), i, buf_end, default_format);
+                    arguments[0].type->getDefaultSerialization()->serializeTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
+                    arguments[1].type->getDefaultSerialization()->serializeTextQuoted(*(arguments[1].column), i, buf_end, default_format);
                     throw Exception(
                         "Incorrect order of events: " + buf_begin.str() + " > " + buf_end.str(),
                         ErrorCodes::INCORRECT_DATA);
