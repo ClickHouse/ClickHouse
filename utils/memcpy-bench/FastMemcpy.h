@@ -1,3 +1,5 @@
+#pragma once
+
 //=====================================================================
 //
 // FastMemcpy.c - skywind3000@163.com, 2015
@@ -6,7 +8,6 @@
 // 50% speed up in avg. vs standard memcpy (tested in vc2012/gcc5.1)
 //
 //=====================================================================
-#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
@@ -39,19 +40,22 @@ typedef __attribute__((__aligned__(1))) uint64_t uint64_unaligned_t;
 //---------------------------------------------------------------------
 // fast copy for different sizes
 //---------------------------------------------------------------------
-static INLINE void memcpy_sse2_16(void * __restrict dst, const void * __restrict src) {
+static INLINE void memcpy_sse2_16(void * __restrict dst, const void * __restrict src)
+{
     __m128i m0 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 0);
     _mm_storeu_si128((reinterpret_cast<__m128i*>(dst)) + 0, m0);
 }
 
-static INLINE void memcpy_sse2_32(void * __restrict dst, const void * __restrict src) {
+static INLINE void memcpy_sse2_32(void * __restrict dst, const void * __restrict src)
+{
     __m128i m0 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 0);
     __m128i m1 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 1);
     _mm_storeu_si128((reinterpret_cast<__m128i*>(dst)) + 0, m0);
     _mm_storeu_si128((reinterpret_cast<__m128i*>(dst)) + 1, m1);
 }
 
-static INLINE void memcpy_sse2_64(void * __restrict dst, const void * __restrict src) {
+static INLINE void memcpy_sse2_64(void * __restrict dst, const void * __restrict src)
+{
     __m128i m0 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 0);
     __m128i m1 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 1);
     __m128i m2 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 2);
@@ -62,7 +66,8 @@ static INLINE void memcpy_sse2_64(void * __restrict dst, const void * __restrict
     _mm_storeu_si128((reinterpret_cast<__m128i*>(dst)) + 3, m3);
 }
 
-static INLINE void memcpy_sse2_128(void * __restrict dst, const void * __restrict src) {
+static INLINE void memcpy_sse2_128(void * __restrict dst, const void * __restrict src)
+{
     __m128i m0 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 0);
     __m128i m1 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 1);
     __m128i m2 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 2);
@@ -88,11 +93,13 @@ static INLINE void memcpy_sse2_128(void * __restrict dst, const void * __restric
 /// Attribute is used to avoid an error with undefined behaviour sanitizer
 /// ../contrib/FastMemcpy/FastMemcpy.h:91:56: runtime error: applying zero offset to null pointer
 /// Found by 01307_orc_output_format.sh, cause - ORCBlockInputFormat and external ORC library.
-__attribute__((__no_sanitize__("undefined"))) static INLINE void *memcpy_tiny(void * __restrict dst, const void * __restrict src, size_t size) {
+__attribute__((__no_sanitize__("undefined"))) static INLINE void *memcpy_tiny(void * __restrict dst, const void * __restrict src, size_t size)
+{
     unsigned char *dd = ((unsigned char*)dst) + size;
     const unsigned char *ss = ((const unsigned char*)src) + size;
 
-    switch (size) {
+    switch (size)
+    {
     case 64:
         memcpy_sse2_64(dd - 64, ss - 64);
         [[fallthrough]];
@@ -653,14 +660,16 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
     size_t padding;
 
     // small memory copy
-    if (size <= 128) {
+    if (size <= 128)
+{
         return memcpy_tiny(dst, src, size);
     }
 
     // align destination to 16 bytes boundary
     padding = (16 - (((size_t)dst) & 15)) & 15;
 
-    if (padding > 0) {
+    if (padding > 0)
+    {
         __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
         dst += padding;
@@ -669,10 +678,12 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
     }
 
     // medium size copy
-    if (size <= cachesize) {
+    if (size <= cachesize)
+    {
         __m128i c0, c1, c2, c3, c4, c5, c6, c7;
 
-        for (; size >= 128; size -= 128) {
+        for (; size >= 128; size -= 128)
+        {
             c0 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 0);
             c1 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 1);
             c2 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 2);
@@ -694,13 +705,16 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
             dst += 128;
         }
     }
-    else {        // big memory copy
+    else
+    {        // big memory copy
         __m128i c0, c1, c2, c3, c4, c5, c6, c7;
 
         _mm_prefetch((const char*)(src), _MM_HINT_NTA);
 
-        if ((((size_t)src) & 15) == 0) {    // source aligned
-            for (; size >= 128; size -= 128) {
+        if ((((size_t)src) & 15) == 0)
+        {    // source aligned
+            for (; size >= 128; size -= 128)
+            {
                 c0 = _mm_load_si128((reinterpret_cast<const __m128i*>(src)) + 0);
                 c1 = _mm_load_si128((reinterpret_cast<const __m128i*>(src)) + 1);
                 c2 = _mm_load_si128((reinterpret_cast<const __m128i*>(src)) + 2);
@@ -722,8 +736,10 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
                 dst += 128;
             }
         }
-        else {                            // source unaligned
-            for (; size >= 128; size -= 128) {
+        else
+        {                            // source unaligned
+            for (; size >= 128; size -= 128)
+            {
                 c0 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 0);
                 c1 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 1);
                 c2 = _mm_loadu_si128((reinterpret_cast<const __m128i*>(src)) + 2);

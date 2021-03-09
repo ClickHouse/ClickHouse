@@ -24,7 +24,6 @@
 #include <immintrin.h>
 
 
-
 template <typename F, typename MemcpyImpl>
 void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_distribution, MemcpyImpl && impl)
 {
@@ -539,7 +538,6 @@ tail:
 
     return ret;
 }
-
 
 
 template <typename F>
