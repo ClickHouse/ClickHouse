@@ -653,7 +653,6 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
 
     get_sync_id_query = "select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'"
     result = mysql_node.query_and_get_data(get_sync_id_query)
-
     assert len(result) == 2
 
     for row in result:
