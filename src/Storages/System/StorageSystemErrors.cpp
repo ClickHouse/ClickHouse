@@ -47,8 +47,8 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &
         if (name.empty())
             continue;
 
-        add_row(name, i, error.local,  error.error_time_ms, error.message, error.stacktrace, 0 /* remote=0 */);
-        add_row(name, i, error.remote, error.error_time_ms, error.message, error.stacktrace, 1 /* remote=1 */);
+        add_row(name, i, error.local,  error.error_time_ms, error.message, error.stacktrace, false /* remote=0 */);
+        add_row(name, i, error.remote, error.error_time_ms, error.message, error.stacktrace, true  /* remote=1 */);
     }
 }
 
