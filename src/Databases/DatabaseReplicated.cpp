@@ -712,11 +712,27 @@ void DatabaseReplicated::detachTablePermanently(const Context & context, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
+        /// We have to remove metadata from zookeeper, because we do not distinguish permanently detached tables
+        /// from attached tables when recovering replica.
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
     DatabaseAtomic::detachTablePermanently(context, table_name);
 }
+
+void DatabaseReplicated::removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path) const
+{
+    auto txn = context.getZooKeeperMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->isInitialQuery() && !txn->isExecuted())
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        String statement = readMetadataFile(table_name);
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+    }
+    DatabaseAtomic::removeDetachedPermanentlyFlag(context, table_name, table_metadata_path);
+}
+
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
