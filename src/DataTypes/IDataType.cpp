@@ -11,8 +11,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationSparse.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTupleElement.h>
 
 
@@ -148,48 +146,9 @@ SerializationPtr IDataType::getDefaultSerialization() const
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSparseSerialization() const
-{
-    return std::make_shared<SerializationSparse>(getDefaultSerialization());
-}
-
 SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const BaseSerializationGetter &) const
 {
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
-}
-
-SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
-{
-    ISerialization::Settings settings =
-    {
-        .num_rows = info.getNumberOfRows(),
-        .num_non_default_rows = info.getNumberOfNonDefaultValues(column_name),
-        .min_ratio_for_dense_serialization = 10
-    };
-
-    return getSerialization(settings);
-}
-
-SerializationPtr IDataType::getSerialization(const IColumn & column) const
-{
-    ISerialization::Settings settings =
-    {
-        .num_rows = column.size(),
-        .num_non_default_rows = column.getNumberOfNonDefaultValues(),
-        .min_ratio_for_dense_serialization = 10
-    };
-
-    return getSerialization(settings);
-}
-
-SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
-{
-    // if (settings.num_non_default_rows * settings.min_ratio_for_dense_serialization < settings.num_rows)
-    //     return getSparseSerialization();
-
-    UNUSED(settings);
-
-    return getDefaultSerialization();
 }
 
 // static
@@ -197,6 +156,7 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
 {
     if (column.isSubcolumn())
     {
+        /// Wrap to custom serialization deepest subcolumn, which is represented in non-complex type.
         auto base_serialization_getter = [&](const IDataType & subcolumn_type)
         {
             return subcolumn_type.getSerialization(column.name, callback);
@@ -209,15 +169,8 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
     return column.type->getSerialization(column.name, callback);
 }
 
-SerializationPtr IDataType::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
+SerializationPtr IDataType::getSerialization(const String &, const StreamExistenceCallback &) const
 {
-    auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
-    if (callback(sparse_idx_name))
-        return getSparseSerialization();
-
-    UNUSED(column_name);
-    UNUSED(callback);
-
     return getDefaultSerialization();
 }
 

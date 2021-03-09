@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Poco/Path.h>
 
@@ -221,8 +220,6 @@ public:
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
     TTLInfos ttl_infos;
-
-    SerializationInfo serialization_info;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(State new_state) const;

@@ -90,6 +90,9 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 
+    for (const auto & column : columns_list)
+        serializations.emplace(column.name, column.type->getDefaultSerialization());
+
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
     initSkipIndices();

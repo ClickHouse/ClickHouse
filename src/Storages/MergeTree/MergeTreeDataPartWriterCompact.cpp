@@ -63,7 +63,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    column.type->enumerateStreams(column.type->getDefaultSerialization(), callback);
+    column.type->enumerateStreams(serializations[column.name], callback);
 }
 
 namespace
@@ -105,6 +105,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 /// Write single granule of one column (rows between 2 marks)
 void writeColumnSingleGranule(
     const ColumnWithTypeAndName & column,
+    const SerializationPtr & serialization,
     ISerialization::OutputStreamGetter stream_getter,
     size_t from_row,
     size_t number_of_rows)
@@ -116,7 +117,6 @@ void writeColumnSingleGranule(
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 
-    auto serialization = column.type->getDefaultSerialization();
     serialization->serializeBinaryBulkStatePrefix(serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
     serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
@@ -203,7 +203,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.rows_to_write);
+            writeColumnSingleGranule(
+                block.getByName(name_and_type->name), serializations[name_and_type->name],
+                stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522

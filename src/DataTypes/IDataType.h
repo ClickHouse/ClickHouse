@@ -31,7 +31,12 @@ class SerializationInfo;
 
 
 /** Properties of data type.
-  * Contains methods for serialization/deserialization.
+  *
+  * Contains methods for getting serialization instances.
+  * One data type may have different serializations, which can be chosen
+  * dynamically before reading or writing, according to information about
+  * column content (see `getSerialization` methods).
+  *
   * Implementations of this interface represent a data type (example: UInt8)
   *  or parametric family of data types (example: Array(...)).
   *
@@ -64,29 +69,27 @@ public:
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
     Names getSubcolumnNames() const;
 
-
+    /// Returns default serialization of data type.
     SerializationPtr getDefaultSerialization() const;
-    SerializationPtr getSparseSerialization() const;
 
-    /// Asks wether the stream with given name exists in table.
+    /// Asks whether the stream with given name exists in table.
     /// If callback returned true for all streams, which are required for
     /// one of serialization types, that serialization will be chosen for reading.
     /// If callback always returned false, the default serialization will be chosen.
     using StreamExistenceCallback = std::function<bool(const String &)>;
     using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
 
-    virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
-    virtual SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
-
+    /// Chooses serialization for reading of one column or subcolumns by
+    /// checking existence of substreams using callback.
     static SerializationPtr getSerialization(
         const NameAndTypePair & column,
         const StreamExistenceCallback & callback = [](const String &) { return false; });
 
-    virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
+    virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
 
-    SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
-    SerializationPtr getSerialization(const IColumn & column) const;
+    /// Returns serialization wrapper for reading one particular subcolumn of data type.
+    virtual SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
     using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
 

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 namespace DB
