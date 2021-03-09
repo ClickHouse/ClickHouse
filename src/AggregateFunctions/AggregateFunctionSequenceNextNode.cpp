@@ -21,6 +21,8 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr size_t MAX_EVENTS_SIZE = 64;
+
 template <typename T>
 inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(const DataTypePtr data_type, const DataTypes & argument_types, bool descending_order)
 {
@@ -28,22 +30,24 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(const DataTy
     {
         // If the number of arguments of sequenceNextNode is 2, the sequenceNextNode acts as sequenceFirstNode.
         if (descending_order)
-            return std::make_shared<SequenceFirstNodeImpl<T, NodeString, true>>(data_type);
+            return std::make_shared<SequenceFirstNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, true>>(data_type);
         else
-            return std::make_shared<SequenceFirstNodeImpl<T, NodeString, false>>(data_type);
+            return std::make_shared<SequenceFirstNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, false>>(data_type);
     }
     else
     {
         if (descending_order)
-            return std::make_shared<SequenceNextNodeImpl<T, NodeString, true>>(data_type, argument_types);
+            return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, true>>(data_type, argument_types);
         else
-            return std::make_shared<SequenceNextNodeImpl<T, NodeString, false>>(data_type, argument_types);
+            return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, false>>(data_type, argument_types);
     }
 }
 
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_args, const DataTypes & argument_types, const Array & parameters)
 {
+    assert(max_args <= MAX_EVENTS_SIZE);
+
     bool descending_order = false;
 
     if (parameters.size() == 1)
