@@ -15,14 +15,14 @@ namespace ErrorCodes
 }
 
 
-/** partitionID(x, y, ...) is a function that computes partition ids of arguments.
+/** partitionId(x, y, ...) is a function that computes partition ids of arguments.
   */
-class FunctionPartitionID : public IFunction
+class FunctionPartitionId : public IFunction
 {
 public:
-    static constexpr auto name = "partitionID";
+    static constexpr auto name = "partitionId";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPartitionID>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPartitionId>(); }
 
     String getName() const override { return name; }
 
@@ -67,9 +67,9 @@ public:
     }
 };
 
-void registerFunctionPartitionID(FunctionFactory & factory)
+void registerFunctionPartitionId(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPartitionID>();
+    factory.registerFunction<FunctionPartitionId>();
 }
 
 }
