@@ -238,7 +238,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
-    auto serialization = column.type->getDefaultSerialization();
+    auto serialization = column.type->getSerialization(column.name, serialization_info);
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())

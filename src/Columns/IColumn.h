@@ -363,6 +363,9 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual void getIndicesOfNonDefaultValues(Offsets & /* offsets */) const {}
+    virtual size_t getNumberOfNonDefaultValues() const { return 0; }
+
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
     virtual Ptr compress() const

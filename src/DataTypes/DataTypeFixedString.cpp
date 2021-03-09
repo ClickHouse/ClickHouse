@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 

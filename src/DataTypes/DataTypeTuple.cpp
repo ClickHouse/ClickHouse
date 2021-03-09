@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationTupleElement.h>
 #include <DataTypes/NestedUtils.h>
@@ -328,6 +329,28 @@ SerializationPtr DataTypeTuple::getSerialization(const String & column_name, con
 
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
+
+SerializationPtr DataTypeTuple::getSerialization(const String & column_name, const SerializationInfo & info) const
+{
+    SerializationTuple::ElementSerializations serializations(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        auto subcolumn_name = Nested::concatenateName(column_name, names[i]);
+
+        ISerialization::Settings settings =
+        {
+            .num_rows = info.getNumberOfRows(),
+            .num_non_default_rows = info.getNumberOfNonDefaultValues(subcolumn_name),
+            .min_ratio_for_dense_serialization = 10
+        };
+
+        auto serializaion = elems[i]->getSerialization(settings);
+        serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, names[i]);
+    }
+
+    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
