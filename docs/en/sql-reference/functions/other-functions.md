@@ -925,7 +925,7 @@ An event has start time and end time. Columns with these times must have the sam
     Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 
 !!! warning "Warning"
-    Events must be ordered by the start time in ascending order. If this requirement is not held the function raises an exception.
+    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
 
 **Arguments**
 
