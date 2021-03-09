@@ -267,7 +267,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_values_column) const
+    const ColumnPtr & default_values_column) const
 {
     validateKeyTypes(key_types);
 
@@ -289,7 +289,6 @@ ColumnPtr IPAddressDictionary::getColumn(
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
-
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {

@@ -9,6 +9,7 @@ PEERDIR(
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
+    contrib/restricted/abseil-cpp
 )
 
 IF (USE_ODBC)
@@ -20,11 +21,11 @@ NO_COMPILER_WARNINGS()
 
 SRCS(
     CacheDictionary.cpp
+    CacheDictionaryUpdateQueue.cpp
     CassandraBlockInputStream.cpp
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
-    ComplexKeyCacheDictionary.cpp
     ComplexKeyDirectDictionary.cpp
     ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
@@ -59,11 +60,10 @@ SRCS(
     RangeHashedDictionary.cpp
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
-    SSDCacheDictionary.cpp
-    SSDComplexKeyCacheDictionary.cpp
     XDBCDictionarySource.cpp
     getDictionaryConfigurationFromAST.cpp
     readInvalidateQuery.cpp
+    registerCacheDictionaries.cpp
     registerDictionaries.cpp
     writeParenthesisedString.cpp
 
