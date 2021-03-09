@@ -75,7 +75,8 @@ def test_recover_from_snapshot(started_cluster):
             stop_zk(zk)
 
     # stale node should recover from leader's snapshot
-    node3.start_clickhouse()
+    # with some sanitizers can start longer than 5 seconds
+    node3.start_clickhouse(20)
 
     try:
         node1_zk = node2_zk = node3_zk = None
