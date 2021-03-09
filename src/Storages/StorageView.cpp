@@ -15,6 +15,7 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/QueryPlan/MaterializingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 
@@ -59,7 +60,7 @@ Pipe StorageView::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe();
 }
 
 void StorageView::read(
@@ -86,10 +87,7 @@ void StorageView::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-    materializing_actions->addMaterializingOutputActions();
-
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
+    auto materializing = std::make_unique<MaterializingStep>(query_plan.getCurrentDataStream());
     materializing->setStepDescription("Materialize constants after VIEW subquery");
     query_plan.addStep(std::move(materializing));
 
@@ -107,9 +105,6 @@ void StorageView::read(
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
-    if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception("Logical error: no table expression in view select AST", ErrorCodes::LOGICAL_ERROR);
-
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)

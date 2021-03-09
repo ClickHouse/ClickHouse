@@ -21,8 +21,7 @@ toc_title: clickhouse-local
 Основной формат вызова:
 
 ``` bash
-$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" \
-    --query "query"
+$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" -q "query"
 ```
 
 Ключи команды:
@@ -77,9 +76,7 @@ $ clickhouse-local --query "
 1	2
 ```
 
-Объём оперативной памяти, занимаемой процессами, которые запустил пользователь (Unix):
-
-Запрос:
+А теперь давайте выведем на экран объём оперативной памяти, занимаемой пользователями (Unix):
 
 ``` bash
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
@@ -87,8 +84,6 @@ $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
         --query "SELECT user, round(sum(mem), 2) as memTotal
             FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
-
-Результат:
 
 ``` text
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.

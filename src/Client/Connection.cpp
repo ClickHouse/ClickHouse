@@ -542,12 +542,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->next();
-}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
@@ -808,10 +802,6 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
             case Protocol::Server::EndOfStream:
                 return res;
 
-            case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
-                return res;
-
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -822,9 +812,6 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
     }
     catch (Exception & e)
     {
-        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
-        e.setRemoteException();
-
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -914,7 +901,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

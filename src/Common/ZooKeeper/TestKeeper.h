@@ -30,7 +30,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
   *
   * NOTE: You can add various failure modes for better testing.
   */
-class TestKeeper final : public IKeeper
+class TestKeeper : public IKeeper
 {
 public:
     TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
@@ -83,7 +83,6 @@ public:
             const Requests & requests,
             MultiCallback callback) override;
 
-    void finalize() override;
 
     struct Node
     {
@@ -131,6 +130,7 @@ private:
 
     void pushRequest(RequestInfo && request);
 
+    void finalize();
 
     ThreadFromGlobalPool processing_thread;
 

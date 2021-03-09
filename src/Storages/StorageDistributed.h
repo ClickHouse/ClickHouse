@@ -85,7 +85,7 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
@@ -114,7 +114,7 @@ public:
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
-    void flushClusterNodesAllData(const Context & context);
+    void flushClusterNodesAllData();
 
     ClusterPtr getCluster() const;
 
@@ -200,8 +200,11 @@ protected:
 
     struct ClusterNodeData
     {
-        std::shared_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
         ConnectionPoolPtr connection_pool;
+
+        void flushAllData() const;
+        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;

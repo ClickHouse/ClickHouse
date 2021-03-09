@@ -97,7 +97,6 @@ function configure
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
     rm -r db0/{data,metadata}/system ||:
-    rm db0/status ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }

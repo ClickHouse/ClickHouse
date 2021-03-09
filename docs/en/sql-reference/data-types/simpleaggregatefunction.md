@@ -18,14 +18,8 @@ The following aggregate functions are supported:
 -   [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
 -   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
 -   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
--   [`argMin`](../../sql-reference/aggregate-functions/reference/argmin.md)
--   [`argMax`](../../sql-reference/aggregate-functions/reference/argmax.md)
 
-
-!!! note "Note"
-    Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes.
-    
-    `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
+Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 
 **Parameters**
 
@@ -35,7 +29,11 @@ The following aggregate functions are supported:
 **Example**
 
 ``` sql
-CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
+CREATE TABLE t
+(
+    column1 SimpleAggregateFunction(sum, UInt64),
+    column2 SimpleAggregateFunction(any, String)
+) ENGINE = ...
 ```
 
 [Original article](https://clickhouse.tech/docs/en/data_types/simpleaggregatefunction/) <!--hide-->

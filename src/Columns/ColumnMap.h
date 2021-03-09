@@ -72,7 +72,6 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
-    bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;
@@ -87,13 +86,8 @@ public:
     const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
     ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
 
-    const ColumnPtr & getNestedColumnPtr() const { return nested; }
-    ColumnPtr & getNestedColumnPtr() { return nested; }
-
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
-
-    ColumnPtr compress() const override;
 };
 
 }

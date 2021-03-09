@@ -198,11 +198,6 @@ public:
         throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    bool hasEqualValues() const override
-    {
-        throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
@@ -220,7 +215,7 @@ public:
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn &) const override;
-
-    MutableColumnPtr cloneResized(size_t size) const override;
 };
+
+
 }

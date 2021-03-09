@@ -36,14 +36,6 @@ public:
         queue.clear();
     }
 
-    void finalize() override
-    {
-        finished_processing = true;
-
-        /// In case we are waiting for result.
-        queue.emplace(Chunk());
-    }
-
 protected:
     void consume(Chunk chunk) override
     {
@@ -53,6 +45,14 @@ protected:
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+
+    void finalize() override
+    {
+        finished_processing = true;
+
+        /// In case we are waiting for result.
+        queue.emplace(Chunk());
+    }
 
 private:
 

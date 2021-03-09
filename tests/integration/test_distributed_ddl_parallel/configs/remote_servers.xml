@@ -1,6 +1,6 @@
 <yandex>
 <remote_servers>
-    <cluster_a>
+    <cluster>
         <shard>
             <replica>
                 <host>n1</host>
@@ -13,20 +13,6 @@
                 <port>9000</port>
             </replica>
         </shard>
-    </cluster_a>
-    <cluster_b>
-        <shard>
-            <replica>
-                <host>n3</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-        <shard>
-            <replica>
-                <host>n4</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-    </cluster_b>
+    </cluster>
 </remote_servers>
 </yandex>

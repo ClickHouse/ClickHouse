@@ -249,7 +249,7 @@ public:
     UInt64 getInputPortNumber(const InputPort * input_port) const
     {
         UInt64 number = 0;
-        for (const auto & port : inputs)
+        for (auto & port : inputs)
         {
             if (&port == input_port)
                 return number;
@@ -263,7 +263,7 @@ public:
     UInt64 getOutputPortNumber(const OutputPort * output_port) const
     {
         UInt64 number = 0;
-        for (const auto & port : outputs)
+        for (auto & port : outputs)
         {
             if (&port == output_port)
                 return number;

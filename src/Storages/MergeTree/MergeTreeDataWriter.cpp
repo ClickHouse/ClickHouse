@@ -12,7 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
-#include <DataStreams/ITTLAlgorithm.h>
+#include <Common/DirectorySyncGuard.h>
 
 #include <Parsers/queryToString.h>
 
@@ -92,23 +92,31 @@ void updateTTL(
     const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
-    const Block & block,
+    Block & block,
     bool update_part_min_max_ttls)
 {
-    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(ttl_entry.expression, block, ttl_entry.result_column);
+    bool remove_column = false;
+    if (!block.has(ttl_entry.result_column))
+    {
+        ttl_entry.expression->execute(block);
+        remove_column = true;
+    }
 
-    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
+    const auto & current = block.getByName(ttl_entry.result_column);
+
+    const IColumn * column = current.column.get();
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
     {
         const auto & date_lut = DateLUT::instance();
         for (const auto & val : column_date->getData())
             ttl_info.update(date_lut.fromDayNum(DayNum(val)));
     }
-    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(ttl_column.get()))
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
     {
         for (const auto & val : column_date_time->getData())
             ttl_info.update(val);
     }
-    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
+    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
         {
@@ -127,6 +135,9 @@ void updateTTL(
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+
+    if (remove_column)
+        block.erase(ttl_entry.result_column);
 }
 
 }
@@ -351,7 +362,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-    SyncGuardPtr sync_guard;
+    std::optional<DirectorySyncGuard> sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
@@ -367,17 +378,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         disk->createDirectories(full_path);
 
         if (data.getSettings()->fsync_part_directory)
-            sync_guard = disk->getDirectorySyncGuard(full_path);
+            sync_guard.emplace(disk, full_path);
     }
 
     if (metadata_snapshot->hasRowsTTL())
         updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
-
-    for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
-
-    for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);

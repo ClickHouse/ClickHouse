@@ -32,7 +32,6 @@ public:
         const String & format_name_,
         UInt64 min_upload_part_size_,
         UInt64 max_single_part_upload_size_,
-        UInt64 max_connections_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
