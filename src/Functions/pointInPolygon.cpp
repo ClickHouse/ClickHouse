@@ -426,14 +426,7 @@ private:
     {
         out_container.reserve(end - begin);
         for (size_t i = begin; i < end; ++i)
-        {
-            Int64 result = 0;
-            if (common::mulOverflow(static_cast<Int64>(x_data[i]), static_cast<Int64>(y_data[i]), result))
-                throw Exception("The coordinates of the point are such that subsequent calculations cannot be performed correctly. " \
-                                "Most likely they are very large in modulus.", ErrorCodes::BAD_ARGUMENTS);
-
             out_container.emplace_back(x_data[i], y_data[i]);
-        }
     }
 
     void parseConstPolygonWithoutHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
