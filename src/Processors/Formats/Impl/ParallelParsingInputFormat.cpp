@@ -110,6 +110,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         {
             column_mapping = input_format->getColumnMapping();
             column_mapping->is_set = true;
+            first_parser_finished.Notify();
         }
 
         // We suppose we will get at least some blocks for a non-empty buffer,
