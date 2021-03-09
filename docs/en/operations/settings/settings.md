@@ -1107,7 +1107,7 @@ Default value: `1`.
 
 **Additional Info** 
 
-This setting is only useful for replicated tables with a sampling key. A query may be executed faster by executing on more servers. But in some cases query performance may even degrade:
+This setting is only useful for replicated tables with a sampling key. A query may be executed faster by executing on several servers in parallel. But query performance may degrade in some cases:
 
 - The position of the sampling key in the partitioning key doesn't allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.
@@ -1115,7 +1115,7 @@ This setting is only useful for replicated tables with a sampling key. A query m
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
 !!! warning "Warning"
-    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
