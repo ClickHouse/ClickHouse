@@ -123,6 +123,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
     }
     catch (...)
     {
+        first_parser_finished.Notify();
         onBackgroundException(unit.offset);
     }
 }
