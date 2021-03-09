@@ -528,7 +528,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
 void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 {
-    auto storage_settings = getSettings();
     auto zookeeper = getZooKeeper();
 
     /// Working with quorum.
@@ -546,10 +545,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
 
     /// Nodes for zero-copy S3 replication
-    if (storage_settings->allow_s3_zero_copy_replication)
+    if (storage_settings.get()->allow_s3_zero_copy_replication)
     {
         zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3", String());
-        zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3/merged", String());
         zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3/shared", String());
     }
 }
@@ -1459,9 +1457,12 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// In some use cases merging can be more expensive than fetching
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
+    std::optional<String> replica_to_execute_merge;
+    bool replica_to_execute_merge_picked = false;
     if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
-        auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+        replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+        replica_to_execute_merge_picked = true;
 
         if (replica_to_execute_merge)
         {
@@ -1547,15 +1548,17 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         auto disk = reserved_space->getDisk();
         if (disk->getType() == DB::DiskType::Type::S3)
         {
-            auto zookeeper = getZooKeeper();
-            String zookeeper_node = zookeeper_path + "/zero_copy_s3/merged/" + entry.new_part_name;
+            if (merge_strategy_picker.shouldMergeOnSingleReplicaS3Shared(entry))
+            {
+                if (!replica_to_execute_merge_picked)
+                    replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
 
-            auto code = zookeeper->tryCreate(zookeeper_node, "lock", zkutil::CreateMode::Ephemeral);
-
-            /// Someone else created or started create this merge,
-            /// so will try to fetch.
-            if (code == Coordination::Error::ZNODEEXISTS)
-                return false;
+                if (replica_to_execute_merge)
+                {
+                    LOG_DEBUG(log, "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+                    return false;
+                }
+            }
         }
     }
 
