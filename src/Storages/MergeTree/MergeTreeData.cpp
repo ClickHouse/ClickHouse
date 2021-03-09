@@ -4256,7 +4256,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             WriteBufferFromOwnString log_str;
             writeCString("\nbalancer: \n", log_str);
             for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
-                writeString(fmt::format("  {}: [{}]\n", disk_name, boost::algorithm::join(per_disk_parts, ", ")), log_str);
+                writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
             LOG_DEBUG(log, log_str.str());
 
             if (ttl_infos)
