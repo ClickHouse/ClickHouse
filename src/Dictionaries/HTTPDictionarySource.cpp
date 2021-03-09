@@ -2,7 +2,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -131,13 +130,11 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
-    auto block = blockForIds(dict_struct, ids);
-
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
-        formatBlock(output_stream, block);
+        auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
+        formatIDs(output_stream, ids);
     };
 
     Poco::URI uri(url);
@@ -152,13 +149,11 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
-    auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
-        formatBlock(output_stream, block);
+        auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
+        formatKeys(dict_struct, output_stream, key_columns, requested_rows);
     };
 
     Poco::URI uri(url);

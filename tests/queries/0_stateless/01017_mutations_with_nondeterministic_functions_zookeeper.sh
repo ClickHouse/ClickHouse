@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
@@ -22,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -n -q "
     INSERT INTO table_for_dict VALUES (3, 3003),(4,4004);
 
     CREATE DICTIONARY dict1( y UInt64 DEFAULT 0, y_new UInt32 DEFAULT 0 ) PRIMARY KEY y
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '${CLICKHOUSE_DATABASE}'))
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '${CLICKHOUSE_DATABASE}'))
     LIFETIME(MIN 1 MAX 10)
     LAYOUT(FLAT());
 

@@ -44,10 +44,11 @@ stages, such as query planning or distributed queries.
 
 To be useful, the tracing information has to be exported to a monitoring system
 that supports OpenTelemetry, such as Jaeger or Prometheus. ClickHouse avoids
-a dependency on a particular monitoring system, instead only providing the
-tracing data through a system table. OpenTelemetry trace span information
+a dependency on a particular monitoring system, instead only
+providing the tracing data conforming to the standard. A natural way to do so
+in an SQL RDBMS is a system table. OpenTelemetry trace span information
 [required by the standard](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span)
-is stored in the `system.opentelemetry_span_log` table.
+is stored in the system table called `system.opentelemetry_span_log`.
 
 The table must be enabled in the server configuration, see the `opentelemetry_span_log`
 element in the default config file `config.xml`. It is enabled by default.
@@ -66,31 +67,3 @@ The table has the following columns:
 
 The tags or attributes are saved as two parallel arrays, containing the keys
 and values. Use `ARRAY JOIN` to work with them.
-
-## Integration with monitoring systems
-
-At the moment, there is no ready tool that can export the tracing data from
-ClickHouse to a monitoring system.
-
-For testing, it is possible to setup the export using a materialized view with the URL engine over the `system.opentelemetry_span_log` table, which would push the arriving log data to an HTTP endpoint of a trace collector. For example, to push the minimal span data to a Zipkin instance running at `http://localhost:9411`, in Zipkin v2 JSON format:
-
-```sql
-CREATE MATERIALIZED VIEW default.zipkin_spans
-ENGINE = URL('http://127.0.0.1:9411/api/v2/spans', 'JSONEachRow')
-SETTINGS output_format_json_named_tuples_as_objects = 1,
-    output_format_json_array_of_rows = 1 AS
-SELECT
-    lower(hex(reinterpretAsFixedString(trace_id))) AS traceId,
-    lower(hex(parent_span_id)) AS parentId,
-    lower(hex(span_id)) AS id,
-    operation_name AS name,
-    start_time_us AS timestamp,
-    finish_time_us - start_time_us AS duration,
-    cast(tuple('clickhouse'), 'Tuple(serviceName text)') AS localEndpoint,
-    cast(tuple(
-        attribute.values[indexOf(attribute.names, 'db.statement')]),
-        'Tuple("db.statement" text)') AS tags
-FROM system.opentelemetry_span_log
-```
-
-In case of any errors, the part of the log data for which the error has occurred will be silently lost. Check the server log for error messages if the data does not arrive.

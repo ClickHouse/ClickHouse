@@ -99,7 +99,7 @@ ReturnType parseDateTimeBestEffortImpl(
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(message, code);
+            throw Exception(message, code);
         else
             return false;
     };
@@ -652,11 +652,6 @@ void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     return parseDateTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr);
-}
-
-bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
-{
-    return parseDateTimeBestEffortImpl<bool, true>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

@@ -1,7 +1,6 @@
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnCompressed.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -290,8 +289,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     while (filt_pos < filt_end_sse)
     {
-        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
 
         if (0 == mask)
         {
@@ -445,33 +443,6 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
 
     get(min_idx, min);
     get(max_idx, max);
-}
-
-ColumnPtr ColumnFixedString::compress() const
-{
-    size_t source_size = chars.size();
-
-    /// Don't compress small blocks.
-    if (source_size < 4096) /// A wild guess.
-        return ColumnCompressed::wrap(this->getPtr());
-
-    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
-
-    if (!compressed)
-        return ColumnCompressed::wrap(this->getPtr());
-
-    size_t column_size = size();
-
-    return ColumnCompressed::create(column_size, compressed->size(),
-        [compressed = std::move(compressed), column_size, n = n]
-        {
-            size_t chars_size = n * column_size;
-            auto res = ColumnFixedString::create(n);
-            res->getChars().resize(chars_size);
-            ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
-            return res;
-        });
 }
 
 }

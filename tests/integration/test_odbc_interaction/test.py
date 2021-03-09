@@ -307,12 +307,6 @@ def test_postgres_insert(started_cluster):
 
 
 def test_bridge_dies_with_parent(started_cluster):
-    if node1.is_built_with_address_sanitizer():
-        # TODO: Leak sanitizer falsely reports about a leak of 16 bytes in clickhouse-odbc-bridge in this test and
-        # that's linked somehow with that we have replaced getauxval() in glibc-compatibility.
-        # The leak sanitizer calls getauxval() for its own purposes, and our replaced version doesn't seem to be equivalent in that case.
-        return
-
     node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")
 
     clickhouse_pid = node1.get_process_pid("clickhouse server")
@@ -342,25 +336,3 @@ def test_bridge_dies_with_parent(started_cluster):
 
     assert clickhouse_pid is None
     assert bridge_pid is None
-
-
-def test_odbc_postgres_date_data_type(started_cluster):
-    conn = get_postgres_conn();
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS clickhouse.test_date (column1 integer, column2 date)")
-
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (1, '2020-12-01')")
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (2, '2020-12-02')")
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (3, '2020-12-03')")
-    conn.commit()
-
-    node1.query(
-        '''
-        CREATE TABLE test_date (column1 UInt64, column2 Date)
-        ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_date')''')
-
-    expected = '1\t2020-12-01\n2\t2020-12-02\n3\t2020-12-03\n'
-    result = node1.query('SELECT * FROM test_date');
-    assert(result == expected)
-
-

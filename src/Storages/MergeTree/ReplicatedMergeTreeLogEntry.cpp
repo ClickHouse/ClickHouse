@@ -6,7 +6,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -17,29 +16,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-enum FormatVersion : UInt8
-{
-    FORMAT_WITH_CREATE_TIME = 2,
-    FORMAT_WITH_BLOCK_ID = 3,
-    FORMAT_WITH_DEDUPLICATE = 4,
-    FORMAT_WITH_UUID = 5,
-    FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
-
-    FORMAT_LAST
-};
-
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    UInt8 format_version = FORMAT_WITH_DEDUPLICATE;
-
-    if (!deduplicate_by_columns.empty())
-        format_version = std::max<UInt8>(format_version, FORMAT_WITH_DEDUPLICATE_BY_COLUMNS);
+    UInt8 format_version = 4;
 
     /// Conditionally bump format_version only when uuid has been assigned.
     /// If some other feature requires bumping format_version to >= 5 then this code becomes no-op.
     if (new_part_uuid != UUIDHelpers::Nil)
-        format_version = std::max<UInt8>(format_version, FORMAT_WITH_UUID);
+        format_version = std::max(format_version, static_cast<UInt8>(5));
 
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
@@ -64,17 +49,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (new_part_uuid != UUIDHelpers::Nil)
                 out << "\ninto_uuid: " << new_part_uuid;
-
-            if (!deduplicate_by_columns.empty())
-            {
-                out << "\ndeduplicate_by_columns: ";
-                for (size_t i = 0; i < deduplicate_by_columns.size(); ++i)
-                {
-                    out << quote << deduplicate_by_columns[i];
-                    if (i != deduplicate_by_columns.size() - 1)
-                        out << ",";
-                }
-            }
 
             break;
 
@@ -155,10 +129,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "format version: " >> format_version >> "\n";
 
-    if (format_version < 1 || format_version >= FORMAT_LAST)
+    if (format_version < 1 || format_version > 5)
         throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
-    if (format_version >= FORMAT_WITH_CREATE_TIME)
+    if (format_version >= 2)
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
@@ -167,7 +141,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "source replica: " >> source_replica >> "\n";
 
-    if (format_version >= FORMAT_WITH_BLOCK_ID)
+    if (format_version >= 3)
     {
         in >> "block_id: " >> escape >> block_id >> "\n";
     }
@@ -193,7 +167,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         }
         in >> new_part_name;
 
-        if (format_version >= FORMAT_WITH_DEDUPLICATE)
+        if (format_version >= 4)
         {
             in >> "\ndeduplicate: " >> deduplicate;
 
@@ -210,20 +184,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
                 }
                 else if (checkString("into_uuid: ", in))
                     in >> new_part_uuid;
-                else if (checkString("deduplicate_by_columns: ", in))
-                {
-                    Strings new_deduplicate_by_columns;
-                    for (;;)
-                    {
-                        String tmp_column_name;
-                        in >> quote >> tmp_column_name;
-                        new_deduplicate_by_columns.emplace_back(std::move(tmp_column_name));
-                        if (!checkString(",", in))
-                            break;
-                    }
-
-                    deduplicate_by_columns = std::move(new_deduplicate_by_columns);
-                }
                 else
                     trailing_newline_found = true;
             }

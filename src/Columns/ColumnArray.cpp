@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnCompressed.h>
 
 #include <common/unaligned.h>
 #include <common/sort.h>
@@ -370,16 +369,8 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
-bool ColumnArray::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnArray>();
-}
-
-namespace
-{
-
 template <bool positive>
-struct Cmp
+struct ColumnArray::Cmp
 {
     const ColumnArray & parent;
     int nan_direction_hint;
@@ -399,9 +390,6 @@ struct Cmp
     }
 };
 
-}
-
-
 void ColumnArray::reserve(size_t n)
 {
     getOffsets().reserve(n);
@@ -412,21 +400,6 @@ void ColumnArray::reserve(size_t n)
 size_t ColumnArray::byteSize() const
 {
     return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
-}
-
-
-size_t ColumnArray::byteSizeAt(size_t n) const
-{
-    const auto & offsets_data = getOffsets();
-
-    size_t pos = offsets_data[n - 1];
-    size_t end = offsets_data[n];
-
-    size_t res = sizeof(offsets_data[0]);
-    for (; pos < end; ++pos)
-        res += getData().byteSizeAt(pos);
-
-    return res;
 }
 
 
@@ -923,21 +896,6 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool
     else
         updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
 }
-
-ColumnPtr ColumnArray::compress() const
-{
-    ColumnPtr data_compressed = data->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
-
-    size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
-
-    return ColumnCompressed::create(size(), byte_size,
-        [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
-        {
-            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
-        });
-}
-
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {

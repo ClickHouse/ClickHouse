@@ -171,12 +171,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     if (!evaluate_block.columns())
         evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
 
-    auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
-    if (dag)
-    {
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
-        actions->execute(evaluate_block);
-    }
+    evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
 
     std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 

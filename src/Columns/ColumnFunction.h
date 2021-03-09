@@ -47,7 +47,6 @@ public:
     void getExtremes(Field &, Field &) const override {}
 
     size_t byteSize() const override;
-    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
@@ -126,11 +125,6 @@ public:
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throw Exception("compareColumn is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    bool hasEqualValues() const override
-    {
-        throw Exception("hasEqualValues is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool, size_t, int, Permutation &) const override

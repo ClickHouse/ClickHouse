@@ -411,21 +411,6 @@ void HashJoin::init(Type type_)
     joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { map.create(data->type); });
 }
 
-bool HashJoin::overDictionary() const
-{
-    return data->type == Type::DICT;
-}
-
-bool HashJoin::empty() const
-{
-    return data->type == Type::EMPTY;
-}
-
-bool HashJoin::alwaysReturnsEmptySet() const
-{
-    return isInnerOrRight(getKind()) && data->empty && !overDictionary();
-}
-
 size_t HashJoin::getTotalRowCount() const
 {
     size_t res = 0;
@@ -734,7 +719,7 @@ public:
         if constexpr (has_defaults)
             applyLazyDefaults();
 
-        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+        for (size_t j = 0; j < right_indexes.size(); ++j)
             columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
     }
 
@@ -747,7 +732,7 @@ public:
     {
         if (lazy_defaults_count)
         {
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            for (size_t j = 0; j < right_indexes.size(); ++j)
                 JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
             lazy_defaults_count = 0;
         }
@@ -1218,8 +1203,8 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     {
         const auto & left_type_origin = data_types[i];
         const auto & [c2, right_type_origin, right_name] = right_table_keys.safeGetByPosition(i);
-        auto left_type = removeNullable(recursiveRemoveLowCardinality(left_type_origin));
-        auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
+        auto left_type = removeNullable(left_type_origin);
+        auto right_type = removeNullable(right_type_origin);
         if (!left_type->equals(*right_type))
             throw Exception(
                 "Type mismatch in joinGet key " + toString(i) + ": found type " + left_type->getName() + ", while the needed type is "
@@ -1311,7 +1296,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
 }
 
 

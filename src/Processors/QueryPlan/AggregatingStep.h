@@ -32,8 +32,6 @@ public:
     void describeActions(FormatSettings &) const override;
     void describePipeline(FormatSettings & settings) const override;
 
-    const Aggregator::Params & getParams() const { return params; }
-
 private:
     Aggregator::Params params;
     bool final;

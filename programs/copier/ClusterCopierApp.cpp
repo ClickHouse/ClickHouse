@@ -1,7 +1,6 @@
 #include "ClusterCopierApp.h"
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
 #include <unistd.h>
 
