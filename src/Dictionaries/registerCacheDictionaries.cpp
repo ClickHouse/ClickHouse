@@ -1,6 +1,7 @@
 #include "CacheDictionary.h"
-#include "SSDCacheDictionaryStorage.h"
 #include "CacheDictionaryStorage.h"
+#include "SerializedCacheDictionaryStorage.h"
+#include "SSDCacheDictionaryStorage.h"
 #include <Dictionaries/DictionaryFactory.h>
 
 namespace DB
@@ -18,9 +19,16 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & layout_prefix,
     const DictionaryLifetime & dict_lifetime,
-    DictionaryKeyType dictionary_key_type)
+    DictionaryKeyType dictionary_key_type,
+    bool serialized_storage)
 {
-    String dictionary_type_prefix = dictionary_key_type == DictionaryKeyType::complex ? ".complex_key_cache." : ".cache.";
+    String dictionary_type_prefix;
+
+    if (!serialized_storage)
+        dictionary_type_prefix = dictionary_key_type == DictionaryKeyType::complex ? ".complex_key_cache." : ".cache.";
+    else
+        dictionary_type_prefix = dictionary_key_type == DictionaryKeyType::complex ? ".serialized_complex_key_cache." : ".serialized_cache.";
+
     String dictionary_configuration_prefix = layout_prefix + dictionary_type_prefix;
 
     const size_t size = config.getUInt64(dictionary_configuration_prefix + "size_in_cells");
@@ -158,7 +166,8 @@ DictionaryPtr createCacheDictionaryLayout(
     const DictionaryStructure & dict_struct,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    DictionarySourcePtr source_ptr)
+    DictionarySourcePtr source_ptr,
+    bool serialized_storage)
 {
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionary");
 
@@ -193,8 +202,23 @@ DictionaryPtr createCacheDictionaryLayout(
 
     const bool allow_read_expired_keys = config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
 
-    auto storage_configuration = parseCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, dictionary_key_type);
-    auto storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
+    auto storage_configuration = parseCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, dictionary_key_type, serialized_storage);
+
+    std::shared_ptr<ICacheDictionaryStorage> storage;
+
+    if (serialized_storage)
+    {
+        SerializedCacheDictionaryStorageConfiguration serialized_configuration
+        {
+            .max_size_in_cells = storage_configuration.max_size_in_cells,
+            .strict_max_lifetime_seconds = storage_configuration.strict_max_lifetime_seconds,
+            .lifetime = storage_configuration.lifetime,
+        };
+
+        storage = std::make_shared<SerializedCacheDictionaryStorage<dictionary_key_type>>(serialized_configuration);
+    }
+    else
+        storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
 
     auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, dictionary_key_type);
 
@@ -265,7 +289,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                           const std::string & config_prefix,
                                           DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        return createCacheDictionaryLayout<DictionaryKeyType::simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+        return createCacheDictionaryLayout<DictionaryKeyType::simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), false);
     };
 
     factory.registerLayout("cache", create_simple_cache_layout, false);
@@ -276,10 +300,32 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                                const std::string & config_prefix,
                                                DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        return createCacheDictionaryLayout<DictionaryKeyType::complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+        return createCacheDictionaryLayout<DictionaryKeyType::complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), false);
     };
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
+
+    auto create_simple_serialized_cache_layout = [=](const String & full_name,
+                                          const DictionaryStructure & dict_struct,
+                                          const Poco::Util::AbstractConfiguration & config,
+                                          const std::string & config_prefix,
+                                          DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
+        return createCacheDictionaryLayout<DictionaryKeyType::simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), true);
+    };
+
+    factory.registerLayout("serialized_cache", create_simple_serialized_cache_layout, false);
+
+    auto create_complex_key_serialzied_cache_layout = [=](const std::string & full_name,
+                                               const DictionaryStructure & dict_struct,
+                                               const Poco::Util::AbstractConfiguration & config,
+                                               const std::string & config_prefix,
+                                               DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
+        return createCacheDictionaryLayout<DictionaryKeyType::complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), true);
+    };
+
+    factory.registerLayout("complex_key_serialized_cache", create_complex_key_serialzied_cache_layout, true);
 
 #if defined(OS_LINUX) || defined(__FreeBSD__)
 
