@@ -725,6 +725,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             need_remove_expired_values = true;
             force_ttl = true;
         }
+
+        new_data_part->serialization_info.add(part->serialization_info);
     }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;

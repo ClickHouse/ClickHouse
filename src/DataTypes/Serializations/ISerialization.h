@@ -140,6 +140,13 @@ public:
         double avg_value_size_hint = 0;
     };
 
+    struct Settings
+    {
+        size_t num_rows;
+        size_t num_non_default_rows;
+        size_t min_ratio_for_dense_serialization;
+    };
+
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
     virtual void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & /*settings*/,
