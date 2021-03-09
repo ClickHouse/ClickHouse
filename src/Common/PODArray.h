@@ -335,7 +335,7 @@ public:
     using const_iterator = const T *;
 
 
-    PODArray() {}
+    PODArray() = default;
 
     PODArray(size_t n)
     {
