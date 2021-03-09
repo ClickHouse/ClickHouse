@@ -45,6 +45,7 @@ public:
                           const ASTPtr & query) override;
     void removeDictionary(const Context & context, const String & dictionary_name) override;
     void detachTablePermanently(const Context & context, const String & table_name) override;
+    void removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path) const override;
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
