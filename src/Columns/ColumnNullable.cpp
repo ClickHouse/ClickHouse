@@ -271,6 +271,11 @@ void ColumnNullable::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                            compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnNullable::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnNullable>();
+}
+
 void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
     /// Cannot pass limit because of unknown amount of NULLs.
