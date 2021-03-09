@@ -21,6 +21,14 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
  *    X will never appear later in any of input streams.
  *  - Aggregate all rows in current blocks of inputs up to the upper_bound of X using
  *    regular hash table algorithm (Aggregator::mergeBlock).
+ * The hash table at one step will contain all keys <= X from all blocks.
+ * There is another, simpler algorithm (AggregatingSortedAlgorithm), that merges
+ * and aggregates sorted data for one key at a time, using one aggregation state.
+ * It is a simple k-way merge algorithm and it makes O(n*log(k)) comparisons,
+ * where * n -- number of rows, k -- number of parts. In comparison, this algorithm
+ * makes about * O(n + k * log(n)) operations, n -- for hash table, k * log(n)
+ * -- for finding positions in blocks. It is better than O(n*log(k)), when k is not
+ * too big and not too small (about 100-1000).
  */
 class FinishAggregatingInOrderAlgorithm final : public IMergingAlgorithm
 {
