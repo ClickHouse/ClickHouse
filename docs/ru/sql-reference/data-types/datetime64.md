@@ -1,8 +1,3 @@
----
-toc_priority: 49
-toc_title: DateTime64
----
-
 # DateTime64 {#data_type-datetime64}
 
 Позволяет хранить момент времени, который может быть представлен как календарная дата и время, с заданной суб-секундной точностью.
@@ -92,12 +87,11 @@ FROM dt
 
 ## See Also {#see-also}
 
--   [Функции преобразования типов](../../sql-reference/functions/type-conversion-functions.md)
--   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
--   [Функции для работы с массивами](../../sql-reference/functions/array-functions.md)
+-   [Функции преобразования типов](../../sql-reference/data-types/datetime64.md)
+-   [Функции для работы с датой и временем](../../sql-reference/data-types/datetime64.md)
+-   [Функции для работы с массивами](../../sql-reference/data-types/datetime64.md)
 -   [Настройка `date_time_input_format`](../../operations/settings/settings.md#settings-date_time_input_format)
--   [Настройка `date_time_output_format`](../../operations/settings/settings.md)
--   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
+-   [Конфигурационный параметр сервера `timezone`](../../sql-reference/data-types/datetime64.md#server_configuration_parameters-timezone)
+-   [Операторы для работы с датой и временем](../../sql-reference/data-types/datetime64.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime`](datetime.md)

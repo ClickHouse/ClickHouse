@@ -119,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
 
     size_t size() const override
     {
@@ -163,8 +163,6 @@ public:
 
     size_t byteSize() const override;
 
-    size_t byteSizeAt(size_t n) const override;
-
     size_t allocatedBytes() const override;
 
     void protect() override;
@@ -198,11 +196,6 @@ public:
         throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    bool hasEqualValues() const override
-    {
-        throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
@@ -220,7 +213,7 @@ public:
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn &) const override;
-
-    MutableColumnPtr cloneResized(size_t size) const override;
 };
+
+
 }

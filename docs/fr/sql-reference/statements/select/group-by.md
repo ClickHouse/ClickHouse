@@ -57,7 +57,7 @@ Cette ligne supplémentaire est uniquement produite en `JSON*`, `TabSeparated*`,
 -   Dans `Pretty*` formats, la ligne est sortie comme une table séparée après le résultat principal.
 -   Dans les autres formats, il n'est pas disponible.
 
-`WITH TOTALS` peut être exécuté de différentes manières lorsqu'il est présent. Le comportement dépend de l' ‘totals_mode’ paramètre.
+`WITH TOTALS` peut être exécuté de différentes manières lorsqu'il est présent. Le comportement dépend de l' ‘totals\_mode’ paramètre.
 
 ### Configuration Du Traitement Des Totaux {#configuring-totals-processing}
 
@@ -67,9 +67,9 @@ Les autres alternatives incluent uniquement les lignes qui passent à travers av
 
 `after_having_exclusive` – Don't include rows that didn't pass through `max_rows_to_group_by`. En d'autres termes, ‘totals’ aura moins ou le même nombre de lignes que si `max_rows_to_group_by` ont été omis.
 
-`after_having_inclusive` – Include all the rows that didn't pass through ‘max_rows_to_group_by’ dans ‘totals’. En d'autres termes, ‘totals’ aura plus ou le même nombre de lignes que si `max_rows_to_group_by` ont été omis.
+`after_having_inclusive` – Include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ dans ‘totals’. En d'autres termes, ‘totals’ aura plus ou le même nombre de lignes que si `max_rows_to_group_by` ont été omis.
 
-`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max_rows_to_group_by’ dans ‘totals’. Sinon, ne pas les inclure.
+`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ dans ‘totals’. Sinon, ne pas les inclure.
 
 `totals_auto_threshold` – By default, 0.5. The coefficient for `after_having_auto`.
 
@@ -117,11 +117,11 @@ L'agrégation est l'une des caractéristiques les plus importantes d'un SGBD ori
 ### Groupe par dans la mémoire externe {#select-group-by-in-external-memory}
 
 Vous pouvez activer le dumping des données temporaires sur le disque pour limiter l'utilisation de la mémoire pendant `GROUP BY`.
-Le [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) réglage détermine le seuil de consommation de RAM pour le dumping `GROUP BY` données temporaires dans le système de fichiers. Si elle est définie sur 0 (valeur par défaut), elle est désactivée.
+Le [max\_bytes\_before\_external\_group\_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) réglage détermine le seuil de consommation de RAM pour le dumping `GROUP BY` données temporaires dans le système de fichiers. Si elle est définie sur 0 (valeur par défaut), elle est désactivée.
 
 Lors de l'utilisation de `max_bytes_before_external_group_by`, nous vous recommandons de définir `max_memory_usage` environ deux fois plus élevé. Ceci est nécessaire car il y a deux étapes à l'agrégation: la lecture des données et la formation des données intermédiaires (1) et la fusion des données intermédiaires (2). Le Dumping des données dans le système de fichiers ne peut se produire qu'au cours de l'étape 1. Si les données temporaires n'ont pas été vidées, l'étape 2 peut nécessiter jusqu'à la même quantité de mémoire qu'à l'étape 1.
 
-Par exemple, si [max_memory_usage](../../../operations/settings/settings.md#settings_max_memory_usage) a été défini sur 10000000000 et que vous souhaitez utiliser l'agrégation externe, il est logique de définir `max_bytes_before_external_group_by` à 10000000000, et `max_memory_usage` à 20000000000. Lorsque l'agrégation externe est déclenchée (s'il y a eu au moins un vidage de données temporaires), la consommation maximale de RAM n'est que légèrement supérieure à `max_bytes_before_external_group_by`.
+Par exemple, si [max\_memory\_usage](../../../operations/settings/settings.md#settings_max_memory_usage) a été défini sur 10000000000 et que vous souhaitez utiliser l'agrégation externe, il est logique de définir `max_bytes_before_external_group_by` à 10000000000, et `max_memory_usage` à 20000000000. Lorsque l'agrégation externe est déclenchée (s'il y a eu au moins un vidage de données temporaires), la consommation maximale de RAM n'est que légèrement supérieure à `max_bytes_before_external_group_by`.
 
 Avec le traitement des requêtes distribuées, l'agrégation externe est effectuée sur des serveurs distants. Pour que le serveur demandeur n'utilise qu'une petite quantité de RAM, définissez `distributed_aggregation_memory_efficient` 1.
 

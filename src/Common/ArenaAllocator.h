@@ -1,4 +1,3 @@
-#pragma once
 #include <Common/Arena.h>
 #include <Common/Allocator.h>
 

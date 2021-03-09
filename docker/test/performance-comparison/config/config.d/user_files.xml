@@ -1,9 +1,0 @@
-<yandex>
-    <!-- Directory with user provided files that are accessible by 'file' table function. -->
-    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
-
-    <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
-    <users_config>users.xml</users_config>
-
-    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-</yandex>

@@ -57,11 +57,6 @@ public:
         return chars.size() + sizeof(n);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return n;
-    }
-
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + sizeof(n);
@@ -132,11 +127,6 @@ public:
                                                compare_results, direction, nan_direction_hint);
     }
 
-    bool hasEqualValues() const override
-    {
-        return hasEqualValuesImpl<ColumnFixedString>();
-    }
-
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
@@ -160,8 +150,6 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
-
-    ColumnPtr compress() const override;
 
     void reserve(size_t size) override
     {
@@ -190,5 +178,6 @@ public:
 
     size_t getN() const { return n; }
 };
+
 
 }

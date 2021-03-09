@@ -1,4 +1,4 @@
-<yandex>
+<dictionaries>
     <dictionary>
         <name>clickhouse_flat</name>
 
@@ -34,4 +34,4 @@
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</dictionaries>

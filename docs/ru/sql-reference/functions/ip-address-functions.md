@@ -1,21 +1,12 @@
----
-toc_priority: 55
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0049\u0050\u002d\u0430\u0434\u0440\u0435\u0441\u0430\u043c\u0438"
----
-
 # Функции для работы с IP-адресами {#funktsii-dlia-raboty-s-ip-adresami}
 
 ## IPv4NumToString(num) {#ipv4numtostringnum}
 
 Принимает число типа UInt32. Интерпретирует его, как IPv4-адрес в big endian. Возвращает строку, содержащую соответствующий IPv4-адрес в формате A.B.C.D (числа в десятичной форме через точки).
 
-Синоним: `INET_NTOA`.
-
 ## IPv4StringToNum(s) {#ipv4stringtonums}
 
 Функция, обратная к IPv4NumToString. Если IPv4 адрес в неправильном формате, то возвращает 0.
-
-Синоним: `INET_ATON`.
 
 ## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
@@ -53,11 +44,7 @@ LIMIT 10
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
-IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. 
-
-Примеры: `INET6_NTOA`.
-
-Примеры:
+IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. Примеры:
 
 ``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
@@ -121,53 +108,10 @@ LIMIT 10
 └────────────────────────────┴────────┘
 ```
 
-## IPv6StringToNum {#ipv6stringtonums}
+## IPv6StringToNum(s) {#ipv6stringtonums}
 
-Функция, обратная к [IPv6NumToString](#ipv6numtostringx). Если IPv6 адрес передан в неправильном формате, то возвращает строку из нулевых байт.
-
-Если IP адрес является корректным IPv4 адресом, функция возвращает его IPv6 эквивалент.
-
+Функция, обратная к IPv6NumToString. Если IPv6 адрес в неправильном формате, то возвращает строку из нулевых байт.
 HEX может быть в любом регистре.
-
-Синоним: `INET6_ATON`.
-
-**Синтаксис**
-
-``` sql
-IPv6StringToNum(string)
-```
-
-**Аргумент** 
-
--   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Адрес IPv6 в двоичном представлении.
-
-Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
-```
-
-Результат:
-
-``` text
-┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
-│ notaddress │ ::                                   │
-│ 127.0.0.1  │ ::ffff:127.0.0.1                     │
-│ 1111::ffff │ 1111::ffff                           │
-└────────────┴──────────────────────────────────────┘
-```
-
-**Смотрите также**
-
--   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
@@ -262,137 +206,36 @@ SELECT
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-## toIPv6 {#toipv6string}
+## toIPv6(string) {#toipv6string}
 
-Приводит строку с адресом в формате IPv6 к типу [IPv6](../../sql-reference/data-types/domains/ipv6.md). Возвращает пустое значение, если входящая строка не является корректным IP адресом.
-Похоже на функцию [IPv6StringToNum](#ipv6stringtonums), которая представляет адрес IPv6 в двоичном виде.
-
-Если входящая строка содержит корректный IPv4 адрес, функция возвращает его IPv6 эквивалент.
-
-**Синтаксис**
-
-```sql
-toIPv6(string)
-```
-
-**Аргумент**
-
--   `string` — IP адрес. [String](../../sql-reference/data-types/string.md)
-
-**Возвращаемое значение**
-
--   IP адрес. 
-
-Тип: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
-
-**Примеры**
-
-Запрос:
+Псевдоним функции `IPv6StringToNum()` которая принимает строку с адресом IPv6 и возвращает значение типа [IPv6](../../sql-reference/functions/ip-address-functions.md), которое равно значению, возвращаемому функцией `IPv6StringToNum()`.
 
 ``` sql
-WITH '2001:438:ffff::407d:1bc1' AS IPv6_string
+WITH
+    '2001:438:ffff::407d:1bc1' as IPv6_string
 SELECT
-    hex(IPv6StringToNum(IPv6_string)),
-    hex(toIPv6(IPv6_string));
+    toTypeName(IPv6StringToNum(IPv6_string)),
+    toTypeName(toIPv6(IPv6_string))
 ```
 
-Результат:
+``` text
+┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
+│ FixedString(16)                          │ IPv6                            │
+└──────────────────────────────────────────┴─────────────────────────────────┘
+```
+
+``` sql
+WITH
+    '2001:438:ffff::407d:1bc1' as IPv6_string
+SELECT
+    hex(IPv6StringToNum(IPv6_string)),
+    hex(toIPv6(IPv6_string))
+```
 
 ``` text
 ┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
 │ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
 └───────────────────────────────────┴──────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT toIPv6('127.0.0.1');
-```
-
-Результат:
-
-``` text
-┌─toIPv6('127.0.0.1')─┐
-│ ::ffff:127.0.0.1    │
-└─────────────────────┘
-```
-
-## isIPv4String {#isipv4string}
-
-Определяет, является ли строка адресом IPv4 или нет. Также вернет `0`, если `string` — адрес IPv6.
-
-**Синтаксис**
-
-```sql
-isIPv4String(string)
-```
-
-**Параметры**
-
--   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   `1` если `string` является адресом IPv4 , иначе — `0`.
-
-Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Примеры**
-
-Запрос:
-
-```sql
-SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr
-```
-
-Результат:
-
-``` text
-┌─addr─────────────┬─isIPv4String(addr)─┐
-│ 0.0.0.0          │                  1 │
-│ 127.0.0.1        │                  1 │
-│ ::ffff:127.0.0.1 │                  0 │
-└──────────────────┴────────────────────┘
-```
-
-## isIPv6String {#isipv6string}
-
-Определяет, является ли строка адресом IPv6 или нет. Также вернет `0`, если `string` — адрес IPv4.
-
-**Синтаксис**
-
-```sql
-isIPv6String(string)
-```
-
-**Параметры**
-
--   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   `1` если `string` является адресом IPv6 , иначе — `0`.
-
-Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr
-```
-
-Результат:
-
-``` text
-┌─addr─────────────┬─isIPv6String(addr)─┐
-│ ::               │                  1 │
-│ 1111::ffff       │                  1 │
-│ ::ffff:127.0.0.1 │                  1 │
-│ 127.0.0.1        │                  0 │
-└──────────────────┴────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->

@@ -134,7 +134,7 @@ Ejemplo:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Para mejorar el rendimiento, los mensajes recibidos se agrupan en bloques del tamaño de [Max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). Si el bloque no se formó dentro de [Nombre de la red inalámbrica (SSID):](../../../operations/server-configuration-parameters/settings.md) milisegundos, los datos se vaciarán a la tabla independientemente de la integridad del bloque.
+Para mejorar el rendimiento, los mensajes recibidos se agrupan en bloques del tamaño de [Max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). Si el bloque no se formó dentro de [Nombre de la red inalámbrica (SSID):](../../../operations/server-configuration-parameters/settings.md) milisegundos, los datos se vaciarán a la tabla independientemente de la integridad del bloque.
 
 Para detener la recepción de datos de tema o cambiar la lógica de conversión, desconecte la vista materializada:
 

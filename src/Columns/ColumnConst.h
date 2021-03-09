@@ -187,11 +187,6 @@ public:
         return data->byteSize() + sizeof(s);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return data->byteSizeAt(0);
-    }
-
     size_t allocatedBytes() const override
     {
         return data->allocatedBytes() + sizeof(s);
@@ -205,8 +200,6 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
-
-    bool hasEqualValues() const override { return true; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
@@ -251,8 +244,6 @@ public:
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
     T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
-
-    bool isCollationSupported() const override { return data->isCollationSupported(); }
 };
 
 }

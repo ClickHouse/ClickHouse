@@ -1,8 +1,3 @@
----
-toc_priority: 38
-toc_title: "\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043d\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
----
-
 # Параметрические агрегатные функции {#aggregate_functions_parametric}
 
 Некоторые агрегатные функции могут принимать не только столбцы-аргументы (по которым производится свёртка), но и набор параметров - констант для инициализации. Синтаксис - две пары круглых скобок вместо одной. Первая - для параметров, вторая - для аргументов.
@@ -239,7 +234,7 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 **Параметры**
 
--   `window` — ширина скользящего окна по времени. Единица измерения зависит от `timestamp` и может варьироваться. Должно соблюдаться условие `timestamp события cond2 <= timestamp события cond1 + window`.
+-   `window` — ширина скользящего окна по времени в секундах. [UInt](../../sql-reference/aggregate-functions/parametric-functions.md).
 -   `mode` - необязательный параметр. Если установлено значение `'strict'`, то функция `windowFunnel()` применяет условия только для уникальных значений.
 -   `timestamp` — имя столбца, содержащего временные отметки. [Date](../../sql-reference/aggregate-functions/parametric-functions.md), [DateTime](../../sql-reference/aggregate-functions/parametric-functions.md#data_type-datetime) и другие параметры с типом `Integer`. В случае хранения меток времени в столбцах с типом `UInt64`, максимально допустимое значение соответствует ограничению для типа `Int64`, т.е. равно `2^63-1`.
 -   `cond` — условия или данные, описывающие цепочку событий. [UInt8](../../sql-reference/aggregate-functions/parametric-functions.md).

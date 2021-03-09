@@ -11,7 +11,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <unistd.h>
 
 
@@ -28,6 +27,9 @@ namespace CurrentMetrics
 
 namespace zkutil
 {
+
+const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -50,18 +52,11 @@ class ZooKeeper
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    /// hosts_string -- comma separated [secure://]host:port list
-    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+    ZooKeeper(const std::string & hosts_, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT,
+              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper");
-
-    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
-              const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper");
+              const std::string & implementation = "zookeeper");
 
     /** Config of the form:
         <zookeeper>
@@ -91,8 +86,6 @@ public:
     /// after the session has expired.
     /// This object remains unchanged, and the new session is returned.
     Ptr startNewSession() const;
-
-    bool configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const;
 
     /// Returns true, if the session has expired.
     bool expired();
@@ -191,17 +184,10 @@ public:
     /// result would be the same as for the single call.
     void tryRemoveRecursive(const std::string & path);
 
-    /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
-    /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
-    /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
-    void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
     using WaitCondition = std::function<bool()>;
-
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
@@ -254,13 +240,14 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti tryAsyncMulti(const Coordination::Requests & ops);
 
-    void finalize();
-
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
+    void init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
+
+    void removeChildrenRecursive(const std::string & path);
+    void tryRemoveChildrenRecursive(const std::string & path);
 
     /// The following methods don't throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -275,7 +262,7 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    Strings hosts;
+    std::string hosts;
     std::string identity;
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
@@ -324,15 +311,8 @@ public:
         return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
-    void setAlreadyRemoved()
-    {
-        need_remove = false;
-    }
-
     ~EphemeralNodeHolder()
     {
-        if (!need_remove)
-            return;
         try
         {
             zookeeper.tryRemove(path);
@@ -340,7 +320,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -348,7 +328,6 @@ private:
     std::string path;
     ZooKeeper & zookeeper;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
-    bool need_remove = true;
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;

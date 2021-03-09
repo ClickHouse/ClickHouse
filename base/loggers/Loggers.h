@@ -1,5 +1,3 @@
-#pragma once
-
 #include <optional>
 #include <string>
 #include <Poco/AutoPtr.h>

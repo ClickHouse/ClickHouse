@@ -3,9 +3,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <optional>
-#include <vector>
-#include <common/types.h>
+#include <Core/Types.h>
 
 namespace Poco::Util
 {
@@ -27,11 +25,8 @@ struct S3AuthSettings
 {
     const String access_key_id;
     const String secret_access_key;
-    const String server_side_encryption_customer_key_base64;
 
     const HeaderCollection headers;
-
-    std::optional<bool> use_environment_credentials;
 };
 
 /// Settings for the StorageS3.

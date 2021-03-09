@@ -76,7 +76,7 @@ SELECT erf(3 / sqrt(2))
 
 返回x的三角余弦值。
 
-## tan(x) {#tanx}
+## 谭(x) {#tanx}
 
 返回x的三角正切值。
 
@@ -88,7 +88,7 @@ SELECT erf(3 / sqrt(2))
 
 返回x的反三角余弦值。
 
-## atan(x) {#atanx}
+## 阿坦(x) {#atanx}
 
 返回x的反三角正切值。
 

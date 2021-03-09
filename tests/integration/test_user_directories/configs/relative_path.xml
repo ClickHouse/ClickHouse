@@ -4,7 +4,4 @@
             <path>users4.xml</path>
         </users_xml>
     </user_directories>
-
-    <users_config remove="remove"/>
-    <access_control_path remove="remove"/>
 </yandex>

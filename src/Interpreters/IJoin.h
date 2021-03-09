@@ -12,7 +12,6 @@ namespace DB
 
 class Block;
 struct ExtraBlock;
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class IJoin
 {
@@ -28,9 +27,7 @@ public:
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
     virtual bool hasTotals() const = 0;
-    /// Set totals for right table
     virtual void setTotals(const Block & block) = 0;
-    /// Add totals to block from left table
     virtual void joinTotals(Block & block) const = 0;
 
     virtual size_t getTotalRowCount() const = 0;

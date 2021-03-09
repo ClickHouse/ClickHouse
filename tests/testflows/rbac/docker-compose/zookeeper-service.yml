@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
   zookeeper:
-    image: zookeeper:3.6.2
+    image: zookeeper:3.4.12
     expose:
       - "2181"
     environment:
@@ -10,9 +10,9 @@ services:
       ZOO_MY_ID: 1
     healthcheck:
       test: echo stat | nc localhost 2181
-      interval: 3s
-      timeout: 2s
-      retries: 5
-      start_period: 2s
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     security_opt:
       - label:disable
