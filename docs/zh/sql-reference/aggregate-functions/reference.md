@@ -396,11 +396,6 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## quantiles(level1, level2, …)(x) {#quantiles}
-
-所有分位数函数也有相应的函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`。这些函数一次计算所列层次的所有分位数，并返回结果值的数组。
-
-
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 该函数实现随机线性回归。 它支持自定义参数的学习率、L2正则化系数、微批，并且具有少量更新权重的方法（[Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认）， [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent)， [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum)， [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)）。
@@ -472,58 +467,6 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 -   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
 -   [线性回归和逻辑回归之间的区别](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
-
-## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
-
-该函数实现随机逻辑回归。 它可以用于二进制分类问题，支持与stochasticLinearRegression相同的自定义参数，并以相同的方式工作。
-
-### 参数 {#agg_functions-stochasticlogisticregression-parameters}
-
-参数与stochasticLinearRegression中的参数完全相同:
-`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-欲了解更多信息，请参阅 [参数](#agg_functions-stochasticlinearregression-parameters).
-
-``` text
-stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
-```
-
-**1.** 安装
-
-<!-- -->
-
-    参考stochasticLinearRegression相关文档
-
-    预测标签的取值范围为[-1, 1]
-
-**2.** 预测
-
-<!-- -->
-
-    使用已经保存的state我们可以预测标签为 `1` 的对象的概率。
-
-    ``` sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
-
-    查询结果返回一个列的概率。注意 `evalMLMethod` 的第一个参数是 `AggregateFunctionState` 对象，接下来的参数是列的特性。
-
-    我们也可以设置概率的范围， 这样需要给元素指定不同的标签。
-
-    ``` sql
-    SELECT ans < 1.1 AND ans > 0.5 FROM
-    (WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) AS ans FROM test_data)
-    ```
-
-    结果是标签。
-
-    `test_data` 是一个像 `train_data` 一样的表，但是不包含目标值。
-
-**另请参阅**
-
--   [随机指标线上回归](#agg_functions-stochasticlinearregression)
--   [线性回归和逻辑回归之间的差异](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/reference/) <!--hide-->
