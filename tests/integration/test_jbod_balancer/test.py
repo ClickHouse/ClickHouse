@@ -170,15 +170,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
                 "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
 
-        time.sleep(2)
-
-        for _ in range(10):
-            try:
-                print("Syncing replica")
-                node2.query("SYSTEM SYNC REPLICA tbl")
-                break
-            except:
-                time.sleep(0.5)
+        node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
         check_balance(node1, "tbl")
         check_balance(node2, "tbl")
