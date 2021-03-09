@@ -16,10 +16,10 @@ size_t NuKeeperLogStore::start_index() const
     return changelog.getStartIndex();
 }
 
-void NuKeeperLogStore::init(size_t from_log_idx)
+void NuKeeperLogStore::init(size_t last_commited_log_index, size_t logs_to_keep)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.readChangelogAndInitWriter(from_log_idx);
+    changelog.readChangelogAndInitWriter(last_commited_log_index, logs_to_keep);
 }
 
 size_t NuKeeperLogStore::next_slot() const
