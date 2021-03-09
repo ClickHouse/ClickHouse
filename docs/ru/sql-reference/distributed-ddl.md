@@ -1,7 +1,6 @@
 ---
 toc_priority: 32
-toc_title: "Распределенные DDL запросы
-"
+toc_title: "Распределенные DDL запросы"
 ---
 
 # Распределенные DDL запросы (секция ON CLUSTER) {#raspredelennye-ddl-zaprosy-sektsiia-on-cluster}

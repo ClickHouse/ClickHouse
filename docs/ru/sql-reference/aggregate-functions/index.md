@@ -1,6 +1,5 @@
 ---
-toc_folder_title: "Агрегатные ф\
-  ункции"
+toc_folder_title: "Агрегатные функции"
 toc_priority: 33
 toc_title: "Введение"
 ---
