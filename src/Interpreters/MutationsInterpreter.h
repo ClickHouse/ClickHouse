@@ -60,6 +60,7 @@ private:
     MutationCommands commands;
     Context context;
     bool can_execute;
+    SelectQueryOptions select_limits;
 
     ASTPtr mutation_ast;
 
