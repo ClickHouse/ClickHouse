@@ -238,8 +238,6 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     addTotalRowsApprox(waiting_hosts.size());
 
     timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
-    /// There is not sense to check query status with zero timeout.
-    assert(timeout_seconds >= 0);
 }
 
 std::pair<String, UInt16> DDLQueryStatusInputStream::parseHostAndPort(const String & host_id) const
@@ -284,7 +282,7 @@ Block DDLQueryStatusInputStream::readImpl()
             return res;
         }
 
-        if (watch.elapsedSeconds() > timeout_seconds)
+        if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
         {
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();

@@ -18,6 +18,7 @@ namespace DB
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated;
 
 class ZooKeeperMetadataTransaction;
@@ -192,5 +193,7 @@ public:
 
     ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
 };
+
+ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 
 }
