@@ -35,4 +35,4 @@ You can use table functions in:
 | [s3](../../sql-reference/table-functions/s3.md)                  | Creates a [S3](../../engines/table-engines/integrations/s3.md)-engine table.                                                           |
 | [postgresql](../../sql-reference/table-functions/postgresql.md)  | Creates a [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)-engine table.                                           |
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/) <!--hide-->

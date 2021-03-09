@@ -723,4 +723,4 @@ Setting fields:
 - `table` — Remote table name.
 - `invalidate_query` — Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dict-sources) <!--hide-->
