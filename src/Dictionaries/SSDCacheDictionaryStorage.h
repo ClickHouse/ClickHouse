@@ -1316,9 +1316,6 @@ private:
         cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
     }
 
-    template <typename>
-    friend class ArenaCellKeyDisposer;
-
     SSDCacheDictionaryStorageConfiguration configuration;
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
