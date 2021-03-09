@@ -112,9 +112,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.max_compress_block_size);
     };
 
-    auto serialization = column.type->getSerialization(column.name, data_part->serialization_info);
-    column.type->enumerateStreams(serialization, callback);
-    serializations.emplace(column.name, std::move(serialization));
+    column.type->enumerateStreams(serializations[column.name], callback);
 }
 
 
@@ -301,7 +299,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     ISerialization::SerializeBinaryBulkSettings & serialize_settings,
     const Granule & granule)
 {
-    auto serialization = serializations[name_and_type.name];
+    const auto & serialization = serializations[name_and_type.name];
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
@@ -406,8 +404,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
     size_t mark_num;
 
-    auto serialization = type.getDefaultSerialization();
-
+    const auto & serialization = serializations[name];
     for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
         if (mark_num > index_granularity.getMarksCount())

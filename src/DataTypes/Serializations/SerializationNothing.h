@@ -1,3 +1,5 @@
+#pragma once
+
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Common/Exception.h>
 
