@@ -30,7 +30,6 @@ Engines in the family:
 -   [CollapsingMergeTree](../../engines/table-engines/mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [VersionedCollapsingMergeTree](../../engines/table-engines/mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree)
--   [S3](../../engines/table-engines/integrations/s3.md#table-engine-s3)
 
 ### Log {#log}
 
