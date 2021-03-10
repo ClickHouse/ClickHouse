@@ -21,7 +21,7 @@ public:
 
     BlockInputStreamPtr loadAll(const std::string & attributes_string, const Block & sample_block);
 
-    BlockInputStreamPtr loadIds(const std::string & ids_string, const std::string & attributes_string, const Block & sample_block);
+    BlockInputStreamPtr loadIds(const std::string & attributes_string, const std::string & ids_string, const Block & sample_block);
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const Block & sample_block);
 
@@ -30,7 +30,7 @@ public:
     bool supportsSelectiveLoad();
 
 private:
-    Block dataToBlock(const Block & sample_block, const void * data);
+    static Block dataToBlock(const Block & sample_block, const void * data);
 
     std::string library_path;
     SharedLibraryPtr library;
