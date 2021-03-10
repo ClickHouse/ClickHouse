@@ -4,7 +4,7 @@ toc_priority: 141
 
 # deltaSum {#agg_functions-deltasum}
 
-Суммирует арифметическую разницу между последовательными значениями. Функция работает аналогично функции [runningDifference](../../functions/other-functions.md#other_functions-runningdifference), но реализована как агрегатная функция.
+Суммирует арифметическую разницу между последовательными значениями. Функция работает аналогично функции [runningDifference](../../functions/other-functions.md#runningdifferencex), но реализована как агрегатная функция.
 
 !!! note "Note"
     Если разница отрицательна — она будет проигнорирована.
