@@ -216,6 +216,10 @@ Pipe StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
 
+    /// There must be at least one column in the block so that it knows the number of rows.
+    if (!header)
+        header.insert({ColumnConst::create(ColumnUInt8::create(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
