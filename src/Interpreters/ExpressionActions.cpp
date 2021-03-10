@@ -624,9 +624,9 @@ void ExpressionActionsChain::finalize()
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
         auto & required_output = steps[i]->required_output;
-        Names required_names;
+        NameSet required_names;
         for (const auto & output : required_output)
-            required_names.push_back(output.first);
+            required_names.insert(output.first);
 
         if (i + 1 < static_cast<int>(steps.size()))
         {
@@ -637,7 +637,7 @@ void ExpressionActionsChain::finalize()
                 {
                     auto iter = required_output.find(it.name);
                     if (iter == required_output.end())
-                        required_names.push_back(it.name);
+                        required_names.insert(it.name);
                     else
                         iter->second = false;
                 }
@@ -694,20 +694,19 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     }
 }
 
-void ExpressionActionsChain::ArrayJoinStep::finalize(const Names & required_output_)
+void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_output_)
 {
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
 
-    NameSet names(required_output_.begin(), required_output_.end());
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_required_columns.emplace_back(column);
     }
 
@@ -730,14 +729,14 @@ ExpressionActionsChain::JoinStep::JoinStep(
     analyzed_join->addJoinedColumnsAndCorrectNullability(result_columns);
 }
 
-void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
+void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
 {
     /// We need to update required and result columns by removing unused ones.
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
 
     /// That's an input columns we need.
-    NameSet required_names(required_output_.begin(), required_output_.end());
+    NameSet required_names = required_output_;
     for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
 

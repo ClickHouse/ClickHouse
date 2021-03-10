@@ -675,10 +675,11 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             for (const auto & kv : stage.column_to_updated)
                 stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
 
+            auto & actions = actions_chain.getLastStep().actions();
+            auto & index = actions->getIndex();
+
             for (const auto & kv : stage.column_to_updated)
             {
-                auto & actions = actions_chain.getLastStep().actions();
-                auto & index = actions->getIndex();
                 auto column_name = kv.second->getColumnName();
                 auto it = index.begin();
                 for (; it != index.end(); ++it)
@@ -688,14 +689,45 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
                 if (it == index.end())
                     throw Exception("Unknown identifier: '" + column_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
 
-                index.push_back(&actions->addAlias(**it, kv.first));
+                const auto & alias = actions->addAlias(**it, kv.first);
+                bool added = false;
+                for (auto & node : index)
+                {
+                    if (node->result_name == alias.result_name)
+                    {
+                        added = true;
+                        node = &alias;
+                        break;
+                    }
+                }
+                if (!added)
+                    index.push_back(&alias);
             }
+
         }
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
+        actions_chain.getLastStep().required_output.clear();
+        ActionsDAG::NodeRawConstPtrs new_index;
+        // auto & actions = actions_chain.getLastStep().actions();
+        // auto & index = actions->getIndex();
         for (const auto & name : stage.output_columns)
+        {
+            // auto it = index.begin();
+            // for (; it != index.end(); ++it)
+            //     if ((*it)->result_name == name)
+            //         break;
+
+
+            // if (it == index.end())
+            //     throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+
+            // new_index.push_back(*it);
             actions_chain.getLastStep().addRequiredOutput(name);
+        }
+        // index.swap(new_index);
+
         actions_chain.getLastActions();
 
         actions_chain.finalize();
