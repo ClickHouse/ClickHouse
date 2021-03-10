@@ -123,7 +123,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
     }
     catch (...)
     {
-        first_parser_finished.set();
         onBackgroundException(unit.offset);
     }
 }
@@ -131,8 +130,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-
     std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
@@ -143,6 +140,7 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
     }
     tryLogCurrentException(__PRETTY_FUNCTION__);
     parsing_finished = true;
+    first_parser_finished.set();
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();
 }
