@@ -16,7 +16,7 @@
 #endif
 
 
-extern bool have_avx;
+//extern bool have_avx;
 void init_memcpy();
 
 
@@ -47,6 +47,7 @@ tail:
             *dst = *src;
         }
     }
+/*
 #if !defined(MEMORY_SANITIZER)  /// Asm code is not instrumented by MSan, skip this branch
     else if (have_avx)
     {
@@ -134,7 +135,7 @@ tail:
             goto tail;
         }
     }
-#endif
+#endif*/
     else
     {
         if (size <= 128)
