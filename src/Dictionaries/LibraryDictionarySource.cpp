@@ -14,6 +14,7 @@
 #include "LibraryDictionarySourceExternal.h"
 #include "registerDictionaries.h"
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -134,7 +135,7 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
-    std::string res;
+    WriteBufferFromOwnString res;
 
     for (const auto & key : config_keys)
     {
@@ -144,41 +145,43 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
         if (bracket_pos != std::string::npos && bracket_pos > 0)
             key_name = key.substr(0, bracket_pos);
 
-        if (!res.empty())
-            res += ' ';
+        if (res.stringRef().size)
+            writeChar(' ', res);
 
-        res += key_name + ' ' + config.getString(config_root + "." + key);
+        writeString(key_name, res);
+        writeChar(' ', res);
+        writeString(config.getString(config_root + "." + key), res);
     }
 
-    return res;
+    return res.str();
 }
 
 
 String LibraryDictionarySource::getDictAttributesString()
 {
-    std::string res;
+    WriteBufferFromOwnString res;
     for (const auto & attr : dict_struct.attributes)
     {
-        if (!res.empty())
-            res += ' ';
-        res += attr.name;
+        if (res.stringRef().size)
+            writeChar(' ', res);
+        writeString(attr.name, res);
     }
 
-    return res;
+    return res.str();
 }
 
 
 String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids)
 {
-    std::string res;
+    WriteBufferFromOwnString res;
     for (const auto & id : ids)
     {
-        if (!res.empty())
-            res += ' ';
-        res += std::to_string(id);
+        if (res.stringRef().size)
+            writeChar(' ', res);
+        writeString(std::to_string(id), res);
     }
 
-    return res;
+    return res.str();
 }
 
 

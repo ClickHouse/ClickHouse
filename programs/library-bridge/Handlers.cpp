@@ -115,8 +115,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            if (!params.has("sample_block"))
+            {
+                processError(response, "No 'sample_block' in request URL");
+                return;
+            }
+
             std::string attributes = params.get("attributes");
-            std::string columns = params.get("columns");
+            std::string columns = params.get("sample_block");
             std::shared_ptr<Block> sample_block;
 
             try
@@ -125,14 +131,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
             catch (const Exception & ex)
             {
-                processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
+                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
                 LOG_WARNING(log, ex.getStackTraceString());
                 return;
             }
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             auto input = library_handler->loadAll(attributes, *sample_block);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
 
             copyData(*input, *output);
         }
@@ -150,69 +156,83 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            if (!params.has("sample_block"))
+            {
+                processError(response, "No 'sample_block' in request URL");
+                return;
+            }
+
             std::string attributes = params.get("attributes");
             std::string ids = params.get("ids");
+            std::string columns = params.get("sample_block");
 
-            std::string columns = params.get("columns");
             std::shared_ptr<Block> sample_block;
-
             try
             {
                 sample_block = parseColumns(std::move(columns));
             }
             catch (const Exception & ex)
             {
-                processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
+                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
                 LOG_WARNING(log, ex.getStackTraceString());
                 return;
             }
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             auto input = library_handler->loadIds(attributes, ids, *sample_block);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
 
             copyData(*input, *output);
         }
         else if (method == "loadKeys")
         {
-            std::string key_columns_string = params.get("key_columns");
-            std::shared_ptr<Block> keys_sample_block;
+            if (!params.has("requested_block"))
+            {
+                processError(response, "No 'requested_block' in request URL");
+                return;
+            }
 
+            if (!params.has("sample_block"))
+            {
+                processError(response, "No 'sample_block' in request URL");
+                return;
+            }
+
+            std::string requested_block_string = params.get("requested_block");
+            std::string sample_block_string = params.get("sample_block");
+
+            std::shared_ptr<Block> requested_sample_block;
             try
             {
-                keys_sample_block = parseColumns(std::move(key_columns_string));
+                requested_sample_block = parseColumns(std::move(requested_block_string));
             }
             catch (const Exception & ex)
             {
-                processError(response, "Invalid 'key_columns' parameter in request body '" + ex.message() + "'");
+                processError(response, "Invalid 'requested_block' parameter in request body '" + ex.message() + "'");
                 LOG_WARNING(log, ex.getStackTraceString());
                 return;
             }
 
-            std::string columns = params.get("columns");
             std::shared_ptr<Block> sample_block;
-
             try
             {
-                sample_block = parseColumns(std::move(columns));
+                sample_block = parseColumns(std::move(sample_block_string));
             }
             catch (const Exception & ex)
             {
-                processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
+                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
                 LOG_WARNING(log, ex.getStackTraceString());
                 return;
             }
-
-            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
 
             auto & read_buf = request.getStream();
-            auto format = FormatFactory::instance().getInput("RowBinary", read_buf, *keys_sample_block, context, DEFAULT_BLOCK_SIZE);
+            auto format = FormatFactory::instance().getInput(FORMAT, read_buf, *requested_sample_block, context, DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto block = reader->read();
-            auto key_columns = block.getColumns();
 
-            auto input = library_handler->loadKeys(key_columns, *sample_block);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
+            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            auto input = library_handler->loadKeys(block.getColumns(), *sample_block);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
 
             copyData(*input, *output);
         }

@@ -27,6 +27,8 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
+    static constexpr inline auto FORMAT = "RowBinary";
+
     void processError(HTTPServerResponse & response, const std::string & message);
 
     Poco::Logger * log;
