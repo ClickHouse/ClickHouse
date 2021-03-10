@@ -33,6 +33,6 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 | [jdbc](jdbc.md)       | Создаёт таблицу с дижком [JDBC](../../engines/table-engines/integrations/jdbc.md).                                                        |
 | [odbc](odbc.md)       | Создаёт таблицу с движком [ODBC](../../engines/table-engines/integrations/odbc.md).                                                       |
 | [hdfs](hdfs.md)       | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                       |
-| [s3](../../sql-reference/table-functions/s3.md)           | Creates a [S3](../../engines/table-engines/integrations/s3.md)-engine table.                                                       |
+| [s3](s3.md)           | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md)-engine table.                                                       |
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/) <!--hide-->
