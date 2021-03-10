@@ -240,16 +240,10 @@ Poco::Timespan NuKeeperTCPHandler::receiveHandshake()
         throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(last_zxid_seen, *in);
-
-    if (last_zxid_seen != 0)
-        throw Exception("Non zero last_zxid_seen is not supported", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-
     Coordination::read(timeout_ms, *in);
+
+    /// TODO Stop ignoring this value
     Coordination::read(previous_session_id, *in);
-
-    if (previous_session_id != 0)
-        throw Exception("Non zero previous session id is not supported", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-
     Coordination::read(passwd, *in);
 
     int8_t readonly;
