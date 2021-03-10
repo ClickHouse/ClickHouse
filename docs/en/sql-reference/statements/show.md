@@ -440,9 +440,7 @@ SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
 
 **Clauses**
 
-`LIKE` clause needs a setting name or part of the name without globs.
-
-`ILIKE` clause can contain globs such as `%` or `_`.
+`LIKE|ILIKE` allow to specify a matching pattern for the setting name. It can contain globs such as `%` or `_`. `LIKE` clause is case-sensitive, `ILIKE` — case insensitive.
 
 When the `CHANGED` clause is used, the query returns only settings changed from their default values.
 
