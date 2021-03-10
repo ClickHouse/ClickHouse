@@ -28,7 +28,7 @@ public:
 
     BlockInputStreamPtr loadIds(const std::string attributes_string, const std::string ids_string, const Block & sample_block);
 
-    BlockInputStreamPtr loadKeys();
+    BlockInputStreamPtr loadKeys(const Block & key_columns, const Block & sample_block);
 
     bool isModified();
 

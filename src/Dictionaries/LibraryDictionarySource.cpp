@@ -9,6 +9,7 @@
 #include <ext/scope_guard.h>
 #include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
+#include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
 #include "registerDictionaries.h"
@@ -109,11 +110,11 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 }
 
 
-/// Not implemented, TODO
-BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & /* key_columns */, const std::vector<std::size_t> & requested_rows)
+BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
-    return bridge_helper->loadKeys();
+    auto block = blockForKeys(dict_struct, key_columns, requested_rows);
+    return bridge_helper->loadKeys(block, description.sample_block);
 }
 
 

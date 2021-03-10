@@ -23,7 +23,7 @@ public:
 
     BlockInputStreamPtr loadIds(const std::string & ids_string, const std::string & attributes_string, const Block & sample_block);
 
-    /// TODO: loadKeys
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const Block & sample_block);
 
     bool isModified();
 
