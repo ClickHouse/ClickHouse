@@ -1107,7 +1107,7 @@ Default value: `1`.
 
 **Additional Info** 
 
-This setting is only useful for replicated tables with a sampling key. A query may be executed faster by executing on several servers in parallel. But query performance may degrade in some cases:
+This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in some cases:
 
 - The position of the sampling key in the partitioning key doesn't allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.

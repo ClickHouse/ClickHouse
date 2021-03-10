@@ -919,18 +919,16 @@ Calculates the number of events that are concurrent at event start time.
 runningConcurrency(start, end)
 ```
 
-An event has start time and end time. Columns with these times must have the same data type. The start time is included in an event, while the stop time is excluded. The function analyses each event start time and calculates the total number of events that are active including the starting event.
+Each event has a start time and an end time. Columns with these two values must be of the same data type. The start time is included in the event, while the end time is excluded. The function calculates the total number of active events for each start time in the specified period.
 
 !!! warning "Warning"
     Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
-
-!!! warning "Warning"
     Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
 
 **Arguments**
 
--   `start` — A column with start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column with end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned values**
 
@@ -940,7 +938,7 @@ Type: [UInt32](../../sql-reference/data-types/int-uint.md)
 
 **Example**
 
-Input table:
+Consider the table:
 
 ``` text
 ┌──────start─┬────────end─┐
