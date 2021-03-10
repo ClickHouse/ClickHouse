@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 namespace
@@ -57,7 +56,6 @@ namespace
     };
 
 }
-
 
 ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
@@ -200,101 +198,14 @@ namespace
         std::function<void(WriteBufferFromFile &)> send_data;
         ThreadFromGlobalPool thread;
     };
-
-    /** A stream, adds additional columns to each block that it will read from inner stream.
-     *
-     *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
-     */
-    class BlockInputStreamWithAdditionalColumns final: public IBlockInputStream
-    {
-    public:
-        BlockInputStreamWithAdditionalColumns(
-            Block block_to_add_,
-            std::unique_ptr<IBlockInputStream>&& stream_)
-            : block_to_add(std::move(block_to_add_))
-            , stream(std::move(stream_))
-        {
-        }
-
-        Block getHeader() const override
-        {
-            auto header = stream->getHeader();
-
-            if (header)
-            {
-                for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
-                    header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
-            }
-
-            return header;
-        }
-
-        Block readImpl() override
-        {
-            auto block = stream->read();
-
-            if (block)
-            {
-                auto block_rows = block.rows();
-
-                auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
-
-                if (cut_block.rows() != block_rows)
-                    throw Exception(
-                        "Number of rows in block to add after cut must equal to number of rows in block from inner stream",
-                        ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-                for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
-                    block.insert(0, cut_block.getByPosition(i));
-
-                current_range_index += block_rows;
-            }
-
-            return block;
-        }
-
-        void readPrefix() override
-        {
-            stream->readPrefix();
-        }
-
-        void readSuffix() override
-        {
-            stream->readSuffix();
-        }
-
-        String getName() const override { return "BlockInputStreamWithAdditionalColumns"; }
-
-    private:
-        Block block_to_add;
-        std::unique_ptr<IBlockInputStream> stream;
-        size_t current_range_index = 0;
-    };
-
 }
-
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-
-    auto stream = std::make_unique<BlockInputStreamWithBackgroundThread>(
-        context, format, sample_block, command, log,
-        [block, this](WriteBufferFromFile & out) mutable
-        {
-            auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
-            formatBlock(output_stream, block);
-            out.close();
-        });
-
-    if (implicit_key)
-    {
-        return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
-    }
-    else
-        return std::shared_ptr<BlockInputStreamWithBackgroundThread>(stream.release());
+    return getStreamForBlock(block);
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -302,7 +213,11 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
+    return getStreamForBlock(block);
+}
 
+BlockInputStreamPtr ExecutableDictionarySource::getStreamForBlock(const Block & block)
+{
     auto stream = std::make_unique<BlockInputStreamWithBackgroundThread>(
         context, format, sample_block, command, log,
         [block, this](WriteBufferFromFile & out) mutable
@@ -354,13 +269,13 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (check_config)
-            throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
 
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
