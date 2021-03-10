@@ -486,6 +486,18 @@ struct HashMethodKeysFixed
 
     PaddedPODArray<Key> prepared_keys;
 
+    static bool usePreparedKeys(const Sizes & key_sizes)
+    {
+        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
+            return false;
+
+        for (auto size : key_sizes)
+            if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+                return false;
+
+        return true;
+    }
+
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : Base(key_columns), key_sizes(std::move(key_sizes_)), keys_size(key_columns.size())
     {
@@ -507,19 +519,13 @@ struct HashMethodKeysFixed
             }
         }
 
-        if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
+        if (usePreparedKeys(key_sizes))
         {
-            bool has_unsupported_sizes = false;
-            for (auto size : key_sizes)
-                if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
-                    has_unsupported_sizes = true;
-
-            if (!has_unsupported_sizes)
-                packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-        if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
+        else if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
         {
             /** The task is to "pack" multiple fixed-size fields into single larger Key.
               * Example: pack UInt8, UInt32, UInt16, UInt64 into UInt128 key:
@@ -593,6 +599,37 @@ struct HashMethodKeysFixed
 #endif
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         }
+    }
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        if (!usePreparedKeys(key_sizes))
+            return {};
+
+        std::vector<IColumn *> new_columns;
+        new_columns.reserve(key_columns.size());
+
+        Sizes new_sizes;
+        auto fill_size = [&](size_t size)
+        {
+            for (size_t i = 0; i < key_sizes.size(); ++i)
+            {
+                if (key_sizes[i] == size)
+                {
+                    new_columns.push_back(key_columns[i]);
+                    new_sizes.push_back(size);
+                }
+            }
+        };
+
+        fill_size(16);
+        fill_size(8);
+        fill_size(4);
+        fill_size(2);
+        fill_size(1);
+
+        key_columns.swap(new_columns);
+        return new_sizes;
     }
 };
 
