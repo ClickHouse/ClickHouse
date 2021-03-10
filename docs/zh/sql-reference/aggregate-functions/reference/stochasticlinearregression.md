@@ -4,31 +4,33 @@ toc_priority: 221
 
 # stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
-This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+该函数实现随机线性回归。 它支持自定义参数的学习率、L2正则化系数、微批，并且具有少量更新权重的方法（[Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认）， [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent)， [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum)， [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)）。
 
-### Parameters {#agg_functions-stochasticlinearregression-parameters}
+### 参数 {#agg_functions-stochasticlinearregression-parameters}
 
-There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
+有4个可自定义的参数。它们按顺序传递给函数，但不需要传递所有四个参数——将使用默认值，然而好的模型需要一些参数调整。
 
-``` text
+**语法**
+
+``` sql
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
-2.  `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
-3.  `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
-4.  `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
+1.  `learning rate` 当执行梯度下降步骤时，步长的系数。 过大的学习率可能会导致模型的权重无限大。 默认值为 `0.00001`。
+2.  `l2 regularization coefficient` 这可能有助于防止过度拟合。 默认值为 `0.1`。
+3.  `mini-batch size` 设置元素的数量，这些元素将被计算和求和以执行梯度下降的一个步骤。纯随机下降使用一个元素，但是具有小批量（约10个元素）使梯度步骤更稳定。 默认值为 `15`。
+4.  `method for updating weights` 他们是: `Adam` (默认情况下), `SGD`, `Momentum`, `Nesterov`。`Momentum` 和 `Nesterov` 需要更多的计算和内存，但是它们恰好在收敛速度和随机梯度方法的稳定性方面是有用的。
 
-### Usage {#agg_functions-stochasticlinearregression-usage}
+### 使用 {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function [evalMLMethod](../../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+`stochasticLinearRegression` 用于两个步骤：拟合模型和预测新数据。 为了拟合模型并保存其状态以供以后使用，我们使用 `-State` 组合器，它基本上保存了状态（模型权重等）。
+为了预测我们使用函数 [evalMLMethod](../../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), 这需要一个状态作为参数以及特征来预测。
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
-**1.** Fitting
+**1.** 拟合
 
-Such query may be used.
+可以使用这种查询。
 
 ``` sql
 CREATE TABLE IF NOT EXISTS train_data
@@ -43,33 +45,33 @@ stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
 AS state FROM train_data;
 ```
 
-Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+在这里，我们还需要将数据插入到 `train_data` 表。参数的数量不是固定的，它只取决于传入 `linearRegressionState` 的参数数量。它们都必须是数值。
+注意，目标值(我们想学习预测的)列作为第一个参数插入。
 
-**2.** Predicting
+**2.** 预测
 
-After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+在将状态保存到表中之后，我们可以多次使用它进行预测，甚至与其他状态合并，创建新的更好的模型。
 
 ``` sql
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, param1, param2) FROM test_data
 ```
 
-The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+查询将返回一列预测值。注意，`evalMLMethod` 的第一个参数是 `AggregateFunctionState` 对象, 接下来是特征列。
 
-`test_data` is a table like `train_data` but may not contain target value.
+`test_data` 是一个类似 `train_data` 的表 但可能不包含目标值。
 
-### Notes {#agg_functions-stochasticlinearregression-notes}
+### 注 {#agg_functions-stochasticlinearregression-notes}
 
-1.  To merge two models user may create such query:
+1.  要合并两个模型，用户可以创建这样的查询:
     `sql  SELECT state1 + state2 FROM your_models`
-    where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
+    其中 `your_models` 表包含这两个模型。此查询将返回新的 `AggregateFunctionState` 对象。
 
-2.  User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
+2.  如果没有使用 `-State` 组合器，用户可以为自己的目的获取所创建模型的权重，而不保存模型 。
     `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
-    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
+    这样的查询将拟合模型，并返回其权重——首先是权重，对应模型的参数，最后一个是偏差。 所以在上面的例子中，查询将返回一个具有3个值的列。
 
-**See Also**
+**参见**
 
--   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#agg_functions-stochasticlogisticregression)
--   [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [随机指标逻辑回归](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#agg_functions-stochasticlogisticregression)
+-   [线性回归和逻辑回归之间的差异](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
