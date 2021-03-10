@@ -20,7 +20,7 @@ $ sudo service clickhouse-server restart
 
 Обновление ClickHouse до определенной версии:
 
-Пример:
+**Пример**
 
 `xx.yy.a.b` — это номер текущей стабильной версии. Последнюю стабильную версию можно узнать [здесь](https://github.com/ClickHouse/ClickHouse/releases)
 
