@@ -143,7 +143,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     actions = analyzer.simpleSelectActions();
 
     auto column_name = expr_list->children.at(0)->getColumnName();
-    actions->removeUnusedActions({column_name});
+    actions->removeUnusedActions(NameSet{column_name});
     actions->projectInput(false);
 
     for (const auto * node : actions->getInputs())

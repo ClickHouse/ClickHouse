@@ -159,7 +159,7 @@ struct ExpressionActionsChain
         virtual NamesAndTypesList getRequiredColumns() const = 0;
         virtual ColumnsWithTypeAndName getResultColumns() const = 0;
         /// Remove unused result and update required columns
-        virtual void finalize(const Names & required_output_) = 0;
+        virtual void finalize(const NameSet & required_output_) = 0;
         /// Add projections to expression
         virtual void prependProjectInput() const = 0;
         virtual std::string dump() const = 0;
@@ -189,7 +189,7 @@ struct ExpressionActionsChain
             return actions_dag->getResultColumns();
         }
 
-        void finalize(const Names & required_output_) override
+        void finalize(const NameSet & required_output_) override
         {
             if (!actions_dag->projectedOutput())
                 actions_dag->removeUnusedActions(required_output_);
@@ -216,7 +216,7 @@ struct ExpressionActionsChain
 
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-        void finalize(const Names & required_output_) override;
+        void finalize(const NameSet & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
         std::string dump() const override { return "ARRAY JOIN"; }
     };
@@ -232,7 +232,7 @@ struct ExpressionActionsChain
         JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-        void finalize(const Names & required_output_) override;
+        void finalize(const NameSet & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before JOIN ?
         std::string dump() const override { return "JOIN"; }
     };
