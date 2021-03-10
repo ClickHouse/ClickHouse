@@ -3466,6 +3466,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
     }
 }
 
+
 void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
@@ -3517,11 +3518,13 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
     }
 }
 
+
 bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const
 {
     auto zookeeper = getZooKeeper();
     return zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_info.getPartName());
 }
+
 
 bool StorageReplicatedMergeTree::partIsLastQuorumPart(const MergeTreePartInfo & part_info) const
 {
@@ -3543,6 +3546,7 @@ bool StorageReplicatedMergeTree::partIsLastQuorumPart(const MergeTreePartInfo & 
 
     return partition_it->second == part_info.getPartName();
 }
+
 
 bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
     const String & source_replica_path, bool to_detached, size_t quorum, zkutil::ZooKeeper::Ptr zookeeper_)
@@ -3595,7 +3599,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     };
 
     DataPartPtr part_to_clone;
-
     {
         /// If the desired part is a result of a part mutation, try to find the source part and compare
         /// its checksums to the checksums of the desired part. If they match, we can just clone the local part.
@@ -3630,6 +3633,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     }
 
+    ReplicatedMergeTreeAddress address;
+    ConnectionTimeouts timeouts;
+    std::pair<String, String> user_password;
+    String interserver_scheme;
     std::function<MutableDataPartPtr()> get_part;
     if (part_to_clone)
     {
@@ -3640,10 +3647,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     }
     else
     {
-        ReplicatedMergeTreeAddress address(zookeeper->get(source_replica_path + "/host"));
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
-        auto user_password = global_context.getInterserverCredentials();
-        String interserver_scheme = global_context.getInterserverScheme();
+        address.fromString(zookeeper->get(source_replica_path + "/host"));
+        timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
+        user_password = global_context.getInterserverCredentials();
+        interserver_scheme = global_context.getInterserverScheme();
 
         get_part = [&, address, timeouts, user_password, interserver_scheme]()
         {
@@ -3671,8 +3678,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             replaced_parts = checkPartChecksumsAndCommit(transaction, part);
 
             /** If a quorum is tracked for this part, you must update it.
-             * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
-             */
+              * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
+              */
             if (quorum)
             {
                 /// Check if this quorum insert is parallel or not
@@ -3789,26 +3796,24 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
 
     std::function<MutableDataPartPtr()> get_part;
 
+    ReplicatedMergeTreeAddress address(zookeeper->get(source_replica_path + "/host"));
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
+    auto user_password = global_context.getInterserverCredentials();
+    String interserver_scheme = global_context.getInterserverScheme();
+
+    get_part = [&, address, timeouts, user_password, interserver_scheme]()
     {
-        ReplicatedMergeTreeAddress address(zookeeper->get(source_replica_path + "/host"));
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
-        auto user_password = global_context.getInterserverCredentials();
-        String interserver_scheme = global_context.getInterserverScheme();
+        if (interserver_scheme != address.scheme)
+            throw Exception("Interserver schemes are different: '" + interserver_scheme
+                + "' != '" + address.scheme + "', can't fetch part from " + address.host,
+                ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
-        get_part = [&, address, timeouts, user_password, interserver_scheme]()
-        {
-            if (interserver_scheme != address.scheme)
-                throw Exception("Interserver schemes are different: '" + interserver_scheme
-                    + "' != '" + address.scheme + "', can't fetch part from " + address.host,
-                    ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
-
-            return fetcher.fetchPart(
-                metadata_snapshot, part_name, source_replica_path,
-                address.host, address.replication_port,
-                timeouts, user_password.first, user_password.second, interserver_scheme, false, "", true,
-                replaced_disk);
-        };
-    }
+        return fetcher.fetchPart(
+            metadata_snapshot, part_name, source_replica_path,
+            address.host, address.replication_port,
+            timeouts, user_password.first, user_password.second, interserver_scheme, false, "", true,
+            replaced_disk);
+    };
 
     try
     {
