@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <input_format_parallel_parsing>0</input_format_parallel_parsing>
+        </default>
+    </profiles>
+</yandex>
