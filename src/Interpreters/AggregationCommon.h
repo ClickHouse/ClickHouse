@@ -19,11 +19,6 @@
 #include <tmmintrin.h>
 #endif
 
-
-template <>
-struct DefaultHash<StringRef> : public StringRefHash {};
-
-
 namespace DB
 {
 namespace ErrorCodes

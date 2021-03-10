@@ -5,16 +5,20 @@
 #include <common/logger_useful.h>
 #include <Coordination/ThreadSafeQueue.h>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/NuKeeperSnapshotManager.h>
 
 namespace DB
 {
 
 using ResponsesQueue = ThreadSafeQueue<NuKeeperStorage::ResponseForSession>;
+using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(ResponsesQueue & responses_queue_, const CoordinationSettingsPtr & coordination_settings_);
+    NuKeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
+
+    void init();
 
     nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
@@ -58,38 +62,24 @@ public:
     void shutdownStorage();
 
 private:
-    struct StorageSnapshot
-    {
-        StorageSnapshot(const nuraft::ptr<nuraft::snapshot> & s, const NuKeeperStorage & storage_)
-            : snapshot(s)
-            , storage(storage_)
-        {}
 
-        nuraft::ptr<nuraft::snapshot> snapshot;
-        NuKeeperStorage storage;
-    };
-
-    using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
-
-    StorageSnapshotPtr createSnapshotInternal(nuraft::snapshot & s);
-
-    StorageSnapshotPtr readSnapshot(nuraft::snapshot & s, nuraft::buffer & in);
-
-    static void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out);
+    SnapshotMetadataPtr latest_snapshot_meta = nullptr;
+    nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
 
     NuKeeperStorage storage;
 
+    NuKeeperSnapshotManager snapshot_manager;
+
     ResponsesQueue & responses_queue;
+
+    SnapshotsQueue & snapshots_queue;
     /// Mutex for snapshots
     std::mutex snapshots_lock;
 
     /// Lock for storage
     std::mutex storage_lock;
-
-    /// Fake snapshot storage
-    std::map<uint64_t, StorageSnapshotPtr> snapshots;
 
     /// Last committed Raft log number.
     std::atomic<size_t> last_committed_idx;
