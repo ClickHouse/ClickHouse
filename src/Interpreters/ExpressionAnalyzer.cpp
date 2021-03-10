@@ -869,7 +869,9 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
         bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
         if (need_convert)
-            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(
+                syntax->analyzed_join->rightConvertingActions(),
+                ExpressionActionsSettings::fromContext(context)));
 
         subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
 
