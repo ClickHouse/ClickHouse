@@ -228,15 +228,15 @@ public:
 };
 
 
-template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped, bool insertion_requires_nullable_column = false>
+template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
 class AggregateFunctionNullVariadic final
     : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped, insertion_requires_nullable_column>>
+        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped, insertion_requires_nullable_column>>(std::move(nested_function_), arguments, params),
+            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
         number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
@@ -283,15 +283,8 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (this->getFlag(place))
             {
-                if constexpr (insertion_requires_nullable_column)
-                {
-                    this->nested_function->insertResultInto(this->nestedPlace(place), to_concrete, arena);
-                }
-                else
-                {
-                    this->nested_function->insertResultInto(this->nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                    to_concrete.getNullMapData().push_back(0);
-                }
+                this->nested_function->insertResultInto(this->nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                to_concrete.getNullMapData().push_back(0);
             }
             else
             {
