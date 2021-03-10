@@ -16,9 +16,9 @@ ExpressionActionsSettings ExpressionActionsSettings::fromSettings(const Settings
     return settings;
 }
 
- ExpressionActionsSettings ExpressionActionsSettings::fromContext(const Context & from)
- {
-     return fromSettings(from.getSettingsRef());
- }
+ExpressionActionsSettings ExpressionActionsSettings::fromContext(const Context & from)
+{
+    return fromSettings(from.getSettingsRef());
+}
 
 }
