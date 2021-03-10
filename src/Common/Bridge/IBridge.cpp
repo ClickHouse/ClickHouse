@@ -5,7 +5,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/config.h>
 #include <Formats/registerFormats.h>
 #include <common/logger_useful.h>
 #include <Common/SensitiveDataMasker.h>

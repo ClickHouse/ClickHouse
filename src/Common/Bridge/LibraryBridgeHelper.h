@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
@@ -24,15 +25,19 @@ public:
 
     bool removeLibrary();
 
+    bool isModified();
+
+    bool supportsSelectiveLoad();
+
     BlockInputStreamPtr loadAll(const std::string attributes_string, const Block & sample_block);
 
     BlockInputStreamPtr loadIds(const std::string attributes_string, const std::string ids_string, const Block & sample_block);
 
     BlockInputStreamPtr loadKeys(const Block & key_columns, const Block & sample_block);
 
-    bool isModified();
+    BlockInputStreamPtr loadBase(const Poco::URI & uri, const Block & sample_block, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
-    bool supportsSelectiveLoad();
+    bool executeRequest(const Poco::URI & uri);
 
 
 protected:
