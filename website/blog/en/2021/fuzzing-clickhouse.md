@@ -6,7 +6,7 @@ tags: ['fuzzing', 'testing']
 ---
 
 Testing is a major problem in software development: there is never enough of
-it. It becomes especially true in a database management system, whose task is
+it. It becomes especially true for a database management system, whose task is
 to interpret a query language that works on the persistent state managed by the
 system in a distributed fashion. Each of these three functions is hard enough
 to test even in isolation, and it gets much worse when you combine them. As
@@ -16,9 +16,9 @@ integration system, new bugs and regressions are creeping in. We are always
 looking for the ways to improve our test coverage, and this article will
 describe our recent development in this area -- the AST-based query fuzzer.
 
-A natural form of testing for a SQL DBMS is to create an SQL script describing
+A natural form of testing for a SQL DBMS is to create a SQL script describing
 the test case, and record its reference result. To test, we run the script and
-check that the result matches the reference. This is used in many SQL DBMSes,
+check that the result matches the reference. This is used in many SQL DBMS,
 and it is the default kind of a test you are expected to write for any
 ClickHouse feature or fix. Currently we have [73k lines of SQL tests
 alone](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/0_stateless),
@@ -27,8 +27,8 @@ that reach the [code coverage of
 
 This form of testing, where a developer writes a few simplified examples of how
 the feature can and cannot be used, is sometimes called "example-based
-testing". Sadly, the bugs often appear in various corner cases and intersecion
-of features, and it is not practical to enumerate them all by hand. There is a
+testing". Sadly, the bugs often appear in various corner cases and intersections
+of features, and it is not practical to enumerate all of these cases by hand. There is a
 technique for automating this process, called "property-based testing". It lets
 you write more general tests of the form "for all values matching these specs,
 the result of some operation on them should match this other spec". For
@@ -54,9 +54,8 @@ employs some techniques for finding interesting constant values, and so on. In
 general, fuzzing allows you to find many interesting corner cases in your
 program automatically, without much developer involvement.
 
-
-Finding valid SQL queries with bit flips would take a long time, so there are
-systems that generate valid SQL queries based on the grammar, such as
+Generating valid SQL queries with bit flips would take a long time, so there are
+systems that generate queries based on the SQL grammar, such as
 [SQLSmith](https://github.com/anse1/sqlsmith).  They are succesfully used for
 finding bugs in databases. It would be interesting to use such a system for
 ClickHouse, but it requires some up-front effort to support the ClickHouse SQL
@@ -78,8 +77,8 @@ be especially efficient in finding bugs, because you can often have some
 alternative branches in your numeric code, but for a `NaN`, both branches hold
 (or not) simultaneously, so this leads to nasty effects. 
 
-Another interesting thing we can do is change the arguments to functions and
-expressions in the select list. Naturally, all the interesting arguments can be
+Another interesting thing we can do is change the arguments of functions, or the list of
+expressions in `SELECT`. Naturally, all the interesting arguments can be
 taken from other test queries. Same goes for changing the tables used in the
 queries. When the fuzzer runs in CI, it runs queries from all the SQL tests in
 random order, mixing in the parts of query from different tests, so that we can
@@ -106,7 +105,9 @@ fuzzing, generating more permutations for them. Even if the coverage of the
 test is not sufficient, there is a good chance that the fuzzer will find the
 missing corner cases. So when we see that all the fuzzer runs in different
 configurations have failed for a particular pull request, this almost always
-means that it introduces a new bug.
+means that it introduces a new bug. When developing a feature that requires
+new grammar, it is also helpful to add fuzzing support for it. I did this for
+window functions early in the development, and it helped me find several bugs.
 
 A major factor that makes fuzzing really efficient is that we have a lot of
 assertions and other checks of program logic in our code. For debug-only
@@ -139,7 +140,7 @@ its cleverness by using [settings
 constraints](https://clickhouse.tech/docs/en/operations/settings/constraints-on-settings/).
 
 The AST-based fuzzer we discussed is only one of the many kinds of fuzzers we
-have in ClickHouse. There is a talk (in Russian) [3] by Alexey Milovidov that
+have in ClickHouse. There is a [talk](https://www.youtube.com/watch?v=GbmK84ZwSeI&t=4481s) (in Russian, [slides are here](https://presentations.clickhouse.tech/cpp_siberia_2021/)) by Alexey Milovidov that
 explores all the fuzzer in greater detail (in Russian). Another interesting
 recent development is application of pivoted query synthesis technique,
 implemented in [SQLancer](https://github.com/sqlancer/sqlancer), to ClickHouse.
