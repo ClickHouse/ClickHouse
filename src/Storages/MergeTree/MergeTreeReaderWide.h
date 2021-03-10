@@ -37,8 +37,12 @@ private:
 
     FileStreams streams;
 
-    void addStreams(const NameAndTypePair & name_and_type,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback;
+    clockid_t clock_type;
+
+    void addStreams(const NameAndTypePair & name_and_type);
+
+    void addStream(const String & stream_name);
 
     void readData(
         const NameAndTypePair & name_and_type, ColumnPtr & column,

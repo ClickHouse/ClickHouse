@@ -15,7 +15,6 @@ private:
     friend class FunctionCast;
 
     DataTypePtr value_type;
-    ColumnPtr keysColumn;
     std::map<String, ColumnPtr> subColumns;
 
     ColumnMap() = delete;

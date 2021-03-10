@@ -362,13 +362,25 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     });
 }
 
-void DataTypeTuple::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeTuple::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const
 {
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         path.back().tuple_element_name = names[i];
-        elems[i]->enumerateStreams(callback, path);
+        elems[i]->enumerateStreams(callback, path, sampleDynamic);
+    }
+    path.pop_back();
+}
+
+void DataTypeTuple::enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const
+{
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element_name = names[i];
+        const auto & element_col = extractElementColumn(column, i);
+        elems[i]->enumerateDynamicStreams(element_col, callback, path);
     }
     path.pop_back();
 }

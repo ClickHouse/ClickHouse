@@ -27,7 +27,6 @@ namespace ErrorCodes
 
 ColumnMap::ColumnMap(const ColumnMap & rhs)
 : value_type(rhs.value_type)
-, keysColumn(rhs.keysColumn->cloneResized(rhs.keysColumn->size()))
 {
     for (const auto & elem : rhs.subColumns)
     {
@@ -45,16 +44,12 @@ ColumnMap::Ptr ColumnMap::create(DataTypePtr value_type, const std::vector<Strin
     Ptr res = ColumnMap::create(value_type);
     MutableColumnPtr res_mut = res->assumeMutable();
     auto new_map = assert_cast<ColumnMap &>(*res_mut);
-    DataTypePtr key_type = std::make_shared<DataTypeString>();
-    MutableColumnPtr keysColumn = key_type->createColumn();
     size_t num_keys = keys.size();
     for (size_t i = 0; i < num_keys; ++i)
     {
         const String & key = keys[i];
-        keysColumn->insert(key);
         new_map.subColumns[key] = subColumns[i];
     }
-    new_map.keysColumn = std::move(keysColumn);
     return res;
 }
 
@@ -77,7 +72,6 @@ ColumnMap::Ptr ColumnMap::create(DataTypePtr value_type, const ColumnPtr & col_k
             const auto & it = new_map.subColumns.find(key);
             if (it == new_map.subColumns.end())
             {
-                new_map.keysColumn->assumeMutable()->insert(key_fld);
                 MutableColumnPtr mcp = value_type->createColumn();
                 mcp->insertManyDefaults(orig_size);
                 mcp->insertFrom(conv_values, i_elem);
@@ -106,7 +100,6 @@ ColumnMap::Ptr ColumnMap::create(const ColumnPtr & column)
     Ptr res = ColumnMap::create(src_map.value_type);
     MutableColumnPtr res_mut = res->assumeMutable();
     auto new_map = assert_cast<ColumnMap &>(*res_mut);
-    new_map.keysColumn = src_map.keysColumn;
     for (const auto & elem : src_map.subColumns)
     {
         new_map.subColumns[elem.first] = elem.second;
@@ -116,20 +109,7 @@ ColumnMap::Ptr ColumnMap::create(const ColumnPtr & column)
 
 std::string ColumnMap::getName() const
 {
-    WriteBufferFromOwnString res;
-    res << "Map(";
-    bool first_column(true);
-    for (auto & elem : subColumns)
-    {
-        if (first_column)
-        {
-            first_column = false;
-            res << ", ";
-        }
-        res << elem.second->getName();
-    }
-    res << ")";
-    return res.str();
+    return "Map(" + value_type->getName() + ")";
 }
 
 MutableColumnPtr ColumnMap::cloneEmpty() const
@@ -141,7 +121,6 @@ MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 {
     MutableColumnPtr res = cloneEmpty();
     auto new_map = assert_cast<ColumnMap &>(*res);
-    new_map.keysColumn = keysColumn->cloneResized(keysColumn->size());
     for (auto & elem : subColumns)
     {
         new_map.subColumns[elem.first] = elem.second->cloneResized(new_size);
@@ -188,7 +167,6 @@ void ColumnMap::insert(const Field & x)
         const auto & it = subColumns.find(key);
         if (it == subColumns.end())
         {
-            keysColumn->assumeMutable()->insert(key);
             MutableColumnPtr mcp = value_type->createColumn();
             mcp->insertManyDefaults(orig_size);
             mcp->insert(elem.second);
@@ -224,7 +202,6 @@ void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length
         const auto & it = subColumns.find(key);
         if (it == subColumns.end())
         {
-            keysColumn->assumeMutable()->insert(key);
             MutableColumnPtr mcp = src_elem.second->cloneEmpty();
             mcp->insertManyDefaults(orig_size);
             mcp->insertRangeFrom(*(src_elem.second), start, length);
@@ -297,7 +274,6 @@ const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
         const auto & it = subColumns.find(key);
         if (it == subColumns.end())
         {
-            keysColumn->assumeMutable()->insert(key);
             MutableColumnPtr mcp = value_type->createColumn();
             mcp->insertManyDefaults(orig_size);
             pos = mcp->deserializeAndInsertFromArena(pos);
@@ -319,7 +295,16 @@ const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 
 const char * ColumnMap::skipSerializedInArena(const char * pos) const
 {
-    return nested->skipSerializedInArena(pos);
+    size_t num_keys = unalignedLoad<size_t>(pos);
+    pos += sizeof(num_keys);
+    MutableColumnPtr mcp = value_type->createColumn();
+    for (size_t i = 0; i < num_keys; ++i)
+    {
+        const size_t string_size = unalignedLoad<size_t>(pos);
+        pos += sizeof(string_size) + string_size;
+        pos = mcp->skipSerializedInArena(pos);
+    }
+    return pos;
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
@@ -572,9 +557,10 @@ void ColumnMap::reserve(size_t n)
 
 size_t ColumnMap::byteSize() const
 {
-    size_t size = keysColumn->byteSize();
+    size_t size = 0;
     for (auto & elem : subColumns)
     {
+        size += elem.first.size();
         size += elem.second->byteSize();
     }
     return size;
@@ -592,7 +578,7 @@ size_t ColumnMap::byteSizeAt(size_t n) const
 
 size_t ColumnMap::allocatedBytes() const
 {
-    size_t size = keysColumn->assumeMutable()->allocatedBytes();
+    size_t size = 0;
     for (auto & elem : subColumns)
     {
         size += elem.second->assumeMutable()->allocatedBytes();
@@ -602,7 +588,6 @@ size_t ColumnMap::allocatedBytes() const
 
 void ColumnMap::protect()
 {
-    keysColumn->assumeMutable()->protect();
     for (auto & elem : subColumns)
     {
         elem.second->assumeMutable()->protect();
@@ -611,7 +596,6 @@ void ColumnMap::protect()
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    keysColumn->assumeMutable()->forEachSubcolumn(callback);
     for (auto & elem : subColumns)
     {
         elem.second->assumeMutable()->forEachSubcolumn(callback);

@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -78,19 +79,30 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
            indices_to_recalc_, marks_file_extension_,
            default_codec_, settings_, index_granularity_)
 {
-    const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
-        addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
+        addStreams(it, nullptr);
 }
 
 
 void MergeTreeDataPartWriterWide::addStreams(
-    const NameAndTypePair & column,
-    const ASTPtr & effective_codec_desc)
+    const NameAndTypePair & name_type,
+    const ColumnPtr column)
 {
+    size_t written_rows = 0;
+    for (const auto & granules : written_granules)
+    {
+        for (const auto & granule : granules)
+        {
+            written_rows += granule.rows_to_write;
+        }
+    }
+
+    const auto & columns = metadata_snapshot->getColumns();
+    const ASTPtr & effective_codec_desc = columns.getCodecDescOrDefault(name_type.name, default_codec);
+
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = IDataType::getFileNameForStream(name_type, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
@@ -109,10 +121,66 @@ void MergeTreeDataPartWriterWide::addStreams(
             part_path + stream_name, marks_file_extension,
             compression_codec,
             settings.max_compress_block_size);
+
+        if (written_rows != 0)
+        {
+            // Refers to MergeTreeDataPartWriterWide::writeColumn().
+            ColumnPtr cp = substream_type.createColumnConstWithDefaultValue(written_rows);
+            auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
+            NameAndTypePair name_and_type;
+            name_and_type.name = stream_name;
+            name_and_type.type = DataTypeFactory::instance().get(substream_type.getName());
+            const auto & [name, type] = name_and_type;
+            auto [it, inserted] = serialization_states.emplace(stream_name, nullptr);
+
+            const auto & global_settings = storage.global_context.getSettingsRef();
+            IDataType::SerializeBinaryBulkSettings serialize_settings;
+            serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
+            serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
+            serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
+            if (inserted)
+            {
+                type->serializeBinaryBulkStatePrefix(serialize_settings, it->second);
+            }
+
+            for (const auto & granules : written_granules)
+            {
+                for (const auto & granule : granules)
+                {
+                    if (granule.mark_on_start)
+                    {
+                        if (last_non_written_marks.count(name))
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "We have to add new mark for column, but already have non written mark.");
+                        last_non_written_marks[stream_name] = getCurrentMarksForColumn(name_and_type, offset_columns, serialize_settings.path);
+                    }
+                    writeSingleGranule(
+                        name_and_type,
+                        *cp,
+                        offset_columns,
+                        it->second,
+                        serialize_settings,
+                        granule
+                    );
+                    if (granule.is_complete)
+                    {
+                        auto marks_it = last_non_written_marks.find(stream_name);
+                        if (marks_it == last_non_written_marks.end())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "No mark was saved for incomplete granule for column {}", backQuoteIfNeed(stream_name));
+                        for (const auto & mark : marks_it->second)
+                            flushMarkToFile(mark, index_granularity.getMarkRows(granule.mark_number));
+                        last_non_written_marks.erase(marks_it);
+                    }
+                }
+            }
+        }
     };
 
     IDataType::SubstreamPath stream_path;
-    column.type->enumerateStreams(callback, stream_path);
+    name_type.type->enumerateStreams(callback, stream_path);
+    if (column != nullptr)
+    {
+        name_type.type->enumerateDynamicStreams(*column, callback, stream_path);
+    }
 }
 
 
@@ -203,31 +271,30 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
-        const ColumnWithTypeAndName & column = block.getByName(it->name);
-
+        ColumnPtr column;
         if (permutation)
         {
             if (primary_key_block.has(it->name))
             {
-                const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                writeColumn(*it, primary_column, offset_columns, granules_to_write);
+                column = primary_key_block.getByName(it->name).column;
             }
             else if (skip_indexes_block.has(it->name))
             {
-                const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                writeColumn(*it, index_column, offset_columns, granules_to_write);
+                column = skip_indexes_block.getByName(it->name).column;
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
-                ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                writeColumn(*it, *permuted_column, offset_columns, granules_to_write);
+                column = block.getByName(it->name).column->permute(*permutation, 0);
             }
         }
         else
         {
-            writeColumn(*it, *column.column, offset_columns, granules_to_write);
+            column = block.getByName(it->name).column;
         }
+
+        addStreams(*it, column);
+        writeColumn(*it, *column, offset_columns, granules_to_write);
     }
 
     if (settings.rewrite_primary_key)
@@ -236,6 +303,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
     shiftCurrentMark(granules_to_write);
+    written_granules.push_back(std::move(granules_to_write));
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(

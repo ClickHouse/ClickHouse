@@ -18,7 +18,9 @@ public:
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const override;
+
+    void enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefixImpl(
             SerializeBinaryBulkSettings & settings,

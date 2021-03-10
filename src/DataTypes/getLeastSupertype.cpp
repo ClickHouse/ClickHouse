@@ -189,7 +189,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_maps)
                 throw Exception(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
+            return std::make_shared<DataTypeMap>(getLeastSupertype(value_types));
         }
     }
 

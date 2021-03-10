@@ -53,7 +53,9 @@ public:
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const override;
+
+    void enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefixImpl(
             SerializeBinaryBulkSettings & settings,

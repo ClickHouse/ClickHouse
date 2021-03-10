@@ -95,7 +95,7 @@ void DataTypeMap::serializeTextImpl(const IColumn & column, WriteBuffer & ostr, 
     writeChar('{', ostr);
     for (const auto & elem : colMap.subColumns)
     {
-        if (first)
+        if (!first)
             writeChar(',', ostr);
         first = false;
         keyWriter(elem.first);
@@ -109,6 +109,7 @@ template <typename KeyReader, typename ValReader>
 void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, KeyReader && keyReader, ValReader && valReader) const
 {
     ColumnMap & colMap = assert_cast<ColumnMap &>(column);
+    MutableColumnPtr keysColumn = key_type->createColumn()->assumeMutable();
     auto & subColumns = colMap.subColumns;
     size_t orig_size = column.size();
 
@@ -326,13 +327,39 @@ void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
     }
 }
 
-void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const
 {
     path.push_back(Substream::MapKeys);
-    callback(path, *this);
+    callback(path, *key_type);
     path.back() = Substream::MapValues;
-    path.back().map_key = "FIXME"; //FIXME!!!
-    value_type->enumerateStreams(callback, path);
+    if (sampleDynamic)
+    {
+        path.back().map_key = "sample";
+        value_type->enumerateStreams(callback, path);
+    }
+    else
+    {
+        for (auto & key : known_keys)
+        {
+            path.back().map_key = key;
+            callback(path, *value_type);
+        }
+    }
+    path.pop_back();
+}
+
+void DataTypeMap::enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const
+{
+    path.push_back(Substream::MapValues);
+    const auto & colMap = assert_cast<const ColumnMap &>(column);
+    auto & subColumns = colMap.subColumns;
+    for (auto & elem : subColumns)
+    {
+        path.back().map_key = elem.first;
+        // iterate recursively into subcolumns
+        value_type->enumerateStreams(callback, path);
+        value_type->enumerateDynamicStreams(*(elem.second), callback, path);
+    }
     path.pop_back();
 }
 
@@ -375,6 +402,7 @@ void DataTypeMap::serializeBinaryBulkStateSuffixImpl(
 {
     auto * map_state = checkAndGetMapSerializeState(state);
 
+    /// Then finalize subcolumns states.
     settings.path.push_back(Substream::MapValues);
     for (auto & elem : map_state->states)
     {
@@ -401,14 +429,36 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
 {
     const ColumnMap & colMap = assert_cast<const ColumnMap &>(column);
     auto map_state = std::make_shared<SerializeBinaryBulkStateMap>();
-    /// First serialize map keys.
-    settings.path.push_back(Substream::MapKeys);
-    if (auto * stream = settings.getter(settings.path))
+
+    /// limit 0 means unlimited - all rows in the column.
+    if (limit == 0)
     {
-        key_type->serializeBinaryBulk(*(colMap.keysColumn), *stream, offset, limit);
+        limit = column.size();
     }
 
-    /// Then serialize contents of each subcolumn.
+    /// First serialize map keys.
+    /// Record what subcolumns ever serialized
+    auto & known = const_cast<std::set<String>&>(known_keys);
+    for (const auto & elem : colMap.subColumns)
+    {
+        known.insert(elem.first);
+    }
+    settings.path.push_back(Substream::MapKeys);
+    MutableColumnPtr keysColumn = key_type->createColumn()->assumeMutable();
+    keysColumn->insert(std::to_string(limit));
+    size_t num_keys = known_keys.size();
+    keysColumn->insert(std::to_string(num_keys));
+    for (auto & key : known_keys)
+    {
+        keysColumn->insert(key);
+    }
+    if (auto * stream = settings.getter(settings.path))
+    {
+        key_type->serializeBinaryBulk(*(keysColumn), *stream, 0, keysColumn->size());
+    }
+    settings.path.pop_back();
+
+    /// Serialize content of each subcolumn.
     settings.path.push_back(Substream::MapValues);
     for (const auto & elem : colMap.subColumns)
     {
@@ -421,6 +471,18 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
     }
     state = std::move(map_state);
     settings.path.pop_back();
+
+    /// For subcolumns ever serialized but not exist in this block, create them with default value and add to this block.
+    for (auto & key : known_keys)
+    {
+        auto it = colMap.subColumns.find(key);
+        if (it == colMap.subColumns.end())
+        {
+            ColumnPtr cp = value_type->createColumnConstWithDefaultValue(column.size());
+            auto & subColumns = const_cast<std::map<String, ColumnPtr>&>(colMap.subColumns);
+            subColumns[key] = cp;
+        }
+    }
 }
 
 void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
@@ -432,57 +494,64 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
 {
     ColumnMap & colMap = assert_cast<ColumnMap &>(column);
     size_t orig_size = colMap.size();
-    size_t delta = 0;
-    MutableColumnPtr keysColumn = colMap.keysColumn->assumeMutable();
     auto & subColumns = colMap.subColumns;
     auto map_state = std::make_shared<DeserializeBinaryBulkStateMap>();
 
-    /// First deserialize map keys.
-    MutableColumnPtr src_keys_column = key_type->createColumn();
-    settings.path.push_back(Substream::MapKeys);
-    if (auto * stream = settings.getter(settings.path))
+    size_t des_rows = 0;
+    while (des_rows < limit)
     {
-        key_type->deserializeBinaryBulk(*src_keys_column, *stream, 0, 0);
-    }
+        /// First deserialize map keys.
+        size_t rows = 0;
+        MutableColumnPtr src_keys_column = key_type->createColumn();
+        settings.path.push_back(Substream::MapKeys);
+        if (auto * stream = settings.getter(settings.path))
+        {
+            // rows, num_keys, key1, key2, key3, ...
+            key_type->deserializeBinaryBulk(*src_keys_column, *stream, 2, 0);
+            const String & str_rows = safeGet<String>((*src_keys_column)[0]);
+            const String & str_num_keys = safeGet<String>((*src_keys_column)[1]);
+            rows = std::stoi(str_rows);
+            size_t num_keys = std::stoi(str_num_keys);
+            key_type->deserializeBinaryBulk(*src_keys_column, *stream, num_keys, 0);
+        }
 
-    /// Then deserialize contents of each subcolumn.
-    settings.path.push_back(Substream::MapValues);
-    for (size_t i = 0; i < src_keys_column->size(); ++i)
-    {
-        const Field & fld = (*src_keys_column)[i];
-        const String & key = safeGet<String>(fld);
-        settings.path.back().map_key = key;
-        // Create a state for each key.
-        DeserializeBinaryBulkStatePtr sub_state = std::make_shared<DeserializeBinaryBulkState>();
-        const auto & it = subColumns.find(key);
-        ColumnPtr cp;
-        if (it == subColumns.end())
+        /// Then deserialize contents of each subcolumn.
+        settings.path.push_back(Substream::MapValues);
+        for (size_t i = 2; i < src_keys_column->size(); ++i)
         {
-            keysColumn->insert(key);
-            MutableColumnPtr mcp = value_type->createColumn();
-            mcp->insertManyDefaults(orig_size);
-            cp = std::move(mcp);
-            value_type->deserializeBinaryBulkWithMultipleStreams(cp, limit, settings, sub_state, cache);
-            delta = cp->size() - orig_size;
-            subColumns[key] = cp;
+            const Field & fld = (*src_keys_column)[i];
+            const String & key = safeGet<String>(fld);
+            settings.path.back().map_key = key;
+            // Create a state for each key.
+            DeserializeBinaryBulkStatePtr sub_state = std::make_shared<DeserializeBinaryBulkState>();
+            const auto & it = subColumns.find(key);
+            ColumnPtr cp;
+            if (it == subColumns.end())
+            {
+                MutableColumnPtr mcp = value_type->createColumn();
+                mcp->insertManyDefaults(orig_size);
+                cp = std::move(mcp);
+                value_type->deserializeBinaryBulkWithMultipleStreams(cp, rows, settings, sub_state, cache);
+                subColumns[key] = cp;
+            }
+            else if (it->second->size() == orig_size)
+            {
+                cp = it->second;
+                value_type->deserializeBinaryBulkWithMultipleStreams(cp, rows, settings, sub_state, cache);
+            }
+            map_state->states[key] = sub_state;
         }
-        else if (it->second->size() == orig_size)
+        for (const auto & elem : subColumns)
         {
-            cp = it->second;
-            value_type->deserializeBinaryBulkWithMultipleStreams(cp, limit, settings, sub_state, cache);
-            delta = cp->size() - orig_size;
+            if (elem.second->size() == orig_size)
+            {
+                elem.second->assumeMutable()->insertManyDefaults(rows);
+            }
         }
-        map_state->states[key] = sub_state;
-    }
-    for (const auto & elem : subColumns)
-    {
-        if (elem.second->size() == orig_size)
-        {
-            elem.second->assumeMutable()->insertManyDefaults(delta);
-        }
+        settings.path.pop_back();
+        des_rows += rows;
     }
     state = std::move(map_state);
-    settings.path.pop_back();
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const

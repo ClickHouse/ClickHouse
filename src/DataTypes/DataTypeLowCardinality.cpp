@@ -50,10 +50,10 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
                         + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
-void DataTypeLowCardinality::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeLowCardinality::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const
 {
     path.push_back(Substream::DictionaryKeys);
-    dictionary_type->enumerateStreams(callback, path);
+    dictionary_type->enumerateStreams(callback, path, sampleDynamic);
     path.back() = Substream::DictionaryIndexes;
     callback(path, *this);
     path.pop_back();

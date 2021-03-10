@@ -42,14 +42,16 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         std::move(mark_cache_),
         std::move(mark_ranges_),
         std::move(settings_),
-        std::move(avg_value_size_hints_))
+        std::move(avg_value_size_hints_)),
+    profile_callback(profile_callback_),
+    clock_type(clock_type_)
 {
     try
     {
         for (const NameAndTypePair & column : columns)
         {
             auto column_from_part = getColumnFromPart(column);
-            addStreams(column_from_part, profile_callback_, clock_type_);
+            addStreams(column_from_part);
         }
     }
     catch (...)
@@ -134,34 +136,37 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     return read_rows;
 }
 
-void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
-
-        if (streams.count(stream_name))
-            return;
-
-        bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
-
-        /** If data file is missing then we will not try to open it.
-          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-          */
-        if (!data_file_exists)
-            return;
-
-        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part->volume->getDisk(), data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
-            data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
-            uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            &data_part->index_granularity_info,
-            profile_callback, clock_type));
+        addStream(stream_name);
     };
 
     IDataType::SubstreamPath substream_path;
     name_and_type.type->enumerateStreams(callback, substream_path);
+}
+
+void MergeTreeReaderWide::addStream(const String & stream_name)
+{
+    if (streams.count(stream_name))
+        return;
+
+    bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
+
+    /** If data file is missing then we will not try to open it.
+      * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+      */
+    if (!data_file_exists)
+        return;
+
+    streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
+        data_part->volume->getDisk(), data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+        data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
+        uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+        &data_part->index_granularity_info,
+        profile_callback, clock_type));
 }
 
 
@@ -179,6 +184,9 @@ void MergeTreeReaderWide::readData(
                 return nullptr;
 
             String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
+
+            /// Add stream for dyanmic subcolumn.
+            addStream(stream_name);
 
             auto it = streams.find(stream_name);
             if (it == streams.end())

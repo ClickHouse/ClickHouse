@@ -56,8 +56,9 @@ public:
       * - the sizes are written/read in a separate stream,
       * This is necessary, because when implementing nested structures, several arrays can have common sizes.
       */
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const override;
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefixImpl(
             SerializeBinaryBulkSettings & settings,

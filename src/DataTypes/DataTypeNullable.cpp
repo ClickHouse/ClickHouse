@@ -42,12 +42,21 @@ bool DataTypeNullable::onlyNull() const
 }
 
 
-void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const
 {
     path.push_back(Substream::NullMap);
     callback(path, *this);
     path.back() = Substream::NullableElements;
-    nested_data_type->enumerateStreams(callback, path);
+    nested_data_type->enumerateStreams(callback, path, sampleDynamic);
+    path.pop_back();
+}
+
+
+void DataTypeNullable::enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);    
+    path.push_back(Substream::NullableElements);
+    nested_data_type->enumerateDynamicStreams(col.getNestedColumn(), callback, path);
     path.pop_back();
 }
 

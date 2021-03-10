@@ -75,6 +75,12 @@ public:
 
     virtual void enumerateStreams(
         const IDataType::StreamCallback & callback,
+        IDataType::SubstreamPath & path,
+        bool sampleDynamic) const = 0;
+
+    virtual void enumerateDynamicStreams(
+        const IColumn & column, 
+        const IDataType::StreamCallback & callback, 
         IDataType::SubstreamPath & path) const = 0;
 
     virtual void serializeBinaryBulkStatePrefix(

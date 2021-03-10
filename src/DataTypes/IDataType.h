@@ -125,9 +125,11 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic = false) const;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path, bool sampleDynamic = false) const { enumerateStreams(callback, path, sampleDynamic); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+
+    virtual void enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const;
 
     virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
@@ -276,7 +278,7 @@ public:
 protected:
     virtual String doGetName() const;
 
-    virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+    virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool /*sampleDynamic*/) const
     {
         callback(path, *this);
     }

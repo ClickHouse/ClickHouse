@@ -243,12 +243,17 @@ void IDataType::insertDefaultInto(IColumn & column) const
     column.insertDefault();
 }
 
-void IDataType::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void IDataType::enumerateStreams(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const
 {
     if (custom_streams)
-        custom_streams->enumerateStreams(callback, path);
+        custom_streams->enumerateStreams(callback, path, sampleDynamic);
     else
-        enumerateStreamsImpl(callback, path);
+        enumerateStreamsImpl(callback, path, sampleDynamic);
+}
+
+void IDataType::enumerateDynamicStreams(const IColumn & /*column*/, const StreamCallback & /*callback*/, SubstreamPath & /*path*/) const
+{
+    return;
 }
 
 void IDataType::serializeBinaryBulkStatePrefix(

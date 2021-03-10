@@ -31,10 +31,21 @@ public:
 
     void enumerateStreams(
         const IDataType::StreamCallback & callback,
+        IDataType::SubstreamPath & path,
+        bool sampleDynamic) const override
+    {
+        addToPath(path);
+        nested->enumerateStreams(callback, path, sampleDynamic);
+        path.pop_back();
+    }
+
+    void enumerateDynamicStreams(
+        const IColumn & column, 
+        const IDataType::StreamCallback & callback, 
         IDataType::SubstreamPath & path) const override
     {
         addToPath(path);
-        nested->enumerateStreams(callback, path);
+        nested->enumerateDynamicStreams(column, callback, path);
         path.pop_back();
     }
 

@@ -78,8 +78,8 @@ private:
         DB::IDataType::SubstreamPath & path);
 
     void addStreams(
-        const NameAndTypePair & column,
-        const ASTPtr & effective_codec_desc);
+        const NameAndTypePair & name_type,
+        const ColumnPtr column = nullptr);
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -117,6 +117,8 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    std::vector<Granules> written_granules;
 };
 
 }

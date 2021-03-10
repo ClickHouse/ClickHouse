@@ -197,15 +197,22 @@ namespace
 }
 
 
-void DataTypeArray::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeArray::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const
 {
     path.push_back(Substream::ArraySizes);
     callback(path, *this);
     path.back() = Substream::ArrayElements;
-    nested->enumerateStreams(callback, path);
+    nested->enumerateStreams(callback, path, sampleDynamic);
     path.pop_back();
 }
 
+void DataTypeArray::enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const
+{
+    const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
+    path.push_back(Substream::ArrayElements);
+    nested->enumerateDynamicStreams(column_array.getData(), callback, path);
+    path.pop_back();
+}
 
 void DataTypeArray::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,

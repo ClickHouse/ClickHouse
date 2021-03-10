@@ -24,7 +24,7 @@ public:
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path, bool sampleDynamic) const override;
 
     void serializeBinaryBulkStatePrefixImpl(
             SerializeBinaryBulkSettings & settings,

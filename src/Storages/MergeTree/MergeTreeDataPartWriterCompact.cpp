@@ -32,16 +32,18 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         WriteMode::Rewrite))
     , marks(*marks_file)
 {
-    const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
-        addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
+        addStreams(column, nullptr);
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnPtr column)
 {
+    const auto & columns = metadata_snapshot->getColumns();
+    const ASTPtr & effective_codec_desc = columns.getCodecDescOrDefault(name_and_type.name, default_codec);
+
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.count(stream_name))
@@ -64,7 +66,11 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
     };
 
     IDataType::SubstreamPath stream_path;
-    column.type->enumerateStreams(callback, stream_path);
+    name_and_type.type->enumerateStreams(callback, stream_path);
+    if (column != nullptr)
+    {
+        name_and_type.type->enumerateDynamicStreams(*column, callback, stream_path);
+    }
 }
 
 namespace
@@ -169,6 +175,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
 void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
 {
+    for (const auto & name_and_type : columns_list)
+    {
+        ColumnPtr column = block.getByName(name_and_type.name).column;
+        addStreams(name_and_type, column);
+    }
+
     for (const auto & granule : granules)
     {
         data_written = true;
