@@ -541,7 +541,7 @@ date_add(unit, value, date)
 Запрос:
 
 ```sql
-select date_add(YEAR, 3, toDate('2018-01-01'));
+SELECT date_add(YEAR, 3, toDate('2018-01-01'));
 ```
 
 Результат:
