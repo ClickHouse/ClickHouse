@@ -42,6 +42,14 @@ namespace ErrorCodes
 template <typename Impl, typename Name>
 class FunctionArrayMapped : public IFunction
 {
+private:
+    size_t
+    my_min(size_t a, size_t b) const
+    {
+        return (a < b) ? a : b;
+    }
+
+
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
@@ -194,6 +202,14 @@ public:
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
                     column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
+
+                ColumnPtr int_column = column_array->getDataPtr();
+                ColumnPtr ca_ptr = ColumnArray::create( int_column->cut(0, my_min(1, int_column->size())),
+                                                         column_array->getOffsetsPtr());
+                const auto * ca = checkAndGetColumn<ColumnArray>(ca_ptr.get());
+
+                column_array_ptr = ca_ptr;
+                column_array = ca;
 
                 if (!array_type)
                     throw Exception("Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
