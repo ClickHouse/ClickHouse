@@ -493,7 +493,7 @@ Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-ref
 Query:
 
 ```sql
-select date_add(YEAR, 3, toDate('2018-01-01'));
+SELECT date_add(YEAR, 3, toDate('2018-01-01'));
 ```
 
 Result:
