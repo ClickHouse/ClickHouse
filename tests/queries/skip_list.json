@@ -45,6 +45,7 @@
         "capnproto",
         "query_profiler",
         "memory_profiler",
+        "01175_distributed_ddl_output_mode_long",  /// issue 21600
         "01103_check_cpu_instructions_at_startup",
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
