@@ -31,7 +31,6 @@ SRCS(
     Bridge/IBridge.cpp
     Bridge/IBridgeHelper.cpp
     Bridge/LibraryBridgeHelper.cpp
-    Bridge/XDBCBridgeHelper.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
