@@ -1,8 +1,9 @@
 #pragma once
 
 #include <common/types.h>
-#include <Common/UInt128.h>
 #include <common/unaligned.h>
+#include <common/StringRef.h>
+#include <Common/UInt128.h>
 
 #include <type_traits>
 
@@ -178,13 +179,19 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
 }
 
 template <typename T>
-inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+static constexpr bool UseDefaultHashForBigInts =
+    std::is_same_v<T, DB::Int128>  ||
+    std::is_same_v<T, DB::UInt128> ||
+    (is_big_int_v<T> && sizeof(T) == 32);
+
+template <typename T>
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64) && UseDefaultHashForBigInts<T>), T> key)
 {
     if constexpr (std::is_same_v<T, DB::Int128>)
     {
         return intHash64(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
     }
-    if constexpr (std::is_same_v<T, DB::UInt128>)
+    else if constexpr (std::is_same_v<T, DB::UInt128>)
     {
         return intHash64(key.low ^ key.high);
     }
@@ -195,6 +202,8 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
+
+    assert(false);
     __builtin_unreachable();
 }
 
@@ -341,6 +350,11 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
             return intHash32<salt>(key);
+
+        assert(false);
         __builtin_unreachable();
     }
 };
+
+template <>
+struct DefaultHash<StringRef> : public StringRefHash {};

@@ -16,3 +16,9 @@ virtualenv build
 
 # Open the web browser and go to http://localhost:8080/
 ```
+
+# How to quickly test the blog
+
+```
+./build.py --skip-multi-page --skip-single-page --skip-amp --skip-pdf --skip-git-log --skip-docs --skip-test-templates --livereload 8080
+```
