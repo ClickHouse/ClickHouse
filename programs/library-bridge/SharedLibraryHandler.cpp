@@ -112,7 +112,7 @@ BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes
 {
     std::vector<std::string> dict_string_ids;
     boost::split(dict_string_ids, ids_string, [](char c) { return c == ' '; });
-    std::vector<UInt64> dict_ids;
+    std::vector<UInt64> dict_ids(dict_string_ids.size());
     for (const auto & id : dict_string_ids)
         dict_ids.push_back(parseFromString<UInt64>(id));
 
