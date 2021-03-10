@@ -30,6 +30,8 @@ NuKeeperServer::NuKeeperServer(
     , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
+    if (coordination_settings->quorum_reads)
+        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Quorum reads enabled, NuKeeper will work slower.");
 }
 
 void NuKeeperServer::startup()
@@ -106,7 +108,7 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 void NuKeeperServer::putRequest(const NuKeeperStorage::RequestForSession & request_for_session)
 {
     auto [session_id, request] = request_for_session;
-    if (isLeaderAlive() && request->isReadRequest())
+    if (!coordination_settings->quorum_reads && isLeaderAlive() && request->isReadRequest())
     {
         state_machine->processReadRequest(request_for_session);
     }
