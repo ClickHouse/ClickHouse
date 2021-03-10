@@ -855,63 +855,59 @@ WHERE diff != 1
 
 ## runningConcurrency {#runningconcurrency}
 
-Определяет, сколько событий проходят одновременно в моменты начала событий. 
+Определяет количество одновременно идущих событий в моменты начала событий. 
 
-!!! warning "Warning"
-    Функция обрабатывает разные блоки данных независимо.
-
-Результат работы функции зависит от порядка событий в блоке. События должны быть отсортированы по увеличению времени начала.
-
-
-**Syntax**
+**Синтаксис**
 
 ``` sql
-runningConcurrency(begin, end)
+runningConcurrency(start, end)
 ```
 
-**Arguments**
+У каждого события есть время начала и время завершения. Столбцы с этими значениями должны содержать данные одинакового типа. Время начала включается в событие, а время завершения исключается из события. Для момента начала каждого события функция вычисляет количество идущих событий.
 
--   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+!!! warning "Предупреждение"
+    Каждый блок данных обрабатывается независимо. Если события из разных блоков данных накладываются, то они не могут быть корректно обработаны.
+    События должны быть отсортированы по возрастанию времени начала. Если это требование нарушено, то функция вызывает исключение.
 
-Note that two columns `begin` and `end` must have the same type.
+**Аргументы**
 
-**Returned values**
+-   `begin` — Столбец с временем начала событий. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — Столбец с временем завершения событий.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   The concurrency of events at the data point.
+**Возвращаемое значение**
 
-Type: [UInt32](../../sql-reference/data-types/int-uint.md)
+-   Количество одновременно идущих событий в момента начала каждого события.
 
-**Example**
+Тип: [UInt32](../../sql-reference/data-types/int-uint.md)
 
-Input table:
+**Пример**
+
+Для таблицы:
 
 ``` text
-┌───────────────begin─┬─────────────────end─┐
-│ 2020-12-01 00:00:00 │ 2020-12-01 00:59:59 │
-│ 2020-12-01 00:30:00 │ 2020-12-01 00:59:59 │
-│ 2020-12-01 00:40:00 │ 2020-12-01 01:30:30 │
-│ 2020-12-01 01:10:00 │ 2020-12-01 01:30:30 │
-│ 2020-12-01 01:50:00 │ 2020-12-01 01:59:59 │
-└─────────────────────┴─────────────────────┘
+┌──────start─┬────────end─┐
+│ 2021-03-03 │ 2021-03-11 │
+│ 2021-03-06 │ 2021-03-12 │
+│ 2021-03-07 │ 2021-03-08 │
+│ 2021-03-11 │ 2021-03-12 │
+└────────────┴────────────┘
 ```
 
-Query:
+Запрос:
 
 ``` sql
-SELECT runningConcurrency(begin, end) FROM example
+SELECT start, runningConcurrency(start, end) FROM example_table;
 ```
 
-Result:
+Результат:
 
 ``` text
-┌─runningConcurrency(begin, end)─┐
-│                              1 │
-│                              2 │
-│                              3 │
-│                              2 │
-│                              1 │
-└────────────────────────────────┘
+┌──────start─┬─runningConcurrency(start, end)─┐
+│ 2021-03-03 │                              1 │
+│ 2021-03-06 │                              2 │
+│ 2021-03-07 │                              3 │
+│ 2021-03-11 │                              2 │
+└────────────┴────────────────────────────────┘
 ```
 
 ## MACNumToString(num) {#macnumtostringnum}
