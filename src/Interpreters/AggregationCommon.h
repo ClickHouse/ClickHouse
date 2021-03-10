@@ -81,6 +81,12 @@ void fillFixedBatch(size_t num_rows, const T * source, T * dest)
     }
 }
 
+/// Move keys of size T into binary blob, starting from offset.
+/// It is assumed that offset is aligned to sizeof(T).
+/// Example: sizeof(key) = 16, sizeof(T) = 4, offset = 8
+/// out[0] : [--------****----]
+/// out[1] : [--------****----]
+/// ...
 template<typename T, typename Key>
 void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset)
 {
@@ -92,6 +98,8 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             size_t num_rows = column->size();
             out.resize_fill(num_rows);
 
+            /// Note: here we violate strict aliasing.
+            /// It should be ok as log as we do not reffer to any value from `out` before filling.
             const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
@@ -100,6 +108,8 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     }
 }
 
+/// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
+/// binary blob. Keys are placed starting from the longest one.
 template <typename T>
 void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
 {
