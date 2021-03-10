@@ -6,7 +6,7 @@ INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',1,'A');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:02',1,'B');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:03',1,'C');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:04',1,'D');
-INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',2,'A');
+INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',2,'B');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:02',2,'B');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:03',2,'D');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:04',2,'C');
@@ -27,26 +27,26 @@ INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:03',6,'A');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:04',6,'B');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:05',6,'C');
 
-SELECT '(0, A)', id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, B)', id, sequenceNextNode(0)(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, C)', id, sequenceNextNode(0)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, D)', id, sequenceNextNode(0)(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, E)', id, sequenceNextNode(0)(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, A)', id, sequenceNextNode(1)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, B)', id, sequenceNextNode(1)(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, C)', id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, D)', id, sequenceNextNode(1)(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, E)', id, sequenceNextNode(1)(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, A->B)', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, A->C)', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, B->A)', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, A->B)', id, sequenceNextNode(1)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, A->C)', id, sequenceNextNode(1)(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, B->A)', id, sequenceNextNode(1)(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, A->A->B)', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(0, B->A->A)', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, A->A->B)', id, sequenceNextNode(1)(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
-SELECT '(1, B->A->A)', id, sequenceNextNode(1)(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, A)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, B)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, C)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, D)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, E)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, B)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, C)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, D)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, E)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, A->B)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, A->C)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, B->A)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A->B)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A->C)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, B->A)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, A->A->B)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, head, B->A->A)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A->A->B)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, tail, B->A->A)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
 
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',10,'A');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:02',10,'B');
@@ -54,31 +54,41 @@ INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:02',10,NULL
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:03',10,'C');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:04',10,'D');
 
-SELECT '(0, A) id >= 10', id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A) id >= 10', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A) id >= 10', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'D', action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
 
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',11,'A');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',11,'B');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',11,'C');
 INSERT INTO test_sequenceNextNode_Nullable values ('1970-01-01 09:00:01',11,'D');
 
-SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node  = 'B');
-SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, A->B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'B');
-SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, B->C->D) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'B', action = 'C', action = 'D') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node is null);
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node  = 'B');
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
+SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
+SELECT '(0, A->B->C) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'D');
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node is NULL);
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'B');
+SELECT '(0, C->B) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C', action ='B') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node = 'A');
+SELECT '(0, C->B->A) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C', action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable WHERE id = 11 GROUP BY id HAVING next_node is null);
 
-SELECT '(0) id < 10', id, sequenceNextNode(0)(dt, action) AS next_node FROM test_sequenceNextNode_Nullable WHERE id < 10 GROUP BY id ORDER BY id;
-SELECT '(0) id < 10', id, sequenceFirstNode(0)(dt, action) AS next_node FROM test_sequenceNextNode_Nullable WHERE id < 10 GROUP BY id ORDER BY id;
-SELECT '(1) id < 10', id, sequenceNextNode(1)(dt, action) AS next_node FROM test_sequenceNextNode_Nullable WHERE id < 10 GROUP BY id ORDER BY id;
-SELECT '(1) id < 10', id, sequenceFirstNode(1)(dt, action) AS next_node FROM test_sequenceNextNode_Nullable WHERE id < 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head) id < 10', id, sequenceNextNode('forward', 'head')(dt, action) AS next_node FROM test_sequenceNextNode_Nullable WHERE id < 10 GROUP BY id ORDER BY id;
+SELECT '(backward, tail) id < 10', id, sequenceNextNode('backward', 'tail')(dt, action) AS next_node FROM test_sequenceNextNode_Nullable WHERE id < 10 GROUP BY id ORDER BY id;
+
+SELECT '(forward, first_match, A)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, A->B)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, A->B->C)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, B)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, B->B)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'B', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, B->A)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+
+SELECT '(backward, first_match, A)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, first_match, B)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, first_match, B->A)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
+SELECT '(backward, first_match, B->B)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'B', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable GROUP BY id ORDER BY id;
 
 DROP TABLE IF EXISTS test_sequenceNextNode_Nullable;
 
@@ -86,13 +96,13 @@ DROP TABLE IF EXISTS test_sequenceNextNode_Nullable;
 
 DROP TABLE IF EXISTS test_sequenceNextNode;
 
-CREATE TABLE iF NOT EXISTS test_sequenceNextNode (dt DateTime, id int, action String) ENGINE = MergeTree() PARTITION BY dt ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_sequenceNextNode (dt DateTime, id int, action String) ENGINE = MergeTree() PARTITION BY dt ORDER BY id;
 
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',1,'A');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:02',1,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:03',1,'C');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:04',1,'D');
-INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',2,'A');
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',2,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:02',2,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:03',2,'D');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:04',2,'C');
@@ -113,56 +123,73 @@ INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:03',6,'A');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:04',6,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:05',6,'C');
 
-SELECT '(0, A)', id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, B)', id, sequenceNextNode(0)(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, C)', id, sequenceNextNode(0)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, D)', id, sequenceNextNode(0)(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, E)', id, sequenceNextNode(0)(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, A)', id, sequenceNextNode(1)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, B)', id, sequenceNextNode(1)(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, C)', id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, D)', id, sequenceNextNode(1)(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, E)', id, sequenceNextNode(1)(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, A->B)', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, A->C)', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, B->A)', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, A->B)', id, sequenceNextNode(1)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, A->C)', id, sequenceNextNode(1)(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, B->A)', id, sequenceNextNode(1)(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, A->A->B)', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(0, B->A->A)', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, A->A->B)', id, sequenceNextNode(1)(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
-SELECT '(1, B->A->A)', id, sequenceNextNode(1)(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, A)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, B)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, C)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, D)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, E)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, B)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, C)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, D)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'D') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, E)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'E') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, A->B)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, A->C)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, B->A)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A->B)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A->C)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A', action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, B->A)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, A->A->B)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, head, B->A->A)', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A->A->B)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A', action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, tail, B->A->A)', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'B', action = 'A', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
 
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',10,'A');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:02',10,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:03',10,'C');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:04',10,'D');
 
-SELECT '(0, A) id = 10', id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
-SELECT '(0, A->B) id = 10', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
-SELECT '(0, B->C) id = 10', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
-SELECT '(0, C) id = 10', id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
-SELECT '(0, D->C) id = 10', id, sequenceNextNode(1)(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
-SELECT '(0, C->B) id = 10', id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head, A) id >= 10', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A) id >= 10', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(backward, tail, A) id >= 10', id, sequenceNextNode('backward', 'tail')(dt, action, action = 'D', action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
 
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'A');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'C');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'D');
 
-SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node  = 'B');
-SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, A->B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'B');
-SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
-SELECT '(0, B->C->D) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'B', action = 'C', action = 'D') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node is null);
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node  = 'B');
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
+SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
+SELECT '(0, A->B->C) id = 11', count() FROM (SELECT id, sequenceNextNode('forward', 'head')(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'D');
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node is NULL);
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'B');
+SELECT '(0, C->B) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C', action ='B') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node = 'A');
+SELECT '(0, C->B->A) id = 11', count() FROM (SELECT id, sequenceNextNode('backward', 'tail')(dt, action, action = 'C', action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node is null);
 
-SELECT '(0) id < 10', id, sequenceNextNode(0)(dt, action) AS next_node FROM test_sequenceNextNode WHERE id < 10 GROUP BY id ORDER BY id;
-SELECT '(0) id < 10', id, sequenceFirstNode(0)(dt, action) AS next_node FROM test_sequenceNextNode WHERE id < 10 GROUP BY id ORDER BY id;
-SELECT '(1) id < 10', id, sequenceNextNode(1)(dt, action) AS next_node FROM test_sequenceNextNode WHERE id < 10 GROUP BY id ORDER BY id;
-SELECT '(1) id < 10', id, sequenceFirstNode(1)(dt, action) AS next_node FROM test_sequenceNextNode WHERE id < 10 GROUP BY id ORDER BY id;
+SELECT '(forward, head) id < 10', id, sequenceNextNode('forward', 'head')(dt, action) AS next_node FROM test_sequenceNextNode WHERE id < 10 GROUP BY id ORDER BY id;
+SELECT '(backward, tail) id < 10', id, sequenceNextNode('backward', 'tail')(dt, action) AS next_node FROM test_sequenceNextNode WHERE id < 10 GROUP BY id ORDER BY id;
+
+SELECT '(forward, first_match, A)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, A->B)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, A->B->C)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, B)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, B->B)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'B', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(forward, first_match, B->A)', id, sequenceNextNode('forward', 'first_match')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+
+SELECT '(backward, first_match, A)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, first_match, B)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, first_match, B->A)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+SELECT '(backward, first_match, B->B)', id, sequenceNextNode('backward', 'first_match')(dt, action, action = 'B', action = 'B') AS next_node FROM test_sequenceNextNode GROUP BY id ORDER BY id;
+
+SELECT '(max_args)', id, sequenceNextNode('forward', 'head')(dt, action, action = '0', action = '1', action = '2', action = '3', action = '4', action = '5', action = '6', action = '7', action = '8', action = '9', action = '10', action = '11', action = '12', action = '13', action = '14', action = '15', action = '16', action = '17', action = '18', action = '19', action = '20', action = '21', action = '22', action = '23', action = '24', action = '25', action = '26', action = '27', action = '28', action = '29', action = '30', action = '31', action = '32', action = '33', action = '34', action = '35', action = '36', action = '37', action = '38', action = '39', action = '40', action = '41', action = '42', action = '43', action = '44', action = '45', action = '46', action = '47', action = '48', action = '49', action = '50', action = '51', action = '52', action = '53', action = '54', action = '55', action = '56', action = '57', action = '58', action = '59', action = '60', action = '61', action = '62', action = '63') from test_sequenceNextNode GROUP BY id ORDER BY id;
+
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',12,'A');
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',12,'A');
+
+SELECT '(forward, head, A) id = 12', sequenceNextNode('forward', 'head')(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 12;
 
 DROP TABLE IF EXISTS test_sequenceNextNode;

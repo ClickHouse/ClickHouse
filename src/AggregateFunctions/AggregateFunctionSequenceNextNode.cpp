@@ -11,6 +11,8 @@
 namespace DB
 {
 
+constexpr size_t MAX_EVENTS_SIZE = 64;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -21,26 +23,26 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr size_t MAX_EVENTS_SIZE = 64;
+template <typename T, SeqDirection Direction>
+inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl2(const DataTypePtr data_type, const DataTypes & argument_types, SeqBase base)
+{
+    if (base == HEAD)
+        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, HEAD>>(data_type, argument_types);
+    else if (base == TAIL)
+        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, TAIL>>(data_type, argument_types);
+    else if (base == FIRST_MATCH)
+        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, FIRST_MATCH>>(data_type, argument_types);
+    else
+        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, LAST_MATCH>>(data_type, argument_types);
+}
 
 template <typename T>
-inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(const DataTypePtr data_type, const DataTypes & argument_types, bool descending_order)
+inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl1(const DataTypePtr data_type, const DataTypes & argument_types, SeqDirection direction, SeqBase base)
 {
-    if (argument_types.size() == 2)
-    {
-        // If the number of arguments of sequenceNextNode is 2, the sequenceNextNode acts as sequenceFirstNode.
-        if (descending_order)
-            return std::make_shared<SequenceFirstNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, true>>(data_type);
-        else
-            return std::make_shared<SequenceFirstNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, false>>(data_type);
-    }
+    if (direction == FORWARD)
+        return createAggregateFunctionSequenceNodeImpl2<T, FORWARD>(data_type, argument_types, base);
     else
-    {
-        if (descending_order)
-            return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, true>>(data_type, argument_types);
-        else
-            return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, false>>(data_type, argument_types);
-    }
+        return createAggregateFunctionSequenceNodeImpl2<T, BACKWARD>(data_type, argument_types, base);
 }
 
 AggregateFunctionPtr
@@ -48,22 +50,32 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_args, c
 {
     assert(max_args <= MAX_EVENTS_SIZE);
 
-    bool descending_order = false;
-
-    if (parameters.size() == 1)
-    {
-        auto type = parameters[0].getType();
-        bool is_correct_type = type == Field::Types::Int64 || type == Field::Types::UInt64;
-        if (!is_correct_type || (parameters[0].get<UInt64>() != 0 && parameters[0].get<UInt64>() != 1))
-            throw Exception("The first parameter for aggregate function " + name + " should be 0 or 1", ErrorCodes::BAD_ARGUMENTS);
-
-        descending_order = parameters[0].get<UInt64>();
-    }
+    String param_dir = parameters.at(0).safeGet<String>();
+    SeqDirection direction;
+    if (param_dir.compare("forward") == 0)
+        direction = FORWARD;
+    else if (param_dir.compare("backward") == 0)
+        direction = BACKWARD;
     else
-        throw Exception("Incorrect number of parameters for aggregate function " + name + ", should be 1",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_dir, ErrorCodes::BAD_ARGUMENTS};
 
-    if (argument_types.size() < 2)
+    String param_base = parameters.at(1).safeGet<String>();
+    SeqBase base;
+    if (param_base.compare("head") == 0)
+        base = HEAD;
+    else if (param_base.compare("tail") == 0)
+        base = TAIL;
+    else if (param_base.compare("first_match") == 0)
+        base = FIRST_MATCH;
+    else if (param_base.compare("last_match") == 0)
+        base = LAST_MATCH;
+    else
+        throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_base, ErrorCodes::BAD_ARGUMENTS};
+
+    if ((base == FIRST_MATCH || base == LAST_MATCH) && argument_types.size() < 3)
+        throw Exception("Aggregate function " + name + " requires at least three arguments when base is first_match or last_match.",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    else if (argument_types.size() < 2)
         throw Exception("Aggregate function " + name + " requires at least two arguments.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     else if (argument_types.size() > max_args + 2)
@@ -89,17 +101,17 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_args, c
 
     WhichDataType timestamp_type(argument_types[0].get());
     if (timestamp_type.idx == TypeIndex::UInt8)
-        return createAggregateFunctionSequenceNodeImpl<UInt8>(data_type, argument_types, descending_order);
+        return createAggregateFunctionSequenceNodeImpl1<UInt8>(data_type, argument_types, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt16)
-        return createAggregateFunctionSequenceNodeImpl<UInt16>(data_type, argument_types, descending_order);
+        return createAggregateFunctionSequenceNodeImpl1<UInt16>(data_type, argument_types, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt32)
-        return createAggregateFunctionSequenceNodeImpl<UInt32>(data_type, argument_types, descending_order);
+        return createAggregateFunctionSequenceNodeImpl1<UInt32>(data_type, argument_types, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt64)
-        return createAggregateFunctionSequenceNodeImpl<UInt64>(data_type, argument_types, descending_order);
+        return createAggregateFunctionSequenceNodeImpl1<UInt64>(data_type, argument_types, direction, base);
     if (timestamp_type.isDate())
-        return createAggregateFunctionSequenceNodeImpl<DataTypeDate::FieldType>(data_type, argument_types, descending_order);
+        return createAggregateFunctionSequenceNodeImpl1<DataTypeDate::FieldType>(data_type, argument_types, direction, base);
     if (timestamp_type.isDateTime())
-        return createAggregateFunctionSequenceNodeImpl<DataTypeDateTime::FieldType>(data_type, argument_types, descending_order);
+        return createAggregateFunctionSequenceNodeImpl1<DataTypeDateTime::FieldType>(data_type, argument_types, direction, base);
 
     throw Exception{"Illegal type " + argument_types.front().get()->getName()
             + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",

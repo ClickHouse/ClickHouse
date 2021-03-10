@@ -27,6 +27,20 @@
 namespace DB
 {
 
+enum SeqDirection
+{
+    FORWARD = 0,
+    BACKWARD = 1
+};
+
+enum SeqBase
+{
+    HEAD = 0,
+    TAIL = 1,
+    FIRST_MATCH = 2,
+    LAST_MATCH = 3
+};
+
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node, size_t MaxEventsSize>
 struct NodeBase
@@ -104,7 +118,7 @@ struct NodeString : public NodeBase<NodeString<MaxEventsSize>, MaxEventsSize>
 };
 
 /// TODO : Expends SequenceNextNodeGeneralData to support other types
-template <typename Node, bool Descending>
+template <typename Node>
 struct SequenceNextNodeGeneralData
 {
     using Allocator = MixedAlignedArenaAllocator<alignof(Node *), 4096>;
@@ -117,10 +131,7 @@ struct SequenceNextNodeGeneralData
     {
         bool operator()(const Node * lhs, const Node * rhs) const
         {
-            if constexpr (Descending)
-                return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time > rhs->event_time;
-            else
-                return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time < rhs->event_time;
+            return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time < rhs->event_time;
         }
     };
 
@@ -134,12 +145,12 @@ struct SequenceNextNodeGeneralData
     }
 };
 
-/// Implementation of sequenceNextNode
-template <typename T, typename Node, bool Descending>
+/// Implementation of sequenceFirstNode
+template <typename T, typename Node, SeqDirection Direction, SeqBase Base>
 class SequenceNextNodeImpl final
-    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>
+    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, SequenceNextNodeImpl<T, Node, Direction, Base>>
 {
-    using Data = SequenceNextNodeGeneralData<Node, Descending>;
+    using Data = SequenceNextNodeGeneralData<Node>;
     static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
 
@@ -149,7 +160,7 @@ class SequenceNextNodeImpl final
 
 public:
     SequenceNextNodeImpl(const DataTypePtr & data_type_, const DataTypes & arguments, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceNextNodeImpl<T, Node, Descending>>(
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, SequenceNextNodeImpl<T, Node, Direction, Base>>(
             {data_type_}, {})
         , data_type(this->argument_types[0])
         , events_size(arguments.size() - 2)
@@ -165,12 +176,11 @@ public:
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
         const AggregateFunctionProperties &) const override
     {
-        /// This aggregate function sets insertion_requires_nullable_column on.
         /// Even though some values are mapped to aggregating key, it could return nulls for the below case.
         ///   aggregated events: [A -> B -> C]
         ///   events to find: [C -> D]
         ///   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
-        return std::make_shared<AggregateFunctionNullVariadic<true, false, true, true>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<false, false, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
@@ -222,7 +232,7 @@ public:
             a.push_back(b[i]->clone(arena), arena);
 
         /// Either sort whole container or do so partially merging ranges afterwards
-        using Comparator = typename SequenceNextNodeGeneralData<Node, Descending>::Comparator;
+        using Comparator = typename SequenceNextNodeGeneralData<Node>::Comparator;
 
         if (!data(place).sorted && !data(rhs).sorted)
             std::stable_sort(std::begin(a), std::end(a), Comparator{});
@@ -246,12 +256,35 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
+        // Temporarily do a const_cast to sort the values. It helps to reduce the computational burden on the initiator node.
+        this->data(const_cast<AggregateDataPtr>(place)).sort();
+
         writeBinary(data(place).sorted, buf);
 
         auto & value = data(place).value;
-        writeVarUInt(value.size(), buf);
-        for (auto & node : value)
-            node->write(buf);
+
+        UInt64 size = std::max(static_cast<UInt64>(events_size + 1), value.size());
+        switch (Base)
+        {
+            case HEAD:
+                writeVarUInt(size, buf);
+                for (UInt64 i = 0; i < size; ++i)
+                    value[i]->write(buf);
+                break;
+
+            case TAIL:
+                writeVarUInt(size, buf);
+                for (UInt64 i = value.size() - 1; i >= size; --i)
+                    value[i]->write(buf);
+                break;
+
+            case FIRST_MATCH:
+            case LAST_MATCH:
+                writeVarUInt(value.size(), buf);
+                for (auto & node : value)
+                    node->write(buf);
+                break;
+        }
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
@@ -271,60 +304,83 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    /// Calculate position of current event in target chain and shift to corresponding offset
-    /// Lets consider case where we search chain 'ABCD':
-    /// - If current event is 'X' we can skip it and perform next step from position after this 'X'
-    /// - If current event is 'A' we will start from this position
-    /// - If current event is 'B' then second position in our chain should match this 'B'.
-    ///   And we perform next step from position one before 'B'.
-    /// - And so on...
-    inline UInt32 calculateJump(const Data & data, const UInt32 i, const UInt32 j) const
+    inline UInt32 getBaseIndex(Data & data, bool & exist) const
     {
-        /// Fast check if value is zero, not in sequence
-        if (data.value[i - j]->events_bitset.none())
-            return events_size - j;
+        switch (Base)
+        {
+            case HEAD:
+                exist = true;
+                return 0;
 
-        UInt32 k = 1;
-        for (; k < events_size - j; ++k)
-            if (data.value[i - j]->events_bitset.test(events_size - 1 - j - k))
+            case TAIL:
+                exist = true;
+                return data.value.size() - 1;
+
+            case FIRST_MATCH:
+                for (UInt64 i = 0; i < data.value.size(); ++i)
+                    if (data.value[i]->events_bitset.test(0))
+                    {
+                        exist = true;
+                        return i;
+                    }
                 break;
-        return k;
+
+            case LAST_MATCH:
+                for (UInt64 i = 0; i < data.value.size(); ++i)
+                {
+                    auto reversed_i = data.value.size() - i - 1;
+                    if (data.value[reversed_i]->events_bitset.test(0))
+                    {
+                        exist = true;
+                        return reversed_i;
+                    }
+                }
+                break;
+        }
+
+        exist = false;
+        return 0;
     }
 
     /// This method returns an index of next node that matched the events.
-    /// It is one as referring Boyer-Moore-Algorithm(https://en.wikipedia.org/wiki/Boyer%E2%80%93Moore_string-search_algorithm).
-    /// But, there are some differences.
-    /// In original Boyer-Moore-Algorithm compares strings, but this algorithm compares events_bits.
-    /// Matched events in the chain of events are represented as a bitmask.
+    /// matched events in the chain of events are represented as a bitmask.
     /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
+        const UInt32 unmatched = data.value.size();
+
         if (data.value.size() <= events_size)
-            return 0;
+            return unmatched;
 
         data.sort();
 
-        UInt32 i = events_size - 1;
-        while (i < data.value.size())
+        bool base_existence;
+        UInt32 base = getBaseIndex(data, base_existence);
+        if (!base_existence)
+            return unmatched;
+
+        if (events_size == 0)
         {
-            UInt32 j = 0;
-            /// Try to match chain of events starting from the end of this chain.
-            for (; j < events_size; ++j)
-            {
-                /// It compares each matched events.
-                /// The lower bitmask is the former matched event.
-                if (!data.value[i - j]->events_bitset.test(events_size - 1 - j))
-                    break;
-            }
-
-            /// Chain of events are matched, return the index of result value.
-            if (j == events_size)
-                return i + 1;
-
-            i += calculateJump(data, i, j);
+            return data.value.size() > 0 ? base : unmatched;
         }
+        else
+        {
+            UInt32 i = 0;
+            switch (Direction)
+            {
+                case FORWARD:
+                    for (i = 0; i < events_size && base + i < data.value.size(); ++i)
+                        if (data.value[base + i]->events_bitset.test(i) == false)
+                            break;
+                    return (i == events_size) ? base + i : unmatched;
 
-        return 0;
+                case BACKWARD:
+                    for (i = 0; i < events_size && i < base; ++i)
+                        if (data.value[base - i]->events_bitset.test(i) == false)
+                            break;
+                    return (i == events_size) ? base - i : unmatched;
+            }
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -332,145 +388,10 @@ public:
         auto & value = data(place).value;
 
         UInt32 event_idx = getNextNodeIndex(this->data(place));
-        if (event_idx != 0 && event_idx < value.size())
+        if (event_idx < value.size())
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             value[event_idx]->insertInto(to_concrete.getNestedColumn());
-            to_concrete.getNullMapData().push_back(0);
-        }
-        else
-            to.insertDefault();
-    }
-
-    bool allocatesMemoryInArena() const override { return true; }
-};
-
-/// Implementation of sequenceFirstNode
-template <typename T, typename Node, bool Descending>
-class SequenceFirstNodeImpl final
-    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>
-{
-    using Data = SequenceNextNodeGeneralData<Node, Descending>;
-    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
-    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
-
-    DataTypePtr & data_type;
-
-public:
-    explicit SequenceFirstNodeImpl(const DataTypePtr & data_type_)
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>(
-            {data_type_}, {})
-        , data_type(this->argument_types[0])
-    {
-    }
-
-    String getName() const override { return "sequenceFirstNode"; }
-
-    DataTypePtr getReturnType() const override { return data_type; }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
-        const AggregateFunctionProperties &) const override
-    {
-        return std::make_shared<AggregateFunctionNullVariadic<true, false, true, true>>(nested_function, arguments, params);
-    }
-
-    void insert(Data & a, const Node * v, Arena * arena) const
-    {
-        ++a.total_values;
-        a.value.push_back(v->clone(arena), arena);
-    }
-
-    void create(AggregateDataPtr __restrict place) const override
-    {
-        new (place) Data;
-    }
-
-    bool compare(const T lhs_timestamp, const T rhs_timestamp) const
-    {
-        return Descending ? lhs_timestamp < rhs_timestamp : lhs_timestamp > rhs_timestamp;
-    }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
-    {
-        bool is_first = true;
-        auto & value = data(place).value;
-        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
-
-        if (value.size() != 0)
-        {
-            if (compare(value[0]->event_time, timestamp))
-                value.pop_back();
-            else
-                is_first = false;
-        }
-
-        if (is_first)
-        {
-            Node * node = Node::allocate(*columns[1], row_num, arena);
-            node->event_time = timestamp;
-            node->events_bitset.reset();
-
-            data(place).value.push_back(node, arena);
-        }
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        auto & a = data(place).value;
-        auto & b = data(rhs).value;
-
-        if (b.empty())
-            return;
-
-        if (a.empty())
-        {
-            a.push_back(b[0]->clone(arena), arena);
-            return;
-        }
-
-        if (compare(a[0]->event_time, b[0]->event_time))
-        {
-            data(place).value.pop_back();
-            a.push_back(b[0]->clone(arena), arena);
-        }
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
-    {
-        writeBinary(data(place).sorted, buf);
-
-        auto & value = data(place).value;
-        writeVarUInt(value.size(), buf);
-        for (auto & node : value)
-            node->write(buf);
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
-    {
-        readBinary(data(place).sorted, buf);
-
-        UInt64 size;
-        readVarUInt(size, buf);
-
-        if (unlikely(size == 0))
-            return;
-
-        auto & value = data(place).value;
-
-        value.resize(size, arena);
-        for (UInt64 i = 0; i < size; ++i)
-            value[i] = Node::read(buf, arena);
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-    {
-        auto & value = data(place).value;
-
-        if (value.size() > 0)
-        {
-            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
-            value[0]->insertInto(to_concrete.getNestedColumn());
             to_concrete.getNullMapData().push_back(0);
         }
         else
