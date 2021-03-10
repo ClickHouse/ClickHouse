@@ -29,6 +29,8 @@ toc_title: "\u041a\u0432\u043e\u0442\u044b"
 
             <!-- Без ограничений. Просто считать соответствующие данные за указанный интервал. -->
             <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
             <errors>0</errors>
             <result_rows>0</result_rows>
             <read_rows>0</read_rows>
@@ -48,6 +50,8 @@ toc_title: "\u041a\u0432\u043e\u0442\u044b"
         <duration>3600</duration>
 
         <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -58,6 +62,8 @@ toc_title: "\u041a\u0432\u043e\u0442\u044b"
         <duration>86400</duration>
 
         <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
         <errors>1000</errors>
         <result_rows>5000000000</result_rows>
         <read_rows>500000000000</read_rows>
@@ -73,6 +79,10 @@ toc_title: "\u041a\u0432\u043e\u0442\u044b"
 Рассмотрим величины, которые можно ограничить:
 
 `queries` - общее количество запросов;
+
+`query_selects` – общее количество запросов `SELECT`.
+
+`query_inserts` – Общее количество запросов `INSERT`.
 
 `errors` - количество запросов, при выполнении которых было выкинуто исключение;
 
