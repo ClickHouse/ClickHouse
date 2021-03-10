@@ -23,4 +23,27 @@ Note that you can not detach permanently the table which is already detached (te
 
 Also you can not [DROP](../../sql-reference/statements/drop.md#drop-table) the detached table, or [CREATE TABLE](../../sql-reference/statements/create/table.md) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](../../sql-reference/statements/rename.md) query.
 
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE test ENGINE = Log AS SELECT * FROM numbers(10);
+
+DETACH TABLE test;
+
+SELECT * FROM TEST;
+```
+
+Result:
+
+``` text
+Ok.
+
+Ok.
+
+Received exception from server (version 21.3.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.TEST doesn't exist.
+```
+
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/detach/) <!--hide-->
