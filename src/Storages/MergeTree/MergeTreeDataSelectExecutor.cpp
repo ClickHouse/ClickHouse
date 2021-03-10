@@ -220,16 +220,21 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     std::optional<KeyCondition> minmax_idx_condition;
     std::optional<PartitionPruner> partition_pruner;
-    if (data.minmax_idx_expr)
+    DataTypes minmax_columns_types;
+    if (metadata_snapshot->hasPartitionKey())
     {
-        minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
+        minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
+
+        minmax_idx_condition.emplace(query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key));
         partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
             String msg = "Neither MinMax index by columns (";
             bool first = true;
-            for (const String & col : data.minmax_idx_columns)
+            for (const String & col : minmax_columns_names)
             {
                 if (first)
                     first = false;
@@ -258,7 +263,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 continue;
 
             if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                    part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
+                    part->minmax_idx.hyperrectangle, minmax_columns_types).can_be_true)
                 continue;
 
             if (partition_pruner)
@@ -1734,10 +1739,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index {} has dropped {} / {} granules.", backQuote(index_helper->index.name), granules_dropped, total_granules);
-
     return res;
 }
-
 
 }
