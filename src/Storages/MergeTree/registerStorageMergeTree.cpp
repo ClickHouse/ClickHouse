@@ -60,6 +60,27 @@ static Names extractColumnNames(const ASTPtr & node)
     }
 }
 
+/** Is used to order Graphite::Retentions by age and precision descending.
+  * Throws exception if not both age and precision are less or greater then another.
+  */
+static bool compareRetentions(const Graphite::Retention & a, const Graphite::Retention & b)
+{
+    if (a.age > b.age && a.precision > b.precision)
+    {
+        return true;
+    }
+    else if (a.age < b.age && a.precision < b.precision)
+    {
+        return false;
+    }
+    String error_msg = "age and precision should only grow up: "
+        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
+        + std::to_string(b.age) + ":" + std::to_string(b.precision);
+    throw Exception(
+        error_msg,
+        ErrorCodes::BAD_ARGUMENTS);
+}
+
 /** Read the settings for Graphite rollup from config.
   * Example
   *
@@ -157,8 +178,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
 }
@@ -427,7 +447,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (is_extended_storage_def && arg_cnt == 0)
+        else if (is_extended_storage_def && (arg_cnt == 0 || !engine_args[arg_num]->as<ASTLiteral>() || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
@@ -450,16 +470,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             arg_cnt += 2;
         }
         else
-            throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool allow_uuid_macro = is_on_cluster || args.query.attach;
+        bool is_replicated_database = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
         if (!args.attach)
         {
+            if (is_replicated_database && !is_extended_storage_def)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
+
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;

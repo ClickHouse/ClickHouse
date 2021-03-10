@@ -1,7 +1,7 @@
 #include <Coordination/NuKeeperServer.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/NuKeeperStateMachine.h>
-#include <Coordination/InMemoryStateManager.h>
+#include <Coordination/NuKeeperStateManager.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -22,23 +22,43 @@ NuKeeperServer::NuKeeperServer(
     int server_id_,
     const CoordinationSettingsPtr & coordination_settings_,
     const Poco::Util::AbstractConfiguration & config,
-    ResponsesQueue & responses_queue_)
+    ResponsesQueue & responses_queue_,
+    SnapshotsQueue & snapshots_queue_)
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
-    , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, "test_keeper_server.raft_configuration", config))
+    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, snapshots_queue_, config.getString("test_keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"), coordination_settings))
+    , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
 }
 
 void NuKeeperServer::startup()
 {
+
+    state_machine->init();
+
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
+
+    bool single_server = state_manager->getTotalServers() == 1;
+
     nuraft::raft_params params;
-    params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
-    params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
-    params.election_timeout_upper_bound_ = coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds();
+    if (single_server)
+    {
+        /// Don't make sense in single server mode
+        params.heart_beat_interval_ = 0;
+        params.election_timeout_lower_bound_ = 0;
+        params.election_timeout_upper_bound_ = 0;
+    }
+    else
+    {
+        params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
+        params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
+        params.election_timeout_upper_bound_ = coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds();
+    }
+
     params.reserved_log_items_ = coordination_settings->reserved_log_items;
     params.snapshot_distance_ = coordination_settings->snapshot_distance;
+    params.stale_log_gap_ = coordination_settings->stale_log_gap;
     params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
     params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
@@ -64,8 +84,10 @@ void NuKeeperServer::startup()
 void NuKeeperServer::shutdown()
 {
     state_machine->shutdownStorage();
-    if (!launcher.shutdown(coordination_settings->shutdown_timeout.totalSeconds()))
-        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", 5);
+    state_manager->flushLogStore();
+    auto timeout = coordination_settings->shutdown_timeout.totalSeconds();
+    if (!launcher.shutdown(timeout))
+        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", timeout);
 }
 
 namespace
@@ -157,13 +179,41 @@ bool NuKeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
-    if (type == nuraft::cb_func::Type::BecomeFresh || type == nuraft::cb_func::Type::BecomeLeader)
+    size_t last_commited = state_machine->last_commit_index();
+    size_t next_index = state_manager->getLogStore()->next_slot();
+    bool commited_store = false;
+    if (next_index < last_commited || next_index - last_commited <= 1)
+        commited_store = true;
+
+    auto set_initialized = [this] ()
     {
         std::unique_lock lock(initialized_mutex);
         initialized_flag = true;
         initialized_cv.notify_all();
+    };
+
+    switch (type)
+    {
+        case nuraft::cb_func::BecomeLeader:
+        {
+            if (commited_store) /// We become leader and store is empty, ready to serve requests
+                set_initialized();
+            return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::BecomeFresh:
+        {
+            set_initialized(); /// We are fresh follower, ready to serve requests.
+            return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::InitialBatchCommited:
+        {
+            if (isLeader()) /// We have committed our log store and we are leader, ready to serve requests.
+                set_initialized();
+            return nuraft::cb_func::ReturnCode::Ok;
+        }
+        default: /// ignore other events
+            return nuraft::cb_func::ReturnCode::Ok;
     }
-    return nuraft::cb_func::ReturnCode::Ok;
 }
 
 void NuKeeperServer::waitInit()

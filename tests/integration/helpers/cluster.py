@@ -13,6 +13,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import shlex
 
 import cassandra.cluster
 import docker
@@ -44,8 +45,8 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
-def run_and_check(args, env=None, shell=False):
-    res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
+def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
+    res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
         print('Stderr:\n{}\n'.format(res.stderr.decode('utf-8')))
@@ -573,7 +574,7 @@ class ClickHouseCluster:
         raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
-        sr_client = CachedSchemaRegistryClient('http://localhost:8081')
+        sr_client = CachedSchemaRegistryClient({"url":'http://localhost:8081'})
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -730,7 +731,7 @@ class ClickHouseCluster:
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
-            subprocess.check_output(clickhouse_start_cmd)
+            subprocess_check_call(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
             start_deadline = time.time() + 20.0  # seconds
@@ -868,6 +869,8 @@ services:
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
+            - IPC_LOCK
+            - SYS_NICE
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -1078,6 +1081,23 @@ class ClickHouseInstance:
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
+
+    def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
+        start_time = time.time()
+        result = self.exec_in_container(
+            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Em {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
+
+        # if repetitions>1 grep will return success even if not enough lines were collected,
+        if repetitions>1 and len(result.splitlines()) < repetitions:
+            print("wait_for_log_line: those lines were found during {} seconds:".format(timeout))
+            print(result)
+            raise Exception("wait_for_log_line: Not enough repetitions: {} found, while {} expected".format(len(result.splitlines()), repetitions))
+
+        wait_duration = time.time() - start_time
+
+        print('{} log line matching "{}" appeared in a {} seconds'.format(repetitions, regexp, wait_duration))
+        return wait_duration
+
 
     def file_exists(self, path):
         return self.exec_in_container(

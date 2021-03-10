@@ -130,10 +130,10 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelinePtr QueryPlan::buildQueryPipeline()
+QueryPipelinePtr QueryPlan::buildQueryPipeline(const QueryPlanOptimizationSettings & optimization_settings)
 {
     checkInitialized();
-    optimize();
+    optimize(optimization_settings);
 
     struct Frame
     {
@@ -177,7 +177,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
     return last_pipeline;
 }
 
-Pipe QueryPlan::convertToPipe()
+Pipe QueryPlan::convertToPipe(const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!isInitialized())
         return {};
@@ -185,7 +185,7 @@ Pipe QueryPlan::convertToPipe()
     if (isCompleted())
         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
 
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline()));
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings)));
 }
 
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
@@ -333,9 +333,9 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-void QueryPlan::optimize()
+void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::optimizeTree(*root, nodes);
+    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
 }
 
 }
