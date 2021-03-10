@@ -34,9 +34,7 @@ namespace
 void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
-
     HTMLForm params(request);
-    params.read(request.getStream());
 
     if (!params.has("method"))
     {
@@ -177,7 +175,46 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
         else if (method == "loadKeys")
         {
-            /// TODO
+            std::string key_columns_string = params.get("key_columns");
+            std::shared_ptr<Block> keys_sample_block;
+
+            try
+            {
+                keys_sample_block = parseColumns(std::move(key_columns_string));
+            }
+            catch (const Exception & ex)
+            {
+                processError(response, "Invalid 'key_columns' parameter in request body '" + ex.message() + "'");
+                LOG_WARNING(log, ex.getStackTraceString());
+                return;
+            }
+
+            std::string columns = params.get("columns");
+            std::shared_ptr<Block> sample_block;
+
+            try
+            {
+                sample_block = parseColumns(std::move(columns));
+            }
+            catch (const Exception & ex)
+            {
+                processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
+                LOG_WARNING(log, ex.getStackTraceString());
+                return;
+            }
+
+            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+
+            auto & read_buf = request.getStream();
+            auto format = FormatFactory::instance().getInput("RowBinary", read_buf, *keys_sample_block, context, DEFAULT_BLOCK_SIZE);
+            auto reader = std::make_shared<InputStreamFromInputFormat>(format);
+            auto block = reader->read();
+            auto key_columns = block.getColumns();
+
+            auto input = library_handler->loadKeys(key_columns, *sample_block);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("RowBinary", out, *sample_block, context);
+
+            copyData(*input, *output);
         }
     }
     catch (...)

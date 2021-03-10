@@ -4,7 +4,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Formats/FormatFactory.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -170,16 +173,43 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_st
 }
 
 
-/// Not implemented, TODO
-BlockInputStreamPtr LibraryBridgeHelper::loadKeys()
+BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns, const Block & sample_block)
 {
     startBridgeSync();
 
+    auto columns = key_columns.getColumns();
+    auto keys_sample_block = key_columns.cloneEmpty();
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LOAD_KEYS_METHOD);
+    uri.addQueryParameter("columns", sample_block.getNamesAndTypesList().toString());
+    uri.addQueryParameter("key_columns", keys_sample_block.getNamesAndTypesList().toString());
 
-    ReadWriteBufferFromHTTP read_buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, {});
-    return {};
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [key_columns, sample_block, this](std::ostream & ostr)
+    {
+        WriteBufferFromOStream out_buffer(ostr);
+        auto output_stream = context.getOutputStream(
+                LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
+        formatBlock(output_stream, key_columns);
+    };
+
+    //Poco::Net::HTTPBasicCredentials credentials;
+    //ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+    //ConnectionTimeouts timeouts;
+
+    //auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
+    //    uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts,
+    //    0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
+
+    //auto input_stream = context.getInputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, *in_ptr, sample_block, DEFAULT_BLOCK_SIZE);
+    //return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+
+    ReadWriteBufferFromHTTP read_buf(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, {});
+
+    auto format = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, read_buf, sample_block, context, DEFAULT_BLOCK_SIZE);
+    auto reader = std::make_shared<InputStreamFromInputFormat>(format);
+    auto block = reader->read();
+
+    return std::make_shared<OneBlockInputStream>(block);
 }
 
 }

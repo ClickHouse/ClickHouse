@@ -139,6 +139,52 @@ BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes
 }
 
 
+BlockInputStreamPtr SharedLibraryHandler::loadKeys(const Columns & key_columns, const Block & sample_block)
+{
+    auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
+    std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
+
+    for (size_t i = 0; i < key_columns.size(); ++i)
+    {
+        auto cell_holder = std::make_unique<ClickHouseLibrary::Field[]>(key_columns[i]->size());
+
+        for (size_t j = 0; j < key_columns[i]->size(); ++j)
+        {
+            auto data_ref = key_columns[i]->getDataAt(j);
+
+            cell_holder[j] = ClickHouseLibrary::Field{
+                    .data = static_cast<const void *>(data_ref.data),
+                    .size = data_ref.size};
+        }
+
+        holder[i] = ClickHouseLibrary::Row{
+                    .data = static_cast<ClickHouseLibrary::Field *>(cell_holder.get()),
+                    .size = key_columns[i]->size()};
+
+        column_data_holders.push_back(std::move(cell_holder));
+    }
+
+    ClickHouseLibrary::Table request_cols{
+            .data = static_cast<ClickHouseLibrary::Row *>(holder.get()),
+            .size = key_columns.size()};
+
+    void * data_ptr = nullptr;
+
+    /// Get function pointer before dataNew call because library->get may throw.
+    auto func_load_keys = library->get<void * (*)(
+                decltype(data_ptr), decltype(&settings_holder->strings), decltype(&request_cols))>("ClickHouseDictionary_v3_loadKeys");
+
+    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
+
+    auto * data = func_load_keys(data_ptr, &settings_holder->strings, &request_cols);
+    auto block = dataToBlock(sample_block, data);
+
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
+
+    return std::make_shared<OneBlockInputStream>(block);
+}
+
+
 Block SharedLibraryHandler::dataToBlock(const Block & sample_block, const void * data)
 {
     if (!data)
