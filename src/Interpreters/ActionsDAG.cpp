@@ -321,24 +321,19 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names)
 
 void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
-    std::cerr << "ActionsDAG::removeUnusedActions\n";
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
 
     std::unordered_map<std::string_view, std::list<const Node *>> names_map;
     for (const auto * node : index)
-    {
-        std::cerr << ".index " << node->result_name << std::endl;
         names_map[node->result_name].push_back(node);
-    }
 
     for (const auto & name : required_names)
     {
-        std::cerr << "..req name " << name << std::endl;
         auto & nodes_list = names_map[name];
         if (nodes_list.empty())
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                            "Unknown column: {}, there are only columns {}", name, dumpDAG());
+                            "Unknown column: {}, there are only columns {}", name, dumpNames());
 
         required_nodes.push_back(nodes_list.front());
         nodes_list.pop_back();
