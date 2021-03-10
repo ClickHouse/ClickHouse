@@ -116,8 +116,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     auto now = time(nullptr);
 
     /// the setting was already enabled, and last state refresh was done recently
-    if ((execute_merges_on_single_replica_time_threshold != 0
-        || s3_execute_merges_on_single_replica_time_threshold != 0)
+    if (((threshold != 0 && execute_merges_on_single_replica_time_threshold != 0)
+        || (threshold_s3 != 0 && s3_execute_merges_on_single_replica_time_threshold != 0))
         && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
         return;
 
