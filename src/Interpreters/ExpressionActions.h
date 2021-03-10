@@ -78,12 +78,12 @@ private:
     ColumnNumbers result_positions;
     Block sample_block;
 
-    size_t max_temporary_non_const_columns = 0;
+    ExpressionActionsSettings settings;
 
 public:
     ExpressionActions() = delete;
     ~ExpressionActions();
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings);
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_);
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 
@@ -91,6 +91,7 @@ public:
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
     const ActionsDAG & getActionsDAG() const { return *actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
+    const ExpressionActionsSettings & getSettings() const { return settings; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;

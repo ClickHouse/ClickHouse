@@ -44,7 +44,8 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
+    : settings(settings_)
 {
     actions_dag = actions_dag_->clone();
 
@@ -54,8 +55,6 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
 #endif
 
     linearizeActions();
-
-    max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
@@ -261,14 +260,14 @@ std::string ExpressionActions::Action::toString() const
 
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
-    if (max_temporary_non_const_columns)
+    if (settings.max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
         for (const auto & column : columns)
             if (column.column && !isColumnConst(*column.column))
                 ++non_const_columns;
 
-        if (non_const_columns > max_temporary_non_const_columns)
+        if (non_const_columns > settings.max_temporary_non_const_columns)
         {
             WriteBufferFromOwnString list_of_non_const_columns;
             for (const auto & column : columns)
@@ -276,7 +275,7 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                     list_of_non_const_columns << "\n" << column.name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + std::to_string(max_temporary_non_const_columns),
+                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
                 ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
