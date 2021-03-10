@@ -221,6 +221,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
     endif ()
 
+    if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-library-bridge)
+    endif ()
+
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})

@@ -18,7 +18,7 @@ public:
 
     LibraryBridgeHelper(const Context & context_, const std::string & dictionary_id_);
 
-    bool initLibrary(const std::string & library_path, const std::string librray_settings);
+    bool initLibrary(const std::string & library_path, const std::string library_settings);
 
     bool cloneLibrary(const std::string & other_dictionary_id);
 

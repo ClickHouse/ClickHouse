@@ -131,7 +131,7 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());
 
-    return ShellCommand::executeDirect(path.toString(), cmd_args, true);
+    return ShellCommand::executeDirect(path.toString(), cmd_args, ShellCommandDestructorStrategy(true));
 }
 
 }
