@@ -212,7 +212,7 @@ convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scal
             static constexpr Int128 min_int128 = minInt128();
             static constexpr Int128 max_int128 = maxInt128();
 
-            if (out <= static_cast<ToNativeType>(min_int128) || out >= (float) static_cast<ToNativeType>(max_int128))
+            if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
             {
                 if constexpr (throw_exception)
                     throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
