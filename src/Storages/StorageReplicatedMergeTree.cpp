@@ -3769,9 +3769,6 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         }
     }
 
-    if (part_name != "foo")
-        return false;
-
     SCOPE_EXIT
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
