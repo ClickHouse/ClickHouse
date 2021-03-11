@@ -220,11 +220,8 @@ void * ClickHouseDictionary_v3_loadKeys(void * data_ptr, ClickHouseLibrary::CStr
         }
     }
 
-    //MakeColumnsFromVector(ptr);
-
     MakeColumnsFromVector(ptr);
     return static_cast<void *>(&ptr->ctable);
-    //return nullptr;
 }
 
 void * ClickHouseDictionary_v3_libNew(

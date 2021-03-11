@@ -79,7 +79,7 @@ def test_load_ids(ch_cluster):
     ''')
 
     result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(0));''')
-    print(result.strip() == '100')
+    assert(result.strip() == '100')
 
 
 def test_load_keys(ch_cluster):
@@ -98,7 +98,7 @@ def test_load_keys(ch_cluster):
     ''')
 
     result = instance.query('''select dictGet(lib_dict_ckc, 'value3', tuple(toUInt64(0)));''')
-    print(result.strip() == '200')
+    assert(result.strip() == '200')
 
 
 if __name__ == '__main__':
