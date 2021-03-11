@@ -1,5 +1,6 @@
 ---
 title: 'Fuzzing ClickHouse'
+image: 'https://blog-images.clickhouse.tech/en/2021/fuzzing-clickhouse/some-checks-were-not-successful.png'
 date: '2021-03-08'
 author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
 tags: ['fuzzing', 'testing']
@@ -88,10 +89,34 @@ The core implementation of the fuzzer is relatively small, consisting of about
 700 lines of C++ code. A prototype was made in a couple of days, but naturally
 it took significantly longer to polish it and to start routinely using it in
 CI. It is very productive and let us find more than 200 bugs already (see the
-label [fuzz](https://github.com/ClickHouse/ClickHouse/labels/fuzz) on GitHub).
-Some errors it finds are not very interesting, e.g. wrong error messages when a
-type of argument doesn't match. But we also found some serious logic errors or
-even memory errors. We fix all the errors we find, even not significant ones,
+label [fuzz](https://github.com/ClickHouse/ClickHouse/labels/fuzz) on GitHub), some of which are serious logic errors or
+even memory errors. When we only started, we could segfault the server or make it enter a never-ending loop with simplest read-only queries such as `SELECT arrayReverseFill(x -> (x < 10), [])` or `SELECT geoDistance(0., 0., -inf, 1.)`. Of course I couldn't resist bringing down our [playground](https://gh-api.clickhouse.tech/play?user=play#LS0gWW91IGNhbiBxdWVyeSB0aGUgR2l0SHViIGhpc3RvcnkgZGF0YSBoZXJlLiBTZWUgaHR0cHM6Ly9naC5jbGlja2hvdXNlLnRlY2gvZXhwbG9yZXIvIGZvciB0aGUgZGVzY3JpcHRpb24gYW5kIGV4YW1wbGUgcXVlcmllcy4Kc2VsZWN0ICdoZWxsbyB3b3JsZCc=) with some of these queries, and was content to see that the server soon restarts correctly.
+These queries are actually minified by hand, normally the fuzzer would generate something barely legible such as:
+```
+SELECT
+    (val + 257,
+      (((tuple(NULL), 10.000100135803223), tuple(-inf)), '-1', (NULL, '0.10', NULL), NULL),
+      (val + 9223372036854775807) = (rval * 100),
+      tuple(65535), tuple(NULL), NULL, NULL),
+    *
+FROM 
+(
+    SELECT dummy AS val
+    FROM system.one
+) AS s1
+ANY LEFT JOIN 
+(
+    SELECT toLowCardinality(toNullable(dummy)) AS rval
+    FROM system.one
+) AS s2 ON (val + 100) = (rval * 7)
+```
+In principle, we could add automated test case minification by modifying AST in the
+same vein with fuzzing. This is somewhat complicated by the fact that the server dies
+after every, excuse my pun, successfully failed query, so we didn't implement it yet.
+
+Not all errors the fuzzer finds are significant, some of them are pretty boring and
+harmless, such as a wrong error code for an
+out-of-bounds argument. We still try to fix all of them,
 because this lets us ensure that under normal operation, the fuzzer doesn't
 find any errors.  This is similar to the approach usually taken with compiler
 warnings and other optional diagnostics -- it's better to fix or disable every
@@ -100,7 +125,7 @@ OK, and it's easy to notice new problems.
 
 After fixing the majority of pre-existing error, this fuzzer became efficient
 for finding errors in new features. Pull requests introducing new features
-normally adds an SQL test, and we pay extra attention to the new tests when
+normally add an SQL test, and we pay extra attention to the new tests when
 fuzzing, generating more permutations for them. Even if the coverage of the
 test is not sufficient, there is a good chance that the fuzzer will find the
 missing corner cases. So when we see that all the fuzzer runs in different
@@ -129,7 +154,7 @@ the client going crazy and running a hundred of random queries instead. All
 queries from the current session become a source for expressions for fuzzing,
 so try entering several different queries to get more interesting results. Be
 careful not to do this in production! When you do this experiment, you'll soon
-notice that the fuzzer tends to generate queries that are too long to run. This
+notice that the fuzzer tends to generate queries that take very long to run. This
 is why for the CI fuzzer runs we have to configure the server to limit query
 execution time, memory usage and so on using the corresponding [server
 settings](https://clickhouse.tech/docs/en/operations/settings/query-complexity/#:~:text=In%20the%20default%20configuration%20file,query%20within%20a%20single%20server.).
@@ -141,7 +166,7 @@ constraints](https://clickhouse.tech/docs/en/operations/settings/constraints-on-
 
 The AST-based fuzzer we discussed is only one of the many kinds of fuzzers we
 have in ClickHouse. There is a [talk](https://www.youtube.com/watch?v=GbmK84ZwSeI&t=4481s) (in Russian, [slides are here](https://presentations.clickhouse.tech/cpp_siberia_2021/)) by Alexey Milovidov that
-explores all the fuzzer in greater detail (in Russian). Another interesting
+explores all the fuzzers we have. Another interesting
 recent development is application of pivoted query synthesis technique,
 implemented in [SQLancer](https://github.com/sqlancer/sqlancer), to ClickHouse.
 The authors are going to give [a talk about
