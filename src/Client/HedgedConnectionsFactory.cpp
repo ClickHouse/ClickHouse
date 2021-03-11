@@ -215,7 +215,11 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
                 return state;
         }
         else if (timeout_fd_to_replica_index.contains(event_fd))
-            replicas[timeout_fd_to_replica_index[event_fd]].change_replica_timeout.reset();
+        {
+            int index = timeout_fd_to_replica_index[event_fd];
+            replicas[index].change_replica_timeout.reset();
+            ++shuffled_pools[index].slowdown_count;
+        }
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
 
@@ -285,6 +289,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
+        shuffled_pool.slowdown_count = 0;
 
         if (shuffled_pool.error_count >= max_tries)
         {
