@@ -348,15 +348,8 @@ SetPtr makeExplicitSet(
     const ASTPtr & right_arg = args.children.at(1);
 
     auto column_name = left_arg->getColumnName();
-    const auto & index = actions.getIndex();
-    auto it = index.begin();
-    for (; it != index.end(); ++it)
-        if ((*it)->result_name == column_name)
-            break;
-
-    if (it == index.end())
-        throw Exception("Unknown identifier: '" + left_arg->getColumnName() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-    const DataTypePtr & left_arg_type = (*it)->result_type;
+    const auto & dag_node = actions.findInIndex(column_name);
+    const DataTypePtr & left_arg_type = dag_node.result_type;
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());

@@ -58,28 +58,13 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
-    // auto it = index.find(node.result_name);
-    // if (it != index.end() && !can_replace && add_to_index)
-    //     throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
     auto & res = nodes.emplace_back(std::move(node));
 
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
-    // if (add_to_index)
-    //     index.replace(&res);
     return res;
 }
-
-// ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
-// {
-//     auto it = index.find(name);
-//     if (it == index.end())
-//         throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-
-//     return **it;
-// }
 
 const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
 {
@@ -113,22 +98,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    auto * res = &addNode(std::move(node));
-
-    // if (materialize)
-    // {
-    //     auto & name = res->result_name;
-
-    //     FunctionOverloadResolverPtr func_builder_materialize =
-    //             std::make_shared<FunctionOverloadResolverAdaptor>(
-    //                     std::make_unique<DefaultOverloadResolver>(
-    //                             std::make_shared<FunctionMaterialize>()));
-
-    //     res = &addFunction(func_builder_materialize, {res}, {}, true, false);
-    //     res = &addAlias(*res, name, true);
-    // }
-
-    return *res;
+    return addNode(std::move(node));
 }
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string alias)
@@ -175,7 +145,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        auto & child = *node.children[i];
+        const auto & child = *node.children[i];
 
         ColumnWithTypeAndName argument;
         argument.column = child.column;
@@ -241,6 +211,36 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     return addNode(std::move(node));
 }
 
+const ActionsDAG::Node & ActionsDAG::findInIndex(const std::string & name) const
+{
+    if (const auto * node = tryFindInIndex(name))
+        return *node;
+
+    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", name);
+}
+
+const ActionsDAG::Node * ActionsDAG::tryFindInIndex(const std::string & name) const
+{
+    for (const auto & node : index)
+        if (node->result_name == name)
+            return node;
+
+    return nullptr;
+}
+
+void ActionsDAG::addOrReplaceInIndex(const Node & node)
+{
+    for (auto & index_node : index)
+    {
+        if (index_node->result_name == node.result_name)
+        {
+            index_node = &node;
+            return;
+        }
+    }
+
+    index.push_back(&node);
+}
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
 {
@@ -592,98 +592,6 @@ void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression)
 }
 #endif
 
-// void ActionsDAG::transformHeader(Block & block)
-// {
-//     NameToNodeMap names_mapping;
-//     std::unordered_map<const Node *, size_t> nodes_mapping;
-//     for (size_t i = 0, size = inputs.size(); i < size; ++i)
-//     {
-//         const auto * input = inputs[i];
-//         names_mapping[input->result_name].emplace_back(i);
-//         nodes_mapping[input] = i;
-//     }
-
-//     auto inputs_mapping = buildNameToNodeMapping(inputs);
-//     auto inputs_pos = getInputsPositions(block, inputs_mapping);
-
-//     ColumnsWithTypeAndName result;
-//     result.reserve(index.size());
-//     for (const auto * node : result)
-//     {
-//         if (node->type = NodeType::INPUT)
-//         {
-//             ssize_t pos = inputs_pos[nodes_mapping[node]];
-//             if (pos >= 0)
-//                 result.push_back(block.getByPosition(pos));
-//         }
-//         else if (node->column)
-//             result.push_back({node->column, node->result_type, node->result_name});
-//         else
-//             result.push_back({node->result_type->, node->result_type, node->result_name});
-//     }
-// }
-
-// ActionsDAG::NameToNodeMap ActionsDAG::buildNameToNodeMapping(const NodeRawConstPtrs & nodes)
-// {
-//     NameToNodeMap map;
-//     for (size_t i = 0, size = nodes.size(); i < size; ++i)
-//     {
-//         const auto * node = nodes[i];
-//         map[node->result_name].emplace_back(i);
-//     }
-
-//     return map;
-// }
-
-// static std::vector<ssize_t> ActionsDAG::getInputsPositions(const Block & block, const NameToNodeMap & inputs_mapping)
-// {
-//     std::vector<ssize_t> inputs_pos(inputs.size(), -1);
-
-//     for (size_t pos = 0; pos < block.columns(); ++pos)
-//     {
-//         const auto & col = block.getByPosition(pos);
-//         auto it = inputs_mapping.find(col.name);
-//         if (it != inputs_mapping.end())
-//         {
-//             for (auto input_pos : it->second)
-//             {
-//                 if (inputs_pos[input_pos] < 0)
-//                 {
-//                     inputs_pos[input_pos] = pos;
-//                     break;
-//                 }
-//             }
-//         }
-//     }
-
-//     return inputs_pos;
-// }
-
-// void ActionsDAG::transformBlock(Block & block, std::vector<ssize_t> inputs_pos, ColumnsWithTypeAndName result_columns)
-// {
-//     if (project_input))
-//     {
-//         block.clear();
-//     }
-//     else
-//     {
-//         std::sort(inputs_pos.rbegin(), inputs_pos.rend());
-//         for (auto input : execution_context.inputs_pos)
-//             if (input >= 0)
-//                 block.erase(input);
-//     }
-
-//     Block res;
-
-//     for (auto & col : result_columns)
-//         res.insert(std::move(col));
-
-//     for (const auto & item : block)
-//         res.insert(std::move(item));
-
-//     block.swap(res);
-// }
-
 std::string ActionsDAG::dumpDAG() const
 {
     std::unordered_map<const Node *, size_t> map;
@@ -940,8 +848,8 @@ ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
     auto column_name = column.name;
     const auto * column_node = &adding_column_action->addColumn(std::move(column));
     NodeRawConstPtrs inputs = {column_node};
-    auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {});
-    auto & alias_node = adding_column_action->addAlias(function_node, std::move(column_name));
+    const auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {});
+    const auto & alias_node = adding_column_action->addAlias(function_node, std::move(column_name));
 
     adding_column_action->index.push_back(&alias_node);
     return adding_column_action;
@@ -1124,7 +1032,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
             /// At first, visit all children.
             while (cur.next_child_to_visit < cur.node->children.size())
             {
-                auto * child = cur.node->children[cur.next_child_to_visit];
+                const auto * child = cur.node->children[cur.next_child_to_visit];
                 auto & child_data = data[child];
 
                 if (!child_data.visited)
@@ -1314,17 +1222,13 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
-    auto it = index.begin();
-    for (; it != index.end(); ++it)
-        if ((*it)->result_name == column_name)
-            break;
-
-    if (it == index.end())
+    const auto * node = tryFindInIndex(column_name);
+    if (!node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
                         column_name, dumpDAG());
 
-    std::unordered_set<const Node *> split_nodes = {*it};
+    std::unordered_set<const Node *> split_nodes = {node};
     return split(split_nodes);
 }
 
@@ -1549,21 +1453,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
 
 ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs, const ColumnsWithTypeAndName & all_inputs)
 {
-    Node * predicate;
-
-    {
-        auto it = index.begin();
-        for (; it != index.end(); ++it)
-            if ((*it)->result_name == filter_name)
-                break;
-
-        if (it == index.end())
+    Node * predicate = const_cast<Node *>(tryFindInIndex(filter_name));
+    if (!predicate)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
                             filter_name, dumpDAG());
-
-        predicate = const_cast<Node *>(*it);
-    }
 
     std::unordered_set<const Node *> allowed_nodes;
 
