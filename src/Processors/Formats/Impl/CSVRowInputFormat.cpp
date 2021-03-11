@@ -424,12 +424,11 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
     }
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool quotes = false;
     bool need_more_data = true;
-    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -459,7 +458,6 @@ static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB
             }
             else if (*pos == '\n')
             {
-                ++number_of_rows;
                 if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                     need_more_data = false;
                 ++pos;
@@ -472,16 +470,13 @@ static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB
                     need_more_data = false;
                 ++pos;
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                {
                     ++pos;
-                    ++number_of_rows;
-                }
             }
         }
     }
 
     saveUpToPosition(in, memory, pos);
-    return {loadAtPosition(in, memory, pos), number_of_rows};
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineCSV(FormatFactory & factory)

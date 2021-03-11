@@ -1,6 +1,5 @@
 #pragma once
 
-#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -38,7 +37,7 @@ struct StringSearcherBase
 {
 #ifdef __SSE2__
     static constexpr auto n = sizeof(__m128i);
-    const int page_size = ::getPageSize();
+    const int page_size = getpagesize();
 
     bool pageSafe(const void * const ptr) const
     {
@@ -255,7 +254,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + n <= haystack_end && pageSafe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
@@ -464,7 +463,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + n <= haystack_end && pageSafe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
@@ -653,7 +652,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + n <= haystack_end && pageSafe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     /// check for first 16 octets
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));

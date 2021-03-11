@@ -95,7 +95,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
         */
     if (!have_at_least_one_physical_column)
     {
-        const auto minimum_size_column_name = part->getColumnNameWithMinimumCompressedSize(metadata_snapshot);
+        const auto minimum_size_column_name = part->getColumnNameWithMinumumCompressedSize(metadata_snapshot);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());

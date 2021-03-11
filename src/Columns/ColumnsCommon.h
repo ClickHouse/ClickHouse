@@ -15,9 +15,7 @@ namespace ErrorCodes
 }
 
 /// Counts how many bytes of `filt` are greater than zero.
-size_t countBytesInFilter(const UInt8 * filt, size_t sz);
 size_t countBytesInFilter(const IColumn::Filter & filt);
-size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map);
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.

@@ -235,8 +235,6 @@ public:
     {
         return true;
     }
-
-    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }

@@ -6,7 +6,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=['configs/config.xml'])
 path_to_userfiles_from_defaut_config = "user_files"
 
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -14,7 +13,6 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
 
 def test_filepath(start_cluster):
     # 2 rows data

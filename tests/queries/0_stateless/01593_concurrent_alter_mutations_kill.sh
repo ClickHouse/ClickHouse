@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_kill"
@@ -25,7 +24,6 @@ function alter_thread
 function kill_mutation_thread
 {
     while true; do
-        # find any mutation and kill it
         mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done=0 and database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_kill' LIMIT 1")
         if [ ! -z "$mutation_id" ]; then
             $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id'" 1> /dev/null
@@ -46,23 +44,7 @@ timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_kill"
-
-# with timeout alter query can be not finished yet, so to execute new alter
-# we use retries
-counter=0
-while true; do
-    if $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2" 2> /dev/null ; then
-        break
-    fi
-
-    if [ "$counter" -gt 120 ]
-    then
-        break
-    fi
-    sleep 0.5
-    counter=$(($counter + 1))
-done
-
+$CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2"
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE concurrent_mutate_kill"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE concurrent_mutate_kill FINAL"
 $CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM concurrent_mutate_kill"

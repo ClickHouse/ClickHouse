@@ -16,6 +16,7 @@
 #include <Core/Block.h>
 #include <Dictionaries/BucketCache.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferAIO.h>
 #include <list>
 #include <pcg_random.hpp>
 #include <Poco/Logger.h>

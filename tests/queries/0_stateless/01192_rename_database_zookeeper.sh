@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
-. "$CURDIR"/../shell_config.sh
+. $CURDIR/../shell_config.sh
 
 
 # 1. init
@@ -53,7 +52,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mv" 2>&1| 
 
 # 7. create dictionary and check it
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.mt (n UInt64, _part String) ENGINE=Memory" # mock
-$CLICKHOUSE_CLIENT -q "CREATE DICTIONARY test_01192_atomic.dict UUID '00001192-0000-4000-8000-000000000002' (n UInt64, _part String DEFAULT 'no') PRIMARY KEY n LAYOUT(DIRECT()) SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'mt' DB 'test_01192'))"
+$CLICKHOUSE_CLIENT -q "CREATE DICTIONARY test_01192_atomic.dict UUID '00001192-0000-4000-8000-000000000002' (n UInt64, _part String DEFAULT 'no') PRIMARY KEY n LAYOUT(DIRECT()) SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'mt' DB 'test_01192'))"
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE DICTIONARY test_01192_atomic.dict"
 $CLICKHOUSE_CLIENT -q "SELECT database, name, status, origin FROM system.dictionaries WHERE uuid='00001192-0000-4000-8000-000000000002'"
 $CLICKHOUSE_CLIENT -q "SELECT dictGet('test_01192_atomic.dict', '_part', toUInt64(1))"

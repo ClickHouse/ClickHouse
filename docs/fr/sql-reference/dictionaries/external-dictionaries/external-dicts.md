@@ -15,9 +15,9 @@ ClickHouse:
 -   Met à jour périodiquement les dictionnaires et charge dynamiquement les valeurs manquantes. En d'autres mots, les dictionnaires peuvent être chargés dynamiquement.
 -   Permet de créer des dictionnaires externes avec des fichiers xml ou [Les requêtes DDL](../../statements/create.md#create-dictionary-query).
 
-La configuration des dictionnaires externes peut être située dans un ou plusieurs fichiers xml. Le chemin d'accès à la configuration spécifiée dans le [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) paramètre.
+La configuration des dictionnaires externes peut être située dans un ou plusieurs fichiers xml. Le chemin d'accès à la configuration spécifiée dans le [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) paramètre.
 
-Les dictionnaires peuvent être chargés au démarrage du serveur ou à la première utilisation, en fonction [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) paramètre.
+Les dictionnaires peuvent être chargés au démarrage du serveur ou à la première utilisation, en fonction [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) paramètre.
 
 Le [dictionnaire](../../../operations/system-tables.md#system_tables-dictionaries) la table système contient des informations sur les dictionnaires configurés sur le serveur. Pour chaque dictionnaire, vous pouvez y trouver:
 

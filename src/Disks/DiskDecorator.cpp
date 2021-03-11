@@ -125,9 +125,9 @@ DiskDecorator::readFile(const String & path, size_t buf_size, size_t estimated_s
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
-    return delegate->writeFile(path, buf_size, mode);
+    return delegate->writeFile(path, buf_size, mode, estimated_size, aio_threshold);
 }
 
 void DiskDecorator::remove(const String & path)
@@ -163,26 +163,6 @@ void DiskDecorator::createHardLink(const String & src_path, const String & dst_p
 void DiskDecorator::truncateFile(const String & path, size_t size)
 {
     delegate->truncateFile(path, size);
-}
-
-int DiskDecorator::open(const String & path, mode_t mode) const
-{
-    return delegate->open(path, mode);
-}
-
-void DiskDecorator::close(int fd) const
-{
-    delegate->close(fd);
-}
-
-void DiskDecorator::sync(int fd) const
-{
-    delegate->sync(fd);
-}
-
-Executor & DiskDecorator::getExecutor()
-{
-    return delegate->getExecutor();
 }
 
 }

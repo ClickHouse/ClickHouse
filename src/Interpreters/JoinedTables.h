@@ -43,6 +43,8 @@ public:
     bool isLeftTableFunction() const;
     size_t tablesCount() const { return table_expressions.size(); }
 
+    const StorageID & leftTableID() const { return table_id; }
+
     void rewriteDistributedInAndJoins(ASTPtr & query);
 
     std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
@@ -55,6 +57,9 @@ private:
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;
     std::optional<DatabaseAndTableWithAlias> left_db_and_table;
+
+    /// left_db_and_table or 'system.one'
+    StorageID table_id = StorageID::createEmpty();
 };
 
 }

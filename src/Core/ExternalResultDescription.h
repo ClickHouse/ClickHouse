@@ -26,12 +26,6 @@ struct ExternalResultDescription
         vtDate,
         vtDateTime,
         vtUUID,
-        vtDateTime64,
-        vtDecimal32,
-        vtDecimal64,
-        vtDecimal128,
-        vtDecimal256,
-        vtFixedString
     };
 
     Block sample_block;

@@ -80,34 +80,6 @@ public:
             nested_func->add(place, columns, row_num, arena);
     }
 
-    void addBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t) const override
-    {
-        nested_func->addBatch(batch_size, places, place_offset, columns, arena, num_arguments - 1);
-    }
-
-    void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
-    {
-        nested_func->addBatchSinglePlace(batch_size, place, columns, arena, num_arguments - 1);
-    }
-
-    void addBatchSinglePlaceNotNull(
-        size_t batch_size,
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t) const override
-    {
-        nested_func->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena, num_arguments - 1);
-    }
-
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
@@ -141,8 +113,6 @@ public:
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
         const Array & params, const AggregateFunctionProperties & properties) const override;
-
-    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }

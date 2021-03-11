@@ -198,8 +198,6 @@ public:
 
         col_offsets.getData().push_back(col.getData().size());
     }
-
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 }

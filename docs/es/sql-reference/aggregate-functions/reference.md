@@ -31,7 +31,7 @@ En ambos casos el tipo del valor devuelto es [UInt64](../../sql-reference/data-t
 
 **Detalles**
 
-ClickHouse soporta el `COUNT(DISTINCT ...)` sintaxis. El comportamiento de esta construcción depende del [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) configuración. Define cuál de las [uniq\*](#agg_function-uniq) se utiliza para realizar la operación. El valor predeterminado es el [uniqExact](#agg_function-uniqexact) función.
+ClickHouse soporta el `COUNT(DISTINCT ...)` sintaxis. El comportamiento de esta construcción depende del [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) configuración. Define cuál de las [uniq\*](#agg_function-uniq) se utiliza para realizar la operación. El valor predeterminado es el [uniqExact](#agg_function-uniqexact) función.
 
 El `SELECT count() FROM table` consulta no está optimizado, porque el número de entradas en la tabla no se almacena por separado. Elige una pequeña columna de la tabla y cuenta el número de valores en ella.
 
@@ -462,6 +462,69 @@ The kurtosis of the given distribution. Type — [Float64](../../sql-reference/d
 
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
+```
+
+## Para obtener más información, consulta nuestra Política de privacidad y nuestras Condiciones de uso) {#agg-function-timeseriesgroupsum}
+
+`timeSeriesGroupSum` puede agregar diferentes series de tiempo que muestran la marca de tiempo no la alineación.
+Utilizará la interpolación lineal entre dos marcas de tiempo de muestra y luego sumará series temporales juntas.
+
+-   `uid` es la identificación única de la serie temporal, `UInt64`.
+-   `timestamp` es el tipo Int64 para admitir milisegundos o microsegundos.
+-   `value` es la métrica.
+
+La función devuelve una matriz de tuplas con `(timestamp, aggregated_value)` par.
+
+Antes de utilizar esta función, asegúrese de `timestamp` está en orden ascendente.
+
+Ejemplo:
+
+``` text
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+
+``` sql
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+
+Y el resultado será:
+
+``` text
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## También puede utilizar el siguiente ejemplo:) {#agg-function-timeseriesgroupratesum}
+
+De manera similar a `timeSeriesGroupSum`, `timeSeriesGroupRateSum` calcula la tasa de series temporales y luego suma las tasas juntas.
+Además, la marca de tiempo debe estar en orden ascendente antes de usar esta función.
+
+Aplicando esta función a los datos del `timeSeriesGroupSum` ejemplo, se obtiene el siguiente resultado:
+
+``` text
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
 ## Acerca de) {#agg_function-avg}

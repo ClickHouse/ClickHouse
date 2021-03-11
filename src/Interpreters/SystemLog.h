@@ -8,7 +8,7 @@
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>
@@ -71,7 +71,6 @@ class TraceLog;
 class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
-class OpenTelemetrySpanLog;
 
 
 class ISystemLog
@@ -106,8 +105,6 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
-    /// OpenTelemetry trace spans.
-    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
 
     std::vector<ISystemLog *> logs;
 };
