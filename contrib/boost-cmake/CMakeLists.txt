@@ -176,6 +176,15 @@ if (NOT EXTERNAL_BOOST_FOUND)
                 ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
                 ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
         )
+    elseif(ARCH_ARM AND OS_DARWIN)
+        set (SRCS_CONTEXT
+                ${LIBRARY_DIR}/libs/context/src/asm/jump_darwin_arm64_aapcs_elf_gas.S
+                ${LIBRARY_DIR}/libs/context/src/asm/make_darwin_arm64_aapcs_elf_gas.S
+                ${LIBRARY_DIR}/libs/context/src/asm/ontop_darwin_arm64_aapcs_elf_gas.S
+                ${LIBRARY_DIR}/libs/context/src/dummy.cpp
+                ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
+                ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+                )
     elseif (ARCH_ARM)
         set (SRCS_CONTEXT
             ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S
