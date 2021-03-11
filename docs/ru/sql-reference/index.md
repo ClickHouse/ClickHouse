@@ -1,5 +1,5 @@
 ---
-toc_folder_title: "\u0421\u043F\u0440\u0430\u0432\u043A\u0430 \u043F\u043E SQL"
+toc_folder_title: "Справка по SQL"
 toc_hidden: true
 toc_priority: 28
 toc_title: hidden
