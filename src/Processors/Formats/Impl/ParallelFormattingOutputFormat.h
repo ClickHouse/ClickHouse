@@ -101,6 +101,9 @@ public:
         finishAndWait();
     }
 
+    /// There are no formats which support parallel formatting and progress writing at the same time
+    void onProgress(const Progress &) override {}
+
 protected:
     void consume(Chunk chunk) override final
     {
