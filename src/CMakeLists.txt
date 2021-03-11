@@ -68,7 +68,6 @@ set(dbms_sources)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
-add_headers_and_sources(clickhouse_common_io Common/Bridge)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
@@ -150,6 +149,7 @@ endif()
 
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
+add_subdirectory(Common/Bridge)
 
 set (all_modules)
 macro(add_object_library name common_path)
@@ -334,6 +334,7 @@ dbms_target_link_libraries (
         boost::program_options
         clickhouse_common_config
         clickhouse_common_zookeeper
+        clickhouse_common_bridge
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         lz4
