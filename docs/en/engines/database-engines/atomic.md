@@ -8,26 +8,21 @@ toc_title: Atomic
 -   What the Database/Table engine does.
 -   Relations with other engines if they exist.
 
+All tables in DatabaseAtomic have persistent UUID and store data in `/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is UUID of the table.
+RENAMEs are performed without changing UUID and moving table data.
+Tables in Atomic databases can be accessed by UUID through DatabaseCatalog.
+On DROP TABLE no data is removed, DatabaseAtomic just marks table as dropped by moving metadata to /clickhouse_path/metadata_dropped/ and notifies DatabaseCatalog.
+Running queries still may use dropped table. Table will be actually removed when it's not in use.
+Allows to execute RENAME and DROP without IStorage-level RWLocks
+
 ## Creating a Database {#creating-a-database}
 ``` sql
     CREATE DATABASE ...
 ```
-or
-
-## Creating a Table {#creating-a-table}
-``` sql
-    CREATE TABLE ...
-```
 
 **Engine Parameters**
 
-**Query Clauses** (for Table engines only)
-
-## Virtual columns {#virtual-columns} (for Table engines only)
-
-List and virtual columns with description, if they exist.
-
-## Data Types Support {#data_types-support} (for Database engines only)
+## Data Types Support {#data_types-support} 
 
 |  EngineName           | ClickHouse                         |
 |-----------------------|------------------------------------|
@@ -63,4 +58,5 @@ Result:
 
 Follow up with any text to clarify the example.
 
-[Original article](https://clickhouse.tech/docs/en/database_engines/atomic/) <!--hide-->
+
+[Original article](https://clickhouse.tech/docs/en/database-engines/atomic/) <!--hide-->
