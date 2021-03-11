@@ -40,6 +40,7 @@ namespace
         Expected & expected,
         bool id_mode,
         bool allow_all,
+        bool allow_any,
         bool allow_current_user,
         bool & all,
         Strings & names,
@@ -56,6 +57,12 @@ namespace
                 return true;
 
             if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
+            {
+                res_all = true;
+                return true;
+            }
+
+            if (allow_any && ParserKeyword{"ANY"}.ignore(pos, expected))
             {
                 res_all = true;
                 return true;
@@ -99,7 +106,7 @@ namespace
                 return false;
 
             bool unused;
-            return parseBeforeExcept(pos, expected, id_mode, false, allow_current_user, unused, except_names, except_current_user);
+            return parseBeforeExcept(pos, expected, id_mode, false, false, allow_current_user, unused, except_names, except_current_user);
         });
     }
 }
@@ -113,7 +120,7 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     Strings except_names;
     bool except_current_user = false;
 
-    if (!parseBeforeExcept(pos, expected, id_mode, allow_all, allow_current_user, all, names, current_user))
+    if (!parseBeforeExcept(pos, expected, id_mode, allow_all, allow_any, allow_current_user, all, names, current_user))
         return false;
 
     parseExceptAndAfterExcept(pos, expected, id_mode, allow_current_user, except_names, except_current_user);
@@ -130,6 +137,7 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     result->allow_users = allow_users;
     result->allow_roles = allow_roles;
     result->id_mode = id_mode;
+    result->use_keyword_any = all && allow_any && !allow_all;
     node = result;
     return true;
 }

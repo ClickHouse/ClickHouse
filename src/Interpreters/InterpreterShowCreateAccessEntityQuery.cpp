@@ -73,6 +73,15 @@ namespace
                 query->settings = user.settings.toASTWithNames(*manager);
         }
 
+        if (user.grantees != RolesOrUsersSet::AllTag{})
+        {
+            if (attach_mode)
+                query->grantees = user.grantees.toAST();
+            else
+                query->grantees = user.grantees.toASTWithNames(*manager);
+            query->grantees->use_keyword_any = true;
+        }
+
         return query;
     }
 

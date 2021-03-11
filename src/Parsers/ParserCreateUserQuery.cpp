@@ -275,6 +275,24 @@ namespace
         });
     }
 
+    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"GRANTEES"}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            ParserRolesOrUsersSet grantees_p;
+            grantees_p.allowAny().allowUsers().allowCurrentUser().allowRoles().useIDMode(id_mode);
+            if (!grantees_p.parse(pos, ast, expected))
+                return false;
+
+            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            return true;
+        });
+    }
+
     bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -330,6 +348,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> remove_hosts;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
     String cluster;
 
     while (true)
@@ -366,6 +385,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
+        if (!grantees && parseGrantees(pos, expected, attach_mode, grantees))
             continue;
 
         if (alter)
@@ -422,6 +444,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->remove_hosts = std::move(remove_hosts);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
+    query->grantees = std::move(grantees);
 
     return true;
 }

@@ -16,6 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -65,6 +66,29 @@ namespace
             updateFromQueryTemplate(*role, query, roles_to_grant_or_revoke);
     }
 
+    void checkGranteeIsAllowed(const ContextAccess & access, const UUID & grantee_id, const IAccessEntity & grantee)
+    {
+        auto current_user = access.getUser();
+        if (current_user && !current_user->grantees.match(grantee_id))
+            throw Exception(grantee.outputTypeAndName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
+    }
+
+    void checkGranteesAreAllowed(const AccessControlManager & access_control, const ContextAccess & access, const std::vector<UUID> & grantee_ids)
+    {
+        auto current_user = access.getUser();
+        if (!current_user || (current_user->grantees == RolesOrUsersSet::AllTag{}))
+            return;
+
+        for (const auto & id : grantee_ids)
+        {
+            auto entity = access_control.tryRead(id);
+            if (auto role = typeid_cast<RolePtr>(entity))
+                checkGranteeIsAllowed(access, id, *role);
+            else if (auto user = typeid_cast<UserPtr>(entity))
+                checkGranteeIsAllowed(access, id, *user);
+        }
+    }
+
     void checkGrantOption(
         const AccessControlManager & access_control,
         const ContextAccess & access,
@@ -80,11 +104,15 @@ namespace
         if (!query.is_revoke)
         {
             access.checkGrantOption(elements);
+            checkGranteesAreAllowed(access_control, access, grantees_from_query);
             return;
         }
 
         if (access.hasGrantOption(elements))
+        {
+            checkGranteesAreAllowed(access_control, access, grantees_from_query);
             return;
+        }
 
         /// Special case for the command REVOKE: it's possible that the current user doesn't have
         /// the access granted with GRANT OPTION but it's still ok because the roles or users
@@ -99,9 +127,15 @@ namespace
         {
             auto entity = access_control.tryRead(id);
             if (auto role = typeid_cast<RolePtr>(entity))
+            {
+                checkGranteeIsAllowed(access, id, *role);
                 all_granted_access.makeUnion(role->access);
+            }
             else if (auto user = typeid_cast<UserPtr>(entity))
+            {
+                checkGranteeIsAllowed(access, id, *user);
                 all_granted_access.makeUnion(user->access);
+            }
         }
 
         AccessRights required_access;
@@ -138,6 +172,7 @@ namespace
         {
             matching_ids = roles_from_query.getMatchingIDs(access_control);
             access.checkAdminOption(matching_ids);
+            checkGranteesAreAllowed(access_control, access, grantees_from_query);
             return matching_ids;
         }
 
@@ -145,7 +180,10 @@ namespace
         {
             matching_ids = roles_from_query.getMatchingIDs();
             if (access.hasAdminOption(matching_ids))
+            {
+                checkGranteesAreAllowed(access_control, access, grantees_from_query);
                 return matching_ids;
+            }
         }
 
         /// Special case for the command REVOKE: it's possible that the current user doesn't have the admin option
@@ -161,9 +199,15 @@ namespace
         {
             auto entity = access_control.tryRead(id);
             if (auto role = typeid_cast<RolePtr>(entity))
+            {
+                checkGranteeIsAllowed(access, id, *role);
                 all_granted_roles.makeUnion(role->granted_roles);
+            }
             else if (auto user = typeid_cast<UserPtr>(entity))
+            {
+                checkGranteeIsAllowed(access, id, *user);
                 all_granted_roles.makeUnion(user->granted_roles);
+            }
         }
 
         const auto & all_granted_roles_set = query.admin_option ? all_granted_roles.getGrantedWithAdminOption() : all_granted_roles.getGranted();
@@ -206,6 +250,7 @@ BlockIO InterpreterGrantQuery::execute()
         /// To execute the command GRANT the current user needs to have the access granted with GRANT OPTION.
         auto required_access = query.access_rights_elements;
         std::for_each(required_access.begin(), required_access.end(), [&](AccessRightsElement & element) { element.grant_option = true; });
+        checkGranteesAreAllowed(access_control, *context.getAccess(), grantees);
         return executeDDLQueryOnCluster(query_ptr, context, std::move(required_access));
     }
 
