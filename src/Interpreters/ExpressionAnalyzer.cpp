@@ -235,15 +235,9 @@ void ExpressionAnalyzer::analyzeAggregation()
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
                     const auto & column_name = group_asts[i]->getColumnName();
-                    const auto & index = temp_actions->getIndex();
-                    auto it = index.begin();
-                    for (; it != index.end(); ++it)
-                        if ((*it)->result_name == column_name)
-                            break;
-                    if (it == index.end())
+                    const auto * node = temp_actions->tryFindInIndex(column_name);
+                    if (!node)
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
-
-                    const auto & node = *it;
 
                     /// Constant expressions have non-null column pointer at this stage.
                     if (node->column && isColumnConst(*node->column))
@@ -394,14 +388,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
                 getRootActions(left_in_operand, true, temp_actions);
 
-                const auto & index = temp_actions->getIndex();
-                auto it = index.begin();
-                auto column_name = left_in_operand->getColumnName();
-                for (; it != index.end(); ++it)
-                    if ((*it)->result_name == column_name)
-                        break;
-
-                if (it != index.end())
+                if (temp_actions->tryFindInIndex(left_in_operand->getColumnName()))
                     makeExplicitSet(func, *temp_actions, true, context,
                         settings.size_limits_for_set, prepared_sets);
             }
@@ -456,22 +443,18 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
-        const auto & index = actions->getIndex();
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const std::string & name = arguments[i]->getColumnName();
-            auto it = index.begin();
-            for (; it != index.end(); ++it)
-                if ((*it)->result_name == name)
-                    break;
-            if (it == index.end())
+            const auto * dag_node = actions->tryFindInIndex(name);
+            if (!dag_node)
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in aggregate function '{}'",
                     name, node->formatForErrorMessage());
             }
 
-            types[i] = (*it)->result_type;
+            types[i] = dag_node->result_type;
             aggregate.argument_names[i] = name;
         }
 
@@ -607,24 +590,19 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
             = window_function.function_node->arguments->children;
         window_function.argument_types.resize(arguments.size());
         window_function.argument_names.resize(arguments.size());
-        const auto & index = actions->getIndex();
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const std::string & name = arguments[i]->getColumnName();
+            const auto * node = actions->tryFindInIndex(name);
 
-            auto it = index.begin();
-            for (; it != index.end(); ++it)
-                if ((*it)->result_name == name)
-                    break;
-
-            if (it == index.end())
+            if (!node)
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in window function '{}'",
                     name, window_function.function_node->formatForErrorMessage());
             }
 
-            window_function.argument_types[i] = (*it)->result_type;
+            window_function.argument_types[i] = node->result_type;
             window_function.argument_names[i] = name;
         }
 
@@ -699,16 +677,8 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAGPtr 
         /// Assign new names to columns, if needed.
         if (result_source.first != result_source.second)
         {
-            auto & index = actions->getIndex();
-            auto it = index.begin();
-            for (; it != index.end(); ++it)
-                if ((*it)->result_name == result_source.second)
-                    break;
-
-            if (it == index.end())
-                throw Exception("Unknown identifier: '" + result_source.second + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-
-            index.push_back(&actions->addAlias(**it, result_source.first));
+            const auto & node = actions->findInIndex(result_source.second);
+            actions->getIndex().push_back(&actions->addAlias(node, result_source.first));
         }
 
         /// Make ARRAY JOIN (replace arrays with their insides) for the columns in these new names.
@@ -905,16 +875,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     String prewhere_column_name = select_query->prewhere()->getColumnName();
     step.addRequiredOutput(prewhere_column_name);
 
-    const auto & index = step.actions()->getIndex();
-    auto it = index.begin();
-    for (; it != index.end(); ++it)
-        if ((*it)->result_name == prewhere_column_name)
-            break;
-
-    if (it == index.end())
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", prewhere_column_name);
-
-    auto filter_type = (*it)->result_type;
+    const auto & node = step.actions()->findInIndex(prewhere_column_name);
+    auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -1010,16 +972,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     auto where_column_name = select_query->where()->getColumnName();
     step.addRequiredOutput(where_column_name);
 
-    const auto & index = step.actions()->getIndex();
-    auto it = index.begin();
-    for (; it != index.end(); ++it)
-        if ((*it)->result_name == where_column_name)
-            break;
-
-    if (it == index.end())
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", where_column_name);
-
-    auto filter_type = (*it)->result_type;
+    const auto & node = step.actions()->findInIndex(where_column_name);
+    auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
