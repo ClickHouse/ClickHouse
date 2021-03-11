@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
-    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace
