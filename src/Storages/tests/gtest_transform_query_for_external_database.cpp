@@ -148,3 +148,12 @@ TEST(TransformQueryForExternalDatabase, Aliases)
           R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))",
           state.context, state.columns);
 }
+
+TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
+{
+    const State & state = State::instance();
+
+    check("SELECT column FROM test.table WHERE column > 2 AND (apply_id = 1 OR joined_table.foo = 1)",
+          R"(SELECT "column" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))",
+          state.context, state.columns);
+}
