@@ -398,14 +398,14 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
     inputs.erase(it, inputs.end());
 }
 
-void ActionsDAG::addAliases(const NamesWithAliases & aliases, bool project)
+void ActionsDAG::addAliases(const NamesWithAliases & aliases)
 {
-    std::unordered_map<std::string_view, const Node *> names_map;
-    for (const auto * node : index)
-        names_map.emplace(node->result_name, node);
+    std::unordered_map<std::string_view, size_t> names_map;
+    for (size_t i = 0; i < index.size(); ++i)
+        names_map[index[i]->result_name] = i;
 
     NodeRawConstPtrs required_nodes;
-    NameSet alias_names;
+    required_nodes.reserve(aliases.size());
 
     for (const auto & item : aliases)
     {
@@ -414,27 +414,8 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, bool project)
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                             "Unknown column: {}, there are only columns {}", item.first, dumpNames());
 
-        required_nodes.push_back(it->second);
-        alias_names.insert(item.second.empty() ? item.first : item.second);
+        required_nodes.push_back(index[it->second]);
     }
-
-    if (project)
-        index.clear();
-    else
-    {
-        size_t next = 0;
-        for (const auto & node : index)
-        {
-            if (alias_names.count(node->result_name) == 0)
-            {
-                index[next] = node;
-                ++next;
-            }
-        }
-        index.resize(next);
-    }
-
-    index.reserve(index.size() + aliases.size());
 
     for (size_t i = 0; i < aliases.size(); ++i)
     {
@@ -450,22 +431,57 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, bool project)
             node.column = child->column;
             node.children.emplace_back(child);
 
-            auto & alias = addNode(std::move(node));
-            index.push_back(&alias);
+            child = &addNode(std::move(node));
+        }
+
+        auto it = names_map.find(child->result_name);
+        if (it == names_map.end())
+        {
+            names_map[child->result_name] = index.size();
+            index.push_back(child);
         }
         else
-            index.push_back(child);
+            index[it->second] = child;
     }
-}
-
-void ActionsDAG::addAliases(const NamesWithAliases & aliases)
-{
-    addAliases(aliases, false);
 }
 
 void ActionsDAG::project(const NamesWithAliases & projection)
 {
-    addAliases(projection, true);
+    std::unordered_map<std::string_view, const Node *> names_map;
+    for (const auto * node : index)
+        names_map.emplace(node->result_name, node);
+
+    index.clear();
+    index.reserve(projection.size());
+
+    for (const auto & item : projection)
+    {
+        auto it = names_map.find(item.first);
+        if (it == names_map.end())
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                            "Unknown column: {}, there are only columns {}", item.first, dumpNames());
+
+        index.push_back(it->second);
+    }
+
+    for (size_t i = 0; i < projection.size(); ++i)
+    {
+        const auto & item = projection[i];
+        auto & child = index[i];
+
+        if (!item.second.empty() && item.first != item.second)
+        {
+            Node node;
+            node.type = ActionType::ALIAS;
+            node.result_type = child->result_type;
+            node.result_name = std::move(item.second);
+            node.column = child->column;
+            node.children.emplace_back(child);
+
+            child = &addNode(std::move(node));
+        }
+    }
+
     removeUnusedActions();
     projectInput();
     projected_output = true;

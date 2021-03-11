@@ -337,7 +337,6 @@ private:
 //     }
 
     void removeUnusedActions(bool allow_remove_inputs = true);
-    void addAliases(const NamesWithAliases & aliases, bool project);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression);

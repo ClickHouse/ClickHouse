@@ -1361,7 +1361,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
             }
         }
 
-        actions_dag->removeUnusedActions(result_names);
+        actions_dag->removeUnusedActions(name_set);
     }
 
     return actions_dag;
