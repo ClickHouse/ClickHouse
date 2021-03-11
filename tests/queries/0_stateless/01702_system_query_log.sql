@@ -12,7 +12,6 @@ DROP SETTINGS PROFILE IF EXISTS sqllt_settings_profile;
 
 SELECT 'CREATE queries';
 CREATE DATABASE sqllt;
-USE sqllt;
 
 CREATE TABLE sqllt.table
 (
@@ -41,15 +40,15 @@ SET DEFAULT ROLE sqllt_role TO sqllt_user;
 -- SET ROLE sqllt_role; -- tests are executed by user `default` which is defined in XML and is impossible to update.
 
 SELECT 'ALTER TABLE queries';
-ALTER TABLE table ADD COLUMN new_col UInt32 DEFAULT 123456789;
-ALTER TABLE table COMMENT COLUMN new_col 'dummy column with a comment';
-ALTER TABLE table CLEAR COLUMN new_col;
-ALTER TABLE table MODIFY COLUMN new_col DateTime DEFAULT '2015-05-18 07:40:13';
-ALTER TABLE table MODIFY COLUMN new_col REMOVE COMMENT;
-ALTER TABLE table RENAME COLUMN new_col TO the_new_col;
-ALTER TABLE table DROP COLUMN the_new_col;
-ALTER TABLE table UPDATE i = i + 1 WHERE 1;
-ALTER TABLE table DELETE WHERE i > 65535;
+ALTER TABLE sqllt.table ADD COLUMN new_col UInt32 DEFAULT 123456789;
+ALTER TABLE sqllt.table COMMENT COLUMN new_col 'dummy column with a comment';
+ALTER TABLE sqllt.table CLEAR COLUMN new_col;
+ALTER TABLE sqllt.table MODIFY COLUMN new_col DateTime DEFAULT '2015-05-18 07:40:13';
+ALTER TABLE sqllt.table MODIFY COLUMN new_col REMOVE COMMENT;
+ALTER TABLE sqllt.table RENAME COLUMN new_col TO the_new_col;
+ALTER TABLE sqllt.table DROP COLUMN the_new_col;
+ALTER TABLE sqllt.table UPDATE i = i + 1 WHERE 1;
+ALTER TABLE sqllt.table DELETE WHERE i > 65535;
 
 -- not done, seems to hard, so I've skipped queries of ALTER-X, where X is:
 -- PARTITION
@@ -126,6 +125,7 @@ RENAME TABLE sqllt.table_new TO sqllt.table;
 TRUNCATE TABLE sqllt.table;
 DROP TABLE sqllt.table SYNC;
 
+SET log_comment='';
 ---------------------------------------------------------------------------------------------------
 -- Now get all logs related to this test
 ---------------------------------------------------------------------------------------------------
@@ -136,10 +136,9 @@ SELECT 'ACTUAL LOG CONTENT:';
 -- Try to filter out all possible previous junk events by excluding old log entries,
 SELECT query_kind, query FROM system.query_log
 WHERE
-    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND query_start_time >= now() - 5
-    -- this one is to make stylecheck happy and to validate that CREATE\DROP queries of non-db-bound-objects, like USER\ROLS are logged properly.
-    AND (current_database == currentDatabase() OR current_database != currentDatabase())
-ORDER BY query;
+    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND event_time >= now() - 10
+    AND current_database == currentDatabase()
+ORDER BY event_time_microseconds;
 
 
 -- cleanup
