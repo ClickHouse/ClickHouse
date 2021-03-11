@@ -16,8 +16,6 @@
 #include <common/StringRef.h>
 #include <ext/bit_cast.h>
 #include <ext/map.h>
-#include <ext/range.h>
-#include <ext/size.h>
 #include <ext/scope_guard.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"

@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
@@ -9,7 +7,6 @@ PEERDIR(
 )
 
 NO_COMPILER_WARNINGS()
-
 
 SRCS(
     AddingDefaultBlockOutputStream.cpp
@@ -21,17 +18,23 @@ SRCS(
     CheckSortedBlockInputStream.cpp
     ColumnGathererStream.cpp
     ConvertingBlockInputStream.cpp
+    copyData.cpp
     CountingBlockOutputStream.cpp
+    CreatingSetsBlockInputStream.cpp
     DistinctSortedBlockInputStream.cpp
     ExecutionSpeedLimits.cpp
     ExpressionBlockInputStream.cpp
+    FilterBlockInputStream.cpp
+    finalizeBlock.cpp
     IBlockInputStream.cpp
     InputStreamFromASTInsertQuery.cpp
     InternalTextLogsRowOutputStream.cpp
     LimitBlockInputStream.cpp
+    materializeBlock.cpp
     MaterializingBlockInputStream.cpp
     MergingSortedBlockInputStream.cpp
     MongoDBBlockInputStream.cpp
+    narrowBlockInputStreams.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
     ParallelParsingBlockInputStream.cpp
@@ -44,10 +47,6 @@ SRCS(
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
-    copyData.cpp
-    finalizeBlock.cpp
-    materializeBlock.cpp
-    narrowBlockInputStreams.cpp
 
 )
 

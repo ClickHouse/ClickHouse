@@ -15,7 +15,7 @@ file(path, format, structure)
 
 **Giriş parametreleri**
 
--   `path` — The relative path to the file from [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Readonly modunda glob'ları takip eden dosya desteğine giden yol: `*`, `?`, `{abc,def}` ve `{N..M}` nerede `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `path` — The relative path to the file from [user\_files\_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Readonly modunda glob'ları takip eden dosya desteğine giden yol: `*`, `?`, `{abc,def}` ve `{N..M}` nerede `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [biçimli](../../interfaces/formats.md#formats) dosya.
 -   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -72,12 +72,12 @@ Birden çok yol bileşenleri globs olabilir. İşlenmek için dosya var olmalı 
 
 1.  Aşağıdaki göreli yollara sahip birkaç dosyamız olduğunu varsayalım:
 
--   ‘some_dir/some_file_1’
--   ‘some_dir/some_file_2’
--   ‘some_dir/some_file_3’
--   ‘another_dir/some_file_1’
--   ‘another_dir/some_file_2’
--   ‘another_dir/some_file_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  Bu dosyalardaki satır miktarını sorgula:
 

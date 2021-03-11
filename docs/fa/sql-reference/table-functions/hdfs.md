@@ -55,12 +55,12 @@ LIMIT 2
 
 1.  فرض کنید که ما چندین فایل با اوریس زیر در اچ دی ها داریم:
 
--   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  پرس و جو مقدار ردیف در این فایل ها:
 

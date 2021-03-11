@@ -30,8 +30,7 @@ static LineReader::Suggest::Words::const_iterator end;
 static void findRange(const char * prefix, size_t prefix_length)
 {
     std::string prefix_str(prefix);
-    if (auto completions = suggest->getCompletions(prefix_str, prefix_length))
-        std::tie(pos, end) = *completions;
+    std::tie(pos, end) = suggest->getCompletions(prefix_str, prefix_length);
 }
 
 /// Iterates through matched range.

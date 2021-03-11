@@ -12,7 +12,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
     یاندکس می کند **نه** حفظ کتابخانه های ذکر شده در زیر و هر تست گسترده برای اطمینان از کیفیت خود را انجام نداده اند.
 
 -   پایتون
-    -   [اطالعات.کلیک _شورم](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [کلیک راننده](https://github.com/mymarilyn/clickhouse-driver)
     -   [کلیک مشتری](https://github.com/yurial/clickhouse-client)
     -   [اطلاعات دقیق](https://github.com/maximdanilchenko/aiochclient)
@@ -48,7 +48,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
     -   [تاتر-اسکالا-کارفرما](https://github.com/crobox/clickhouse-scala-client)
 -   کوتلین
     -   [AORM](https://github.com/TanVD/AORM)
--   C#
+-   C\#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [فاحشه خانه.ادو](https://github.com/killwort/ClickHouse-Net)
     -   [فاحشه خانه.کارگیر](https://github.com/DarkWanderer/ClickHouse.Client)

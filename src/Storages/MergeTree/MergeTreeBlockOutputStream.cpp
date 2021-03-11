@@ -22,13 +22,16 @@ void MergeTreeBlockOutputStream::write(const Block & block)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
         storage.renameTempPartAndAdd(part, &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 
-        /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-        storage.background_executor.triggerTask();
+        if (storage.merging_mutating_task_handle)
+        {
+            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+            storage.merging_mutating_task_handle->signalReadyToRun();
+        }
     }
 }
 

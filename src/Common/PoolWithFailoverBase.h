@@ -7,6 +7,7 @@
 #include <functional>
 #include <common/types.h>
 #include <ext/scope_guard.h>
+#include <Core/Types.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -229,7 +230,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             ShuffledPool & shuffled_pool = shuffled_pools[i];
             TryResult & result = try_results[i];
-            if (max_tries && (shuffled_pool.error_count >= max_tries || !result.entry.isNull()))
+            if (shuffled_pool.error_count >= max_tries || !result.entry.isNull())
                 continue;
 
             std::string fail_message;

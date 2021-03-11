@@ -139,10 +139,10 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 اگر شما نیاز به محدود کردن پیوستن به مصرف حافظه عملیات استفاده از تنظیمات زیر:
 
--   [_پاک کردن _روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
--   [_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+-   [\_پاک کردن \_روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [\_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-هنگامی که هر یک از این محدودیت رسیده است, کلیک به عنوان عمل می کند [_شروع مجدد](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) تنظیم دستور.
+هنگامی که هر یک از این محدودیت رسیده است, کلیک به عنوان عمل می کند [\_شروع مجدد](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) تنظیم دستور.
 
 ## مثالها {#examples}
 

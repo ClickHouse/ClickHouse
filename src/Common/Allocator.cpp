@@ -14,8 +14,6 @@
       * In debug build, use small mmap threshold to reproduce more memory
       * stomping bugs. Along with ASLR it will hopefully detect more issues than
       * ASan. The program may fail due to the limit on number of memory mappings.
-      *
-      * Not too small to avoid too quick exhaust of memory mappings.
       */
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 16384;
+    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 4096;
 #endif

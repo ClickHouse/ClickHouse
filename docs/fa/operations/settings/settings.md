@@ -5,7 +5,7 @@ machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 
 # تنظیمات {#settings}
 
-## _شماره توزیع شده {#distributed-product-mode}
+## \_شماره توزیع شده {#distributed-product-mode}
 
 تغییر رفتار [توزیع subqueries](../../sql-reference/operators/in.md).
 
@@ -75,7 +75,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 اگر `force_primary_key=1` چک خانه را ببینید اگر پرس و جو شرایط کلیدی اولیه است که می تواند مورد استفاده قرار گیرد برای محدود کردن محدوده داده است. اگر هیچ شرایط مناسب وجود دارد, این یک استثنا می اندازد. با این حال, بررسی نمی کند که وضعیت مقدار داده ها به خواندن را کاهش می دهد. برای کسب اطلاعات بیشتر در مورد محدوده داده ها در جداول ادغام, دیدن [ادغام](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## قالب_نما {#format-schema}
+## قالب\_نما {#format-schema}
 
 این پارامتر زمانی مفید است که شما با استفاده از فرمت های که نیاز به یک تعریف طرح, مانند [سروان نیا](https://capnproto.org/) یا [Protobuf](https://developers.google.com/protocol-buffers/). ارزش بستگی به فرمت.
 
@@ -98,7 +98,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 مقدار پیش فرض: 0.
 
-## _تنظیم مجدد به حالت اولیه {#settings-http_zlib_compression_level}
+## \_تنظیم مجدد به حالت اولیه {#settings-http_zlib_compression_level}
 
 سطح فشرده سازی داده ها را در پاسخ به درخواست قام تنظیم می کند [قابلیت تنظیم صدا = 1](#settings-enable_http_compression).
 
@@ -143,7 +143,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 مقدار پیش فرض: 0.
 
-## وارد کردن _فرست_مرزیابی _نمایش مجدد {#settings-input_format_allow_errors_num}
+## وارد کردن \_فرست\_مرزیابی \_نمایش مجدد {#settings-input_format_allow_errors_num}
 
 حداکثر تعداد خطاهای قابل قبول را در هنگام خواندن از فرمت های متنی تنظیم می کند).
 
@@ -239,7 +239,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   اگر `input_format_values_interpret_expressions=0` و `format_values_deduce_templates_of_expressions=1`, عبارات در اولین, ردیف دوم و سوم با استفاده از الگو تجزیه `lower(String)` و با هم تفسیر, بیان در ردیف جلو با قالب دیگری تجزیه (`upper(String)`).
 -   اگر `input_format_values_interpret_expressions=1` و `format_values_deduce_templates_of_expressions=1`, همان است که در مورد قبلی, بلکه اجازه می دهد تا عقب نشینی به تفسیر عبارات به طور جداگانه اگر این امکان وجود ندارد به استنباط الگو.
 
-## وارد کردن _تماس_عول_ایجاد _شکلتهای _شخصی {#settings-input-format-values-accurate-types-of-literals}
+## وارد کردن \_تماس\_عول\_ایجاد \_شکلتهای \_شخصی {#settings-input-format-values-accurate-types-of-literals}
 
 این تنظیم تنها زمانی استفاده می شود `input_format_values_deduce_templates_of_expressions = 1`. این می تواند رخ دهد, که عبارت برای برخی از ستون دارای ساختار مشابه, اما حاوی لیتر عددی از انواع مختلف, به عنوان مثال
 
@@ -261,7 +261,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 1.
 
-## _پوشه های ورودی و خروجی {#session_settings-input_format_defaults_for_omitted_fields}
+## \_پوشه های ورودی و خروجی {#session_settings-input_format_defaults_for_omitted_fields}
 
 هنگام انجام `INSERT` نمایش داده شد, جایگزین مقادیر ستون ورودی حذف شده با مقادیر پیش فرض از ستون مربوطه. این گزینه فقط برای اعمال [جیسانچرو](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) و [جدول دار](../../interfaces/formats.md#tabseparated) فرمتها.
 
@@ -285,7 +285,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 را قادر می سازد و یا غیر فعال با استفاده از مقادیر پیش فرض اگر داده های ورودی شامل `NULL`, اما نوع داده از ستون مربوطه در نمی `Nullable(T)` (برای فرمت های ورودی متن).
 
-## _دفتر_صرفههای شناسنامهی ورودی {#settings-input-format-skip-unknown-fields}
+## \_دفتر\_صرفههای شناسنامهی ورودی {#settings-input-format-skip-unknown-fields}
 
 را قادر می سازد و یا غیر فعال پرش درج داده های اضافی.
 
@@ -305,7 +305,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 0.
 
-## تغییر _کم_تر_تنظیم مجدد _جنسان {#settings-input_format_import_nested_json}
+## تغییر \_کم\_تر\_تنظیم مجدد \_جنسان {#settings-input_format_import_nested_json}
 
 درج دادههای جسون را با اشیای تو در تو فعال یا غیرفعال میکند.
 
@@ -324,7 +324,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 -   [استفاده از ساختارهای تو در تو](../../interfaces/formats.md#jsoneachrow-nested) با `JSONEachRow` قالب.
 
-## _فرست_ام_امنمایش گذرواژه {#settings-input-format-with-names-use-header}
+## \_فرست\_ام\_امنمایش گذرواژه {#settings-input-format-with-names-use-header}
 
 را قادر می سازد و یا غیر فعال چک کردن سفارش ستون در هنگام قرار دادن داده ها.
 
@@ -342,7 +342,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 1.
 
-## تغییر _شماره {#settings-date_time_input_format}
+## تغییر \_شماره {#settings-date_time_input_format}
 
 اجازه می دهد تا انتخاب تجزیه کننده از نمایش متن از تاریخ و زمان.
 
@@ -409,7 +409,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 0.
 
-## ت_مایش بیشینه {#setting-max_block_size}
+## ت\_مایش بیشینه {#setting-max_block_size}
 
 در خانه, داده ها توسط بلوک های پردازش (مجموعه ای از قطعات ستون). چرخه پردازش داخلی برای یک بلوک به اندازه کافی موثر هستند, اما هزینه های قابل توجه در هر بلوک وجود دارد. این `max_block_size` تنظیم یک توصیه برای چه اندازه بلوک (در تعداد ردیف) برای بارگذاری از جداول است. اندازه بلوک نباید بیش از حد کوچک, به طوری که هزینه در هر بلوک هنوز هم قابل توجه است, اما نه بیش از حد بزرگ به طوری که پرس و جو با محدودیت است که پس از اولین بلوک به سرعت پردازش تکمیل. هدف این است که برای جلوگیری از مصرف حافظه بیش از حد در هنگام استخراج تعداد زیادی از ستون ها در موضوعات مختلف و برای حفظ حداقل برخی از محل کش.
 
@@ -417,13 +417,13 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 بلوک اندازه `max_block_size` همیشه از جدول لود نمی. اگر واضح است که داده های کمتر نیاز به بازیابی یک بلوک کوچکتر پردازش می شود.
 
-## ترجی_حات {#preferred-block-size-bytes}
+## ترجی\_حات {#preferred-block-size-bytes}
 
 مورد استفاده برای همان هدف به عنوان `max_block_size` اما با تطبیق تعداد سطرها در بلوک اندازه بلوک توصیه شده را در بایت تنظیم می کند.
 با این حال, اندازه بلوک نمی تواند بیش از `max_block_size` ردیف
 به طور پیش فرض: 1,000,000. تنها در هنگام خواندن از موتورهای ادغام کار می کند.
 
-## ادغام _تر_م_را_م_مایش مجدد {#setting-merge-tree-min-rows-for-concurrent-read}
+## ادغام \_تر\_م\_را\_م\_مایش مجدد {#setting-merge-tree-min-rows-for-concurrent-read}
 
 اگر تعداد ردیف از یک فایل از یک خوانده شود [ادغام](../../engines/table-engines/mergetree-family/mergetree.md) جدول بیش از `merge_tree_min_rows_for_concurrent_read` سپس کلیک کنیدهاوس تلاش می کند برای انجام خواندن همزمان از این فایل در موضوعات مختلف.
 
@@ -433,7 +433,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 163840.
 
-## _انتقال به _انتقال به _شخصی {#setting-merge-tree-min-bytes-for-concurrent-read}
+## \_انتقال به \_انتقال به \_شخصی {#setting-merge-tree-min-bytes-for-concurrent-read}
 
 اگر تعداد بایت برای خواندن از یک فایل از یک [ادغام](../../engines/table-engines/mergetree-family/mergetree.md)- جدول موتور بیش از `merge_tree_min_bytes_for_concurrent_read` سپس کلیک کنیدهاوس تلاش می کند به صورت همزمان از این فایل در موضوعات مختلف به عنوان خوانده شده.
 
@@ -443,7 +443,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 251658240.
 
-## ادغام _تر_م_را_م_را_مایش مجدد {#setting-merge-tree-min-rows-for-seek}
+## ادغام \_تر\_م\_را\_م\_را\_مایش مجدد {#setting-merge-tree-min-rows-for-seek}
 
 اگر فاصله بین دو بلوک داده در یک فایل خوانده شود کمتر از `merge_tree_min_rows_for_seek` ردیف, سپس کلیک می کند از طریق فایل به دنبال ندارد اما می خواند پی در پی داده ها.
 
@@ -453,7 +453,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 0.
 
-## ادغام _تر_حضربه _ترکمال {#setting-merge-tree-min-bytes-for-seek}
+## ادغام \_تر\_حضربه \_ترکمال {#setting-merge-tree-min-bytes-for-seek}
 
 اگر فاصله بین دو بلوک داده در یک فایل خوانده شود کمتر از `merge_tree_min_bytes_for_seek` بایت, سپس پی در پی تاتر می خواند طیف وسیعی از فایل است که شامل هر دو بلوک, در نتیجه اجتناب اضافی به دنبال.
 
@@ -463,7 +463,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 0.
 
-## ادغام _تر_کوارسی_یندگرمانی {#setting-merge-tree-coarse-index-granularity}
+## ادغام \_تر\_کوارسی\_یندگرمانی {#setting-merge-tree-coarse-index-granularity}
 
 هنگامی که جستجو برای داده ها, تاتر چک علامت داده ها در فایل شاخص. اگر فاحشه خانه می یابد که کلید های مورد نیاز در برخی از محدوده هستند, این تقسیم این محدوده به `merge_tree_coarse_index_granularity` موشک و جستجو کلید های مورد نیاز وجود دارد به صورت بازگشتی.
 
@@ -473,11 +473,11 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 مقدار پیش فرض: 8.
 
-## _انتقال به _انتقال {#setting-merge-tree-max-rows-to-use-cache}
+## \_انتقال به \_انتقال {#setting-merge-tree-max-rows-to-use-cache}
 
 اگر کلیک خانه باید بیش از خواندن `merge_tree_max_rows_to_use_cache` ردیف ها در یک پرس و جو از کش بلوک های غیر فشرده استفاده نمی کنند.
 
-ذخیره سازی داده های ذخیره شده بلوک های غیر فشرده برای نمایش داده شد. تاتر با استفاده از این کش برای سرعت بخشیدن به پاسخ به نمایش داده شد کوچک تکرار شده است. این تنظیم محافظت از کش از سطل زباله توسط نمایش داده شد که مقدار زیادی از داده ها به عنوان خوانده شده. این [_بالا](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) تنظیم سرور اندازه کش از بلوک های غیر فشرده را تعریف می کند.
+ذخیره سازی داده های ذخیره شده بلوک های غیر فشرده برای نمایش داده شد. تاتر با استفاده از این کش برای سرعت بخشیدن به پاسخ به نمایش داده شد کوچک تکرار شده است. این تنظیم محافظت از کش از سطل زباله توسط نمایش داده شد که مقدار زیادی از داده ها به عنوان خوانده شده. این [\_بالا](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) تنظیم سرور اندازه کش از بلوک های غیر فشرده را تعریف می کند.
 
 مقادیر ممکن:
 
@@ -485,11 +485,11 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 Default value: 128 ✕ 8192.
 
-## _انتقال به _انتقال {#setting-merge-tree-max-bytes-to-use-cache}
+## \_انتقال به \_انتقال {#setting-merge-tree-max-bytes-to-use-cache}
 
 اگر کلیک خانه باید بیش از خواندن `merge_tree_max_bytes_to_use_cache` بایت در یک پرس و جو, این کش از بلوک های غیر فشرده استفاده نمی.
 
-ذخیره سازی داده های ذخیره شده بلوک های غیر فشرده برای نمایش داده شد. تاتر با استفاده از این کش برای سرعت بخشیدن به پاسخ به نمایش داده شد کوچک تکرار شده است. این تنظیم محافظت از کش از سطل زباله توسط نمایش داده شد که مقدار زیادی از داده ها به عنوان خوانده شده. این [_بالا](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) تنظیم سرور اندازه کش از بلوک های غیر فشرده را تعریف می کند.
+ذخیره سازی داده های ذخیره شده بلوک های غیر فشرده برای نمایش داده شد. تاتر با استفاده از این کش برای سرعت بخشیدن به پاسخ به نمایش داده شد کوچک تکرار شده است. این تنظیم محافظت از کش از سطل زباله توسط نمایش داده شد که مقدار زیادی از داده ها به عنوان خوانده شده. این [\_بالا](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) تنظیم سرور اندازه کش از بلوک های غیر فشرده را تعریف می کند.
 
 مقدار ممکن:
 
@@ -497,7 +497,7 @@ Default value: 128 ✕ 8192.
 
 مقدار پیش فرض: 2013265920.
 
-## _عنوان _تو_میشه {#settings-min-bytes-to-use-direct-io}
+## \_عنوان \_تو\_میشه {#settings-min-bytes-to-use-direct-io}
 
 حداقل حجم داده های مورد نیاز برای استفاده از دسترسی مستقیم به دیسک ذخیره سازی.
 
@@ -510,11 +510,11 @@ Default value: 128 ✕ 8192.
 
 مقدار پیش فرض: 0.
 
-## _خروج {#settings-log-queries}
+## \_خروج {#settings-log-queries}
 
 راه اندازی ورود به سیستم پرس و جو.
 
-نمایش داده شد با توجه به قوانین در به کلیک خانه فرستاده می شود [_خروج](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) پارامتر پیکربندی سرور.
+نمایش داده شد با توجه به قوانین در به کلیک خانه فرستاده می شود [\_خروج](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) پارامتر پیکربندی سرور.
 
 مثال:
 
@@ -522,7 +522,7 @@ Default value: 128 ✕ 8192.
 log_queries=1
 ```
 
-## _قاب کردن _نوع {#settings-log-queries-min-type}
+## \_قاب کردن \_نوع {#settings-log-queries-min-type}
 
 `query_log` حداقل نوع برای ورود به سیستم.
 
@@ -544,7 +544,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 راه اندازی موضوعات پرس و جو ورود به سیستم.
 
-نمایش داده شد' موضوعات runned توسط ClickHouse با راه اندازی این سیستم هستند با توجه به قوانین در [_ر_خروج](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) پارامتر پیکربندی سرور.
+نمایش داده شد' موضوعات runned توسط ClickHouse با راه اندازی این سیستم هستند با توجه به قوانین در [\_ر\_خروج](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) پارامتر پیکربندی سرور.
 
 مثال:
 
@@ -552,19 +552,19 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
-## ا_فزونهها {#settings-max_insert_block_size}
+## ا\_فزونهها {#settings-max_insert_block_size}
 
 اندازه بلوک به شکل برای درج به یک جدول.
 این تنظیم فقط در مواردی که سرور بلوک را تشکیل می دهد اعمال می شود.
 برای مثال برای درج از طریق رابط اچ.تی. تی. پی سرور تجزیه فرمت داده ها و اشکال بلوک از اندازه مشخص شده است.
-اما هنگامی که با استفاده از کلیک-مشتری تجزیه داده های خود را و ‘max_insert_block_size’ تنظیم بر روی سرور به اندازه بلوک قرار داده تاثیر نمی گذارد.
+اما هنگامی که با استفاده از کلیک-مشتری تجزیه داده های خود را و ‘max\_insert\_block\_size’ تنظیم بر روی سرور به اندازه بلوک قرار داده تاثیر نمی گذارد.
 تنظیمات نیز یک هدف در هنگام استفاده از درج را انتخاب کنید ندارد, از داده ها با استفاده از بلوک های مشابه که پس از انتخاب تشکیل قرار داده.
 
 مقدار پیش فرض: 1,048,576.
 
 به طور پیش فرض کمی بیش از `max_block_size`. دلیل این کار این است زیرا موتورهای جدول خاص (`*MergeTree`) بخش داده ها بر روی دیسک برای هر بلوک قرار داده شده است که یک نهاد نسبتا بزرگ را تشکیل می دهند. به طور مشابه, `*MergeTree` جداول مرتب سازی بر داده ها در هنگام درج و اندازه بلوک به اندازه کافی بزرگ اجازه می دهد مرتب سازی داده های بیشتر در رم.
 
-## _معرض _سبک_ز_وز {#min-insert-block-size-rows}
+## \_معرض \_سبک\_ز\_وز {#min-insert-block-size-rows}
 
 مجموعه حداقل تعداد ردیف در بلوک است که می تواند به یک جدول توسط یک قرار داده `INSERT` پرس و جو. بلوک های کوچکتر به اندازه به موارد بزرگتر له می شوند.
 
@@ -575,7 +575,7 @@ log_query_threads=1
 
 مقدار پیش فرض: 1048576.
 
-## ا_فزونهها {#min-insert-block-size-bytes}
+## ا\_فزونهها {#min-insert-block-size-bytes}
 
 مجموعه حداقل تعداد بایت در بلوک است که می تواند به یک جدول توسط یک قرار داده `INSERT` پرس و جو. بلوک های کوچکتر به اندازه به موارد بزرگتر له می شوند.
 
@@ -586,7 +586,7 @@ log_query_threads=1
 
 مقدار پیش فرض: 268435456.
 
-## _شروع مجدد _شروع مجدد _شروع مجدد _کاربری {#settings-max_replica_delay_for_distributed_queries}
+## \_شروع مجدد \_شروع مجدد \_شروع مجدد \_کاربری {#settings-max_replica_delay_for_distributed_queries}
 
 غیرفعال تاخیر کپی برای نمایش داده شد توزیع شده است. ببینید [تکرار](../../engines/table-engines/mergetree-family/replication.md).
 
@@ -596,22 +596,22 @@ log_query_threads=1
 
 مورد استفاده در هنگام انجام `SELECT` از یک جدول توزیع شده است که اشاره به جداول تکرار.
 
-## _مخفی کردن {#settings-max_threads}
+## \_مخفی کردن {#settings-max_threads}
 
-حداکثر تعداد موضوعات پردازش پرس و جو, به جز موضوعات برای بازیابی داده ها از سرور از راه دور (دیدن ‘max_distributed_connections’ پارامتر).
+حداکثر تعداد موضوعات پردازش پرس و جو, به جز موضوعات برای بازیابی داده ها از سرور از راه دور (دیدن ‘max\_distributed\_connections’ پارامتر).
 
 این پارامتر شامل موضوعات است که انجام همان مراحل از خط لوله پردازش پرس و جو به صورت موازی.
-مثلا, در هنگام خواندن از یک جدول, اگر ممکن است به ارزیابی عبارات با توابع, فیلتر با کجا و از پیش جمع شده برای گروه به صورت موازی با استفاده از حداقل ‘max_threads’ تعداد موضوعات, سپس ‘max_threads’ استفاده می شود.
+مثلا, در هنگام خواندن از یک جدول, اگر ممکن است به ارزیابی عبارات با توابع, فیلتر با کجا و از پیش جمع شده برای گروه به صورت موازی با استفاده از حداقل ‘max\_threads’ تعداد موضوعات, سپس ‘max\_threads’ استفاده می شود.
 
 مقدار پیش فرض: تعداد هسته های پردازنده فیزیکی.
 
 اگر کمتر از یک پرس و جو را انتخاب کنید به طور معمول بر روی یک سرور در یک زمان اجرا, تنظیم این پارامتر به یک مقدار کمی کمتر از تعداد واقعی هسته پردازنده.
 
-برای نمایش داده شد که به سرعت به دلیل محدودیت تکمیل, شما می توانید یک مجموعه پایین تر ‘max_threads’. مثلا , اگر تعداد لازم از نوشته در هر بلوک و حداکثر _سرخ واقع = 8, سپس 8 بلوک بازیابی می شوند, اگر چه این امر می توانست به اندازه کافی برای خواندن فقط یک بوده است.
+برای نمایش داده شد که به سرعت به دلیل محدودیت تکمیل, شما می توانید یک مجموعه پایین تر ‘max\_threads’. مثلا , اگر تعداد لازم از نوشته در هر بلوک و حداکثر \_سرخ واقع = 8, سپس 8 بلوک بازیابی می شوند, اگر چه این امر می توانست به اندازه کافی برای خواندن فقط یک بوده است.
 
 کوچکتر `max_threads` ارزش حافظه کمتر مصرف می شود.
 
-## ا_فزونهها {#settings-max-insert-threads}
+## ا\_فزونهها {#settings-max-insert-threads}
 
 حداکثر تعداد موضوعات برای اجرای `INSERT SELECT` پرس و جو.
 
@@ -622,61 +622,61 @@ log_query_threads=1
 
 مقدار پیش فرض: 0.
 
-موازی `INSERT SELECT` اثر تنها در صورتی که `SELECT` بخش به صورت موازی اجرا, دیدن [_مخفی کردن](#settings-max_threads) تنظیمات.
+موازی `INSERT SELECT` اثر تنها در صورتی که `SELECT` بخش به صورت موازی اجرا, دیدن [\_مخفی کردن](#settings-max_threads) تنظیمات.
 مقادیر بالاتر به استفاده از حافظه بالاتر منجر شود.
 
-## _بزرگنمایی {#max-compress-block-size}
+## \_بزرگنمایی {#max-compress-block-size}
 
 حداکثر اندازه بلوک از داده های غیر فشرده قبل از فشرده سازی برای نوشتن به یک جدول. به طور پیش فرض, 1,048,576 (1 مگابایت). اگر اندازه کاهش می یابد, میزان فشرده سازی به طور قابل توجهی کاهش می یابد, سرعت فشرده سازی و رفع فشار کمی با توجه به محل کش را افزایش می دهد, و مصرف حافظه کاهش می یابد. معمولا وجود دارد هر دلیلی برای تغییر این تنظیم نیست.
 
 هنوز بلوک برای فشرده سازی اشتباه نیست (یک تکه از حافظه متشکل از بایت) با بلوک برای پردازش پرس و جو (مجموعه ای از ردیف از یک جدول).
 
-## _بزرگنمایی {#min-compress-block-size}
+## \_بزرگنمایی {#min-compress-block-size}
 
-برای [ادغام](../../engines/table-engines/mergetree-family/mergetree.md)"جداول . به منظور کاهش زمان تاخیر در هنگام پردازش نمایش داده شد, یک بلوک فشرده شده است در هنگام نوشتن علامت بعدی اگر اندازه خود را حداقل ‘min_compress_block_size’. به طور پیش فرض 65,536.
+برای [ادغام](../../engines/table-engines/mergetree-family/mergetree.md)"جداول . به منظور کاهش زمان تاخیر در هنگام پردازش نمایش داده شد, یک بلوک فشرده شده است در هنگام نوشتن علامت بعدی اگر اندازه خود را حداقل ‘min\_compress\_block\_size’. به طور پیش فرض 65,536.
 
-اندازه واقعی بلوک, اگر داده غیر فشرده کمتر از است ‘max_compress_block_size’, کمتر از این مقدار و کمتر از حجم داده ها برای یک علامت.
+اندازه واقعی بلوک, اگر داده غیر فشرده کمتر از است ‘max\_compress\_block\_size’, کمتر از این مقدار و کمتر از حجم داده ها برای یک علامت.
 
-بیایید نگاهی به عنوان مثال. فرض کنیم که ‘index_granularity’ در طول ایجاد جدول به 8192 تنظیم شد.
+بیایید نگاهی به عنوان مثال. فرض کنیم که ‘index\_granularity’ در طول ایجاد جدول به 8192 تنظیم شد.
 
-ما در حال نوشتن یک ستون نوع 32 (4 بایت در هر مقدار). هنگام نوشتن 8192 ردیف, کل خواهد بود 32 کیلوبایت داده. پس min_compress_block_size = 65,536 یک فشرده بلوک تشکیل خواهد شد برای هر دو نشانه است.
+ما در حال نوشتن یک ستون نوع 32 (4 بایت در هر مقدار). هنگام نوشتن 8192 ردیف, کل خواهد بود 32 کیلوبایت داده. پس min\_compress\_block\_size = 65,536 یک فشرده بلوک تشکیل خواهد شد برای هر دو نشانه است.
 
 ما در حال نوشتن یک ستون نشانی اینترنتی با نوع رشته (اندازه متوسط 60 بایت در هر مقدار). هنگام نوشتن 8192 ردیف, متوسط خواهد بود کمی کمتر از 500 کیلوبایت داده. پس از این بیش از است 65,536, یک بلوک فشرده خواهد شد برای هر علامت تشکیل. در این مورد, در هنگام خواندن داده ها از دیسک در طیف وسیعی از یک علامت, اطلاعات اضافی نمی خواهد از حالت فشرده خارج شود.
 
 معمولا وجود دارد هر دلیلی برای تغییر این تنظیم نیست.
 
-## بیشینه_کرکی_سیز {#settings-max_query_size}
+## بیشینه\_کرکی\_سیز {#settings-max_query_size}
 
 حداکثر بخشی از پرس و جو است که می تواند به رم برای تجزیه با تجزیه کننده گذاشتن گرفته شده است.
 پرس و جو درج همچنین شامل داده ها برای درج است که توسط تجزیه کننده جریان جداگانه پردازش (که مصرف درجه(1) رم), است که در این محدودیت شامل نمی شود.
 
 مقدار پیش فرض: 256 کیلوبایت.
 
-## فعالسازی _دلای {#interactive-delay}
+## فعالسازی \_دلای {#interactive-delay}
 
 فاصله در میکروثانیه برای بررسی اینکه اجرای درخواست لغو شده است و ارسال پیشرفت.
 
 مقدار پیش فرض: 100,000 (چک برای لغو و پیشرفت می فرستد ده بار در ثانیه).
 
-## connect_timeout, receive_timeout, send_timeout {#connect-timeout-receive-timeout-send-timeout}
+## connect\_timeout, receive\_timeout, send\_timeout {#connect-timeout-receive-timeout-send-timeout}
 
 وقفه در ثانیه بر روی سوکت مورد استفاده برای برقراری ارتباط با مشتری.
 
 مقدار پیش فرض: 10, 300, 300.
 
-## _انتقال به _ار_خروج {#cancel-http-readonly-queries-on-client-close}
+## \_انتقال به \_ار\_خروج {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
 مقدار پیشفرض: 0
 
-## پول_نتروال {#poll-interval}
+## پول\_نتروال {#poll-interval}
 
 قفل در یک حلقه انتظار برای تعداد مشخصی از ثانیه.
 
 مقدار پیش فرض: 10.
 
-## _ادغام گیر {#max-distributed-connections}
+## \_ادغام گیر {#max-distributed-connections}
 
 حداکثر تعداد اتصالات همزمان با سرور از راه دور برای پردازش توزیع از یک پرس و جو تنها به یک جدول توزیع. ما توصیه می کنیم تنظیم یک مقدار کمتر از تعداد سرور در خوشه.
 
@@ -690,7 +690,7 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 
 مقدار پیش فرض: 1024.
 
-## _انتقال به _مزاح_اف_کننده {#connect-timeout-with-failover-ms}
+## \_انتقال به \_مزاح\_اف\_کننده {#connect-timeout-with-failover-ms}
 
 فاصله در میلی ثانیه برای اتصال به یک سرور از راه دور برای یک موتور جدول توزیع, اگر ‘shard’ و ‘replica’ بخش ها در تعریف خوشه استفاده می شود.
 اگر ناموفق, چندین تلاش برای اتصال به کپی های مختلف ساخته شده.
@@ -711,30 +711,30 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 ## همترازی پایین {#setting-use_uncompressed_cache}
 
 اینکه از یک کش از بلوکهای غیر فشرده استفاده شود یا خیر. می پذیرد 0 یا 1. به طور پیش فرض, 0 (غیر فعال).
-با استفاده از کش غیر فشرده (فقط برای جداول در خانواده ادغام) می تواند به طور قابل توجهی کاهش زمان تاخیر و افزایش توان در هنگام کار با تعداد زیادی از نمایش داده شد کوتاه است. فعال کردن این تنظیم برای کاربرانی که ارسال درخواست کوتاه مکرر. همچنین با توجه به پرداخت [_بالا](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+با استفاده از کش غیر فشرده (فقط برای جداول در خانواده ادغام) می تواند به طور قابل توجهی کاهش زمان تاخیر و افزایش توان در هنگام کار با تعداد زیادی از نمایش داده شد کوتاه است. فعال کردن این تنظیم برای کاربرانی که ارسال درخواست کوتاه مکرر. همچنین با توجه به پرداخت [\_بالا](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-برای نمایش داده شد که خواندن حداقل حجم تا حدودی زیادی از داده ها (یک میلیون ردیف یا بیشتر) غیر فشرده کش غیر فعال است به طور خودکار به صرفه جویی در فضا برای واقعا کوچک نمایش داده شد. این به این معنی است که شما می توانید نگه دارید ‘use_uncompressed_cache’ تنظیم همیشه به مجموعه 1.
+برای نمایش داده شد که خواندن حداقل حجم تا حدودی زیادی از داده ها (یک میلیون ردیف یا بیشتر) غیر فشرده کش غیر فعال است به طور خودکار به صرفه جویی در فضا برای واقعا کوچک نمایش داده شد. این به این معنی است که شما می توانید نگه دارید ‘use\_uncompressed\_cache’ تنظیم همیشه به مجموعه 1.
 
-## جایگزینی _خروج {#replace-running-query}
+## جایگزینی \_خروج {#replace-running-query}
 
-هنگام استفاده از رابط قام ‘query_id’ پارامتر را می توان گذشت. این هر رشته که به عنوان شناسه پرس و جو در خدمت است.
-اگر پرس و جو از همان کاربر با همان ‘query_id’ در حال حاضر در این زمان وجود دارد, رفتار بستگی به ‘replace_running_query’ پارامتر.
+هنگام استفاده از رابط قام ‘query\_id’ پارامتر را می توان گذشت. این هر رشته که به عنوان شناسه پرس و جو در خدمت است.
+اگر پرس و جو از همان کاربر با همان ‘query\_id’ در حال حاضر در این زمان وجود دارد, رفتار بستگی به ‘replace\_running\_query’ پارامتر.
 
-`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query_id’ در حال حاضر در حال اجرا).
+`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ در حال حاضر در حال اجرا).
 
 `1` – Cancel the old query and start running the new one.
 
 یاندکسمتریکا با استفاده از این پارامتر را به 1 برای اجرای پیشنهادات خود را برای شرایط تقسیم بندی. پس از ورود به شخصیت بعدی, اگر پرس و جو قدیمی هنوز تمام نشده است, باید لغو شود.
 
-## _خاله جریان {#stream-flush-interval-ms}
+## \_خاله جریان {#stream-flush-interval-ms}
 
-این نسخهها کار میکند برای جداول با جریان در مورد یک ایست, و یا زمانی که یک موضوع تولید [ا_فزونهها](#settings-max_insert_block_size) ردیف
+این نسخهها کار میکند برای جداول با جریان در مورد یک ایست, و یا زمانی که یک موضوع تولید [ا\_فزونهها](#settings-max_insert_block_size) ردیف
 
 مقدار پیش فرض 7500 است.
 
 کوچکتر ارزش, اطلاعات بیشتر به جدول سرخ. تنظیم مقدار خیلی کم منجر به عملکرد ضعیف می شود.
 
-## _تبالسازی {#settings-load_balancing}
+## \_تبالسازی {#settings-load_balancing}
 
 تعیین الگوریتم انتخاب کپی است که برای پردازش پرس و جو توزیع استفاده.
 
@@ -794,16 +794,16 @@ load_balancing = first_or_random
 مقادیر ممکن:
 
 -   1 — ClickHouse always sends a query to the localhost replica if it exists.
--   0 — ClickHouse uses the balancing strategy specified by the [_تبالسازی](#settings-load_balancing) تنظیمات.
+-   0 — ClickHouse uses the balancing strategy specified by the [\_تبالسازی](#settings-load_balancing) تنظیمات.
 
 مقدار پیش فرض: 1.
 
 !!! warning "اخطار"
-    غیر فعال کردن این تنظیم در صورت استفاده [بیشینه_راپرال_راپیکال](#settings-max_parallel_replicas).
+    غیر فعال کردن این تنظیم در صورت استفاده [بیشینه\_راپرال\_راپیکال](#settings-max_parallel_replicas).
 
-## کد _ورود {#totals-mode}
+## کد \_ورود {#totals-mode}
 
-چگونه برای محاسبه مجموع زمانی که نیاز است در حال حاضر به عنوان زمانی که max_rows_to_group_by و group_by_overflow_mode = ‘any’ حضور دارند.
+چگونه برای محاسبه مجموع زمانی که نیاز است در حال حاضر به عنوان زمانی که max\_rows\_to\_group\_by و group\_by\_overflow\_mode = ‘any’ حضور دارند.
 بخش را ببینید “WITH TOTALS modifier”.
 
 ## در حال بارگذاری {#totals-auto-threshold}
@@ -811,7 +811,7 @@ load_balancing = first_or_random
 نگهبان `totals_mode = 'auto'`.
 بخش را ببینید “WITH TOTALS modifier”.
 
-## بیشینه_راپرال_راپیکال {#settings-max_parallel_replicas}
+## بیشینه\_راپرال\_راپیکال {#settings-max_parallel_replicas}
 
 حداکثر تعداد کپی برای هر سفال در هنگام اجرای یک پرس و جو.
 برای سازگاری (برای دریافت بخش های مختلف از تقسیم داده های مشابه), این گزینه تنها کار می کند زمانی که کلید نمونه گیری قرار است.
@@ -824,7 +824,7 @@ load_balancing = first_or_random
 تدوین تنها برای بخشی از خط لوله پرس و جو پردازش استفاده می شود: برای مرحله اول تجمع (گروه های).
 اگر این بخش از خط لوله وارد شده بود, پرس و جو ممکن است سریع تر با توجه به استقرار چرخه های کوتاه و محدود تماس تابع جمع اجرا. حداکثر بهبود عملکرد (تا چهار برابر سریعتر در موارد نادر) برای نمایش داده شد با توابع چند دانه ساده دیده می شود. معمولا افزایش عملکرد ناچیز است. در موارد بسیار نادر, ممکن است کم کردن سرعت اجرای پرس و جو.
 
-## _کوچکنمایی {#min-count-to-compile}
+## \_کوچکنمایی {#min-count-to-compile}
 
 چند بار به طور بالقوه استفاده از یک تکه وارد شده از کد قبل از در حال اجرا تلفیقی. به طور پیش فرض, 3.
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
@@ -833,27 +833,27 @@ For testing, the value can be set to 0: compilation runs synchronously and the q
 کد کامپایل شده برای هر ترکیب های مختلف از توابع کل مورد استفاده در پرس و جو و نوع کلید در گروه بند مورد نیاز است.
 The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-## خروجی _فرمان_جسون_کوات_64بیت_تنظیمی {#session_settings-output_format_json_quote_64bit_integers}
+## خروجی \_فرمان\_جسون\_کوات\_64بیت\_تنظیمی {#session_settings-output_format_json_quote_64bit_integers}
 
 اگر مقدار درست است صحیح به نظر می رسد در نقل قول ها در هنگام استفاده از JSON\* Int64 و UInt64 فرمت (برای سازگاری بیشتر با جاوا اسکریپت پیاده سازی); در غیر این صورت اعداد صحیح هستند و خروجی بدون نقل قول.
 
-## _مخفی کردن _قابلیت _جدید {#settings-format_csv_delimiter}
+## \_مخفی کردن \_قابلیت \_جدید {#settings-format_csv_delimiter}
 
 شخصیت به عنوان یک جداساز در داده های سی سی. وی تفسیر شده است. به طور پیش فرض, جداساز است `,`.
 
-## _فرستادن به _کوچکنمایی {#settings-input_format_csv_unquoted_null_literal_as_null}
+## \_فرستادن به \_کوچکنمایی {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 برای فرمت ورودی سی اس وی را قادر می سازد و یا غیر فعال تجزیه بدون نقل `NULL` به عنوان تحت اللفظی (مترادف برای `\N`).
 
-## _انتقال به _شروع مجدد {#settings-output-format-csv-crlf-end-of-line}
+## \_انتقال به \_شروع مجدد {#settings-output-format-csv-crlf-end-of-line}
 
 استفاده از داس/ویندوز-سبک خط جدا کننده (CRLF) در CSV به جای یونیکس سبک (LF).
 
-## _فرستادن در_م_مایش از _برخط {#settings-output-format-tsv-crlf-end-of-line}
+## \_فرستادن در\_م\_مایش از \_برخط {#settings-output-format-tsv-crlf-end-of-line}
 
 استفاده از توضیحات / ویندوز به سبک خط جدا (سازمان تنظیم مقررات) در واحد پشتیبانی فنی فنی فنی مهندسی به جای سبک یونیکس.
 
-## _معامله {#settings-insert_quorum}
+## \_معامله {#settings-insert_quorum}
 
 را قادر می سازد حد نصاب می نویسد.
 
@@ -877,10 +877,10 @@ The results of the compilation are saved in the build directory in the form of .
 
 همچنین نگاه کنید به:
 
--   [_بههنگامسازی](#settings-insert_quorum_timeout)
+-   [\_بههنگامسازی](#settings-insert_quorum_timeout)
 -   [مورد احترام](#settings-select_sequential_consistency)
 
-## _بههنگامسازی {#settings-insert_quorum_timeout}
+## \_بههنگامسازی {#settings-insert_quorum_timeout}
 
 ارسال به فاصله حد نصاب در ثانیه. اگر ایست را تصویب کرده است و بدون نوشتن صورت گرفته است و در عین حال, تاتر یک استثنا تولید و مشتری باید پرس و جو تکرار برای نوشتن همان بلوک به همان و یا هر ماکت دیگر.
 
@@ -888,7 +888,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 همچنین نگاه کنید به:
 
--   [_معامله](#settings-insert_quorum)
+-   [\_معامله](#settings-insert_quorum)
 -   [مورد احترام](#settings-select_sequential_consistency)
 
 ## مورد احترام {#settings-select_sequential_consistency}
@@ -908,10 +908,10 @@ The results of the compilation are saved in the build directory in the form of .
 
 همچنین نگاه کنید به:
 
--   [_معامله](#settings-insert_quorum)
--   [_بههنگامسازی](#settings-insert_quorum_timeout)
+-   [\_معامله](#settings-insert_quorum)
+-   [\_بههنگامسازی](#settings-insert_quorum_timeout)
 
-## _تنظیم مجدد به حالت اولیه {#settings-insert-deduplicate}
+## \_تنظیم مجدد به حالت اولیه {#settings-insert-deduplicate}
 
 امکان حذف یا غیرفعال کردن مسدود کردن تقسیم بندی `INSERT` (برای تکرار\* جداول).
 
@@ -942,7 +942,7 @@ The results of the compilation are saved in the build directory in the form of .
 همزمان, این رفتار “breaks” `INSERT` حق تقدم. اگر یک `INSERT` به جدول اصلی موفق بود و `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` اجازه می دهد تا برای تغییر این رفتار. در تلاش مجدد, یک دیدگاه محقق درج تکرار دریافت خواهد کرد و بررسی تکرار به خودی خود انجام,
 نادیده گرفتن نتیجه چک برای جدول منبع, و ردیف به دلیل شکست اول از دست داده وارد.
 
-## ویژ_گیها {#settings-max-network-bytes}
+## ویژ\_گیها {#settings-max-network-bytes}
 
 محدودیت حجم داده ها (به بایت) است که دریافت و یا انتقال بر روی شبکه در هنگام اجرای یک پرس و جو. این تنظیم در مورد هر پرس و جو فردی.
 
@@ -953,7 +953,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 0.
 
-## _عرض {#settings-max-network-bandwidth}
+## \_عرض {#settings-max-network-bandwidth}
 
 محدودیت سرعت تبادل داده ها بر روی شبکه در بایت در هر ثانیه. این تنظیم در مورد هر پرس و جو.
 
@@ -964,7 +964,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 0.
 
-## _شمارهگیر بیشینه {#settings-max-network-bandwidth-for-user}
+## \_شمارهگیر بیشینه {#settings-max-network-bandwidth-for-user}
 
 محدودیت سرعت تبادل داده ها بر روی شبکه در بایت در هر ثانیه. این تنظیم به تمام نمایش داده شد همزمان در حال اجرا انجام شده توسط یک کاربر اعمال می شود.
 
@@ -975,7 +975,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 0.
 
-## _شمارهگیرها {#settings-max-network-bandwidth-for-all-users}
+## \_شمارهگیرها {#settings-max-network-bandwidth-for-all-users}
 
 محدودیت سرعت است که داده ها در بیش از شبکه در بایت در هر ثانیه رد و بدل. این تنظیم در مورد تمام نمایش داده شد به صورت همزمان در حال اجرا بر روی سرور.
 
@@ -986,7 +986,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 0.
 
-## ا_فزونهها {#settings-count_distinct_implementation}
+## ا\_فزونهها {#settings-count_distinct_implementation}
 
 مشخص می کند که کدام یک از `uniq*` توابع باید برای انجام [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) ساخت و ساز.
 
@@ -1048,7 +1048,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیشفرض: 0
 
-## ا_فزون_ف_کوپ {#setting-optimize_throw_if_noop}
+## ا\_فزون\_ف\_کوپ {#setting-optimize_throw_if_noop}
 
 را قادر می سازد و یا غیر فعال پرتاب یک استثنا اگر یک [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) پرس و جو یک ادغام انجام نمی.
 
@@ -1066,7 +1066,7 @@ The results of the compilation are saved in the build directory in the form of .
 -   نوع: ثانیه
 -   مقدار پیشفرض: 60 ثانیه
 
-کنترل خطاهای چگونه سریع در جداول توزیع صفر. اگر یک ماکت برای برخی از زمان در دسترس نیست, تجمع می یابد 5 اشتباهات, و توزیع _راپیرار_لفا_لایف تنظیم شده است 1 دوم, سپس ماکت در نظر گرفته شده است طبیعی 3 ثانیه پس از خطا گذشته.
+کنترل خطاهای چگونه سریع در جداول توزیع صفر. اگر یک ماکت برای برخی از زمان در دسترس نیست, تجمع می یابد 5 اشتباهات, و توزیع \_راپیرار\_لفا\_لایف تنظیم شده است 1 دوم, سپس ماکت در نظر گرفته شده است طبیعی 3 ثانیه پس از خطا گذشته.
 
 همچنین نگاه کنید به:
 
@@ -1118,7 +1118,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 0.
 
-## _شخصیت {#setting-os-thread-priority}
+## \_شخصیت {#setting-os-thread-priority}
 
 اولویت را تنظیم می کند ([خوبه](https://en.wikipedia.org/wiki/Nice_(Unix))) برای موضوعات که نمایش داده شد را اجرا کند . زمانبندی سیستم عامل این اولویت در نظر هنگام انتخاب موضوع بعدی به اجرا در هر هسته پردازنده در دسترس است.
 
@@ -1154,7 +1154,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 همچنین نگاه کنید به:
 
--   جدول سیستم [_قطع](../../operations/system-tables.md#system_tables-trace_log)
+-   جدول سیستم [\_قطع](../../operations/system-tables.md#system_tables-trace_log)
 
 ## ایران در تهران {#query_profiler_cpu_time_period_ns}
 
@@ -1177,9 +1177,9 @@ The results of the compilation are saved in the build directory in the form of .
 
 همچنین نگاه کنید به:
 
--   جدول سیستم [_قطع](../../operations/system-tables.md#system_tables-trace_log)
+-   جدول سیستم [\_قطع](../../operations/system-tables.md#system_tables-trace_log)
 
-## اجازه دادن به _فعال کردن اختلال در عملکرد {#settings-allow_introspection_functions}
+## اجازه دادن به \_فعال کردن اختلال در عملکرد {#settings-allow_introspection_functions}
 
 فعالسازی از کارانداختن [توابع درون گونه](../../sql-reference/functions/introspection.md) برای پروفایل پرس و جو.
 
@@ -1193,23 +1193,23 @@ The results of the compilation are saved in the build directory in the form of .
 **همچنین نگاه کنید به**
 
 -   [پروفایل پرس و جو نمونه برداری](../optimizing-performance/sampling-query-profiler.md)
--   جدول سیستم [_قطع](../../operations/system-tables.md#system_tables-trace_log)
+-   جدول سیستم [\_قطع](../../operations/system-tables.md#system_tables-trace_log)
 
-## وارد_فرمت_پارلل_درپارس {#input-format-parallel-parsing}
+## وارد\_فرمت\_پارلل\_درپارس {#input-format-parallel-parsing}
 
 -   نوع: بولی
 -   مقدار پیشفرض: درست
 
 فعال کردن نظم حفظ تجزیه موازی از فرمت های داده. پشتیبانی تنها برای TSV TKSV CSV و JSONEachRow فرمت های.
 
-## _حداقل کردن _بیتس_برای_پرال_درپارس {#min-chunk-bytes-for-parallel-parsing}
+## \_حداقل کردن \_بیتس\_برای\_پرال\_درپارس {#min-chunk-bytes-for-parallel-parsing}
 
 -   نوع: امضا نشده
 -   مقدار پیشفرض: 1 مگابایت
 
 حداقل اندازه تکه در بایت, که هر موضوع به صورت موازی تجزیه خواهد شد.
 
-## _فرماندگی لبه بام {#settings-output_format_avro_codec}
+## \_فرماندگی لبه بام {#settings-output_format_avro_codec}
 
 مجموعه کدک فشرده سازی مورد استفاده برای خروجی فایل اورو.
 
@@ -1223,7 +1223,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیشفرض: `snappy` (در صورت موجود بودن) یا `deflate`.
 
-## _فرماندگی لبه چشم {#settings-output_format_avro_sync_interval}
+## \_فرماندگی لبه چشم {#settings-output_format_avro_sync_interval}
 
 مجموعه حداقل اندازه داده (در بایت) بین نشانگر هماهنگ سازی برای فایل خروجی هواپیما.
 
@@ -1233,7 +1233,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 32768 (32 کیلوبایت)
 
-## باز کردن _نمایش مجدد {#settings-format_avro_schema_registry_url}
+## باز کردن \_نمایش مجدد {#settings-format_avro_schema_registry_url}
 
 نشانی اینترنتی رجیستری طرحواره را برای استفاده تنظیم میکند [هشدار داده می شود](../../interfaces/formats.md#data-format-avro-confluent) قالب
 

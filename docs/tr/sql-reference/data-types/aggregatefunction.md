@@ -5,7 +5,7 @@ toc_priority: 52
 toc_title: AggregateFunction (ad, types_of_arguments...)
 ---
 
-# AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [materyalize bir görünüm](../../sql-reference/statements/create.md#create-view). Bir toplama işlevi durumu üretmek için ortak yolu ile toplama işlevi çağırarak olduğunu `-State` sonek. Gelecekte toplanmanın nihai sonucunu elde etmek için, aynı toplama işlevini `-Merge`sonek.
 

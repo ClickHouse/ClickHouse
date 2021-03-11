@@ -261,14 +261,6 @@ private:
 
     PaddedPODArray<Key> getIds() const;
 
-    /// Preallocates the hashtable based on query progress
-    /// (Only while loading all data).
-    ///
-    /// @see preallocate
-    template <typename T>
-    void resize(Attribute & attribute, size_t added_rows);
-    void resize(size_t added_rows);
-
     template <typename AttrType, typename ChildType, typename AncestorType>
     void isInAttrImpl(const AttrType & attr, const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
     template <typename ChildType, typename AncestorType>

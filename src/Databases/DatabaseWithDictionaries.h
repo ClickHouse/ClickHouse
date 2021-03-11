@@ -1,4 +1,3 @@
-#pragma once
 #include <Databases/DatabaseOnDisk.h>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <ext/scope_guard.h>

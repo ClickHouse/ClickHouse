@@ -6,54 +6,19 @@
 
 namespace DB::GatherUtils
 {
-
-namespace
-{
-
 struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
-    : public ArraySourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>
+    : public ArraySinkSourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>
 {
-    template <typename Source>
-    static void selectSource(bool is_const, bool is_nullable, Source && source, size_t & offset, ColumnArray::MutablePtr & result)
+    template <typename Source, typename Sink>
+    static void selectSourceSink(Source && source, Sink && sink, size_t & offset)
     {
-        using SourceType = typename std::decay<Source>::type;
-        using Sink = typename SourceType::SinkType;
-
-        if (is_nullable)
-        {
-            using NullableSource = NullableArraySource<SourceType>;
-            using NullableSink = typename NullableSource::SinkType;
-
-            auto & nullable_source = static_cast<NullableSource &>(source);
-
-            result = ColumnArray::create(nullable_source.createValuesColumn());
-            NullableSink sink(result->getData(), result->getOffsets(), source.getColumnSize());
-
-            if (is_const)
-                sliceFromLeftConstantOffsetUnbounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset);
-            else
-                sliceFromLeftConstantOffsetUnbounded(static_cast<NullableSource &>(source), sink, offset);
-        }
-        else
-        {
-            result = ColumnArray::create(source.createValuesColumn());
-            Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
-
-            if (is_const)
-                sliceFromLeftConstantOffsetUnbounded(static_cast<ConstSource<SourceType> &>(source), sink, offset);
-            else
-                sliceFromLeftConstantOffsetUnbounded(source, sink, offset);
-        }
+        sliceFromLeftConstantOffsetUnbounded(source, sink, offset);
     }
 };
 
-}
-
-ColumnArray::MutablePtr sliceFromLeftConstantOffsetUnbounded(IArraySource & src, size_t offset)
+void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset)
 {
-    ColumnArray::MutablePtr res;
-    SliceFromLeftConstantOffsetUnboundedSelectArraySource::select(src, offset, res);
-    return res;
+    SliceFromLeftConstantOffsetUnboundedSelectArraySource::select(src, sink, offset);
 }
 }
 

@@ -17,12 +17,8 @@ namespace
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
-    /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
-    plain_hashing.next();
+    plain_file->next();
     marks.next();
-
-    plain_file->finalize();
-    marks_file->finalize();
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::sync() const
@@ -201,42 +197,47 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     {
         index_types = primary_index_block.getDataTypes();
         index_columns.resize(primary_columns_num);
-        last_block_index_columns.resize(primary_columns_num);
+        last_index_row.resize(primary_columns_num);
         for (size_t i = 0; i < primary_columns_num; ++i)
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
-    /** While filling index (index_columns), disable memory tracker.
-     * Because memory is allocated here (maybe in context of INSERT query),
-     *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-     * And otherwise it will look like excessively growing memory consumption in context of query.
-     *  (observed in long INSERT SELECTs)
-     */
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
-    /// Write index. The index contains Primary Key value for each `index_granularity` row.
-
-    size_t current_row = getIndexOffset();
-    size_t total_marks = index_granularity.getMarksCount();
-
-    while (index_mark < total_marks && current_row < rows)
     {
-        if (metadata_snapshot->hasPrimaryKey())
-        {
-            for (size_t j = 0; j < primary_columns_num; ++j)
-            {
-                const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, current_row);
-                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
-            }
-        }
+        /** While filling index (index_columns), disable memory tracker.
+         * Because memory is allocated here (maybe in context of INSERT query),
+         *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
+         * And otherwise it will look like excessively growing memory consumption in context of query.
+         *  (observed in long INSERT SELECTs)
+         */
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-        current_row += index_granularity.getMarkRows(index_mark++);
+        /// Write index. The index contains Primary Key value for each `index_granularity` row.
+
+        size_t current_row = getIndexOffset();
+        size_t total_marks = index_granularity.getMarksCount();
+
+        while (index_mark < total_marks && current_row < rows)
+        {
+            if (metadata_snapshot->hasPrimaryKey())
+            {
+                for (size_t j = 0; j < primary_columns_num; ++j)
+                {
+                    const auto & primary_column = primary_index_block.getByPosition(j);
+                    index_columns[j]->insertFrom(*primary_column.column, current_row);
+                    primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
+                }
+            }
+
+            current_row += index_granularity.getMarkRows(index_mark++);
+        }
     }
 
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
-        last_block_index_columns[j] = primary_index_block.getByPosition(j).column;
+    {
+        const IColumn & primary_column = *primary_index_block.getByPosition(j).column.get();
+        primary_column.get(rows - 1, last_index_row[j]);
+    }
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
@@ -309,8 +310,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
     skip_index_data_mark = skip_index_current_data_mark;
 }
 
-void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
-        MergeTreeData::DataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
 {
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
@@ -322,26 +322,22 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
-                const auto & column = *last_block_index_columns[j];
-                size_t last_row_number = column.size() - 1;
-                index_columns[j]->insertFrom(column, last_row_number);
-                index_types[j]->serializeBinary(column, last_row_number, *index_stream);
+                index_columns[j]->insert(last_index_row[j]);
+                index_types[j]->serializeBinary(last_index_row[j], *index_stream);
             }
-            last_block_index_columns.clear();
+
+            last_index_row.clear();
         }
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
-        index_file_stream->finalize();
-        if (sync)
-            index_file_stream->sync();
         index_stream = nullptr;
     }
 }
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
-        MergeTreeData::DataPart::Checksums & checksums, bool sync)
+        MergeTreeData::DataPart::Checksums & checksums)
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -354,8 +350,6 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
     {
         stream->finalize();
         stream->addToChecksums(checksums);
-        if (sync)
-            stream->sync();
     }
 
     skip_indices_streams.clear();

@@ -27,8 +27,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
-#include <cassert>
-
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -362,7 +360,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 {
     IDataType::SerializeBinaryBulkSettings settings;
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (written_streams.count(stream_name))
@@ -382,7 +380,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
     if (serialize_states.count(name) == 0)
          type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (written_streams.count(stream_name))
@@ -400,7 +398,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
     type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (!written_streams.emplace(stream_name).second)
@@ -487,7 +485,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
         throw Exception("Duplicate column with name " + column_name + " in constructor of StorageLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
         String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
 
@@ -550,20 +548,17 @@ void StorageLog::loadMarks()
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
-    {
-        std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
-        disk->moveDirectory(table_path, new_path_to_table_data);
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-        table_path = new_path_to_table_data;
-        file_checker.setPath(table_path + "sizes.json");
+    table_path = new_path_to_table_data;
+    file_checker.setPath(table_path + "sizes.json");
 
-        for (auto & file : files)
-            file.second.data_file_path = table_path + fileName(file.second.data_file_path);
+    for (auto & file : files)
+        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
-        marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
-    }
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
     renameInMemory(new_table_id);
 }
 
@@ -597,7 +592,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
@@ -613,7 +608,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
 Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

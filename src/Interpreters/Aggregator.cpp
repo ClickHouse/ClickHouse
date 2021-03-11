@@ -112,22 +112,7 @@ Block Aggregator::Params::getHeader(
 {
     Block res;
 
-    if (intermediate_header)
-    {
-        res = intermediate_header.cloneEmpty();
-
-        if (final)
-        {
-            for (const auto & aggregate : aggregates)
-            {
-                auto & elem = res.getByName(aggregate.column_name);
-
-                elem.type = aggregate.function->getReturnType();
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-    else
+    if (src_header)
     {
         for (const auto & key : keys)
             res.insert(src_header.safeGetByPosition(key).cloneEmpty());
@@ -146,6 +131,21 @@ Block Aggregator::Params::getHeader(
                 type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
             res.insert({ type, aggregate.column_name });
+        }
+    }
+    else if (intermediate_header)
+    {
+        res = intermediate_header.cloneEmpty();
+
+        if (final)
+        {
+            for (const auto & aggregate : aggregates)
+            {
+                auto & elem = res.getByName(aggregate.column_name);
+
+                elem.type = aggregate.function->getReturnType();
+                elem.column = elem.type->createColumn();
+            }
         }
     }
 
@@ -367,14 +367,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
-    {
-        if (has_low_cardinality)
-            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
-        else
-            return AggregatedDataVariants::Type::key_fixed_string;
-    }
-
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
     if (params.keys_size == num_fixed_contiguous_keys)
     {
@@ -405,6 +397,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::low_cardinality_key_string;
         else
             return AggregatedDataVariants::Type::key_string;
+    }
+
+    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else
+            return AggregatedDataVariants::Type::key_fixed_string;
     }
 
     return AggregatedDataVariants::Type::serialized;
@@ -844,7 +844,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
-    NativeBlockOutputStream block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
+    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
@@ -913,15 +913,15 @@ template <typename Method>
 Block Aggregator::convertOneBucketToBlock(
     AggregatedDataVariants & data_variants,
     Method & method,
+    Arena * arena,
     bool final,
     size_t bucket) const
 {
     Block block = prepareBlockAndFill(data_variants, final, method.data.impls[bucket].size(),
-        [bucket, &method, this] (
+        [bucket, &method, arena, this] (
             MutableColumns & key_columns,
             AggregateColumnsData & aggregate_columns,
             MutableColumns & final_aggregate_columns,
-            Arena * arena,
             bool final_)
         {
             convertToBlockImpl(method, method.data.impls[bucket],
@@ -950,7 +950,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
         if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst)) \
             return {}; \
-        block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
+        block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -982,7 +982,7 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        Block block = convertOneBucketToBlock(data_variants, method, false, bucket);
+        Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, bucket);
         out.write(block);
         update_max_sizes(block);
     }
@@ -1285,7 +1285,7 @@ Block Aggregator::prepareBlockAndFill(
         }
     }
 
-    filler(key_columns, aggregate_columns_data, final_aggregate_columns, data_variants.aggregates_pool, final);
+    filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
     Block res = header.cloneEmpty();
 
@@ -1352,7 +1352,6 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
-        Arena * arena,
         bool final_)
     {
         if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
@@ -1367,7 +1366,8 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
             }
             else
             {
-                insertAggregatesIntoColumns(data, final_aggregate_columns, arena);
+                /// Always single-thread. It's safe to pass current arena from 'aggregates_pool'.
+                insertAggregatesIntoColumns(data, final_aggregate_columns, data_variants.aggregates_pool);
             }
 
             if (params.overflow_row)
@@ -1395,13 +1395,12 @@ Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_v
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
-        Arena * arena,
         bool final_)
     {
     #define M(NAME) \
         else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
             convertToBlockImpl(*data_variants.NAME, data_variants.NAME->data, \
-                key_columns, aggregate_columns, final_aggregate_columns, arena, final_);
+                key_columns, aggregate_columns, final_aggregate_columns, data_variants.aggregates_pool, final_);
 
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
@@ -1435,11 +1434,21 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     bool final,
     ThreadPool * thread_pool) const
 {
+    size_t max_threads = thread_pool ? thread_pool->getMaxThreads() : 1;
+    if (max_threads > data_variants.aggregates_pools.size())
+        for (size_t i = data_variants.aggregates_pools.size(); i < max_threads; ++i)
+            data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
+
     auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
-        return convertOneBucketToBlock(data_variants, method, final, bucket);
+
+        /// Select Arena to avoid race conditions
+        size_t thread_number = static_cast<size_t>(bucket) % max_threads;
+        Arena * arena = data_variants.aggregates_pools.at(thread_number).get();
+
+        return convertOneBucketToBlock(data_variants, method, arena, final, bucket);
     };
 
     /// packaged_task is used to ensure that exceptions are automatically thrown into the main stream.
@@ -1949,7 +1958,7 @@ private:
             else if (method == AggregatedDataVariants::Type::NAME) \
             { \
                 aggregator.mergeBucketImpl<decltype(merged_data.NAME)::element_type>(data, bucket_num, arena); \
-                block = aggregator.convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket_num); \
+                block = aggregator.convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket_num); \
             }
 
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)

@@ -115,57 +115,9 @@ Returns the “first significant subdomain”. This is a non-standard concept sp
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
 
-For example:
+For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
--   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
--   `cutToFirstSignificantSubdomain('tr') = ''`.
-
-### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
-
-Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
-
-For example:
-
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
--   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
--   `cutToFirstSignificantSubdomain('tr') = ''`.
-
-### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
-
-Same as `cutToFirstSignificantSubdomain` but accept custom TLD list name, useful if:
-
-- you need fresh TLD list,
-- or you have custom.
-
-Configuration example:
-
-```xml
-<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
-<top_level_domains_lists>
-    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
-</top_level_domains_lists>
-```
-
-Example:
-
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/', 'public_suffix_list') = 'yandex.com.tr'`.
-
-### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
-
-Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
-
-### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
-
-Same as `firstSignificantSubdomain` but accept custom TLD list name.
-
-### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
-
-Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
-
-### port(URL\[, default_port = 0\]) {#port}
+### port(URL\[, default\_port = 0\]) {#port}
 
 Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
 
@@ -175,11 +127,11 @@ Returns the path. Example: `/top/news.html` The path does not include the query 
 
 ### pathFull {#pathfull}
 
-The same as above, but including query string and fragment. Example: /top/news.html?page=2#comments
+The same as above, but including query string and fragment. Example: /top/news.html?page=2\#comments
 
 ### queryString {#querystring}
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as # and everything after #.
+Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \# and everything after \#.
 
 ### fragment {#fragment}
 
@@ -187,7 +139,7 @@ Returns the fragment identifier. fragment does not include the initial hash symb
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Returns the query string and fragment identifier. Example: page=1#29390.
+Returns the query string and fragment identifier. Example: page=1\#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 

@@ -1,5 +1,5 @@
 ---
-toc_priority: 21
+toc_priority: 15
 toc_title: OnTime
 ---
 
@@ -148,13 +148,13 @@ SETTINGS index_granularity = 8192;
 Loading data:
 
 ``` bash
-$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --input_format_with_names_use_header=0 --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
+$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

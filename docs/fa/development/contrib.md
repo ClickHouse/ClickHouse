@@ -21,6 +21,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
 | googletest      | [لیسانس 3 بند](https://github.com/google/googletest/blob/master/LICENSE)                                                                    |
 | اچ 3            | [نمایی مجوز 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                            |
 | hyperscan       | [لیسانس 3 بند](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                      |
+| لیبتری          | [لیسانس 2 بند](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                               |
 | شکنجه نوجوان    | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                         |
 | لیبیدوید        | [مجوز زلب](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                              |
 | نوشیدن شراب     | [الجی پی ال2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                        |
@@ -29,7 +30,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
 | سوالات متداول   | [نمایی مجوز 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                             |
 | libressl        | [OpenSSL مجوز](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                                |
 | کتابدار         | [لیسانس 2 بند](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                                |
-| _عرض           | [CC0 1.0 جهانی](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                        |
+| \_عرض           | [CC0 1.0 جهانی](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                        |
 | llvm            | [لیسانس 3 بند](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)                    |
 | lz4             | [لیسانس 2 بند](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                            |
 | ماریادب-اتصال-ج | [الجی پی ال2.1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                              |

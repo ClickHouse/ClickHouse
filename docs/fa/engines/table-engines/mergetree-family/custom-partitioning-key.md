@@ -117,7 +117,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-پوشهها ‘201901_1_1_0’, ‘201901_1_7_1’ و به همین ترتیب دایرکتوری از قطعات هستند. هر بخش مربوط به پارتیشن مربوطه و شامل داده ها فقط برای یک ماه خاص (جدول در این مثال پارتیشن بندی توسط ماه).
+پوشهها ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ و به همین ترتیب دایرکتوری از قطعات هستند. هر بخش مربوط به پارتیشن مربوطه و شامل داده ها فقط برای یک ماه خاص (جدول در این مثال پارتیشن بندی توسط ماه).
 
 این `detached` دایرکتوری شامل قطعات است که از جدول با استفاده از جدا شد [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) پرس و جو. قطعات خراب نیز به این دایرکتوری منتقل, به جای اینکه حذف. سرور از قطعات از `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) پرس و جو.
 

@@ -156,7 +156,7 @@ void ExternalAuthenticators::reset()
     ldap_server_params.clear();
 }
 
-void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+void ExternalAuthenticators::setConfig(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
     std::scoped_lock lock(mutex);
     reset();

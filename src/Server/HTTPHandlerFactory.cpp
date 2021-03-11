@@ -8,7 +8,6 @@
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "PrometheusRequestHandler.h"
-#include "WebUIRequestHandler.h"
 
 
 namespace DB
@@ -31,10 +30,10 @@ HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string &
 
 Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactoryMain::createRequestHandler(const Poco::Net::HTTPServerRequest & request)
 {
-    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
-        name, request.getMethod(), request.clientAddress().toString(), request.get("User-Agent", "(none)"),
+    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}",
+        name, request.getMethod(), request.clientAddress().toString(), request.has("User-Agent") ? request.get("User-Agent") : "none",
         (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
-        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"));
+        request.getContentType(), request.getTransferEncoding());
 
     for (auto & handler_factory : child_factories)
     {
@@ -79,9 +78,7 @@ static inline auto createHandlersFactoryFromConfig(
     for (const auto & key : keys)
     {
         if (key == "defaults")
-        {
             addDefaultHandlersFactory(*main_handler_factory, server, async_metrics);
-        }
         else if (startsWith(key, "rule"))
         {
             const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
@@ -115,9 +112,7 @@ static inline auto createHandlersFactoryFromConfig(
 static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IServer & server, const std::string & name, AsynchronousMetrics & async_metrics)
 {
     if (server.config().has("http_handlers"))
-    {
         return createHandlersFactoryFromConfig(server, name, "http_handlers", async_metrics);
-    }
     else
     {
         auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
@@ -173,10 +168,6 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
     factory.addHandler(replicas_status_handler.release());
-
-    auto web_ui_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server, "play.html");
-    web_ui_handler->attachNonStrictPath("/play")->allowGetAndHeadRequest();
-    factory.addHandler(web_ui_handler.release());
 }
 
 void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)

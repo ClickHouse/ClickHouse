@@ -427,8 +427,9 @@ private:
 using SSDComplexKeyCachePartitionPtr = std::shared_ptr<SSDComplexKeyCachePartition>;
 
 
-/** Class for managing SSDCachePartition and getting data from source.
-  */
+/*
+    Class for managing SSDCachePartition and getting data from source.
+*/
 class SSDComplexKeyCacheStorage
 {
 public:
@@ -514,8 +515,9 @@ private:
 };
 
 
-/** Dictionary interface
-  */
+/*
+    Dictionary interface
+*/
 class SSDComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:

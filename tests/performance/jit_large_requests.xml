@@ -29,7 +29,7 @@
                 number
             FROM
                 system.numbers
-            LIMIT 100000000
+            LIMIT 10000000
     </fill_query>
     <query>
         SELECT

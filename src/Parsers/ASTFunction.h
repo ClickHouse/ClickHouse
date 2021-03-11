@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
@@ -18,19 +17,13 @@ public:
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
 
-    /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
-    bool no_empty_args = false;
-
+public:
     /** Get text identifying the AST node. */
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
-
-    ASTSelectWithUnionQuery * tryGetQueryArgument() const;
-
-    ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

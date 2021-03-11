@@ -22,7 +22,7 @@ Bu `FixedString` veri tam olarak uzunluğa sahip olduğunda tür etkilidir `N` b
 Verimli bir şekilde depolan theabilen değerlere örnekler `FixedString`- yazılan sütunlar:
 
 -   IP adreslerinin ikili gösterimi (`FixedString(16)` IPv6 için).
--   Language codes (ru_RU, en_US … ).
+-   Language codes (ru\_RU, en\_US … ).
 -   Currency codes (USD, RUB … ).
 -   Karma ikili gösterimi (`FixedString(16)` MD5 için, `FixedString(32)` SHA256 için).
 

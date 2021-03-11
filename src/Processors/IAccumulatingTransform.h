@@ -18,7 +18,6 @@ protected:
 
     Chunk current_input_chunk;
     Chunk current_output_chunk;
-    Chunk totals;
     bool has_input = false;
     bool finished_input = false;
     bool finished_generate = false;
@@ -35,10 +34,6 @@ public:
 
     Status prepare() override;
     void work() override;
-
-    /// Adds additional port for totals.
-    /// If added, totals will have been ready by the first generate() call (in totals chunk).
-    InputPort * addTotalsPort();
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }

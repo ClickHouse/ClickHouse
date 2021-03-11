@@ -3,7 +3,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <common/demangle.h>
-#include <Common/NaNUtils.h>
 
 
 class SipHash;
@@ -143,19 +142,6 @@ public:
 
     T operator() (const Float64 & x) const
     {
-        if constexpr (!std::is_floating_point_v<T>)
-        {
-            if (!isFinite(x))
-            {
-                /// When converting to bool it's ok (non-zero converts to true, NaN including).
-                if (std::is_same_v<T, bool>)
-                    return true;
-
-                /// Conversion of infinite values to integer is undefined.
-                throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
-            }
-        }
-
         if constexpr (std::is_same_v<Decimal256, T>)
             return Int256(x);
         else
@@ -201,10 +187,12 @@ public:
     {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else if constexpr (std::is_same_v<T, UInt8>)
+            return static_cast<T>(static_cast<UInt16>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
-            return bigint_cast<T>(x);
+            return static_cast<T>(x);
     }
 };
 

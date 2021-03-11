@@ -27,10 +27,10 @@ Komut satırı istemcisinde, formatta bir parametreler bölümü belirtebilirsin
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 Stdın'den yalnızca tek bir tablo alınabilir.
 
-Aşağıdaki parametreler isteğe bağlıdır: **–name**– Name of the table. If omitted, _data is used.
+Aşağıdaki parametreler isteğe bağlıdır: **–name**– Name of the table. If omitted, \_data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-Aşağıdaki parametrelerden biri gereklidir:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
+Aşağıdaki parametrelerden biri gereklidir:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Sütun adlarını ve türlerini tanımlar.
 
 Belirtilen dosyalar ‘file’ belirtilen biçimde ayrıştırılır ‘format’, belirtilen veri türlerini kullanarak ‘types’ veya ‘structure’. Tablo sunucuya yüklenecek ve orada adı ile geçici bir tablo olarak erişilebilir ‘name’.
@@ -48,7 +48,7 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/sync       1
 ```
 
-HTTP arabirimini kullanırken, dış veriler çok parçalı/form veri biçiminde geçirilir. Her tablo ayrı bir dosya olarak iletilir. Tablo adı dosya adından alınır. Bu ‘query_string’ parametreleri geçirilir ‘name_format’, ‘name_types’, ve ‘name_structure’, nere ‘name’ bu parametreler karşılık gelen tablonun adıdır. Parametrelerin anlamı, komut satırı istemcisini kullanırken olduğu gibi aynıdır.
+HTTP arabirimini kullanırken, dış veriler çok parçalı/form veri biçiminde geçirilir. Her tablo ayrı bir dosya olarak iletilir. Tablo adı dosya adından alınır. Bu ‘query\_string’ parametreleri geçirilir ‘name\_format’, ‘name\_types’, ve ‘name\_structure’, nere ‘name’ bu parametreler karşılık gelen tablonun adıdır. Parametrelerin anlamı, komut satırı istemcisini kullanırken olduğu gibi aynıdır.
 
 Örnek:
 

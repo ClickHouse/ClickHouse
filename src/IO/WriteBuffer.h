@@ -60,6 +60,7 @@ public:
       */
     virtual ~WriteBuffer() {}
 
+
     inline void nextIfAtEnd()
     {
         if (!hasPendingData())

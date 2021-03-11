@@ -246,7 +246,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-Özel durum olarak, uınt32, Int32, Uınt64 veya Int64 sayısal türlerinden bugüne dönüştürme ve sayı 65536'dan büyük veya eşitse, sayı Unıx zaman damgası (ve gün sayısı olarak değil) olarak yorumlanır ve tarihe yuvarlanır. Bu, yaygın yazı oluşumu için destek sağlar ‘toDate(unix_timestamp)’, aksi takdirde bir hata olur ve daha hantal yazmayı gerektirir ‘toDate(toDateTime(unix_timestamp))’.
+Özel durum olarak, uınt32, Int32, Uınt64 veya Int64 sayısal türlerinden bugüne dönüştürme ve sayı 65536'dan büyük veya eşitse, sayı Unıx zaman damgası (ve gün sayısı olarak değil) olarak yorumlanır ve tarihe yuvarlanır. Bu, yaygın yazı oluşumu için destek sağlar ‘toDate(unix\_timestamp)’, aksi takdirde bir hata olur ve daha hantal yazmayı gerektirir ‘toDate(toDateTime(unix\_timestamp))’.
 
 Bir tarih ve tarih ile saat arasında dönüştürme doğal bir şekilde gerçekleştirilir: boş bir zaman ekleyerek veya saati bırakarak.
 

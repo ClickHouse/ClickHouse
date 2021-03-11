@@ -16,11 +16,11 @@ toc_title: "\u062F\u0631\u0648\u0646 \u0646\u06AF\u0631\u06CC"
 
 -   نصب `clickhouse-common-static-dbg` بسته
 
--   تنظیم [اجازه دادن به _فعال کردن اختلال در عملکرد](../../operations/settings/settings.md#settings-allow_introspection_functions) تنظیم به 1.
+-   تنظیم [اجازه دادن به \_فعال کردن اختلال در عملکرد](../../operations/settings/settings.md#settings-allow_introspection_functions) تنظیم به 1.
 
         For security reasons introspection functions are disabled by default.
 
-تاتر موجب صرفه جویی در گزارش نیمرخ به [_قطع](../../operations/system-tables.md#system_tables-trace_log) جدول سیستم. اطمینان حاصل کنید که جدول و پیشفیلتر به درستی پیکربندی شده است.
+تاتر موجب صرفه جویی در گزارش نیمرخ به [\_قطع](../../operations/system-tables.md#system_tables-trace_log) جدول سیستم. اطمینان حاصل کنید که جدول و پیشفیلتر به درستی پیکربندی شده است.
 
 ## افزودن مدخل جدید {#addresstoline}
 

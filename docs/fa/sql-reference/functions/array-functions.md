@@ -1028,7 +1028,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 
 ## ارریایکو {#arrayauc}
 
-محاسبه حراج (منطقه تحت منحنی, که یک مفهوم در یادگیری ماشین است, مشاهده اطلاعات بیشتر: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+محاسبه حراج (منطقه تحت منحنی, که یک مفهوم در یادگیری ماشین است, مشاهده اطلاعات بیشتر: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
 
 **نحو**
 
