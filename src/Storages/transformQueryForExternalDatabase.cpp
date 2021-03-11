@@ -160,8 +160,73 @@ bool isCompatible(const IAST & node)
     return node.as<ASTIdentifier>();
 }
 
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+
+void removeUnknownChildren(ASTs & children, const NameSet & known_names)
+{
+
+    ASTs new_children;
+    for (auto & child : children)
+    {
+        bool leave_child = removeUnknownSubexpressions(child, known_names);
+        if (leave_child)
+            new_children.push_back(child);
+    }
+    children = std::move(new_children);
 }
 
+/// return `true` if we should leave node in tree
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
+{
+    if (const auto * ident = node->as<ASTIdentifier>())
+        return known_names.contains(ident->name());
+
+    if (const auto * lit = node->as<ASTLiteral>())
+        return true;
+
+    auto * func = node->as<ASTFunction>();
+    if (func && (func->name == "and" || func->name == "or"))
+    {
+        removeUnknownChildren(func->arguments->children, known_names);
+        /// all children removed, current node can be removed too
+        if (func->arguments->children.size() == 1)
+        {
+            /// if only one child left, pull it on top level
+            node = func->arguments->children[0];
+            return true;
+        }
+        return !func->arguments->children.empty();
+    }
+
+    bool leave_child = true;
+    for (auto & child : node->children)
+    {
+        leave_child = leave_child && removeUnknownSubexpressions(child, known_names);
+        if (!leave_child)
+            break;
+    }
+    return leave_child;
+}
+
+bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    if (!node)
+        return false;
+
+    NameSet known_names;
+    for (const auto & col : available_columns)
+        known_names.insert(col.name);
+
+    if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
+    {
+        /// traverse expression list on top level
+        removeUnknownChildren(expr_list->children, known_names);
+        return !expr_list->children.empty();
+    }
+    return removeUnknownSubexpressions(node, known_names);
+}
+
+}
 
 String transformQueryForExternalDatabase(
     const SelectQueryInfo & query_info,
@@ -191,7 +256,8 @@ String transformQueryForExternalDatabase(
       */
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
-    if (original_where)
+    bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
+    if (original_where && where_has_known_columns)
     {
         replaceConstantExpressions(original_where, context, available_columns);
 
