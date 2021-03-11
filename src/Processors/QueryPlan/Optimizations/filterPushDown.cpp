@@ -51,23 +51,16 @@ static size_t tryAddNewFilterStep(
     // std::cerr << "===============\n" << expression->dumpDAG() << std::endl;
     // std::cerr << "---------------\n" << split_filter->dumpDAG() << std::endl;
 
-    const auto & index = expression->getIndex();
-    auto it = index.begin();
-    for (; it != index.end(); ++it)
-        if ((*it)->result_name == filter_column_name)
-            break;
-
-    const bool found_filter_column = it != expression->getIndex().end();
-
-    if (!found_filter_column && !removes_filter)
+    const auto * filter_node = expression->tryFindInIndex(filter_column_name);
+    if (!filter_node && !removes_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
                         filter_column_name, expression->dumpDAG());
 
     /// Filter column was replaced to constant.
-    const bool filter_is_constant = found_filter_column && (*it)->column && isColumnConst(*(*it)->column);
+    const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
 
-    if (!found_filter_column || filter_is_constant)
+    if (!filter_node || filter_is_constant)
         /// This means that all predicates of filter were pushed down.
         /// Replace current actions to expression, as we don't need to filter anything.
         parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);

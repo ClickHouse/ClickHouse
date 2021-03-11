@@ -1773,21 +1773,6 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         skip_indices,
         compression_codec};
 
-    // if (!blocksHaveEqualStructure(mutating_stream->getHeader(), out.getHeader()))
-    // {
-    //     auto reorder_dag = std::make_shared<ActionsDAG>(mutating_stream->getHeader().getColumnsWithTypeAndName());
-    //     ActionsDAG::NodeRawConstPtrs new_index;
-    //     for (const auto & col : out.getHeader())
-    //         new_index.push_back(reorder_dag->getIndex()[mutating_stream->getHeader().getPositionByName(col.name)]);
-    //     reorder_dag->getIndex() = std::move(new_index);
-
-    //     auto reorder_expr = std::make_shared<ExpressionActions>(std::move(reorder_dag), ExpressionActionsSettings{});
-    //     mutating_stream = std::make_shared<ExpressionBlockInputStream>(mutating_stream, reorder_expr);
-    // }
-
-    // std::cerr << "mutating header 1 " << mutating_stream->getHeader().dumpStructure() << std::endl;
-    // std::cerr << "out header " << out.getHeader().dumpStructure() << std::endl;
-
     mutating_stream->readPrefix();
     out.writePrefix();
 
