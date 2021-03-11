@@ -1,6 +1,6 @@
 ---
 toc_priority: 0
-toc_title: "\u041E\u0431\u0437\u043E\u0440"
+toc_title: "Обзор"
 ---
 
 # Что такое ClickHouse {#what-is-clickhouse}
