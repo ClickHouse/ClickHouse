@@ -292,7 +292,7 @@ public:
     /// Otherwise, return actions which inputs are from available_inputs.
     /// Returned actions add single column which may be used for filter.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
-    ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs);
+    ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs, const ColumnsWithTypeAndName & all_inputs);
 
 private:
     Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
@@ -323,7 +323,7 @@ private:
 
     void compileFunctions();
 
-    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction);
+    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction, const ColumnsWithTypeAndName & all_inputs);
 };
 
 
