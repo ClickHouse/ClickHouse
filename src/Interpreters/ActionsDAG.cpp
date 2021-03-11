@@ -1432,7 +1432,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 ///
 /// Result actions add single column with conjunction result (it is always last in index).
 /// No other columns are added or removed.
-ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunction)
+ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
         return nullptr;
@@ -1445,6 +1445,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
                             std::make_shared<FunctionAnd>()));
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
+    std::unordered_map<std::string, std::list<const Node *>> added_inputs;
 
     struct Frame
     {
@@ -1488,13 +1489,30 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
 
                 if (node.type == ActionType::INPUT)
                 {
-                    actions->inputs.emplace_back(&node);
-                    actions->index.push_back(&node);
+                    added_inputs[node.result_name].push_back(&node);
+                    // actions->inputs.emplace_back(&node);
+                    // actions->index.push_back(&node);
                 }
 
                 stack.pop();
             }
         }
+    }
+
+    for (const auto & col : all_inputs)
+    {
+        const Node * input;
+        auto & list = added_inputs[col.name];
+        if (list.empty())
+            input = &actions->addInput(col);
+        else
+        {
+            input = list.front();
+            list.pop_front();
+            actions->inputs.push_back(input);
+        }
+
+        actions->index.push_back(input);
     }
 
     const Node * result_predicate = nodes_mapping[*conjunction.begin()];
@@ -1513,7 +1531,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
     return actions;
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs)
+ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs, const ColumnsWithTypeAndName & all_inputs)
 {
     Node * predicate;
 
@@ -1551,7 +1569,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    auto actions = cloneActionsForConjunction(conjunction.allowed);
+    auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 

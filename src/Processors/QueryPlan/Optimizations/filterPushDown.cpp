@@ -43,7 +43,8 @@ static size_t tryAddNewFilterStep(
 
     // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
 
-    auto split_filter = expression->splitActionsForFilter(filter_column_name, removes_filter, allowed_inputs);
+    const auto & all_inputs = child->getInputStreams().front().header.getColumnsWithTypeAndName();
+    auto split_filter = expression->splitActionsForFilter(filter_column_name, removes_filter, allowed_inputs, all_inputs);
     if (!split_filter)
         return 0;
 
