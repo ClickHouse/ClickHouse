@@ -35,7 +35,8 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
     {
         if (std::exchange(need_comma, true))
             settings.ostr << ", ";
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ALL" << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_keyword_any ? "ANY" : "ALL")
+                      << (settings.hilite ? IAST::hilite_none : "");
     }
     else
     {
