@@ -9,6 +9,7 @@ Parquet
 ## 英文   <->         中文
 Integer             整数
 floating-point      浮点数
+Fitting             拟合
 Decimal             定点数
 Tuple               元组
 function            函数
