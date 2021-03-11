@@ -240,7 +240,6 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) cons
 
         if (leftBecomeNullable(col.type))
             col.type = makeNullable(col.type);
-    }
 
     for (const auto & col : columns_added_by_join)
     {
