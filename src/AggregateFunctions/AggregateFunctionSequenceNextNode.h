@@ -263,18 +263,18 @@ public:
 
         auto & value = data(place).value;
 
-        UInt64 size = std::max(static_cast<UInt64>(events_size + 1), value.size());
+        size_t size = std::max(static_cast<size_t>(events_size + 1), value.size());
         switch (Base)
         {
             case HEAD:
                 writeVarUInt(size, buf);
-                for (UInt64 i = 0; i < size; ++i)
+                for (size_t i = 0; i < size; ++i)
                     value[i]->write(buf);
                 break;
 
             case TAIL:
                 writeVarUInt(size, buf);
-                for (UInt64 i = value.size() - 1; i >= size; --i)
+                for (size_t i = value.size() - 1; i >= size; --i)
                     value[i]->write(buf);
                 break;
 
