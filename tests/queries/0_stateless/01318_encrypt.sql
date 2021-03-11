@@ -12,7 +12,6 @@
 -----------------------------------------------------------------------------------------
 SELECT aes_encrypt_mysql(); --{serverError 42} not enough arguments
 SELECT aes_encrypt_mysql('aes-128-ecb'); --{serverError 42} not enough arguments
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text'); --{serverError 42} not enough arguments
 
 -- Mode
 SELECT aes_encrypt_mysql(789, 'text', 'key'); --{serverError 43} bad mode type
@@ -24,12 +23,10 @@ SELECT encrypt(789, 'text', 'key'); --{serverError 43} bad mode type
 SELECT encrypt('blah blah blah', 'text', 'key'); -- {serverError 36} garbage mode value
 SELECT encrypt('des-ede3-ecb', 'text', 'key'); -- {serverError 36} bad mode value of valid cipher name
 
-
 -- Key
 SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 456); --{serverError 43} bad key type
 SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key'); -- {serverError 36} key is too short
 
-SELECT encrypt('aes-128-ecb', 'text'); --{serverError 42} key is missing
 SELECT encrypt('aes-128-ecb', 'text', 456); --{serverError 43} bad key type
 SELECT encrypt('aes-128-ecb', 'text', 'key'); -- {serverError 36} key is too short
 SELECT encrypt('aes-128-ecb', 'text', 'keykeykeykeykeykeykeykeykeykeykeykey'); -- {serverError 36} key is to long
@@ -51,6 +48,7 @@ SELECT encrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError 43} bad
 -----------------------------------------------------------------------------------------
 -- Validate against predefined ciphertext,plaintext,key and IV for MySQL compatibility mode
 -----------------------------------------------------------------------------------------
+DROP TABLE IF EXISTS encryption_test;
 CREATE TABLE encryption_test
 (
     input String,
@@ -130,5 +128,16 @@ WITH
 SELECT
     hex(encrypt('aes-256-gcm', plaintext, key, iv, aad)) as ciphertext_actual,
     ciphertext_actual = concat(hex(ciphertext), hex(tag));
+
+-----------------------------------------------------------------------------------------
+-- Server-supplied master key (see tests/config/config.d/encryption.xml)
+-----------------------------------------------------------------------------------------
+SELECT 'Server-supplied key';
+
+SELECT hex(aes_encrypt_mysql('aes-128-ecb', 'text'));
+SELECT hex(aes_encrypt_mysql('aes-128-ecb', 'text', ''));
+
+SELECT hex(encrypt('aes-128-ecb', 'text'));
+SELECT hex(encrypt('aes-128-ecb', 'text', ''));
 
 DROP TABLE encryption_test;

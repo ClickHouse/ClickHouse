@@ -4,6 +4,9 @@
 
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#if USE_INTERNAL_SSL_LIBRARY
+#  include <openssl/hkdf.h>
+#endif
 
 #include <string>
 #include <cassert>
@@ -57,6 +60,45 @@ const EVP_CIPHER * getCipherByName(const StringRef & cipher_name)
     // causes data race, so we stick to the slower but safer alternative here.
     return evp_cipher;
 }
+
+// This depends on BoringSSL-specific API.
+#if USE_INTERNAL_SSL_LIBRARY
+void ServerKey::setMasterKey(const std::string_view & master_key_)
+{
+    master_key = std::unique_ptr<const ServerKey>(new ServerKey(master_key_));
+}
+
+std::unique_ptr<const ServerKey> & ServerKey::getMasterKey()
+{
+    return master_key;
+}
+
+StringRef ServerKey::derive(size_t octets) const
+{
+    assert(octets <= derived_key.size());
+    return StringRef(derived_key.data(), octets);
+}
+
+ServerKey::ServerKey(const std::string_view & master_key_)
+{
+    std::string_view salt(""); // No salt: derive keys in a deterministic manner.
+    std::string_view info(""); // No info: nothing is applicable.
+    std::array<char, 32> result;
+
+    // BoringSSL and OpenSSL have vastly different API for HKDF. Maybe
+    // it's possible to support both, but for now we only support the
+    // former.
+    const int ok = HKDF(reinterpret_cast<uint8_t *>(result.data()), result.size(),
+                        EVP_sha256(),
+                        reinterpret_cast<const uint8_t *>(master_key_.data()), master_key_.size(),
+                        reinterpret_cast<const uint8_t *>(salt.data()), salt.size(),
+                        reinterpret_cast<const uint8_t *>(info.data()), info.size());
+    if (!ok)
+        onError("Failed to derive a key from the master key");
+
+    derived_key = std::string(result.data(), result.size());
+}
+#endif
 
 }
 

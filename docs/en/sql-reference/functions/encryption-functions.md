@@ -7,7 +7,7 @@ toc_title: Encryption
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
-Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
+Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively. The key is optional only if an encryption key is specified by [encryption](../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings.
 
 Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored). 
 
@@ -28,14 +28,14 @@ This function encrypts data using these modes:
 **Syntax**
 
 ``` sql
-encrypt('mode', 'plaintext', 'key' [, iv, aad])
+encrypt('mode', 'plaintext', [key, iv, aad])
 ```
 
 **Arguments**
 
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text thats need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
--   `key` — Encryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Encryption key. Optional if a server key is available. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
 -   `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
@@ -124,14 +124,14 @@ Supported encryption modes:
 **Syntax**
 
 ``` sql
-aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
+aes_encrypt_mysql('mode', 'plaintext', [key, iv])
 ```
 
 **Arguments**
 
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text that needs to be encrypted. [String](../../sql-reference/data-types/string.md#string).
--   `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. Optional if a server key is available. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
@@ -233,14 +233,14 @@ This function decrypts ciphertext into a plaintext using these modes:
 **Syntax**
 
 ``` sql
-decrypt('mode', 'ciphertext', 'key' [, iv, aad])
+decrypt('mode', 'ciphertext', [key, iv, aad])
 ```
 
 **Arguments**
 
 -   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
--   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Decryption key. Optional if a server key is available. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
 -   `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
@@ -313,14 +313,14 @@ Supported decryption modes:
 **Syntax**
 
 ``` sql
-aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
+aes_decrypt_mysql('mode', 'ciphertext', [key, iv])
 ```
 
 **Arguments**
 
 -   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
--   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Decryption key. Optional if a server key is available. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — Initialization vector. Optinal. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**

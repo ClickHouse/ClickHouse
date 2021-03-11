@@ -92,6 +92,7 @@
 #if USE_SSL
 #    if USE_INTERNAL_SSL_LIBRARY
 #        include <Compression/CompressionCodecEncrypted.h>
+#        include <Functions/FunctionsAES.h>
 #    endif
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
@@ -428,6 +429,7 @@ static void loadEncryptionKey(const std::string & key_command [[maybe_unused]], 
 
     const std::string_view key = std::string_view(buf.data(), key_size);
     CompressionCodecEncrypted::setMasterKey(key);
+    OpenSSLDetails::ServerKey::setMasterKey(key);
 
 #else
     LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");

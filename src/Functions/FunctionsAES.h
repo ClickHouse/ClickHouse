@@ -131,6 +131,37 @@ inline void validateIV(const StringRef & iv_value, const size_t cipher_iv_size)
                 DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
+// This depends on BoringSSL-specific API.
+#if USE_INTERNAL_SSL_LIBRARY
+
+struct ServerKey
+{
+    /** If a server master key is available, the server is supposed to
+      * invoke this static method at the startup. Encryption functions
+      * will then allow the key in the arguments to be omitted or
+      * NULL, and will use server-supplied keys instead.
+      *
+      * The actual keys to be used are derived from the master key by
+      * extracting the first 128, 196, or 256 bits of HKDF-SHA-256.
+      *
+      * Note that the master key is currently not guarded by a
+      * mutex. This method should be invoked no more than once.
+      */
+    static void setMasterKey(const std::string_view & master_key);
+    static std::unique_ptr<const ServerKey> & getMasterKey();
+
+    StringRef derive(size_t octets) const;
+
+private:
+    ServerKey(const std::string_view & master_key);
+
+    std::string derived_key; // 256 bits
+
+    static inline std::unique_ptr<const ServerKey> master_key;
+};
+
+#endif /* USE_INTERNAL_SSL_LIBRARY */
+
 }
 
 namespace DB
@@ -165,14 +196,31 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
-            FunctionArgumentDescriptors{
-                {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
-                {"input", isStringOrFixedString, nullptr, "plaintext"},
-                {"key", isStringOrFixedString, nullptr, "encryption key binary string"},
-            },
-            optional_args
-        );
+        // If a server key is available, the argument "key" becomes optional.
+#if USE_INTERNAL_SSL_LIBRARY
+        if (OpenSSLDetails::ServerKey::getMasterKey())
+        {
+            optional_args.insert(optional_args.begin(), FunctionArgumentDescriptor{
+                "key", isStringOrFixedString, nullptr, "encryption key binary string"
+            });
+            validateFunctionArgumentTypes(*this, arguments,
+                FunctionArgumentDescriptors{
+                    {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
+                    {"input", isStringOrFixedString, nullptr, "plaintext"},
+                },
+                optional_args
+            );
+        }
+        else
+#endif
+            validateFunctionArgumentTypes(*this, arguments,
+                FunctionArgumentDescriptors{
+                    {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
+                    {"input", isStringOrFixedString, nullptr, "plaintext"},
+                    {"key", isStringOrFixedString, nullptr, "encryption key binary string"},
+                },
+                optional_args
+            );
 
         return std::make_shared<DataTypeString>();
     }
@@ -193,7 +241,7 @@ private:
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
         const auto input_column = arguments[1].column;
-        const auto key_column = arguments[2].column;
+        const auto key_column = arguments.size() >= 3 ? arguments[2].column : ColumnPtr();
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -299,7 +347,21 @@ private:
 
         for (size_t r = 0; r < input_rows_count; ++r)
         {
-            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
+            auto key_value = StringRef{};
+            if (key_column)
+                key_value = key_column->getDataAt(r);
+#if USE_INTERNAL_SSL_LIBRARY
+            if (key_value.size == 0)
+            {
+                const auto & master_key = OpenSSLDetails::ServerKey::getMasterKey();
+                if (master_key)
+                    // This may look inefficient, but derive() actually
+                    // returns a cached result.
+                    key_value = master_key->derive(key_size);
+            }
+#endif
+            key_value = key_holder.setKey(key_size, key_value);
+
             auto iv_value = StringRef{};
             if (iv_column)
             {
@@ -440,14 +502,31 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
-            FunctionArgumentDescriptors{
-                {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
-                {"input", nullptr, nullptr, "ciphertext"},
-                {"key", isStringOrFixedString, nullptr, "decryption key binary string"},
-            },
-            optional_args
-        );
+        // If a server key is available, the argument "key" becomes optional.
+#if USE_INTERNAL_SSL_LIBRARY
+        if (OpenSSLDetails::ServerKey::getMasterKey())
+        {
+            optional_args.insert(optional_args.begin(), FunctionArgumentDescriptor{
+                "key", isStringOrFixedString, nullptr, "encryption key binary string"
+            });
+            validateFunctionArgumentTypes(*this, arguments,
+                FunctionArgumentDescriptors{
+                    {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
+                    {"input", isStringOrFixedString, nullptr, "ciphertext"},
+                },
+                optional_args
+            );
+        }
+        else
+#endif
+            validateFunctionArgumentTypes(*this, arguments,
+                FunctionArgumentDescriptors{
+                    {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
+                    {"input", isStringOrFixedString, nullptr, "ciphertext"},
+                    {"key", isStringOrFixedString, nullptr, "decryption key binary string"},
+                },
+                optional_args
+            );
 
         return std::make_shared<DataTypeString>();
     }
@@ -467,7 +546,7 @@ private:
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
         const auto input_column = arguments[1].column;
-        const auto key_column = arguments[2].column;
+        const auto key_column = arguments.size() >= 3 ? arguments[2].column : ColumnPtr();
 
         ColumnPtr result_column;
         if (arguments.size() <= 3)
@@ -581,7 +660,21 @@ private:
         for (size_t r = 0; r < input_rows_count; ++r)
         {
             // 0: prepare key if required
-            auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
+            auto key_value = StringRef{};
+            if (key_column)
+                key_value = key_column->getDataAt(r);
+#if USE_INTERNAL_SSL_LIBRARY
+            if (key_value.size == 0)
+            {
+                const auto & master_key = OpenSSLDetails::ServerKey::getMasterKey();
+                if (master_key)
+                    // This may look inefficient, but derive() actually
+                    // returns a cached result.
+                    key_value = master_key->derive(key_size);
+            }
+#endif
+            key_value = key_holder.setKey(key_size, key_value);
+
             auto iv_value = StringRef{};
             if (iv_column)
             {

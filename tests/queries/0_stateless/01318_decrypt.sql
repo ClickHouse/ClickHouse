@@ -12,7 +12,6 @@
 -----------------------------------------------------------------------------------------
 SELECT aes_decrypt_mysql(); --{serverError 42} not enough arguments
 SELECT aes_decrypt_mysql('aes-128-ecb'); --{serverError 42} not enough arguments
-SELECT aes_decrypt_mysql('aes-128-ecb', 'text'); --{serverError 42} not enough arguments
 
 -- Mode
 SELECT aes_decrypt_mysql(789, 'text', 'key'); --{serverError 43} bad mode type
@@ -29,7 +28,6 @@ SELECT decrypt('des-ede3-ecb', 'text', 'key'); -- {serverError 36} bad mode valu
 SELECT aes_decrypt_mysql('aes-128-ecb', 'text', 456); --{serverError 43} bad key type
 SELECT aes_decrypt_mysql('aes-128-ecb', 'text', 'key'); -- {serverError 36} key is too short
 
-SELECT decrypt('aes-128-ecb', 'text'); --{serverError 42} key is missing
 SELECT decrypt('aes-128-ecb', 'text', 456); --{serverError 43} bad key type
 SELECT decrypt('aes-128-ecb', 'text', 'key'); -- {serverError 36} key is too short
 SELECT decrypt('aes-128-ecb', 'text', 'keykeykeykeykeykeykeykeykeykeykeykey'); -- {serverError 36} key is to long
@@ -59,6 +57,7 @@ SELECT decrypt('aes-128-ctr', '', '1111111111111111') == '';
 -----------------------------------------------------------------------------------------
 -- Validate against predefined ciphertext,plaintext,key and IV for MySQL compatibility mode
 -----------------------------------------------------------------------------------------
+DROP TABLE IF EXISTS encryption_test;
 CREATE TABLE encryption_test
 (
     input String,
@@ -133,5 +132,58 @@ WITH
 SELECT
     hex(decrypt('aes-256-gcm', concat(ciphertext, tag), key, iv, aad)) as plaintext_actual,
     plaintext_actual = hex(plaintext);
+
+-----------------------------------------------------------------------------------------
+-- Server-supplied master key (see tests/config/config.d/encryption.xml)
+-----------------------------------------------------------------------------------------
+SELECT 'Server-supplied key';
+
+SELECT 'MySQL-compatitable mode, with key folding, no length checks, etc.';
+SELECT 'aes-128-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'aes-128-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'aes-128-ecb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-ecb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-ecb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'aes-128-ofb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-ofb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-ofb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'Strict mode without key folding and proper key and iv lengths checks.';
+SELECT 'aes-128-cbc' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-cbc' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-cbc' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'aes-128-cfb128' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-cfb128' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-cfb128' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'aes-128-ctr' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-ctr' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-ctr' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'aes-128-ecb' as mode, decrypt(mode, encrypt(mode, input)) == input FROM encryption_test;
+SELECT 'aes-192-ecb' as mode, decrypt(mode, encrypt(mode, input)) == input FROM encryption_test;
+SELECT 'aes-256-ecb' as mode, decrypt(mode, encrypt(mode, input)) == input FROM encryption_test;
+
+SELECT 'aes-128-ofb' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-ofb' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-ofb' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'GCM mode with IV';
+SELECT 'aes-128-gcm' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-192-gcm' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+SELECT 'aes-256-gcm' as mode, decrypt(mode, encrypt(mode, input, '', iv), '', iv) == input FROM encryption_test;
+
+SELECT 'GCM mode with IV and AAD';
+SELECT 'aes-128-gcm' as mode, decrypt(mode, encrypt(mode, input, '', iv, 'AAD'), '', iv, 'AAD') == input FROM encryption_test;
+SELECT 'aes-192-gcm' as mode, decrypt(mode, encrypt(mode, input, '', iv, 'AAD'), '', iv, 'AAD') == input FROM encryption_test;
+SELECT 'aes-256-gcm' as mode, decrypt(mode, encrypt(mode, input, '', iv, 'AAD'), '', iv, 'AAD') == input FROM encryption_test;
 
 DROP TABLE encryption_test;
