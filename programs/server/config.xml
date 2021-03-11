@@ -960,6 +960,10 @@
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
+    <!-- Path to library dictionary .so
+    -->
+    <dictionaries_lib_path>/etc/clickhouse-server/config.d/dictionaries_lib</dictionaries_lib_path>
+
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).
         name - name for the rule (optional)
