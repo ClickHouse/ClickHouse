@@ -425,7 +425,8 @@ private:
         T & out_container) const
     {
         out_container.reserve(end - begin);
-        for (size_t i = begin; i < end; ++i) {
+        for (size_t i = begin; i < end; ++i)
+        {
             Int64 result = 0;
             if (common::mulOverflow(static_cast<Int64>(x_data[i]), static_cast<Int64>(y_data[i]), result))
                 throw Exception("The coordinates of the point are such that subsequent calculations cannot be performed correctly. " \
