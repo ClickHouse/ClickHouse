@@ -11,17 +11,18 @@ _is_sourced() {
 		&& [ "${FUNCNAME[1]}" = 'source' ]
 }
 
-set_chown() {
+get_variables() {
+    declare -g DO_CHOWN
     DO_CHOWN=1
     if [ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]; then
         DO_CHOWN=0
     fi
-}
 
-set_user() {
+    declare -g CLICKHOUSE_UID CLICKHOUSE_GID
     CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
     CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
 
+    declare -g gosu USER GROUP
     # support --user
     if [ "$(id -u)" = "0" ]; then
         USER=$CLICKHOUSE_UID
@@ -42,10 +43,8 @@ set_user() {
         gosu=""
         DO_CHOWN=0
     fi
-}
 
-get_variables() {
-    # set some vars
+    declare -g CLICKHOUSE_CONFIG SERVER_ARGS
     CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
     SERVER_ARGS="$SERVER_ARGS --config-file=$CLICKHOUSE_CONFIG"
 
@@ -54,9 +53,11 @@ get_variables() {
         exit 1
     fi
 
+    declare -g HTTP_PORT
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
 
+    declare -g DATA_DIR TMP_DIR USER_PATH LOG_PATH LOG_DIR ERROR_LOG_PATH ERROR_LOG_DIR FORMAT_SCHEMA_PATH
     # get CH directories locations
     DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=path || true)"
     TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
@@ -67,6 +68,7 @@ get_variables() {
     ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH" || true)"
     FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
+    declare -g CLICKHOUSE_USER CLICKHOUSE_PASSWORD CLICKHOUSE_DB CLICKHOUSE_ACCESS_MANAGEMENT
     CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
     CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
     CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
@@ -191,9 +193,6 @@ _main() {
 		set -- clickhouse-server "$@"
 	fi
     if [ "$1" = 'clickhouse-server' ]; then
-        set_chown
-        set_user
-       
         get_variables
         # Modify dir permission, create users and parse init_files
         # only if data directory is empyt
