@@ -263,7 +263,7 @@ public:
 
         auto & value = data(place).value;
 
-        size_t size = std::max(static_cast<size_t>(events_size + 1), value.size());
+        size_t size = std::min(static_cast<size_t>(events_size + 1), value.size());
         switch (Base)
         {
             case HEAD:
