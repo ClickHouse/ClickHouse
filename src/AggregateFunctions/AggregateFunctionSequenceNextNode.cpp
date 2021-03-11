@@ -50,24 +50,28 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_args, c
 {
     assert(max_args <= MAX_EVENTS_SIZE);
 
+    if (parameters.size() < 2)
+        throw Exception("Aggregate function " + name + " requires 2 parameters (direction, head)",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     String param_dir = parameters.at(0).safeGet<String>();
     SeqDirection direction;
-    if (param_dir.compare("forward") == 0)
+    if (param_dir == "forward")
         direction = FORWARD;
-    else if (param_dir.compare("backward") == 0)
+    else if (param_dir == "backward")
         direction = BACKWARD;
     else
         throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_dir, ErrorCodes::BAD_ARGUMENTS};
 
     String param_base = parameters.at(1).safeGet<String>();
     SeqBase base;
-    if (param_base.compare("head") == 0)
+    if (param_base == "head")
         base = HEAD;
-    else if (param_base.compare("tail") == 0)
+    else if (param_base == "tail")
         base = TAIL;
-    else if (param_base.compare("first_match") == 0)
+    else if (param_base == "first_match")
         base = FIRST_MATCH;
-    else if (param_base.compare("last_match") == 0)
+    else if (param_base == "last_match")
         base = LAST_MATCH;
     else
         throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_base, ErrorCodes::BAD_ARGUMENTS};
