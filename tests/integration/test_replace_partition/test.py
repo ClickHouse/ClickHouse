@@ -1,3 +1,7 @@
+# pylint: disable=line-too-long
+# pylint: disable=unused-argument
+# pylint: disable=redefined-outer-name:
+
 import time
 import pytest
 
@@ -14,13 +18,13 @@ def _fill_nodes(nodes, shard):
         node.query(
             '''
                 CREATE DATABASE test;
-    
+
                 CREATE TABLE real_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = MergeTree(date, id, 8192);
-    
+
                 CREATE TABLE other_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = MergeTree(date, id, 8192);
-    
+
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
             '''.format(shard=shard, replica=node.name))
