@@ -1530,15 +1530,28 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
-    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(
-        metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
-
     FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+
+    std::optional<CurrentlySubmergingEmergingTagger> tagger;
+    ReservationPtr reserved_space = balancedReservation(
+        metadata_snapshot,
+        estimated_space_for_merge,
+        max_volume_index,
+        future_merged_part.name,
+        future_merged_part.part_info,
+        future_merged_part.parts,
+        &tagger,
+        &ttl_infos);
+
+    if (!reserved_space)
+        reserved_space
+            = reserveSpacePreferringTTLRules(metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
+
     future_merged_part.uuid = entry.new_part_uuid;
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
@@ -3637,6 +3650,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     ConnectionTimeouts timeouts;
     std::pair<String, String> user_password;
     String interserver_scheme;
+    std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
     if (part_to_clone)
     {
@@ -3660,9 +3674,19 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
             return fetcher.fetchPart(
-                metadata_snapshot, part_name, source_replica_path,
-                address.host, address.replication_port,
-                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached, "", true);
+                metadata_snapshot,
+                part_name,
+                source_replica_path,
+                address.host,
+                address.replication_port,
+                timeouts,
+                user_password.first,
+                user_password.second,
+                interserver_scheme,
+                to_detached,
+                "",
+                &tagger_ptr,
+                true);
         };
     }
 
@@ -3808,7 +3832,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         return fetcher.fetchPart(
             metadata_snapshot, part_name, source_replica_path,
             address.host, address.replication_port,
-            timeouts, user_password.first, user_password.second, interserver_scheme, false, "", true,
+            timeouts, user_password.first, user_password.second, interserver_scheme, false, "", nullptr, true,
             replaced_disk);
     };
 
