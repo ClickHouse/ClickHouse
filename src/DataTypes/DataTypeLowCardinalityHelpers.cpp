@@ -87,7 +87,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 
     if (const auto * column_map = typeid_cast<const ColumnMap *>(column.get()))
     {
-        auto nested = column_map->getNestedColumnPtr();
+        const auto & nested = column_map->getNestedColumnPtr();
         auto nested_no_lc = recursiveRemoveLowCardinality(nested);
         if (nested.get() == nested_no_lc.get())
             return column;
