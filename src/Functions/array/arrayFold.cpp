@@ -24,9 +24,6 @@ struct ArrayFoldImpl
         std::cerr << " **** ArrayFoldImpl **** " << std::endl;
         std::cerr << "     array: "  << array.dumpStructure()   << std::endl;
         std::cerr << "     mapped: " << mapped->dumpStructure() << std::endl;
-        std::cerr << "     mapped[0]: " << (*mapped)[0].dump() << std::endl;
-        // std::cerr << "     mapped[1]: " << (*mapped)[1].dump() << std::endl;
-        //
 
         ColumnPtr res;
         if (mapped->size() == 0)
@@ -35,6 +32,8 @@ struct ArrayFoldImpl
         }
         else
         {
+            std::cerr << "     mapped[0]: " << (*mapped)[0].dump() << std::endl;
+            // std::cerr << "     mapped[1]: " << (*mapped)[1].dump() << std::endl;
             res = mapped->cut(0, 1);
         }
         std::cerr << " ^^^^ ArrayFoldImpl ^^^^" << std::endl;
