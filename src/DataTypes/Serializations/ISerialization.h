@@ -2,12 +2,19 @@
 
 #include <Common/COW.h>
 #include <Core/Types.h>
+#include <common/demangle.h>
+#include <Common/typeid_cast.h>
 
 #include <unordered_map>
 #include <memory>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class IDataType;
 
@@ -24,6 +31,12 @@ class Field;
 
 struct FormatSettings;
 struct NameAndTypePair;
+
+enum class SerializationKind : UInt8
+{
+    DEFAULT = 0,
+    SPARSE = 1
+};
 
 class ISerialization
 {
@@ -90,6 +103,8 @@ public:
         String toString() const;
     };
 
+    virtual SerializationKind getKind() const { return SerializationKind::DEFAULT; }
+
     /// Cache for common substreams of one type, but possible different its subcolumns.
     /// E.g. sizes of arrays of Nested data type.
     using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
@@ -143,8 +158,8 @@ public:
     struct Settings
     {
         size_t num_rows;
-        size_t num_non_default_rows;
-        size_t min_ratio_for_dense_serialization;
+        size_t num_default_rows;
+        double ratio_for_sparse_serialization;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -258,9 +273,48 @@ public:
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
+
+    template <typename State, typename Serialization>
+    static State * checkAndGetSerializeState(SerializeBinaryBulkStatePtr & state, const Serialization &);
+
+    template <typename State, typename Serialization>
+    static State * checkAndGetDeserializeState(DeserializeBinaryBulkStatePtr & state, const Serialization &);
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
+
+template <typename State, typename Serialization, typename StatePtr>
+static State * checkAndGetState(StatePtr & state)
+{
+    if (!state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Got empty state for {}", demangle(typeid(Serialization).name()));
+
+    auto * state_concrete = typeid_cast<State *>(state.get());
+    if (!state_concrete)
+    {
+        auto & state_ref = *state;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid State for {}. Expected: {}, got {}",
+                demangle(typeid(Serialization).name()),
+                demangle(typeid(State).name()),
+                demangle(typeid(state_ref).name()));
+    }
+
+    return state_concrete;
+}
+
+template <typename State, typename Serialization>
+State * ISerialization::checkAndGetSerializeState(SerializeBinaryBulkStatePtr & state, const Serialization &)
+{
+    return checkAndGetState<State, Serialization>(state);
+}
+
+template <typename State, typename Serialization>
+State * ISerialization::checkAndGetDeserializeState(DeserializeBinaryBulkStatePtr & state, const Serialization &)
+{
+    return checkAndGetState<State, Serialization>(state);
+}
 
 }

@@ -139,9 +139,9 @@ public:
         return false;
     }
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices) const override;
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t offset, size_t limit) const override;
 
-    size_t getNumberOfNonDefaultValues() const override;
+    // size_t getNumberOfDefaultRows() const override;
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 

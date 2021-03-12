@@ -72,7 +72,7 @@ public:
         Type part_type_);
 
     IMergeTreeDataPart(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
@@ -178,6 +178,9 @@ public:
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
+    /// TODO: add comment
+    SerializationInfo serialization_info;
+
     size_t rows_count = 0;
 
 
@@ -221,8 +224,6 @@ public:
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
     TTLInfos ttl_infos;
-
-    SerializationInfo serialization_info;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(State new_state) const;
@@ -360,6 +361,8 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
+    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.txt";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
@@ -420,6 +423,8 @@ private:
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
+
+    void loadSerializationInfo();
 
     void loadPartitionAndMinMaxIndex();
 

@@ -30,6 +30,17 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
+void IColumn::insertAtOffsetsFrom(const Offsets & offsets, const IColumn & values, size_t)
+{
+    assert(offsets.size() == values.size());
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        if (offsets[i])
+            insertManyDefaults(offsets[i]);
+        insertFrom(values, i);
+    }
+}
+
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);

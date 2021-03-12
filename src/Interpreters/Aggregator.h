@@ -1038,6 +1038,7 @@ protected:
         const IAggregateFunction * batch_that;
         const IColumn ** batch_arguments;
         const UInt64 * offsets = nullptr;
+        bool has_sparse_arguments = false;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;

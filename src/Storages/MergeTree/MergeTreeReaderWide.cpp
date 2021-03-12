@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -83,7 +84,12 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = type->createColumn();
+            {
+                if (isSparseSerializaion(serializations[name]))
+                    res_columns[pos] = ColumnSparse::create(type->createColumn());
+                else
+                    res_columns[pos] = type->createColumn();
+            }
 
             auto & column = res_columns[pos];
             try

@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnSparse.h>
 
 
 namespace DB
@@ -153,10 +154,19 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
+    virtual void addBatchSparse(
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
+
     /** The same for single place.
       */
     virtual void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
+
+    virtual void addBatchSparseSinglePlace(
+        AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       */
@@ -212,6 +222,13 @@ public:
       * Otherwise return nullptr.
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
+
+    virtual bool supportsSparseArguments() const { return false; }
+
+    virtual void addManyDefaults(size_t /* length */) const
+    {
+        throw Exception("Method addManyDefaults is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
@@ -278,6 +295,32 @@ public:
         }
     }
 
+    void addBatchSparse(
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets_data = column_sparse.getOffsetsData();
+
+        size_t offset_pos = 0;
+        size_t offsets_size = offsets_data.size();
+        for (size_t i = 0; i < column_sparse.size(); ++i)
+        {
+            if (offset_pos < offsets_size && i == offsets_data[offset_pos])
+            {
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, &values, offset_pos + 1, arena);
+                ++offset_pos;
+            }
+            else
+            {
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, &values, 0, arena);
+            }
+        }
+    }
+
     void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
@@ -295,6 +338,18 @@ public:
             for (size_t i = 0; i < batch_size; ++i)
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
+    }
+
+    void addBatchSparseSinglePlace(
+        AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+
+        for (size_t i = 1; i < values->size(); ++i)
+            static_cast<const Derived *>(this)->add(place, &values, i, arena);
+
+        static_cast<const Derived *>(this)->addManyDefaults(column_sparse.getNumberOfDefaults());
     }
 
     void addBatchSinglePlaceNotNull(

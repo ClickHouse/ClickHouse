@@ -252,17 +252,16 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
 
 
 IMergeTreeDataPart::IMergeTreeDataPart(
-    MergeTreeData & storage_, const String & name_, const VolumePtr & volume_, const std::optional<String> & relative_path_, Type part_type_)
-    : storage(storage_)
-    , name(name_)
-    , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
-    , volume(volume_)
-    , relative_path(relative_path_.value_or(name_))
-    , index_granularity_info(storage_, part_type_)
-    , part_type(part_type_)
+    const MergeTreeData & storage_,
+    const String & name_,
+    const VolumePtr & volume_,
+    const std::optional<String> & relative_path_,
+    Type part_type_)
+    : IMergeTreeDataPart(
+        storage_, name_,
+        MergeTreePartInfo::fromPartName(name_, storage_.format_version),
+        volume_, relative_path_, part_type_)
 {
-    incrementStateMetric(state);
-    incrementTypeMetric(part_type);
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -278,6 +277,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
+    , serialization_info(storage_.getSettings()->ratio_for_sparse_serialization)
     , part_type(part_type_)
 {
     incrementStateMetric(state);
@@ -563,7 +563,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     if (check_consistency)
         checkConsistency(require_columns_checksums);
     loadDefaultCompressionCodec();
-
+    loadSerializationInfo();
 }
 
 void IMergeTreeDataPart::loadIndexGranularity()
@@ -927,6 +927,16 @@ void IMergeTreeDataPart::loadUUID()
         readText(uuid, *in);
         if (uuid == UUIDHelpers::Nil)
             throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+void IMergeTreeDataPart::loadSerializationInfo()
+{
+    String path = getFullRelativePath() + SERIALIZATION_FILE_NAME;
+    if (volume->getDisk()->exists(path))
+    {
+        auto in = openForReading(volume->getDisk(), path);
+        serialization_info.read(*in);
     }
 }
 

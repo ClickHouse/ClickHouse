@@ -81,7 +81,10 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 {
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
+    {
+        serializations.emplace(it.name, it.type->getSerialization(it.name, data_part->serialization_info));
         addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
+    }
 }
 
 
@@ -112,9 +115,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.max_compress_block_size);
     };
 
-    auto serialization = column.type->getSerialization(column.name, data_part->serialization_info);
-    column.type->enumerateStreams(serialization, callback);
-    serializations.emplace(column.name, std::move(serialization));
+    column.type->enumerateStreams(serializations[column.name], callback);
 }
 
 
@@ -193,7 +194,14 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
-    auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), rows_written_in_last_mark);
+    Block block_to_write = block;
+    for (auto & col : block_to_write)
+    {
+        if (serializations[col.name]->getKind() != SerializationKind::SPARSE)
+            col.column = col.column->convertToFullColumnIfSparse();
+    }
+
+    auto granules_to_write = getGranulesToWrite(index_granularity, block_to_write.rows(), getCurrentMark(), rows_written_in_last_mark);
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
@@ -205,7 +213,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
-        const ColumnWithTypeAndName & column = block.getByName(it->name);
+        const ColumnWithTypeAndName & column = block_to_write.getByName(it->name);
 
         if (permutation)
         {
@@ -301,7 +309,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     ISerialization::SerializeBinaryBulkSettings & serialize_settings,
     const Granule & granule)
 {
-    auto serialization = serializations[name_and_type.name];
+    const auto & serialization = serializations[name_and_type.name];
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
@@ -406,7 +414,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
     size_t mark_num;
 
-    auto serialization = type.getDefaultSerialization();
+    const auto & serialization = serializations[name];
 
     for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {

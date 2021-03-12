@@ -157,7 +157,7 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 
     Serializations serializations(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]);
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -290,6 +290,8 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
         }
 
         writeCString(grid_symbols.bar, out);
+
+        std::cerr << "current row: " << toString((*columns[0])[i]) << "\n";
 
         for (size_t j = 0; j < num_columns; ++j)
         {
