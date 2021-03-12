@@ -1,0 +1,20 @@
+
+syntax = "proto3";
+
+package clickhouse.s3_task_server;
+
+
+service S3TaskServer {
+    rpc GetNext (S3TaskRequest) returns (S3TaskReply) {}
+}
+
+
+message S3TaskRequest {
+    string query_id = 1;
+}
+
+
+message S3TaskReply {
+    string message = 1;
+    int32 error = 2;
+}
