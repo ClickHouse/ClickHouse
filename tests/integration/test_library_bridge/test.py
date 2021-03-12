@@ -7,7 +7,7 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 
 cluster = ClickHouseCluster(__file__)
 
-instance = cluster.add_instance('instance', main_configs=['configs/config.d/config.xml'], user_configs=['configs/log_conf.xml'])
+instance = cluster.add_instance('instance', main_configs=['configs/config.d/config.xml']])
 
 @pytest.fixture(scope="module")
 def ch_cluster():
@@ -61,14 +61,14 @@ def test_load_all(ch_cluster):
 "8\t18\t28\t38\n" +
 "9\t19\t29\t39\n"
 )
+    instance.query('DROP DICTIONARY lib_dict')
     assert(result == expected)
 
 
 def test_load_ids(ch_cluster):
     instance.query('''
         CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
-        PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'
-        SETTINGS (value1 '1')))
+        PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
         LAYOUT(CACHE(
         SIZE_IN_CELLS 10000000
         BLOCK_SIZE 4096
@@ -79,6 +79,7 @@ def test_load_ids(ch_cluster):
     ''')
 
     result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(0));''')
+    instance.query('DROP DICTIONARY lib_dict_c')
     assert(result.strip() == '100')
 
 
@@ -86,14 +87,33 @@ def test_load_keys(ch_cluster):
     instance.query('''
         CREATE DICTIONARY lib_dict_ckc (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
-        SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'
-        SETTINGS (value1 '1')))
+        SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
         LAYOUT(COMPLEX_KEY_CACHE( SIZE_IN_CELLS 10000000))
         LIFETIME(2);
     ''')
 
     result = instance.query('''select dictGet(lib_dict_ckc, 'value2', tuple(toUInt64(0)));''')
+    instance.query('DROP DICTIONARY lib_dict_ckc')
     assert(result.strip() == '200')
+
+
+def test_load_all_many_rows(ch_cluster):
+    num_rows = [1000, 10000, 100000, 1000000]
+    for num in num_rows:
+        instance.query('''
+            CREATE DICTIONARY lib_dict (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
+            PRIMARY KEY key
+            SOURCE(library(
+                PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'
+                SETTINGS (num_rows {})))
+            LAYOUT(HASHED())
+            LIFETIME (MIN 0 MAX 10)
+        '''.format(num))
+
+        result = instance.query('SELECT * FROM lib_dict ORDER BY key')
+        expected = instance.query('SELECT number, number, number, number FROM numbers({})'.format(num))
+        instance.query('DROP DICTIONARY lib_dict')
+        assert(result == expected)
 
 
 if __name__ == '__main__':

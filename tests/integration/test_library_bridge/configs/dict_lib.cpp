@@ -178,19 +178,30 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     if (!ptr)
         return nullptr;
 
+    size_t num_rows = 0;
     if (settings)
     {
         LOG(ptr->lib->log, "settings passed: " << settings->size);
         for (size_t i = 0; i < settings->size; ++i)
         {
-            LOG(ptr->lib->log, "setting " << i << " :" << settings->data[i]);
+            num_rows = std::atoi(settings->data[i]);
         }
     }
 
-    for (size_t i = 0; i < 10; ++i)
+    if (!num_rows)
     {
-        LOG(ptr->lib->log, "id " << i << " :" << " generating.");
-        ptr->dataHolder.emplace_back(std::vector<uint64_t>{i, i + 10, i + 20, i + 30});
+        for (size_t i = 0; i < 10; ++i)
+        {
+            LOG(ptr->lib->log, "id " << i << " :" << " generating.");
+            ptr->dataHolder.emplace_back(std::vector<uint64_t>{i, i + 10, i + 20, i + 30});
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            ptr->dataHolder.emplace_back(std::vector<uint64_t>{i, i, i, i});
+        }
     }
 
     MakeColumnsFromVector(ptr);
