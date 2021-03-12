@@ -181,7 +181,7 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
     if (const auto * ident = node->as<ASTIdentifier>())
         return known_names.contains(ident->name());
 
-    if (const auto * lit = node->as<ASTLiteral>())
+    if (node->as<ASTLiteral>() != nullptr)
         return true;
 
     auto * func = node->as<ASTFunction>();
