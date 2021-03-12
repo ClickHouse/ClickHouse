@@ -82,7 +82,7 @@ def test_load_ids(ch_cluster):
     assert(result.strip() == '100')
 
 
-@pytest.mark.skip(reason="worked before merge with master, not there seems to be a bug in podarray, skip untill fixed")
+@pytest.mark.skip(reason="worked before merge with master, now there seems to be a bug in podarray, skip untill fixed")
 def test_load_keys(ch_cluster):
     instance.query('''
         CREATE DICTIONARY lib_dict_ckc (key UInt64, value1 UInt64, value3 UInt64, value3 UInt64)
