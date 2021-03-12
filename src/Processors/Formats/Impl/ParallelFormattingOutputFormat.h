@@ -6,6 +6,9 @@
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
+#include "IO/ReadBuffer.h"
+#include "IO/ReadBufferFromString.h"
+#include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -103,6 +106,12 @@ public:
 
     /// There are no formats which support parallel formatting and progress writing at the same time
     void onProgress(const Progress &) override {}
+
+    String getContentType() const override
+    {
+        WriteBufferFromOwnString buffer;
+        return internal_formatter_creator(buffer)->getContentType();
+    }
 
 protected:
     void consume(Chunk chunk) override final
