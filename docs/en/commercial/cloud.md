@@ -35,7 +35,7 @@ Alibaba Cloud Managed Service for ClickHouse [China Site](https://www.aliyun.com
 -   Highly reliable cloud disk storage engine based on Alibaba Cloud Apsara distributed system
 -   Expand capacity on demand without manual data migration
 -   Support single-node, single-replica, multi-node, and multi-replica architectures, and support hot and cold data tiering
--   Support access whitelist, one-key recovery, multi-layer network security protection, cloud disk encryption
+-   Support access allow-list, one-key recovery, multi-layer network security protection, cloud disk encryption
 -   Seamless integration with cloud log systems, databases, and data application tools
 -   Built-in monitoring and database management platform
 -   Professional database expert technical support and service
