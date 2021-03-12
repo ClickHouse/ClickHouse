@@ -20,6 +20,7 @@ struct ArrayCompactImpl
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
+    static bool isFolding() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & nested_type, const DataTypePtr &)
     {
