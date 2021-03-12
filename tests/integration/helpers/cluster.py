@@ -118,7 +118,7 @@ class ClickHouseCluster:
         self.server_bin_path = p.realpath(
             server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
         self.odbc_bridge_bin_path = p.realpath(odbc_bridge_bin_path or get_odbc_bridge_path())
-        self.library_bridge_bin_path = p.realpath(get_library_bridge_path())
+        self.library_bridge_bin_path = p.realpath(library_bridge_bin_path or get_library_bridge_path())
         self.client_bin_path = p.realpath(
             client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(
