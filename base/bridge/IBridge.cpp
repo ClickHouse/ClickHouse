@@ -10,6 +10,10 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Server/HTTP/HTTPServer.h>
 
+#if USE_ODBC
+#    include <Poco/Data/ODBC/Connector.h>
+#endif
+
 
 namespace DB
 {
@@ -161,8 +165,10 @@ void IBridge::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
 
-    /// Will do nothing in case it is not ODBCBridge.
-    registerODBCConnector();
+#if USE_ODBC
+    if (bridgeName() == "ODBCBridge")
+        Poco::Data::ODBC::Connector::registerConnector();
+#endif
 
     ServerApplication::initialize(self); // NOLINT
 }
