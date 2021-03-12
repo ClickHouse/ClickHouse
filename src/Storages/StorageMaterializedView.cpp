@@ -409,32 +409,6 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-void StorageMaterializedView::checkTableCanBeDropped() const
-{
-    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
-    if (!has_inner_table)
-        return;
-
-    auto target_table = tryGetTargetTable();
-    if (!target_table)
-        return;
-
-    target_table->checkTableCanBeDropped();
-}
-
-void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
-{
-    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
-    if (!has_inner_table)
-        return;
-
-    auto target_table = tryGetTargetTable();
-    if (!target_table)
-        return;
-
-    target_table->checkPartitionCanBeDropped(partition);
-}
-
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
