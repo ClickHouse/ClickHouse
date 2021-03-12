@@ -354,6 +354,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     config.keys(config_prefix, config_elems);
     auto has_hierarchy = false;
 
+    std::unordered_set<String> attribute_names;
     std::vector<DictionaryAttribute> res_attributes;
 
     const FormatSettings format_settings;
@@ -375,6 +376,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         /// columns will be duplicated
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
+
+        if (attribute_names.find(name) != attribute_names.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary attributes names must be unique. Attribute name ({}) is not unique",
+                name);
+
+        attribute_names.insert(name);
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
