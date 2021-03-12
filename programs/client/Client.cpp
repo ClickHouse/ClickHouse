@@ -1255,6 +1255,29 @@ private:
         return true;
     }
 
+    // Prints changed settings to stderr. Useful for debugging fuzzing failures.
+    void printChangedSettings() const
+    {
+        const auto & changes = context.getSettingsRef().changes();
+        if (!changes.empty())
+        {
+            fmt::print(stderr, "Changed settings: ");
+            for (size_t i = 0; i < changes.size(); ++i)
+            {
+                if (i)
+                {
+                    fmt::print(stderr, ", ");
+                }
+                fmt::print(stderr, "{} = '{}'", changes[i].name,
+                           toString(changes[i].value));
+            }
+            fmt::print(stderr, "\n");
+        }
+        else
+        {
+            fmt::print(stderr, "No changed settings.\n");
+        }
+    }
 
     /// Returns false when server is not available.
     bool processWithFuzzing(const String & text)
@@ -1323,6 +1346,8 @@ private:
                 // child elements.
                 if (base_before_fuzz != base_after_fuzz)
                 {
+                    printChangedSettings();
+
                     fmt::print(stderr,
                         "Base before fuzz: {}\n"
                         "Base after fuzz: {}\n",
@@ -1388,6 +1413,8 @@ private:
 
                         if (formatted_twice != fuzzed_text)
                         {
+                            printChangedSettings();
+
                             fmt::print(stderr, "The query formatting is broken. Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
                                 formatted_twice, fuzzed_text);
                             fmt::print(stderr, "AST parsed back:\n'{}'\nSource AST:\n'{}'\n",
@@ -1433,25 +1460,7 @@ private:
 
                 // Print the changed settings because they might be needed to
                 // reproduce the error.
-                const auto & changes = context.getSettingsRef().changes();
-                if (!changes.empty())
-                {
-                    fmt::print(stderr, "Changed settings: ");
-                    for (size_t i = 0; i < changes.size(); ++i)
-                    {
-                        if (i)
-                        {
-                            fmt::print(stderr, ", ");
-                        }
-                        fmt::print(stderr, "{} = '{}'", changes[i].name,
-                            toString(changes[i].value));
-                    }
-                    fmt::print(stderr, "\n");
-                }
-                else
-                {
-                    fmt::print(stderr, "No changed settings.\n");
-                }
+                printChangedSettings();
 
                 return false;
             }
