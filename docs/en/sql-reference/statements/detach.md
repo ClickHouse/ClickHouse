@@ -27,8 +27,44 @@ Also you can not [DROP](../../sql-reference/statements/drop.md#drop-table) the d
 
 Creating a table:
 
+Query:
+
 ``` sql
 CREATE TABLE test ENGINE = Log AS SELECT * FROM numbers(10);
 SELECT * FROM test;
+```
+
+Result:
+
+``` text
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Detaching the table:
+
+Query:
+
+``` sql
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+Result:
+
+``` text
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test doesn't exist.
+```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/detach/) <!--hide-->
