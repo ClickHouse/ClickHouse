@@ -97,6 +97,8 @@ private:
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && reader) const;
+
+    void assertKeyType() const;
 };
 
 }

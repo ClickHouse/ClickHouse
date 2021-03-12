@@ -17,7 +17,7 @@ def alter_user_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=alter_user, flags=TE,
+        Suite(run=alter_user,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in alter_user.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def alter_user_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=alter_user, flags=TE,
+        Suite(run=alter_user,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in alter_user.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
+    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("ALTER USER",),
 ])
@@ -61,7 +62,13 @@ def alter_user(self, privilege, grant_target_name, user_name, node=None):
         alter_user_name = f"alter_user_{getuid()}"
         with user(node, alter_user_name):
 
-            with When("I check the user can't alter a user"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't alter a user"):
                 node.query(f"ALTER USER {alter_user_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -108,6 +115,8 @@ def alter_user(self, privilege, grant_target_name, user_name, node=None):
 @Name("alter user")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterUser("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of ALTER USER.
