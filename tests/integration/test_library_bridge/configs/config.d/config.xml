@@ -1,0 +1,3 @@
+<yandex>
+    <dictionaries_lib_path>/etc/clickhouse-server/config.d/dictionaries_lib</dictionaries_lib_path>
+</yandex>
