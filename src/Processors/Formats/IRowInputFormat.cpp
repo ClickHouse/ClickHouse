@@ -42,11 +42,11 @@ bool isParseError(int code)
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
     : IInputFormat(std::move(header), in_), params(params_)
 {
-    const auto & header_ = getPort().getHeader();
-    size_t num_columns = header_.columns();
+    const auto & port_header = getPort().getHeader();
+    size_t num_columns = port_header.columns();
     serializations.resize(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header_.getByPosition(i).type->getDefaultSerialization();
+        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
 
 
