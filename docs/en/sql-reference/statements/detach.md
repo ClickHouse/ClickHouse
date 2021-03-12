@@ -25,25 +25,10 @@ Also you can not [DROP](../../sql-reference/statements/drop.md#drop-table) the d
 
 **Example**
 
-Query:
+Creating a table:
 
 ``` sql
 CREATE TABLE test ENGINE = Log AS SELECT * FROM numbers(10);
-
-DETACH TABLE test;
-
-SELECT * FROM TEST;
-```
-
-Result:
-
-``` text
-Ok.
-
-Ok.
-
-Received exception from server (version 21.3.1):
-Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.TEST doesn't exist.
-```
+SELECT * FROM test;
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/detach/) <!--hide-->
