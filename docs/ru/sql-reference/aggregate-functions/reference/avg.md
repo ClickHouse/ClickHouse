@@ -14,12 +14,12 @@ avg(x)
 
 **Аргументы**
 
--   `x` — входное значение в формате [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `x` — входное значение типа [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Возвращаемое значение**
 
--   среднее арифметическое, всегда в формате [Float64](../../../sql-reference/data-types/float.md).
--   `NaN`, если не указано входное значение `x`.
+-   среднее арифметическое, всегда типа [Float64](../../../sql-reference/data-types/float.md).
+-   `NaN`, если входное значение `x` — пустое.
 
 **Пример**
 
