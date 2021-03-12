@@ -32,8 +32,6 @@ protected:
 
     virtual HandlerFactoryPtr getHandlerFactoryPtr(Context & context) const = 0;
 
-    virtual void registerODBCConnector() const {}
-
     size_t keep_alive_timeout;
 
 private:
