@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Common/Bridge/IBridge.h>
+#include <bridge/IBridge.h>
 #include "HandlerFactory.h"
 
 

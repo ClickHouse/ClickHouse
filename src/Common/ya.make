@@ -28,7 +28,6 @@ SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
     Allocator.cpp
-    Bridge/IBridge.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
@@ -46,10 +45,8 @@ SRCS(
     ExternalLoaderStatus.cpp
     FieldVisitors.cpp
     FileChecker.cpp
-    IBridgeHelper.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
-    LibraryBridgeHelper.cpp
     Macros.cpp
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp

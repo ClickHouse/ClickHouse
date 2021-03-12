@@ -18,7 +18,7 @@ target_link_libraries(clickhouse-library-bridge PRIVATE
     daemon
     dbms
     clickhouse_parsers
-    clickhouse_common_bridge
+    bridge
 )
 
 set_target_properties(clickhouse-library-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
