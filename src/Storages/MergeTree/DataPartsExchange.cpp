@@ -329,6 +329,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & interserver_scheme,
     bool to_detached,
     const String & tmp_prefix_,
+    std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
     bool try_use_s3_copy,
     const DiskPtr disk_s3)
 {
@@ -431,7 +432,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                 throw;
             /// Try again but without S3 copy
             return fetchPart(metadata_snapshot, part_name, replica_path, host, port, timeouts,
-                user, password, interserver_scheme, to_detached, tmp_prefix_, false);
+                user, password, interserver_scheme, to_detached, tmp_prefix_, nullptr, false);
         }
     }
 
@@ -448,10 +449,18 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
-            reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
+            reservation
+                = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
+            if (!reservation)
+                reservation
+                    = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
         }
         else
-            reservation = data.reserveSpace(sum_files_size);
+        {
+            reservation = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, nullptr);
+            if (!reservation)
+                reservation = data.reserveSpace(sum_files_size);
+        }
     }
     else
     {
