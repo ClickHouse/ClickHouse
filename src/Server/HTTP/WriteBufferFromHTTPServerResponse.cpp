@@ -149,6 +149,8 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 {
     std::lock_guard lock(mutex);
 
+    std::cout << StackTrace().toString() << std::endl;
+
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
         return;
