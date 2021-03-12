@@ -674,7 +674,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
             if (column_name_type.name == column_name)
             {
                 throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
-                ErrorCodes::NOT_AN_AGGREGATE);
+                                ErrorCodes::NOT_AN_AGGREGATE);
             }
         }
 
