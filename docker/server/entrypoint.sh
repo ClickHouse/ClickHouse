@@ -12,11 +12,10 @@ _is_sourced() {
 }
 
 get_variables() {
-    declare -g DO_CHOWN
-    DO_CHOWN=1
-    if [ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]; then
-        DO_CHOWN=0
-    fi
+    declare -g CLICKHOUSE_DO_NOT_CHOWN INIT_ON_EVERY_START
+    CLICKHOUSE_DO_NOT_CHOWN="${CLICKHOUSE_DO_NOT_CHOWN:-1}"
+    # Backwards compatibility
+    INIT_ON_EVERY_START="${INIT_ON_EVERY_START:-1}"
 
     declare -g CLICKHOUSE_UID CLICKHOUSE_GID
     CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
@@ -36,12 +35,10 @@ get_variables() {
             exit 1
         fi
     else
-        # User needs to exist in docker image
-        # build a new image with the user desired
         USER="$(id -u)"
         GROUP="$(id -g)"
         gosu=""
-        DO_CHOWN=0
+        CLICKHOUSE_DO_NOT_CHOWN=0
     fi
 
     declare -g CLICKHOUSE_CONFIG SERVER_ARGS
@@ -52,7 +49,7 @@ get_variables() {
         echo "Configuration file '$dir' isn't readable by user with id '$USER'"
         exit 1
     fi
-
+    
     declare -g HTTP_PORT
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
@@ -96,7 +93,7 @@ setup_dirs() {
             exit 1
         fi
 
-        if [ "$DO_CHOWN" = "1" ]; then
+        if [ "$CLICKHOUSE_DO_NOT_CHOWN" = "1" ]; then
             # ensure proper directories permissions
             chown -R "$USER:$GROUP" "$dir"
         elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
@@ -162,7 +159,6 @@ docker_process_init_files() {
         fi
 
         for f in /docker-entrypoint-initdb.d/*; do
-        echo $f
             case "$f" in
                 *.sh)
                     if [ -x "$f" ]; then
@@ -194,19 +190,25 @@ _main() {
 	fi
     if [ "$1" = 'clickhouse-server' ]; then
         get_variables
-        # Modify dir permission, create users and parse init_files
-        # only if data directory is empyt
+
+        # Skip user creation if the container was initialyzed erlier
         if [ -z "$DATABASE_ALREADY_EXISTS" ]; then
-            setup_dirs
             create_clickhouse_user
+        fi
+        # Backwards compatibility:
+        # Modify dir permission, create users and parse init_files
+        # only INIT_ON_EVERY_START is equal to 1 (default)
+        # 
+        # To skup this step set INIT_ON_EVERY_START env. variable to 0
+        if [ "$INIT_ON_EVERY_START" = "1" ]; then
+            setup_dirs
             docker_process_init_files
         fi
     fi
 
-    # SERVER_ARGS and gosu variables are defined in get_variables 
-    # and set_user functions.
+    # SERVER_ARGS and gosu variables are defined in get_variables.
     # These variables are defined only if the first argument is clickhouse-server
-    exec $gosu "$@" $SERVER_ARGS
+    exec $gosu "$@" "$SERVER_ARGS"
 }
 
 # If we are sourced from elsewhere, don't perform any further actions
