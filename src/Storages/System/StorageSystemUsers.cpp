@@ -90,11 +90,17 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
 
-        if (authentication.getType() == Authentication::Type::LDAP_SERVER)
+        if (
+            authentication.getType() == Authentication::Type::LDAP ||
+            authentication.getType() == Authentication::Type::KERBEROS
+        )
         {
             Poco::JSON::Object auth_params_json;
 
-            auth_params_json.set("server", authentication.getServerName());
+            if (authentication.getType() == Authentication::Type::LDAP)
+                auth_params_json.set("server", authentication.getLDAPServerName());
+            else if (authentication.getType() == Authentication::Type::KERBEROS)
+                auth_params_json.set("realm", authentication.getKerberosRealm());
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);
