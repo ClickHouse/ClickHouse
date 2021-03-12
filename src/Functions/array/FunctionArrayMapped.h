@@ -239,63 +239,103 @@ public:
             if (Impl::isFolding())
                 arrays.emplace_back(arguments[arguments.size() - 1]); // TODO .last()
             std::cerr << "  arrays.size() = " << arrays.size() << std::endl;
+            std::cerr << "  column_first_array->size() = " << column_first_array->size() << std::endl;
+            std::cerr << "  column_first_array->getOffsets().size() = " << column_first_array->getOffsets().size() << std::endl;
             std::cerr << "  column_first_array->getData().size() = " << column_first_array->getData().size() << std::endl;
 
             if (Impl::isFolding() && (column_first_array->getData().size() > 0)) // TODO .size() -> .empty()
             {
 
+                size_t arr_cursor = 0;
 
-                ColumnWithTypeAndName accumulator = arguments.back();
-                ColumnPtr res;
+                MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
 
-                for(size_t i = 0; i < column_first_array->getData().size(); ++i)
+                for(size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
                 {
-                    std::cerr << "  ----- iteration " << i << "  ------" << std::endl;
-                    // Make slice of input arrays and accumulator for lambda
-                    ColumnsWithTypeAndName iter_arrays;
-                    iter_arrays.reserve(arrays.size());
-                    for(size_t j = 0; j < arrays.size() - 1; ++j)
-                    {
-                        auto const & arr = arrays[j];
-                        std::cerr << "    " << j << ") " << 1 << std::endl;
-                        /*
-                        const ColumnArray * arr_array = checkAndGetColumn<ColumnArray>(arr.column.get());
-                        std::cerr << "    " << j << ") " << 1 << " " << arr_array << std::endl;
-                        std::cerr << "    " << j << ") " << 2 << std::endl;
-                        const ColumnPtr & nested_column_x = arr_array->getData().cut(i, 1);
-                        std::cerr << "    " << j << ") " << 3 << std::endl;
-                        const ColumnPtr & offsets_column_x = ColumnArray::ColumnOffsets::create(1, 1);
-                        std::cerr << "    " << j << ") " << 4 << std::endl;
-                        auto new_arr_array = ColumnArray::create(nested_column_x, offsets_column_x);
-                        std::cerr << "    " << j << ") " << 5 << std::endl;
-                        */
-                        iter_arrays.emplace_back(ColumnWithTypeAndName(arr.column->cut(i, 1),
-                                                                       arr.type,
-                                                                       arr.name));
-                        std::cerr << "    " << j << ") " << 6 << std::endl;
-                    }
-                    iter_arrays.emplace_back(accumulator);
-                    // ----
-                    std::cerr << "    formed" << std::endl;
-                    auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(IColumn::Offsets(1, 1)));
-                    auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-                    std::cerr << "    pre append" << std::endl;
-                    replicated_column_function->appendArguments(iter_arrays);
-                    std::cerr << "    post append" << std::endl;
-                    auto lambda_result = replicated_column_function->reduce().column;
-                    if (lambda_result->lowCardinality())
-                        lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-                    std::cerr << "    pre execute" << std::endl;
-                    res = Impl::execute(*column_first_array, lambda_result); // TODO column_first_array
-                    std::cerr << "  post execute : res " << res->dumpStructure() << std::endl;
-                    std::cerr << "  post execute : res[0] " << (*res)[0].dump() << std::endl;
-                    // ~~~
-                    // ~~~
-                    // ~~~
-                    accumulator.column = res;
-                }
+                    std::cerr << "  --- row " << irow << "  ---" << std::endl;
 
-                return res;
+                    // Make accumulator column for this row
+                    // TODO проверить с константой
+                    ColumnWithTypeAndName accumulator_column = arguments.back(); // TODO тут нужно ещё и позицию в аргументе извлекать
+                    ColumnPtr acc(accumulator_column.column->cut(irow, 1));
+
+                    std::cerr << "  * accumulator.type " << accumulator_column.type->getName() << std::endl;
+                    std::cerr << "  * accumulator.column " << accumulator_column.column->dumpStructure() << std::endl;
+                    std::cerr << "  * acc "    << acc->dumpStructure() << std::endl;
+                    std::cerr << "  * acc[0] " << (*acc)[0].dump() << std::endl;
+
+                    auto accumulator = ColumnWithTypeAndName(acc,
+                                                             accumulator_column.type,
+                                                             accumulator_column.name);
+
+                    ColumnPtr res;
+                    size_t const arr_next = column_first_array->getOffsets()[irow]; // when we do folding
+                    for(size_t iter = 0; arr_cursor < arr_next; ++iter, ++arr_cursor)
+                    {
+                        std::cerr << "  ----- iteration " << iter << "  ------" << std::endl;
+                        // Make slice of input arrays and accumulator for lambda
+                        ColumnsWithTypeAndName iter_arrays;
+                        std::cerr << "    arrays.size() = " << arrays.size() << std::endl;
+                        iter_arrays.reserve(arrays.size() + 1);
+                        //size_t arr_from = (iter == 0) ? 0 : column_first_array->getOffsets()[iter - 1];
+                        //size_t arr_len = column_first_array->getOffsets()[iter] - arr_from;
+                        //std::cerr << "  arr_from = " << arr_from << std::endl;
+                        //std::cerr << "  arr_len  = " << arr_len  << std::endl;
+                        std::cerr << "    arr_cursor = " << arr_cursor << std::endl;
+                        std::cerr << "    arr_next   = " << arr_next << std::endl;
+                        for(size_t icolumn = 0; icolumn < arrays.size() - 1; ++icolumn)
+                        {
+                            auto const & arr = arrays[icolumn];
+                            std::cerr << "    @ " << icolumn << ") 1 :: " << arr_cursor << std::endl;
+                            /*
+                            const ColumnArray * arr_array = checkAndGetColumn<ColumnArray>(arr.column.get());
+                            std::cerr << "    " << icolumn << ") " << 1 << " " << arr_array << std::endl;
+                            std::cerr << "    " << icolumn << ") " << 2 << std::endl;
+                            const ColumnPtr & nested_column_x = arr_array->getData().cut(iter, 1);
+                            std::cerr << "    " << icolumn << ") " << 3 << std::endl;
+                            const ColumnPtr & offsets_column_x = ColumnArray::ColumnOffsets::create(1, 1);
+                            std::cerr << "    " << icolumn << ") " << 4 << std::endl;
+                            auto new_arr_array = ColumnArray::create(nested_column_x, offsets_column_x);
+                            std::cerr << "    " << icolumn << ") " << 5 << std::endl;
+                            */
+                            iter_arrays.emplace_back(ColumnWithTypeAndName(arr.column->cut(arr_cursor, 1),
+                                                                           arr.type,
+                                                                           arr.name));
+                            std::cerr << "    @ " << icolumn << ") 2 :: " << iter_arrays.back().column->dumpStructure() << std::endl;
+                        }
+                        iter_arrays.emplace_back(accumulator);
+                        // ----
+                        std::cerr << "    formed" << std::endl;
+                        auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
+                        auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
+                        std::cerr << "    pre append" << std::endl;
+                        replicated_column_function->appendArguments(iter_arrays);
+                        std::cerr << "    post append" << std::endl;
+                        auto lambda_result = replicated_column_function->reduce().column;
+                        if (lambda_result->lowCardinality())
+                            lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
+                        std::cerr << "    pre execute" << std::endl;
+                        res = Impl::execute(*column_first_array, lambda_result); // TODO column_first_array
+                        std::cerr << "  post execute : res " << res->dumpStructure() << std::endl;
+                        std::cerr << "  post execute : res[0] " << (*res)[0].dump() << std::endl;
+                        // ~~~
+                        // ~~~
+                        // ~~~
+                        accumulator.column = res;
+
+                    }
+
+                    std::cerr << "  pre result " << result->dumpStructure() << std::endl;
+                    //result->insertFrom(*res, 0);
+                    result->insert((*res)[0]);
+                    std::cerr << "  post result " << result->dumpStructure() << std::endl;
+                    std::cerr << "  post res[0] " << (*res)[0].dump() << std::endl;
+                    std::cerr << "  post result[0] " << (*result)[0].dump() << std::endl;
+
+                    //return res;
+
+                }
+                return result;
 
             }
             else
