@@ -377,13 +377,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
 
-        if (attribute_names.find(name) != attribute_names.end())
+        auto insert_result = attribute_names.insert(name);
+        bool inserted = insert_result.second;
+
+        if (!inserted)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Dictionary attributes names must be unique. Attribute name ({}) is not unique",
                 name);
-
-        attribute_names.insert(name);
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
