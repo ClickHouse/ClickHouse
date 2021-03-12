@@ -87,6 +87,7 @@
 
 #### Bug Fix
 
+* Fix redundant reconnects to ZooKeeper and the possibility of two active sessions for a single clickhouse server. Both problems introduced in #14678. [#21264](https://github.com/ClickHouse/ClickHouse/pull/21264) ([alesapin](https://github.com/alesapin)).
 * Fix a deadlock in `ALTER DELETE` mutations for non replicated MergeTree table engines when the predicate contains the table itself. Fixes [#20558](https://github.com/ClickHouse/ClickHouse/issues/20558). [#21477](https://github.com/ClickHouse/ClickHouse/pull/21477) ([alesapin](https://github.com/alesapin)).
 * Fix SIGSEGV for distributed queries on failures. [#21434](https://github.com/ClickHouse/ClickHouse/pull/21434) ([Azat Khuzhin](https://github.com/azat)).
 * Now `ALTER MODIFY COLUMN` queries will correctly affect changes in partition key, skip indices, TTLs, and so on. Fixes [#13675](https://github.com/ClickHouse/ClickHouse/issues/13675). [#21334](https://github.com/ClickHouse/ClickHouse/pull/21334) ([alesapin](https://github.com/alesapin)).
