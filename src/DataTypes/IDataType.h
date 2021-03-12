@@ -75,6 +75,7 @@ public:
     using StreamExistenceCallback = std::function<bool(const String &)>;
     using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
 
+    virtual SerializationPtr getSerialization(const IColumn & column) const;
     virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
     virtual SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
@@ -86,7 +87,7 @@ public:
     virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
 
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
-    SerializationPtr getSerialization(const IColumn & column) const;
+    // SerializationPtr getSerialization(const IColumn & column) const;
 
     using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
 
@@ -502,5 +503,7 @@ template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+bool isSparseSerializaion(const SerializationPtr & serialization);
 
 }

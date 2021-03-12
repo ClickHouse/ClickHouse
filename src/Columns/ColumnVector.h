@@ -303,19 +303,34 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & offsets) const override
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & offsets, size_t from, size_t limit) const override
     {
         offsets.reserve(data.size());
-        for (size_t i = 0; i < data.size(); ++i)
+        size_t to = limit && from + limit < size() ? from + limit : size();
+        for (size_t i = from; i < to; ++i)
             if (data[i] != T{})
                 offsets.push_back(i);
     }
 
-    size_t getNumberOfNonDefaultValues() const override
+    void insertAtOffsetsFrom(const IColumn::Offsets & offsets, const IColumn & values, size_t total_rows_hint) override
+    {
+        const auto & values_data = assert_cast<const Self &>(values).getData();
+
+        ssize_t position = static_cast<ssize_t>(data.size()) - 1;
+        data.resize_fill(data.size() + total_rows_hint);
+
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            position += offsets[i] + 1;
+            data[position] = values_data[i];
+        }
+    }
+
+    size_t getNumberOfDefaultRows(size_t step) const override
     {
         size_t res = 0;
-        for (size_t i = 0; i < data.size(); ++i)
-            res += (data[i] != T{});
+        for (size_t i = 0; i < data.size(); i += step)
+            res += (data[i] == T{});
 
         return res;
     }

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnSparse.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
@@ -590,6 +591,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     {
         if (inst->offsets)
             inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else if (inst->has_sparse_arguments)
+            inst->batch_that->addBatchSparse(places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
         else
             inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
     }
@@ -608,6 +611,8 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
+        else if(inst->has_sparse_arguments)
+            inst->batch_that->addBatchSparseSinglePlace(res + inst->state_offset, inst->batch_arguments, arena);
         else
             inst->batch_that->addBatchSinglePlace(rows, res + inst->state_offset, inst->batch_arguments, arena);
     }
@@ -643,19 +648,30 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
+        bool allow_sparse_arguments = aggregate_columns[i].size() == 1;
+        bool has_sparse_arguments = false;
+
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             materialized_columns.push_back(columns.at(params.aggregates[i].arguments[j])->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
-            auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
-            if (column_no_lc.get() != aggregate_columns[i][j])
+            auto full_column = allow_sparse_arguments
+                ? aggregate_columns[i][j]->getPtr()
+                : aggregate_columns[i][j]->convertToFullColumnIfSparse();
+
+            full_column = recursiveRemoveLowCardinality(full_column);
+            if (full_column.get() != aggregate_columns[i][j])
             {
-                materialized_columns.emplace_back(std::move(column_no_lc));
+                materialized_columns.emplace_back(std::move(full_column));
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
+
+            if (typeid_cast<const ColumnSparse *>(aggregate_columns[i][j]))
+                has_sparse_arguments = true;
         }
 
+        aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
         auto * that = aggregate_functions[i];

@@ -196,42 +196,6 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
-static SerializeStateLowCardinality * checkAndGetLowCardinalitySerializeState(
-    ISerialization::SerializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for SerializationLowCardinality.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * low_cardinality_state = typeid_cast<SerializeStateLowCardinality *>(state.get());
-    if (!low_cardinality_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for SerializationLowCardinality. Expected: "
-                        + demangle(typeid(SerializeStateLowCardinality).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return low_cardinality_state;
-}
-
-static DeserializeStateLowCardinality * checkAndGetLowCardinalityDeserializeState(
-    ISerialization::DeserializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for SerializationLowCardinality.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * low_cardinality_state = typeid_cast<DeserializeStateLowCardinality *>(state.get());
-    if (!low_cardinality_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for SerializationLowCardinality. Expected: "
-                        + demangle(typeid(DeserializeStateLowCardinality).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return low_cardinality_state;
-}
-
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
@@ -256,7 +220,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * low_cardinality_state = checkAndGetLowCardinalitySerializeState(state);
+    auto * low_cardinality_state = checkAndGetSerializeState<SerializeStateLowCardinality>(state, *this);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     if (low_cardinality_state->shared_dictionary && settings.low_cardinality_max_dictionary_size)
@@ -495,7 +459,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
     const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
 
-    auto * low_cardinality_state = checkAndGetLowCardinalitySerializeState(state);
+    auto * low_cardinality_state = checkAndGetSerializeState<SerializeStateLowCardinality>(state, *this);
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
@@ -594,7 +558,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * low_cardinality_state = checkAndGetLowCardinalityDeserializeState(state);
+    auto * low_cardinality_state = checkAndGetDeserializeState<DeserializeStateLowCardinality>(state, *this);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()

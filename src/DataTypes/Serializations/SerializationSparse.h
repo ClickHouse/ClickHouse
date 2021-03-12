@@ -10,6 +10,8 @@ class SerializationSparse final : public SerializationWrapper
 public:
     SerializationSparse(const SerializationPtr & nested_);
 
+    SerializationKind getKind() const override { return SerializationKind::SPARSE; }
+
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
@@ -37,6 +39,9 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
+
+    // void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
 };
 
 }

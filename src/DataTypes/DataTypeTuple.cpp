@@ -340,8 +340,8 @@ SerializationPtr DataTypeTuple::getSerialization(const String & column_name, con
         ISerialization::Settings settings =
         {
             .num_rows = info.getNumberOfRows(),
-            .num_non_default_rows = info.getNumberOfNonDefaultValues(subcolumn_name),
-            .min_ratio_for_dense_serialization = 10
+            .num_default_rows = info.getNumberOfDefaultRows(subcolumn_name),
+            .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
         };
 
         auto serializaion = elems[i]->getSerialization(settings);

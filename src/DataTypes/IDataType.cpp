@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 
 #include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
@@ -158,13 +159,14 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
+
 SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
 {
     ISerialization::Settings settings =
     {
         .num_rows = info.getNumberOfRows(),
-        .num_non_default_rows = info.getNumberOfNonDefaultValues(column_name),
-        .min_ratio_for_dense_serialization = 10
+        .num_default_rows = info.getNumberOfDefaultRows(column_name),
+        .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
     };
 
     return getSerialization(settings);
@@ -172,11 +174,14 @@ SerializationPtr IDataType::getSerialization(const String & column_name, const S
 
 SerializationPtr IDataType::getSerialization(const IColumn & column) const
 {
+    if (typeid_cast<const ColumnSparse *>(&column))
+        return getSparseSerialization();
+
     ISerialization::Settings settings =
     {
         .num_rows = column.size(),
-        .num_non_default_rows = column.getNumberOfNonDefaultValues(),
-        .min_ratio_for_dense_serialization = 10
+        .num_default_rows = column.getNumberOfDefaultRows(IColumn::DEFAULT_ROWS_SEARCH_STEP),
+        .ratio_for_sparse_serialization = 10
     };
 
     return getSerialization(settings);
@@ -184,10 +189,9 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
 {
-    // if (settings.num_non_default_rows * settings.min_ratio_for_dense_serialization < settings.num_rows)
-    //     return getSparseSerialization();
-
-    UNUSED(settings);
+    double ratio = settings.num_rows ? std::min(static_cast<double>(settings.num_default_rows) / settings.num_rows, 1.0) : 0.0;
+    if (ratio > settings.ratio_for_sparse_serialization)
+        return getSparseSerialization();
 
     return getDefaultSerialization();
 }
@@ -215,9 +219,6 @@ SerializationPtr IDataType::getSerialization(const String & column_name, const S
     if (callback(sparse_idx_name))
         return getSparseSerialization();
 
-    UNUSED(column_name);
-    UNUSED(callback);
-
     return getDefaultSerialization();
 }
 
@@ -236,6 +237,11 @@ void IDataType::enumerateStreams(const SerializationPtr & serialization, const S
     {
         callback(substream_path, *getTypeForSubstream(substream_path));
     }, path);
+}
+
+bool isSparseSerializaion(const SerializationPtr & serialization)
+{
+    return typeid_cast<const SerializationSparse *>(serialization.get());
 }
 
 }

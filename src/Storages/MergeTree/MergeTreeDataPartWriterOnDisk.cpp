@@ -121,7 +121,7 @@ static size_t computeIndexGranularityImpl(
         }
         else
         {
-            size_t size_of_row_in_bytes = block_size_in_memory / rows_in_block;
+            size_t size_of_row_in_bytes = std::max(block_size_in_memory / rows_in_block, 1UL);
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }

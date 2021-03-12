@@ -41,7 +41,7 @@ void NativeBlockOutputStream::flush()
 }
 
 
-void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
+void NativeBlockOutputStream::writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -53,12 +53,10 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
 
-    auto serialization = type.getDefaultSerialization();
-
     ISerialization::SerializeBinaryBulkStatePtr state;
-    serialization->serializeBinaryBulkStatePrefix(settings, state);
-    serialization->serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
-    serialization->serializeBinaryBulkStateSuffix(settings, state);
+    serialization.serializeBinaryBulkStatePrefix(settings, state);
+    serialization.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
+    serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
 
@@ -121,9 +119,13 @@ void NativeBlockOutputStream::write(const Block & block)
 
         writeStringBinary(type_name, ostr);
 
+        /// TODO: add revision
+        auto serialization = column.type->getSerialization(*column.column);
+        writeIntBinary(serialization->getKind(), ostr);
+
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*column.type, column.column, ostr, 0, 0);
+            writeData(*serialization, column.column, ostr, 0, 0);
 
         if (index_ostr)
         {

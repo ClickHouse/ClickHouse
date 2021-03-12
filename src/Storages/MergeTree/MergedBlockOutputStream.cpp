@@ -24,6 +24,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
+    , serialization_info(storage.getSettings()->ratio_for_sparse_serialization)
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
@@ -147,6 +148,18 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     removeEmptyColumnsFromPart(new_part, part_columns, checksums);
 
+    if (serialization_info.getNumberOfRows() > 0)
+    {
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);
+        HashingWriteBuffer out_hashing(*out);
+        serialization_info.write(out_hashing);
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        out->finalize();
+        if (sync)
+            out->sync();
+    }
+
     {
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
@@ -155,15 +168,6 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         if (sync)
             out->sync();
     }
-
-    // if (serialization_info.getNumberOfRows() > 0)
-    // {
-    //     auto out = volume->getDisk()->writeFile(part_path + "serialization.txt", 4096);
-    //     serialization_info.write(*out);
-    //     out->finalize();
-    //     if (sync)
-    //         out->sync();
-    // }
 
     if (default_codec != nullptr)
     {

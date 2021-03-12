@@ -530,21 +530,21 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices) const
+void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices, size_t, size_t) const
 {
     for (size_t i = 0;  i < offsets.size(); ++i)
         if (offsets[i] - offsets[i - 1] > 1)
             indices.push_back(i);
 }
 
-size_t ColumnString::getNumberOfNonDefaultValues() const
-{
-    size_t res = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
-        res += (offsets[i] - offsets[i - 1] > 1);
+// size_t ColumnString::getNumberOfDefaultRows() const
+// {
+//     size_t res = 0;
+//     for (size_t i = 0; i < offsets.size(); ++i)
+//         res += (offsets[i] - offsets[i - 1] > 1);
 
-    return res;
-}
+//     return res;
+// }
 
 ColumnPtr ColumnString::compress() const
 {

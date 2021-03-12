@@ -17,17 +17,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+SerializationInfo::SerializationInfo(
+    double ratio_for_sparse_serialization_,
+    size_t default_rows_search_step_)
+    : ratio_for_sparse_serialization(ratio_for_sparse_serialization_)
+    , default_rows_search_step(default_rows_search_step_)
+{
+}
+
 void SerializationInfo::add(const Block & block)
 {
     number_of_rows += block.rows();
     for (const auto & elem : block)
     {
-        non_default_values[elem.name] = elem.column->getNumberOfNonDefaultValues();
+        default_rows[elem.name] += elem.column->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
         for (const auto & subname : elem.type->getSubcolumnNames())
         {
             auto subcolumn = elem.type->getSubcolumn(subname, *elem.column);
             auto full_name = Nested::concatenateName(elem.name, subname);
-            non_default_values[full_name] += subcolumn->getNumberOfNonDefaultValues();
+            default_rows[full_name] += subcolumn->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
         }
     }
 }
@@ -35,14 +43,14 @@ void SerializationInfo::add(const Block & block)
 void SerializationInfo::add(const SerializationInfo & other)
 {
     number_of_rows += other.number_of_rows;
-    for (const auto & [name, num] : other.non_default_values)
-        non_default_values[name] += num;
+    for (const auto & [name, num] : other.default_rows)
+        default_rows[name] += num;
 }
 
-size_t SerializationInfo::getNumberOfNonDefaultValues(const String & column_name) const
+size_t SerializationInfo::getNumberOfDefaultRows(const String & column_name) const
 {
-    auto it = non_default_values.find(column_name);
-    if (it == non_default_values.end())
+    auto it = default_rows.find(column_name);
+    if (it == default_rows.end())
         return 0;
     return it->second;
 }
@@ -51,12 +59,14 @@ namespace
 {
 
 constexpr auto KEY_NUMBER_OF_ROWS = "number_of_rows";
-constexpr auto KEY_NUMBER_OF_NON_DEFAULT_VALUES = "number_of_non_default_values";
+constexpr auto KEY_NUMBER_OF_default_rows = "number_of_default_rows";
 constexpr auto KEY_NUMBER = "number";
 constexpr auto KEY_NAME = "name";
 constexpr auto KEY_VERSION = "version";
 
 }
+
+/// TODO: add all fields.
 
 void SerializationInfo::fromJSON(const String & json_str)
 {
@@ -66,9 +76,9 @@ void SerializationInfo::fromJSON(const String & json_str)
     if (object->has(KEY_NUMBER_OF_ROWS))
         number_of_rows = object->getValue<size_t>(KEY_NUMBER_OF_ROWS);
 
-    if (object->has(KEY_NUMBER_OF_NON_DEFAULT_VALUES))
+    if (object->has(KEY_NUMBER_OF_default_rows))
     {
-        auto array = object->getArray(KEY_NUMBER_OF_NON_DEFAULT_VALUES);
+        auto array = object->getArray(KEY_NUMBER_OF_default_rows);
         for (const auto & elem : *array)
         {
             auto elem_object = elem.extract<Poco::JSON::Object::Ptr>();
@@ -78,7 +88,7 @@ void SerializationInfo::fromJSON(const String & json_str)
 
             auto name = elem_object->getValue<String>(KEY_NAME);
             auto number = elem_object->getValue<size_t>(KEY_NUMBER);
-            non_default_values[name] = number;
+            default_rows[name] = number;
         }
     }
 }
@@ -90,7 +100,7 @@ String SerializationInfo::toJSON() const
     info.set(KEY_NUMBER_OF_ROWS, number_of_rows);
 
     Poco::JSON::Array column_infos;
-    for (const auto & [name, num] : non_default_values)
+    for (const auto & [name, num] : default_rows)
     {
         Poco::JSON::Object column_info;
         column_info.set(KEY_NAME, name);
@@ -98,7 +108,7 @@ String SerializationInfo::toJSON() const
         column_infos.add(std::move(column_info));
     }
 
-    info.set(KEY_NUMBER_OF_NON_DEFAULT_VALUES, std::move(column_infos));
+    info.set(KEY_NUMBER_OF_default_rows, std::move(column_infos));
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);

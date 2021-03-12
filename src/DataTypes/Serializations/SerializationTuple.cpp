@@ -293,39 +293,6 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 };
 
-static SerializeBinaryBulkStateTuple * checkAndGetTupleSerializeState(ISerialization::SerializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeTuple.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * tuple_state = typeid_cast<SerializeBinaryBulkStateTuple *>(state.get());
-    if (!tuple_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for DataTypeTuple. Expected: "
-                        + demangle(typeid(SerializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return tuple_state;
-}
-
-static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(ISerialization::DeserializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeTuple.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * tuple_state = typeid_cast<DeserializeBinaryBulkStateTuple *>(state.get());
-    if (!tuple_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for DataTypeTuple. Expected: "
-                        + demangle(typeid(DeserializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return tuple_state;
-}
 
 void SerializationTuple::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
@@ -344,7 +311,7 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetTupleSerializeState(state);
+    auto * tuple_state = checkAndGetSerializeState<SerializeBinaryBulkStateTuple>(state, *this);
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->serializeBinaryBulkStateSuffix(settings, tuple_state->states[i]);
@@ -370,7 +337,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetTupleSerializeState(state);
+    auto * tuple_state = checkAndGetSerializeState<SerializeBinaryBulkStateTuple>(state, *this);
 
     for (const auto i : ext::range(0, ext::size(elems)))
     {
@@ -386,7 +353,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * tuple_state = checkAndGetTupleDeserializeState(state);
+    auto * tuple_state = checkAndGetDeserializeState<DeserializeBinaryBulkStateTuple>(state, *this);
 
     auto mutable_column = column->assumeMutable();
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);

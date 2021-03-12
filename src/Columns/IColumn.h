@@ -67,6 +67,8 @@ public:
     /// If column is ColumnLowCardinality, transforms is to full column.
     virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
+    virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
+
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
@@ -363,8 +365,14 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void getIndicesOfNonDefaultValues(Offsets & /* offsets */) const {}
-    virtual size_t getNumberOfNonDefaultValues() const { return 0; }
+    virtual void getIndicesOfNonDefaultValues(Offsets & /* offsets */, size_t, size_t) const {}
+
+    virtual void insertAtOffsetsFrom(const Offsets & offsets, const IColumn & values, size_t total_rows_hint);
+
+    static constexpr auto DEFAULT_ROWS_SEARCH_STEP = 8;
+    static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
+
+    virtual size_t getNumberOfDefaultRows(size_t /* step */) const { return {}; }
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
