@@ -13,7 +13,7 @@ Syntax:
 DETACH TABLE|VIEW [IF EXISTS] [db.]name [PERMANENTLY] [ON CLUSTER cluster]
 ```
 
-Detaching does not delete the data or metadata for the table or view. If the table or view was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view again. If the table or view was detached `PERMANENTLY`, there will be no automatic recall. 
+Detaching does not delete the data or metadata for the table or materialized view. If the table or view was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view again. If the table or view was detached `PERMANENTLY`, there will be no automatic recall. 
 
 Whether the table was detached permanently or not, in both cases you can reattach it using the [ATTACH](../../sql-reference/statements/attach.md). System log tables can be also attached back (e.g. `query_log`, `text_log`, etc). Other system tables can't be reattached. On the next server launch the server will recall those tables again.
 
