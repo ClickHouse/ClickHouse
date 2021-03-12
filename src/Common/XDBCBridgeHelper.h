@@ -15,7 +15,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
-#include <Common/Bridge/IBridgeHelper.h>
+#include <Common/IBridgeHelper.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>

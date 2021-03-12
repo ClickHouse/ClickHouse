@@ -1,6 +1,5 @@
 #include "LibraryBridgeHelper.h"
 
-#include <sstream>
 #include <IO/ReadHelpers.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>

@@ -5,7 +5,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
-#include <Common/Bridge/IBridgeHelper.h>
+#include <Common/IBridgeHelper.h>
 
 
 namespace DB
