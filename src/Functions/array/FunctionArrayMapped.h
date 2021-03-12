@@ -268,7 +268,7 @@ public:
                                                              accumulator_column.type,
                                                              accumulator_column.name);
 
-                    ColumnPtr res;
+                    ColumnPtr res(acc);
                     size_t const arr_next = column_first_array->getOffsets()[irow]; // when we do folding
                     for(size_t iter = 0; arr_cursor < arr_next; ++iter, ++arr_cursor)
                     {
