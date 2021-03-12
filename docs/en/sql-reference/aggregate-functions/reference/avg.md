@@ -63,4 +63,4 @@ Result:
 └────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
