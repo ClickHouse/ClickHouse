@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u0421\u043b\u043e\u0432\u0430\u0440\u0438"
+toc_folder_title: "Словари"
 toc_priority: 35
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Словари {#slovari}
