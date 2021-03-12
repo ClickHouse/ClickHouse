@@ -39,16 +39,17 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/EnabledQuota.h>
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/ProcessList.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -472,8 +473,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings.enable_global_with_statement)
         {
             ApplyWithGlobalVisitor().visit(ast);
-            query = serializeAST(*ast);
         }
+
+        /// Normalize SelectWithUnionQuery
+        NormalizeSelectWithUnionQueryVisitor::Data data{context.getSettingsRef().union_default_mode};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);

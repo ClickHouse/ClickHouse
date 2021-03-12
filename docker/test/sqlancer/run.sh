@@ -29,4 +29,5 @@ tail -n 1000 /var/log/clickhouse-server/stderr.log > /test_output/stderr.log
 tail -n 1000 /var/log/clickhouse-server/stdout.log > /test_output/stdout.log
 tail -n 1000 /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log
 
+/process_sqlancer_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 ls /test_output

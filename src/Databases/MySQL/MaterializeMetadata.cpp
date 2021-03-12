@@ -159,6 +159,9 @@ static void checkSyncUserPriv(const mysqlxx::PoolWithFailover::Entry & connectio
 
 bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection) const
 {
+    if (binlog_file.empty())
+        return false;
+
     Block logs_header {
         {std::make_shared<DataTypeString>(), "Log_name"},
         {std::make_shared<DataTypeUInt64>(), "File_size"}
@@ -219,13 +222,8 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
 }
 
-MaterializeMetadata::MaterializeMetadata(
-    mysqlxx::PoolWithFailover::Entry & connection, const String & path_,
-    const String & database, bool & opened_transaction)
-    : persistent_path(path_)
+MaterializeMetadata::MaterializeMetadata(const String & path_) : persistent_path(path_)
 {
-    checkSyncUserPriv(connection);
-
     if (Poco::File(persistent_path).exists())
     {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
@@ -239,9 +237,17 @@ MaterializeMetadata::MaterializeMetadata(
         assertString("\nData Version:\t", in);
         readIntText(data_version, in);
 
-        if (checkBinlogFileExists(connection))
-            return;
     }
+}
+
+void MaterializeMetadata::startReplication(
+    mysqlxx::PoolWithFailover::Entry & connection, const String & database,
+    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables)
+{
+    checkSyncUserPriv(connection);
+
+    if (checkBinlogFileExists(connection))
+      return;
 
     bool locked_tables = false;
 
