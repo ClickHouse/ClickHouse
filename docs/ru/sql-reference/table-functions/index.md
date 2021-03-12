@@ -1,8 +1,7 @@
 ---
-toc_folder_title: "\u0422\u0430\u0431\u043B\u0438\u0447\u043D\u044B\u0435 \u0444\u0443\
-  \u043D\u043A\u0446\u0438\u0438"
+toc_folder_title: "Табличные функции"
 toc_priority: 34
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Табличные функции {#table-functions}

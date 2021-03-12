@@ -128,6 +128,7 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 
 # Put logs into /test_output/
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz
+tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 
 # Write check result into check_status.tsv

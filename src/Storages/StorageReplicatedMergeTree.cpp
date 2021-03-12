@@ -144,6 +144,12 @@ static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
+    /// Every ReplicatedMergeTree table is using only one ZooKeeper session.
+    /// But if several ReplicatedMergeTree tables are using different
+    /// ZooKeeper sessions, some queries like ATTACH PARTITION FROM may have
+    /// strange effects. So we always use only one session for all tables.
+    /// (excluding auxiliary zookeepers)
+
     std::lock_guard lock(current_zookeeper_mutex);
     if (zookeeper_name == default_zookeeper_name)
     {
@@ -891,20 +897,7 @@ void StorageReplicatedMergeTree::setTableStructure(
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
     if (new_columns != new_metadata.columns)
-    {
         new_metadata.columns = new_columns;
-
-        new_metadata.column_ttls_by_name.clear();
-        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
-        {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
-            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
-        }
-
-        /// The type of partition key expression may change
-        if (new_metadata.partition_key.definition_ast != nullptr)
-            new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
-    }
 
     if (!metadata_diff.empty())
     {
@@ -969,6 +962,47 @@ void StorageReplicatedMergeTree::setTableStructure(
                 new_metadata.table_ttl = TTLTableDescription{};
             }
         }
+    }
+
+    /// Changes in columns may affect following metadata fields
+    if (new_metadata.columns != old_metadata.columns)
+    {
+        new_metadata.column_ttls_by_name.clear();
+        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
+
+        if (new_metadata.partition_key.definition_ast != nullptr)
+            new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+        if (!metadata_diff.sorting_key_changed) /// otherwise already updated
+            new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+        /// Primary key is special, it exists even if not defined
+        if (new_metadata.primary_key.definition_ast != nullptr)
+        {
+            new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+        }
+        else
+        {
+            new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, global_context);
+            new_metadata.primary_key.definition_ast = nullptr;
+        }
+
+        if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+            new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+        if (!metadata_diff.skip_indices_changed) /// otherwise already updated
+        {
+            for (auto & index : new_metadata.secondary_indices)
+                index.recalculateWithNewColumns(new_metadata.columns, global_context);
+        }
+
+        if (!metadata_diff.ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                new_metadata.table_ttl.definition_ast, new_metadata.columns, global_context, new_metadata.primary_key);
     }
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
@@ -1482,15 +1516,28 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
-    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(
-        metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
-
     FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+
+    std::optional<CurrentlySubmergingEmergingTagger> tagger;
+    ReservationPtr reserved_space = balancedReservation(
+        metadata_snapshot,
+        estimated_space_for_merge,
+        max_volume_index,
+        future_merged_part.name,
+        future_merged_part.part_info,
+        future_merged_part.parts,
+        &tagger,
+        &ttl_infos);
+
+    if (!reserved_space)
+        reserved_space
+            = reserveSpacePreferringTTLRules(metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
+
     future_merged_part.uuid = entry.new_part_uuid;
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
@@ -3515,6 +3562,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     }
 
+    std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
     if (part_to_clone)
     {
@@ -3538,9 +3586,18 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
             return fetcher.fetchPart(
-                metadata_snapshot, part_name, source_replica_path,
-                address.host, address.replication_port,
-                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
+                metadata_snapshot,
+                part_name,
+                source_replica_path,
+                address.host,
+                address.replication_port,
+                timeouts,
+                user_password.first,
+                user_password.second,
+                interserver_scheme,
+                to_detached,
+                "",
+                &tagger_ptr);
         };
     }
 
@@ -3815,7 +3872,7 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 

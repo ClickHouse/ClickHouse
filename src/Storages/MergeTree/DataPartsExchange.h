@@ -58,7 +58,8 @@ public:
         const String & password,
         const String & interserver_scheme,
         bool to_detached = false,
-        const String & tmp_prefix_ = "");
+        const String & tmp_prefix_ = "",
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
