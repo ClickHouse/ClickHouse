@@ -50,6 +50,7 @@
 
 #### Improvement
 
+* Case-insensitive compression methods for table functions. Also fixed LZMA compression method which was checked in upper case. [#21416](https://github.com/ClickHouse/ClickHouse/pull/21416) ([Vladimir Chebotarev](https://github.com/excitoon)).
 * Add two settings to delay or throw error during insertion when there are too many inactive parts. This is useful when server fails to clean up parts quickly enough. [#20178](https://github.com/ClickHouse/ClickHouse/pull/20178) ([Amos Bird](https://github.com/amosbird)).
 * Provide better compatibility for mysql clients. 1. mysql jdbc 2. mycli. [#21367](https://github.com/ClickHouse/ClickHouse/pull/21367) ([Amos Bird](https://github.com/amosbird)).
 * Forbid to drop a column if it's referenced by materialized view. Closes [#21164](https://github.com/ClickHouse/ClickHouse/issues/21164). [#21303](https://github.com/ClickHouse/ClickHouse/pull/21303) ([flynn](https://github.com/ucasFL)).
