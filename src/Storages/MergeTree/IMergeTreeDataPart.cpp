@@ -1110,7 +1110,7 @@ void IMergeTreeDataPart::remove() const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            // volume->getDisk()->removeRecursive(to + "/");
+            volume->getDisk()->removeRecursive(to + "/");
         }
     }
 }
