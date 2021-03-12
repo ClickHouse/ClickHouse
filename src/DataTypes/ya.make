@@ -12,9 +12,9 @@ PEERDIR(
 SRCS(
     DataTypeAggregateFunction.cpp
     DataTypeArray.cpp
-    DataTypeCustomGeo.cpp
     DataTypeCustomIPv4AndIPv6.cpp
     DataTypeCustomSimpleAggregateFunction.cpp
+    DataTypeCustomSimpleTextSerialization.cpp
     DataTypeDate.cpp
     DataTypeDateTime.cpp
     DataTypeDateTime64.cpp
@@ -43,7 +43,6 @@ SRCS(
     Serializations/ISerialization.cpp
     Serializations/SerializationAggregateFunction.cpp
     Serializations/SerializationArray.cpp
-    Serializations/SerializationCustomSimpleText.cpp
     Serializations/SerializationDate.cpp
     Serializations/SerializationDateTime.cpp
     Serializations/SerializationDateTime64.cpp
@@ -51,12 +50,13 @@ SRCS(
     Serializations/SerializationDecimalBase.cpp
     Serializations/SerializationEnum.cpp
     Serializations/SerializationFixedString.cpp
-    Serializations/SerializationIP.cpp
+    Serializations/SerializationInfo.cpp
     Serializations/SerializationLowCardinality.cpp
     Serializations/SerializationMap.cpp
     Serializations/SerializationNothing.cpp
     Serializations/SerializationNullable.cpp
     Serializations/SerializationNumber.cpp
+    Serializations/SerializationSparse.cpp
     Serializations/SerializationString.cpp
     Serializations/SerializationTuple.cpp
     Serializations/SerializationTupleElement.cpp

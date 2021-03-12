@@ -52,6 +52,9 @@ public:
     const DataTypePtr & getNestedType() const { return nested; }
 
     SerializationPtr doGetDefaultSerialization() const override;
+
+private:
+    void assertKeyType() const;
 };
 
 }

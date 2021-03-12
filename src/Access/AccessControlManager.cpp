@@ -361,9 +361,9 @@ void AccessControlManager::addStoragesFromMainConfig(
 }
 
 
-UUID AccessControlManager::login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
+UUID AccessControlManager::login(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
-    return MultipleAccessStorage::login(user_name, password, address, *external_authenticators);
+    return MultipleAccessStorage::login(credentials, address, *external_authenticators);
 }
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)

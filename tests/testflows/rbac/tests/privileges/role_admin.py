@@ -17,7 +17,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(test=role_admin, flags=TE)(grant_target_name=user_name, user_name=user_name)
+        Suite(test=role_admin)(grant_target_name=user_name, user_name=user_name)
 
 @TestSuite
 def privileges_granted_via_role(self, node=None):
@@ -35,7 +35,7 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(test=role_admin, flags=TE)(grant_target_name=role_name, user_name=user_name)
+        Suite(test=role_admin)(grant_target_name=role_name, user_name=user_name)
 
 @TestSuite
 def role_admin(self, grant_target_name, user_name, node=None):
@@ -52,7 +52,13 @@ def role_admin(self, grant_target_name, user_name, node=None):
 
         with user(node, target_user_name), role(node, role_admin_name):
 
-            with When("I check the user can't grant a role"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't grant a role"):
                 node.query(f"GRANT {role_admin_name} TO {target_user_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -105,10 +111,40 @@ def role_admin(self, grant_target_name, user_name, node=None):
                 node.query(f"GRANT {role_admin_name} TO {target_user_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
+    with Scenario("Grant role with revoked ALL privilege"):
+        role_admin_name = f"role_admin_{getuid()}"
+        target_user_name = f"target_user_{getuid()}"
+
+        with user(node, target_user_name), role(node, role_admin_name):
+
+            with When(f"I grant ROLE ADMIN"):
+                node.query(f"GRANT ROLE ADMIN ON *.* TO {grant_target_name}")
+
+            with And("I revoke ALL privilege"):
+                node.query(f"REVOKE ALL ON *.* FROM {grant_target_name}")
+
+            with Then("I check the user cannot grant a role"):
+                node.query(f"GRANT {role_admin_name} TO {target_user_name}", settings=[("user",user_name)],
+                    exitcode=exitcode, message=message)
+
+    with Scenario("Grant role with ALL privilege"):
+        role_admin_name = f"role_admin_{getuid()}"
+        target_user_name = f"target_user_{getuid()}"
+
+        with user(node, target_user_name), role(node, role_admin_name):
+
+            with When(f"I grant ALL privilege"):
+                node.query(f"GRANT ALL ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can grant a role"):
+                node.query(f"GRANT {role_admin_name} TO {target_user_name}", settings = [("user", f"{user_name}")])
+
 @TestFeature
 @Name("role admin")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_RoleAdmin("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of ROLE ADMIN.
