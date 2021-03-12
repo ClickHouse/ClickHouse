@@ -415,7 +415,7 @@ Result:
 
 ## sign(x) {#signx}
 
-Extracts the sign of a real number.
+Returns the sign of a real number.
 
 **Syntax**
 
