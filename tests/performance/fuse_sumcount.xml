@@ -1,0 +1,9 @@
+<test max_ignored_relative_change="0.4">
+    <settings>
+        <optimize_fuse_sum_count_avg>true</optimize_fuse_sum_count_avg>
+    </settings>
+    <query>SELECT sum(number), avg(number) FROM numbers(100000000)</query>
+    <query>SELECT sum(number), count(number) FROM numbers(100000000)</query>
+    <query>SELECT avg(number), count(number) FROM numbers(100000000)</query>
+    <query>SELECT sum(number), avg(number), count(number) FROM numbers(100000000)</query>
+</test>
