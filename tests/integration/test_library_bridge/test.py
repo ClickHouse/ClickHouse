@@ -82,23 +82,17 @@ def test_load_ids(ch_cluster):
     assert(result.strip() == '100')
 
 
-@pytest.mark.skip(reason="worked before merge with master, now there seems to be a bug in podarray, skip untill fixed")
 def test_load_keys(ch_cluster):
     instance.query('''
-        CREATE DICTIONARY lib_dict_ckc (key UInt64, value1 UInt64, value3 UInt64, value3 UInt64)
+        CREATE DICTIONARY lib_dict_ckc (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
         SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'
         SETTINGS (value1 '1')))
-        LAYOUT(COMPLEX_KEY_CACHE(
-        SIZE_IN_CELLS 10000000
-        BLOCK_SIZE 4096
-        FILE_SIZE 16777216
-        READ_BUFFER_SIZE 1048576
-        MAX_STORED_KEYS 1048576))
+        LAYOUT(COMPLEX_KEY_CACHE( SIZE_IN_CELLS 10000000))
         LIFETIME(2);
     ''')
 
-    result = instance.query('''select dictGet(lib_dict_ckc, 'value3', tuple(toUInt64(0)));''')
+    result = instance.query('''select dictGet(lib_dict_ckc, 'value2', tuple(toUInt64(0)));''')
     assert(result.strip() == '200')
 
 
