@@ -22,7 +22,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
     /// We also need similar graph to load tables on server startup in order of topsort.
 }
 
-void DatabaseReplicatedDDLWorker::initializeMainThread()
+bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
     while (!stop_flag)
     {
@@ -33,7 +33,7 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
                 database->tryConnectToZooKeeperAndInitDatabase(false);
             initializeReplication();
             initialized = true;
-            return;
+            return true;
         }
         catch (...)
         {
@@ -41,6 +41,8 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
             sleepForSeconds(5);
         }
     }
+
+    return false;
 }
 
 void DatabaseReplicatedDDLWorker::shutdown()
@@ -61,7 +63,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
         database->recoverLostReplica(current_zookeeper, our_log_ptr, max_log_ptr);
     else
-        last_skipped_entry_name.emplace(log_ptr_str);
+        last_skipped_entry_name.emplace(DDLTaskBase::getLogEntryName(our_log_ptr));
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)

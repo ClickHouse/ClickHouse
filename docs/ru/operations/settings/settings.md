@@ -1,6 +1,6 @@
 ---
 toc_priority: 60
-toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438"
+toc_title: "Настройки"
 ---
 
 # Настройки {#settings}
@@ -2551,5 +2551,16 @@ SELECT * FROM test2;
 ```
 
 Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
+
+## allow_experimental_geo_types {#allow-experimental-geo-types}
+
+Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
+
+Возможные значения:
+
+-   0 — Использование типов данных для работы с географическими структурами не поддерживается.
+-   1 — Использование типов данных для работы с географическими структурами поддерживается.
+
+Значение по умолчанию: `0`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

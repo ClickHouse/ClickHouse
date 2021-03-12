@@ -111,6 +111,7 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "01720_type_map_and_casts",
         "01413_alter_update_supertype",
         "01149_zookeeper_mutation_stuck_after_replace_partition",
         "00836_indices_alter_replicated_zookeeper",
@@ -261,7 +262,8 @@
         "00116_storage_set",
         "00083_create_merge_tree_zookeeper",
         "00062_replicated_merge_tree_alter_zookeeper",
-        "01720_constraints_complex_types"
+        "01720_constraints_complex_types",
+        "01747_alter_partition_key_enum_zookeeper"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -276,6 +278,7 @@
         "00534_functions_bad_arguments4",
         "00534_functions_bad_arguments9",
         "00564_temporary_table_management",
+        "00600_replace_running_query",
         "00626_replace_partition_from_table_zookeeper",
         "00652_replicated_mutations_zookeeper",
         "00687_top_and_offset",
@@ -520,6 +523,7 @@
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
         "00604_show_create_database",
+        "00600_replace_running_query",
         "00612_http_max_query_size",
         "00619_union_highlite",
         "00620_optimize_on_nonleader_replica_zookeeper",
@@ -748,6 +752,7 @@
         "01676_dictget_in_default_expression",
         "01700_system_zookeeper_path_in",
         "01715_background_checker_blather_zookeeper",
+        "01747_alter_partition_key_enum_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -757,6 +762,13 @@
         "memory_limit",
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
-        "01721_engine_file_truncate_on_insert" // It's ok to execute in parallel but not several instances of the same test.
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01748_dictionary_table_dot", // creates database
+        "00950_dict_get",
+        "01683_flat_dictionary",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key"
     ]
 }

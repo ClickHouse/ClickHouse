@@ -117,8 +117,11 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
+
+        c_start = allocated + pad_left;
+        c_end = c_start;
+        c_end_of_storage = allocated + bytes - pad_right;
 
         if (pad_left)
             memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
@@ -147,12 +150,12 @@ protected:
 
         ptrdiff_t end_diff = c_end - c_start;
 
-        c_start = reinterpret_cast<char *>(
-                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
-            + pad_left;
+        char * allocated = reinterpret_cast<char *>(
+            TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
+        c_start = allocated + pad_left;
         c_end = c_start + end_diff;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        c_end_of_storage = allocated + bytes - pad_right;
     }
 
     bool isInitialized() const
@@ -318,11 +321,9 @@ protected:
 
     T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
     T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
-    T * t_end_of_storage()             { return reinterpret_cast<T *>(this->c_end_of_storage); }
 
     const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); }
     const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); }
-    const T * t_end_of_storage() const { return reinterpret_cast<const T *>(this->c_end_of_storage); }
 
 public:
     using value_type = T;
@@ -334,7 +335,7 @@ public:
     using const_iterator = const T *;
 
 
-    PODArray() {}
+    PODArray() = default;
 
     PODArray(size_t n)
     {
@@ -430,7 +431,7 @@ public:
     template <typename U, typename ... TAllocatorParams>
     void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
@@ -443,7 +444,7 @@ public:
     template <typename... Args>
     void emplace_back(Args &&... args)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
