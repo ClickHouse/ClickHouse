@@ -526,10 +526,6 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    // Return directly if no shard to query.
-    if (query_info.cluster->getShardsInfo().empty())
-        return;
-
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
