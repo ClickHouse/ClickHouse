@@ -1,6 +1,6 @@
 ---
 toc_priority: 66
-toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Прочие функции"
 ---
 
 # Прочие функции {#other-functions}

@@ -1,6 +1,6 @@
 ---
 toc_priority: 38
-toc_title: "\u0421\u043b\u043e\u0432\u0430\u0440\u044c"
+toc_title: "Словарь"
 ---
 
 # CREATE DICTIONARY {#create-dictionary-query}
