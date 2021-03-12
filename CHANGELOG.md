@@ -5,7 +5,7 @@
 #### Backward Incompatible Change
 
 * Now it's not allowed to create MergeTree tables in old syntax with table TTL because it's just ignored. Attach of old tables is still possible. [#20282](https://github.com/ClickHouse/ClickHouse/pull/20282) ([alesapin](https://github.com/alesapin)).
-* Now all case-insensitive function names will be lower-cased during query analysis. This is needed for projection query routing. [#20174](https://github.com/ClickHouse/ClickHouse/pull/20174) ([Amos Bird](https://github.com/amosbird)).
+* Now all case-insensitive function names will be rewritten to their canonical representations. This is needed for projection query routing (the upcoming feature). [#20174](https://github.com/ClickHouse/ClickHouse/pull/20174) ([Amos Bird](https://github.com/amosbird)).
 * Fix creation of `TTL` in cases, when its expression is a function and it is the same as `ORDER BY` key. Now it's allowed to set custom aggregation to primary key columns in `TTL` with `GROUP BY`. Backward incompatible: For primary key columns, which are not in `GROUP BY` and aren't set explicitly now is applied function `any` instead of `max`, when TTL is expired. Also if you use TTL with `WHERE` or `GROUP BY` you can see exceptions at merges, while making rolling update. [#15450](https://github.com/ClickHouse/ClickHouse/pull/15450) ([Anton Popov](https://github.com/CurtizJ)).
 
 #### New Feature
