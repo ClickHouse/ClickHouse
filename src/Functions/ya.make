@@ -144,6 +144,7 @@ SRCS(
     array/arrayFirst.cpp
     array/arrayFirstIndex.cpp
     array/arrayFlatten.cpp
+    array/arrayFold.cpp
     array/arrayIntersect.cpp
     array/arrayJoin.cpp
     array/arrayMap.cpp
