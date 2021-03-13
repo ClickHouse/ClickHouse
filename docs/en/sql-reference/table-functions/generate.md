@@ -10,7 +10,7 @@ Allows to populate test tables with data.
 Supports all data types that can be stored in table except `LowCardinality` and `AggregateFunction`.
 
 ``` sql
-generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
+generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]])
 ```
 
 **Arguments**

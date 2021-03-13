@@ -17,16 +17,18 @@ mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_ind
 Проверяется нулевая гипотеза, что генеральные совокупности стохастически равны. Наряду с двусторонней гипотезой могут быть проверены и односторонние.
 Для применения U-критерия Манна — Уитни закон распределения генеральных совокупностей не обязан быть нормальным.
 
+**Аргументы**
+
+-   `sample_data` — данные выборок. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `sample_index` — индексы выборок. [Integer](../../../sql-reference/data-types/int-uint.md).
+
 **Параметры**
 
 -   `alternative` — альтернативная гипотеза. (Необязательный параметр, по умолчанию: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
     -   `'two-sided'`;
     -   `'greater'`;
     -   `'less'`.
--   `continuity_correction` - если не 0, то при вычислении p-значения применяется коррекция непрерывности. (Необязательный параметр, по умолчанию: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `sample_data` — данные выборок. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — индексы выборок. [Integer](../../../sql-reference/data-types/int-uint.md).
-
+-   `continuity_correction` — если не 0, то при вычислении p-значения применяется коррекция непрерывности. (Необязательный параметр, по умолчанию: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 

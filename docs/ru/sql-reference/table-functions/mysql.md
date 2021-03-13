@@ -10,10 +10,10 @@ toc_title: mysql
 **Синтаксис**
 
 ``` sql
-mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `host:port` — адрес сервера MySQL.
 

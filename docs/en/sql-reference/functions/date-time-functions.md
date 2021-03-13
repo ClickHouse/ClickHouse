@@ -470,7 +470,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
--   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
+-   `value` — Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
 -   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 
