@@ -1,6 +1,6 @@
 ---
 toc_priority: 48
-toc_title: "\u0411\u0438\u0442\u043e\u0432\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Битовые функции"
 ---
 
 # Битовые функции {#bitovye-funktsii}

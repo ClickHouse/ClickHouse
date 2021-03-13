@@ -1,6 +1,6 @@
 ---
 toc_priority: 64
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043c\u0430\u0448\u0438\u043d\u043d\u043e\u0433\u043e\u0020\u043e\u0431\u0443\u0447\u0435\u043d\u0438\u044f"
+toc_title: "Функции машинного обучения"
 ---
 
 # Функции машинного обучения {#funktsii-mashinnogo-obucheniia}
