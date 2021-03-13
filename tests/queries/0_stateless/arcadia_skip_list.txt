@@ -221,3 +221,4 @@
 01304_polygons_sym_difference
 01305_polygons_union
 01306_polygons_intersection
+01702_system_query_log
