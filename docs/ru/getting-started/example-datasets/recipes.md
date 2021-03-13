@@ -337,6 +337,6 @@ WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
 
 ### Online Playground
 
-Этот набор данных также доступен в [Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+Этот набор данных также доступен в [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/getting-started/example-datasets/recipes/) <!--hide-->
