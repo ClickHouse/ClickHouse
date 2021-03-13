@@ -120,6 +120,9 @@ protected:
     void finalize() override;
 
 private:
+    static constexpr size_t kCachelineSize = 64;
+    using CachelinePadding = char[kCachelineSize];
+
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.
@@ -149,6 +152,7 @@ private:
         Chunk chunk;
         Memory<> segment;
         size_t actual_memory_size{0};
+        [[maybe_unused]] CachelinePadding padding;
     };
 
     Poco::Event collector_finished{};
@@ -167,10 +171,11 @@ private:
 
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};
-
+    [[maybe_unused]] CachelinePadding padding0;
     std::atomic_size_t collector_unit_number{0};
+    [[maybe_unused]] CachelinePadding padding1;
     std::atomic_size_t writer_unit_number{0};
-
+    [[maybe_unused]] CachelinePadding padding2;
     std::condition_variable collector_condvar;
     std::condition_variable writer_condvar;
 

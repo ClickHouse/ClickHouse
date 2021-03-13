@@ -138,6 +138,8 @@ protected:
 
 private:
 
+    static constexpr size_t kCachelineSize = 64;
+    using CachelinePadding = char[kCachelineSize];
     class InternalParser
     {
     public:
@@ -183,17 +185,19 @@ private:
     };
 
     const InternalParserCreator internal_parser_creator;
+    [[maybe_unused]] CachelinePadding padding0;
     /// Function to segment the file. Then "parsers" will parse that segments.
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const size_t min_chunk_bytes;
+    [[maybe_unused]] size_t segmentator_ticket_number{0};
 
+    [[maybe_unused]] CachelinePadding padding1;
     BlockMissingValues last_block_missing_values;
-
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
-    size_t segmentator_ticket_number{0};
     size_t reader_ticket_number{0};
+    [[maybe_unused]] CachelinePadding padding2;
 
     std::mutex mutex;
     std::condition_variable reader_condvar;
@@ -232,17 +236,16 @@ private:
         /// Needed for better exception message.
         size_t offset = 0;
         bool is_last{false};
+        [[maybe_unused]] CachelinePadding padding;
     };
 
     std::exception_ptr background_exception = nullptr;
+    /// Compute it to have a more understandable error message.
+    size_t successfully_read_rows_count{0};
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
-
-    /// Compute it to have a more understandable error message.
-    size_t successfully_read_rows_count{0};
-
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
