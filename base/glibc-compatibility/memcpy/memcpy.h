@@ -61,7 +61,7 @@
   * because L3 cache is shared (and L2 cache is partially shared).
   *
   * Very large size of memcpy typically indicates suboptimal (not cache friendly) algorithms in code or unrealistic scenarios,
-  * so we don't pay attention to it.
+  * so we don't pay attention to using non-temporary stores.
   *
   * On recent Intel CPUs, the presense of "erms" makes "rep movsb" the most benefitial,
   * even comparing to non-temporary aligned unrolled stores even with the most wide registers.
