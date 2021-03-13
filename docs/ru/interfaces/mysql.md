@@ -1,6 +1,6 @@
 ---
 toc_priority: 20
-toc_title: "\u004d\u0079\u0053\u0051\u004c\u002d\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441"
+toc_title: "MySQL-интерфейс"
 ---
 
 # MySQL-интерфейс {#mysql-interface}

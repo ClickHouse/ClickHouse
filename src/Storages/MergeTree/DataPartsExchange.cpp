@@ -252,7 +252,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & password,
     const String & interserver_scheme,
     bool to_detached,
-    const String & tmp_prefix_)
+    const String & tmp_prefix_,
+    std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr)
 {
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
@@ -306,10 +307,18 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
-            reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
+            reservation
+                = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
+            if (!reservation)
+                reservation
+                    = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
         }
         else
-            reservation = data.reserveSpace(sum_files_size);
+        {
+            reservation = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, nullptr);
+            if (!reservation)
+                reservation = data.reserveSpace(sum_files_size);
+        }
     }
     else
     {
