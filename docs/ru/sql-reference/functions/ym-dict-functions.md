@@ -113,13 +113,13 @@ LIMIT 15
 **Синтаксис**
 
 ``` sql
-regionToTopContinent(id[, geobase]);
+regionToTopContinent(id[, geobase])
 ```
 
-**Параметры**
+**Аргументы**
 
--   `id` — Идентификатор региона из геобазы Яндекса. [UInt32](../../sql-reference/functions/ym-dict-functions.md).
--   `geobase` — Ключ словаря. Смотрите [Множественные геобазы](#multiple-geobases). [String](../../sql-reference/functions/ym-dict-functions.md). Опциональный параметр.
+-   `id` — идентификатор региона из геобазы Яндекса. [UInt32](../../sql-reference/functions/ym-dict-functions.md).
+-   `geobase` — ключ словаря. Смотрите [Множественные геобазы](#multiple-geobases). [String](../../sql-reference/functions/ym-dict-functions.md). Опциональный параметр.
 
 **Возвращаемое значение**
 

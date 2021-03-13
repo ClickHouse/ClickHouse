@@ -136,7 +136,7 @@ toUnixTimestamp(str, [timezone])
 Запрос:
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
 ```
 
 Результат:
@@ -162,6 +162,7 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 ```sql
 SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 ```
+
 ```text
 ┌─ISOYear20170101─┐
 │      2016-01-04 │
@@ -215,14 +216,14 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 toStartOfSecond(value[, timezone])
 ```
 
-**Параметры**
+**Аргументы**
 
--   `value` — Дата и время. [DateTime64](../data-types/datetime64.md).
--   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
+-   `value` — дата и время. [DateTime64](../data-types/datetime64.md).
+-   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
 
 **Возвращаемое значение**
 
-- Входное значение с отсеченными долями секунды.
+-   Входное значение с отсеченными долями секунды.
 
 Тип: [DateTime64](../data-types/datetime64.md).
 
@@ -256,9 +257,9 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 └────────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
-- Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+-   Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
 
 ## toStartOfFiveMinute {#tostartoffiveminute}
@@ -497,7 +498,7 @@ SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 └─────────────────────┴────────────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
@@ -511,7 +512,7 @@ SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 now([timezone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). [String](../../sql-reference/data-types/string.md)
 
@@ -571,9 +572,9 @@ SELECT now('Europe/Moscow');
 dateDiff('unit', startdate, enddate, [timezone])
 ```
 
-**Параметры**
+**Аргументы**
 
--   `unit` — Единица измерения времени, в которой будет вычислена разница между `startdate` и `enddate`. [String](../syntax.md#syntax-string-literal).
+-   `unit` — единица измерения времени, в которой будет вычислена разница между `startdate` и `enddate`. [String](../syntax.md#syntax-string-literal).
 
         Поддерживаемые значения:
 
@@ -706,6 +707,7 @@ formatDateTime(Time, Format\[, Timezone\])
 Возвращает значение времени и даты в определенном вами формате.
 
 **Поля подстановки**
+
 Используйте поля подстановки для того, чтобы определить шаблон для выводимой строки. В колонке «Пример» результат работы функции для времени `2018-01-02 22:33:44`.
 
 | Поле        | Описание                                                             | Пример     |

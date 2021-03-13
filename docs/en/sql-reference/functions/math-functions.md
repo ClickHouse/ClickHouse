@@ -54,7 +54,7 @@ If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a ran
 Example (three sigma rule):
 
 ``` sql
-SELECT erf(3 / sqrt(2))
+SELECT erf(3 / sqrt(2));
 ```
 
 ``` text

@@ -20,7 +20,7 @@ argMax(arg, val)
 argMax(tuple(arg, val))
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `arg` — аргумент.
 -   `val` — значение.

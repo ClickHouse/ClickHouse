@@ -112,7 +112,7 @@ Finds the highest continent in the hierarchy for the region.
 **Syntax**
 
 ``` sql
-regionToTopContinent(id[, geobase]);
+regionToTopContinent(id[, geobase])
 ```
 
 **Arguments**
