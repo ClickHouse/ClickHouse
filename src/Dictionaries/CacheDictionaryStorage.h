@@ -4,6 +4,8 @@
 #include <variant>
 
 #include <pcg_random.hpp>
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
@@ -31,6 +33,8 @@ struct CacheDictionaryStorageConfiguration
     const DictionaryLifetime lifetime;
 };
 
+
+
 /// TODO: Add documentation
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
@@ -46,29 +50,7 @@ public:
         , rnd_engine(randomSeed())
         , cache(configuration.max_size_in_cells, false, { *this })
     {
-        for (const auto & dictionary_attribute : dictionary_structure.attributes)
-        {
-            auto attribute_type = dictionary_attribute.underlying_type;
-
-            auto type_call = [&](const auto & dictionary_attribute_type)
-            {
-                using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-                using AttributeType = typename Type::AttributeType;
-                using ValueType = DictionaryValueType<AttributeType>;
-
-                attributes.emplace_back();
-                auto & last_attribute = attributes.back();
-                last_attribute.type = attribute_type;
-                last_attribute.is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
-
-                if (dictionary_attribute.is_nullable)
-                    last_attribute.attribute_container = std::vector<Field>();
-                else
-                    last_attribute.attribute_container = PaddedPODArray<ValueType>();
-            };
-
-            callOnDictionaryAttributeType(attribute_type, type_call);
-        }
+        setup(dictionary_structure);
     }
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
@@ -88,9 +70,7 @@ public:
         const DictionaryStorageFetchRequest & fetch_request) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        {
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
-        }
         else
             throw Exception("Method fetchColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -126,9 +106,7 @@ public:
         const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-        {
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
-        }
         else
             throw Exception("Method fetchColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -174,7 +152,7 @@ public:
             });
         }
 
-        return arena.size() + cache.getSizeInBytes();
+        return arena.size() + cache.getSizeInBytes() + attributes_size_in_bytes;
     }
 
 private:
@@ -192,7 +170,7 @@ private:
 
 
     template <typename KeysStorageFetchResult>
-    ALWAYS_INLINE KeysStorageFetchResult fetchColumnsForKeysImpl(
+    KeysStorageFetchResult fetchColumnsForKeysImpl(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & fetch_request)
     {
@@ -216,44 +194,41 @@ private:
             auto key = keys[key_index];
             auto * it = cache.find(key);
 
-            if (it)
-            {
-                /// Columns values for key are serialized in cache now deserialize them
-                const auto & cell = it->getMapped();
-
-                bool has_deadline = cellHasDeadline(cell);
-
-                if (has_deadline && now > cell.deadline + max_lifetime_seconds)
-                {
-                    result.key_index_to_state[key_index] = {KeyState::not_found};
-                    ++result.not_found_keys_size;
-                    continue;
-                }
-                else if (has_deadline && now > cell.deadline)
-                {
-                    result.key_index_to_state[key_index] = {KeyState::expired, fetched_columns_index};
-                    ++result.expired_keys_size;
-                }
-                else
-                {
-                    result.key_index_to_state[key_index] = {KeyState::found, fetched_columns_index};
-                    ++result.found_keys_size;
-                }
-
-                if (cell.is_default)
-                {
-                    result.key_index_to_state[key_index].setDefault();
-                    ++result.default_keys_size;
-                }
-
-                fetched_keys.emplace_back(cell.element_index, cell.is_default);
-                ++fetched_columns_index;
-            }
-            else
+            if (!it)
             {
                 result.key_index_to_state[key_index] = {KeyState::not_found};
                 ++result.not_found_keys_size;
+                continue;
             }
+
+            const auto & cell = it->getMapped();
+
+            if (now > cell.deadline + max_lifetime_seconds)
+            {
+                result.key_index_to_state[key_index] = {KeyState::not_found};
+                ++result.not_found_keys_size;
+                continue;
+            }
+
+            bool cell_is_expired = false;
+            KeyState::State key_state = KeyState::found;
+
+            if (now > cell.deadline)
+            {
+                cell_is_expired = true;
+                key_state = KeyState::expired;
+            }
+
+            result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+            ++fetched_columns_index;
+
+            result.expired_keys_size += cell_is_expired;
+            result.found_keys_size += !cell_is_expired;
+
+            result.key_index_to_state[key_index].setDefaultValue(cell.is_default);
+            result.default_keys_size += cell.is_default;
+
+            fetched_keys.emplace_back(cell.element_index, cell.is_default);
         }
 
         for (size_t attribute_index = 0; attribute_index < fetch_request.attributesSize(); ++attribute_index)
@@ -275,7 +250,7 @@ private:
                 {
                     auto fetched_key = fetched_keys[fetched_key_index];
 
-                    if (fetched_key.is_default)
+                    if (unlikely(fetched_key.is_default))
                         fetched_column.insert(default_value_provider.getDefaultValue(fetched_key_index));
                     else
                         fetched_column.insert(container[fetched_key.element_index]);
@@ -302,7 +277,7 @@ private:
                         {
                             auto fetched_key = fetched_keys[fetched_key_index];
 
-                            if (fetched_key.is_default)
+                            if (unlikely(fetched_key.is_default))
                                 column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
                             else
                             {
@@ -318,7 +293,7 @@ private:
                             auto fetched_key = fetched_keys[fetched_key_index];
                             auto & data = column_typed.getData();
 
-                            if (fetched_key.is_default)
+                            if (unlikely(fetched_key.is_default))
                                 column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
                             else
                             {
@@ -460,10 +435,10 @@ private:
     {
         size_t cache_max_size = cache.getMaxSize();
 
-        if (unlikely(attributes.empty()) || insert_index * 2 < cache_max_size)
+        if (unlikely(attributes.empty()) || insert_index < cache_max_size * 2)
             return;
 
-        std::unordered_map<size_t, typename CacheLRUHashMap::iterator> element_index_to_cache_iterator;
+        absl::flat_hash_map<size_t, typename CacheLRUHashMap::iterator, DefaultHash<size_t>> element_index_to_cache_iterator;
 
         for (auto begin = cache.begin(); begin != cache.end(); ++begin)
         {
@@ -483,7 +458,15 @@ private:
             for (size_t i = 0; i < container_size; ++i)
             {
                 if (indexes_to_delete.contains(i))
+                {
+                    if constexpr (std::is_same_v<decltype(container[0]), StringRef>)
+                    {
+                        StringRef data = container[i];
+                        arena.free(const_cast<char *>(data.data), data.size);
+                    }
+
                     continue;
+                }
 
                 std::swap(container[remove_index], container[i]);
 
@@ -513,7 +496,15 @@ private:
                 for (size_t i = 0; i < container_size; ++i)
                 {
                     if (indexes_to_delete.contains(i))
+                    {
+                        if constexpr (std::is_same_v<decltype(container[0]), StringRef>)
+                        {
+                            StringRef data = container[i];
+                            arena.free(const_cast<char *>(data.data), data.size);
+                        }
+
                         continue;
+                    }
 
                     std::swap(container[remove_index], container[i]);
                     ++remove_index;
@@ -559,6 +550,47 @@ private:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->template getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
     }
 
+    StringRef copyStringInArena(StringRef value_to_copy)
+    {
+        size_t value_to_copy_size = value_to_copy.size;
+        char * place_for_key = arena.alloc(value_to_copy_size);
+        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data), value_to_copy_size);
+        StringRef updated_value{place_for_key, value_to_copy_size};
+
+        return updated_value;
+    }
+
+    void setup(const DictionaryStructure & dictionary_structure)
+    {
+        /// For each dictionary attribute create storage attribute
+        /// For simple attributes create PODArray, for complex vector of Fields
+
+        attributes.reserve(dictionary_structure.attributes.size());
+
+        for (const auto & dictionary_attribute : dictionary_structure.attributes)
+        {
+            auto attribute_type = dictionary_attribute.underlying_type;
+
+            auto type_call = [&](const auto & dictionary_attribute_type)
+            {
+                using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+                using AttributeType = typename Type::AttributeType;
+                using ValueType = DictionaryValueType<AttributeType>;
+
+                attributes.emplace_back();
+                auto & last_attribute = attributes.back();
+                last_attribute.type = attribute_type;
+                last_attribute.is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
+
+                if (dictionary_attribute.is_nullable)
+                    last_attribute.attribute_container = std::vector<Field>();
+                else
+                    last_attribute.attribute_container = PaddedPODArray<ValueType>();
+            };
+
+            callOnDictionaryAttributeType(attribute_type, type_call);
+        }
+    }
 
     using TimePoint = std::chrono::system_clock::time_point;
 
@@ -578,26 +610,13 @@ private:
         cache.insert(key, cell);
     }
 
-    StringRef copyStringInArena(StringRef value_to_copy)
-    {
-        size_t value_to_copy_size = value_to_copy.size;
-        char * place_for_key = arena.alloc(value_to_copy_size);
-        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data), value_to_copy_size);
-        StringRef updated_value{place_for_key, value_to_copy_size};
-
-        return updated_value;
-    }
-
-    inline static bool cellHasDeadline(const Cell & cell)
-    {
-        return cell.deadline != std::chrono::system_clock::from_time_t(0);
-    }
-
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
-            cell.deadline = std::chrono::system_clock::from_time_t(0);
+            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add strict_max_lifetime_seconds
+            /// to the expiration time. And it overflows pretty well.
+            cell.deadline = std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(configuration.strict_max_lifetime_seconds);
             return;
         }
 
@@ -638,10 +657,6 @@ private:
             std::vector<Field>> attribute_container;
     };
 
-    std::vector<Attribute> attributes;
-    size_t insert_index = 0;
-    std::unordered_set<size_t, DefaultHash<size_t>> indexes_to_delete;
-
     class CacheStorageCellDisposer
     {
     public:
@@ -667,6 +682,10 @@ private:
         ComplexKeyLRUHashMap>;
 
     CacheLRUHashMap cache;
+
+    std::vector<Attribute> attributes;
+    size_t insert_index = 0;
+    absl::flat_hash_set<size_t, DefaultHash<size_t>> indexes_to_delete;
 };
 
 }
