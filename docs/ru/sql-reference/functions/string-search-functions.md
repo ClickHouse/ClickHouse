@@ -7,7 +7,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
 
-## position(haystack, needle) {#position}
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Поиск подстроки `needle` в строке `haystack`.
 
@@ -18,16 +18,20 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u
 **Синтаксис**
 
 ``` sql
-position(haystack, needle[, start_pos])
+position((haystack, needle[, start_pos]) | (needle in haystack))
 ```
 
 Алиас: `locate(haystack, needle[, start_pos])`.
+
+!!! note 
+    Добавили поддержку синтаксиса position(needle in haystack) syntax для лучшей совместимости с SQL, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly the same way as POSITION(haystack, needle).
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `needle in haystack` — дополнительный параметр  
 
 **Возвращаемые значения**
 

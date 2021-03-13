@@ -14,24 +14,25 @@ The search is case-sensitive by default in all these functions. There are separa
 
 Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
-!!! note 
-    Now it supports position(needle in haystack) syntax for SQL-compatibility, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly the same way as POSITION(haystack, needle). 
-
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
 **Syntax**
 
 ``` sql
-position(haystack, needle[, start_pos])
-```
+position((haystack, needle[, start_pos]) | (needle in haystack))
+``` 
 
 Alias: `locate(haystack, needle[, start_pos])`.
+
+!!! note 
+    Now it supports position(needle in haystack) syntax for SQL-compatibility, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly the same way as POSITION(haystack, needle).
 
 **Arguments**
 
 -   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `needle in haystack` — additional parameter
 
 **Returned values**
 
