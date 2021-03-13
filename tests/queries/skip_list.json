@@ -278,6 +278,7 @@
         "00534_functions_bad_arguments4",
         "00534_functions_bad_arguments9",
         "00564_temporary_table_management",
+        "00600_replace_running_query",
         "00626_replace_partition_from_table_zookeeper",
         "00652_replicated_mutations_zookeeper",
         "00687_top_and_offset",
@@ -522,6 +523,7 @@
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
         "00604_show_create_database",
+        "00600_replace_running_query",
         "00612_http_max_query_size",
         "00619_union_highlite",
         "00620_optimize_on_nonleader_replica_zookeeper",
@@ -761,6 +763,7 @@
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
         "01683_flat_dictionary",
