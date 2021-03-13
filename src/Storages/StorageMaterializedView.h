@@ -66,9 +66,6 @@ public:
 
     void shutdown() override;
 
-    void checkTableCanBeDropped() const override;
-    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
-
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     StoragePtr getTargetTable() const;

@@ -66,3 +66,29 @@ TEST(Common, PODNoOverallocation)
 
     EXPECT_EQ(capacities, (std::vector<size_t>{4065, 8161, 16353, 32737, 65505, 131041, 262113, 524257, 1048545}));
 }
+
+template <size_t size>
+struct ItemWithSize
+{
+    char v[size] {};
+};
+
+TEST(Common, PODInsertElementSizeNotMultipleOfLeftPadding)
+{
+    using ItemWith24Size = ItemWithSize<24>;
+    PaddedPODArray<ItemWith24Size> arr1_initially_empty;
+
+    size_t items_to_insert_size = 120000;
+
+    for (size_t test = 0; test < items_to_insert_size; ++test)
+        arr1_initially_empty.emplace_back();
+
+    EXPECT_EQ(arr1_initially_empty.size(), items_to_insert_size);
+
+    PaddedPODArray<ItemWith24Size> arr2_initially_nonempty;
+
+    for (size_t test = 0; test < items_to_insert_size; ++test)
+        arr2_initially_nonempty.emplace_back();
+
+    EXPECT_EQ(arr1_initially_empty.size(), items_to_insert_size);
+}
