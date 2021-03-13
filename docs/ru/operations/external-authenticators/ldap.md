@@ -1,11 +1,11 @@
 # LDAP {#external-authenticators-ldap} 
 
-Для аутентификации пользователей ClickHouse можно использовать сервер LDAP. Для этого есть два разных подхода:
+Для аутентификации пользователей ClickHouse можно использовать сервер LDAP. Можно использовать два подхода:
 
-- использовать LDAP как внешний аутентификатор для существующих пользователей, которые определены в `users.xml` или в локальных путях управления контролем
-- использовать LDAP как внешний пользовательский каталог и разрешить аутентификацию локально неопределенных пользователей, если они есть на LDAP сервере
+- Использовать LDAP как внешний аутентификатор для существующих пользователей, которые определены в `users.xml` или в локальных путях управления контролем.
+- Использовать LDAP как внешний пользовательский каталог и разрешить аутентификацию локально неопределенных пользователей, если они есть на LDAP сервере.
 
-Для этих обоих подходов необходимо определить в ClickHouse конфиге внутренне названный LDAP сервер, чтобы другие части конфига могли ссылаться на него.
+Для обоих подходов необходимо определить в конфиге ClickHouse внутренне названный LDAP сервер, чтобы другие части конфига могли ссылаться на него.
 
 ## Определение LDAP сервера {#ldap-server-definition}
 
@@ -37,33 +37,33 @@
 
 **Параметры**
 
-- `host` — LDAP server hostname or IP, this parameter is mandatory and cannot be empty. имя хоста сервера LDAP или его IP. Этот параметр обязательный и не может быть пустым.
-- `port` — порт сервера LDAP. По-умолчанию: при значение `true` настройки `enable_tls` — `636`, иначе `389`.
+- `host` — имя хоста сервера LDAP или его IP. Этот параметр обязательный и не может быть пустым.
+- `port` — порт сервера LDAP. По-умолчанию: при значении `true` настройки `enable_tls` — `636`, иначе `389`.
 - `bind_dn` — шаблон для создания DN для привязки.
-    - конечный DN будет создан заменой всех подстрок `{user_name}` шаблона на настоящее имя пользователя при каждой попытке аутентификации.
-- `verification_cooldown` — a period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. 
-    - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
-- `enable_tls` — flag to trigger use of secure connection to the LDAP server.
-    - Specify `no` for plain text `ldap://` protocol (not recommended).
-    - Specify `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended, the default).
-    - Specify `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS).
-- `tls_minimum_protocol_version` — the minimum protocol version of SSL/TLS.
-    - Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).
-- `tls_require_cert` — SSL/TLS peer certificate verification behavior.
-    - Accepted values are: `never`, `allow`, `try`, `demand` (the default).
-- `tls_cert_file` — path to certificate file.
-- `tls_key_file` — path to certificate key file.
-- `tls_ca_cert_file` — path to CA certificate file.
-- `tls_ca_cert_dir` — path to the directory containing CA certificates.
-- `tls_cipher_suite` — allowed cipher suite (in OpenSSL notation).
+    - конечный DN будет создан заменой всех подстрок `{user_name}` шаблона на фактическое имя пользователя при каждой попытке аутентификации.
+- `verification_cooldown` — промежуток времени (в секундах) после успешной попытки привязки, в течение которого пользователь будет считаться успешно аутентифицированным без с сервером LDAP для всех последующих запросов.
+    - Укажите `0` (по-умолчанию), чтобы отключить кеширования и заставить связываться с сервером LDAP для каждого запроса аутетификации. 
+- `enable_tls` — флаг, включающий использование защищенного соединения с сервером LDAP.
+    - Укажите `no` для текстового `ldap://` протокола (не рекомендовано).
+    - Укажите `yes` для LDAP через SSL/TLS `ldaps://` протокола (рекомендовано, используется по-умолчанию).
+    - Укажите `starttls` для устаревшего StartTLS протокола (текстовый `ldap://` протокол, модернизированный до TLS).
+- `tls_minimum_protocol_version` — минимальная версия протокола SSL/TLS.
+    - Принимаемые значения: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (по-умолчанию).
+- `tls_require_cert` —  поведение при проверке сертификата SSL/TLS.
+    - Принимаемые значения: `never`, `allow`, `try`, `demand` (по-умолчанию).
+- `tls_cert_file` — путь до файла сертификата.
+- `tls_key_file` — путь к файлу ключа сертификата.
+- `tls_ca_cert_file` — путь к файлу ЦС сертификата.
+- `tls_ca_cert_dir` — путь к каталогу, содержащая сертификаты ЦС. 
+- `tls_cipher_suite` — разрешить набор шифров (в нотации OpenSSL).
 
-## LDAP External Authenticator {#ldap-external-authenticator}
+## LDAP внешний аутентификатор {#ldap-external-authenticator}
 
-A remote LDAP server can be used as a method for verifying passwords for locally defined users (users defined in `users.xml` or in local access control paths). In order to achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
+Удаленный сервер LDAP можно использовать как метод верификации паролей локально определенных пользователей (пользователей, которые определены в `users.xml` или в локальных путях управления контролем). Для этого укажите имя определенного до этого сервера LDAP вместо `password` или другой похожей секции в определении пользователя.
 
-At each login attempt, ClickHouse will try to "bind" to the specified DN defined by the `bind_dn` parameter in the [LDAP server definition](#ldap-server-definition) using the provided credentials, and if successful, the user will be considered authenticated. This is often called a "simple bind" method.
+При каждой попытке авторизации, ClickHouse пытается "привязаться" к DN, указанному в [определение LDAP сервера](#ldap-server-definition) параметром `bind_dn`, используя предоставленные реквизиты для входа. Если попытка оказалась успешной, пользователь считается аутентифицированным. Обычно это называют методом "простой привязки".
 
-For example,
+**Например**
 
 ```xml
 <yandex>
@@ -80,22 +80,25 @@ For example,
 </yandex>
 ```
 
-Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
+Обратите внимание, что пользователь `my_user` ссылается на `my_ldap_server`. Этот LDAP сервер должен быть настроен в основном файле `config.xml`, как это было описано ранее.
 
-When SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled in ClickHouse, users that are authenticated by LDAP servers can also be created using the [CRATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement.
+При включенном SQL-ориентированным [Управлением доступом](../access-rights.md#access-control) пользователи, аутентифицированные LDAP серверами, могут также быть созданы выражением [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement).
 
+Запрос:
 
 ```sql
-CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server'
+CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server';
 ```
 
-## LDAP Exernal User Directory {#ldap-external-user-directory}
+## Внешний пользовательский каталог LDAP {#ldap-external-user-directory}
 
-In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. In order to achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
+В добавок к локально определенным пользователям, удаленный LDAP сервер может быть использован как источник определения пользователей. Для этого укажите имя определенного до этого сервера LDAP (см. [Определение LDAP сервера](#ldap-server-definition)) в секции `ldap` внутри секции `users_directories` файла `config.xml`.
 
-At each login attempt, ClickHouse will try to find the user definition locally and authenticate it as usual, but if the user is not defined, ClickHouse will assume it exists in the external LDAP directory, and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled and roles are created using the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
+При каждой попытке авторизации, ClicHouse пытается локально найти определение пользователя и авторизовать его как обычно. Если определение не будет найдено, ClickHouse предполагает, что оно находится во внешнем LDAP каталоге, и попытается "привязаться" к DN, указанному на LDAP сервере, используя предоставленные реквизиты для входа. Если попытка оказалась успешной, пользователь считается существующим и  аутентифицированным. Пользователю будут присвоены роли из списка, указанного в секции `roles`. Кроме того, может быть выполнен LDAP поиск, а его результаты могут быть преобразованы в имена ролей и присвоены пользователям, если была настроена секция `role_mapping`. Все это работает при условии, что SQL-ориентированное [Управлением доступом](../access-rights.md#access-control) включено, а роли созданы выражением[CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement).
 
-Example (goes into `config.xml`):
+**Пример**
+
+В `config.xml`.
 
 ```xml
 <yandex>
@@ -120,35 +123,26 @@ Example (goes into `config.xml`):
 </yandex>
 ```
 
-Note that `my_ldap_server` referred in the `ldap` section inside the `user_directories` section must be a previously
-defined LDAP server that is configured in the `config.xml` (see [LDAP Server Definition](#ldap-server-definition)).
+Обратите внимание, что `my_ldap_server`, указанный в секции `ldap` внутри секции `user_directories`, должен быть настроен в файле `config.xml`, как это было описано ранее. (см. [Определение LDAP сервера](#ldap-server-definition)).
 
-Parameters:
+**Параметры**
 
-- `server` - one of LDAP server names defined in the `ldap_servers` config section above.
+- `server` — One of LDAP server names defined in the `ldap_servers` config section above.
   This parameter is mandatory and cannot be empty.
-- `roles` - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-    - If no roles are specified here or assigned during role mapping (below), user will not be able
-      to perform any actions after authentication.
-- `role_mapping` - section with LDAP search parameters and mapping rules.
-    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter`
-      and the name of the logged in user. For each entry found during that search, the value of the specified
-      attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed,
-      and the rest of the value becomes the name of a local role defined in ClickHouse,
-      which is expected to be created beforehand by the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
+- `roles` — Section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
+    - If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication.
+- `role_mapping` — Section with LDAP search parameters and mapping rules.
+    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
     - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
-        - `base_dn` - template used to construct the base DN for the LDAP search.
-           - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}`
-             substrings of the template with the actual user name and bind DN during each LDAP search.
-        - `scope` - scope of the LDAP search.
+        - `base_dn` — Template used to construct the base DN for the LDAP search.
+           - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during each LDAP search.
+        - `scope` — Scope of the LDAP search.
             - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` - template used to construct the search filter for the LDAP search.
-            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}`
-              substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
+        - `search_filter` — Template used to construct the search filter for the LDAP search.
+            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
             - Note, that the special characters must be escaped properly in XML.
-        - `attribute` - attribute name whose values will be returned by the LDAP search.
-        - `prefix` - prefix, that will be expected to be in front of each string in the original
-          list of strings returned by the LDAP search. Prefix will be removed from the original
-          strings and resulting strings will be treated as local role names. Empty, by default.
+        - `attribute` — Attribute name whose values will be returned by the LDAP search.
+        - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated as local role names. Empty, by default.
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap.md) <!--hide-->
