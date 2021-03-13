@@ -1874,16 +1874,53 @@ Default value: `0`.
 
 ## insert_shard_id {#insert_shard_id}
 
-Enables insertion of data into specific shards of [Distributed](../../engines/table-engines/special/distributed.md#distributed) tables.
+Enables synchronous insertion of data into specific shards of [Distributed](../../engines/table-engines/special/distributed.md#distributed) tables.
 
-This setting allows to synchronously insert data into specific shard from distributed table without perceiving local tables.
+If `insert_shard_id` isn't specified or the value is incorrect, the server will throw an exception.
+
+You can check server config or use this query to get the number of shard on `requested_cluster`.
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster='requested_cluster';
+```
 
 Possible values:
 
 -   0 — Disabled.
--   Any number from `1` to `shards_number` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+-   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
 
 Defauld value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Result:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
