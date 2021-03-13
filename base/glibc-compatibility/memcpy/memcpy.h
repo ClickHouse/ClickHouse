@@ -137,7 +137,7 @@ tail:
             /// A single byte.
             *dst = *src;
         }
-        /// Zero bytes.
+        /// No bytes remaining.
     }
     else
     {
