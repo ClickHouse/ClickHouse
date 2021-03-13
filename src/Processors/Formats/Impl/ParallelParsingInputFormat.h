@@ -183,7 +183,10 @@ private:
         const InputFormatPtr & input_format;
         InputPort port;
     };
-
+#ifdef __GNUC__
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wattributes"
+#endif
     const InternalParserCreator internal_parser_creator;
     [[maybe_unused]] CachelinePadding padding0;
     /// Function to segment the file. Then "parsers" will parse that segments.
@@ -242,7 +245,9 @@ private:
     std::exception_ptr background_exception = nullptr;
     /// Compute it to have a more understandable error message.
     size_t successfully_read_rows_count{0};
-
+#ifdef __GNUC__
+#  pragma GCC diagnostic pop
+#endif
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
