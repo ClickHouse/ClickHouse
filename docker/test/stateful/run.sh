@@ -13,6 +13,22 @@ dpkg -i package_folder/clickhouse-test_*.deb
 
 function start()
 {
+    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server2/config.xml --daemon \
+        -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
+        --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
+        --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
+        --mysql_port 19004 \
+        --test_keeper_server.tcp_port 19181 --test_keeper_server.server_id 2
+
+        sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server3/config.xml --daemon \
+        -- --path /var/lib/clickhouse3/ --logger.stderr /var/log/clickhouse-server/stderr3.log \
+        --logger.log /var/log/clickhouse-server/clickhouse-server3.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server3.err.log \
+        --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
+        --mysql_port 29004 \
+        --test_keeper_server.tcp_port 29181 --test_keeper_server.server_id 3
+    fi
+
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
@@ -72,4 +88,10 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
+fi
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
+    pigz < /var/log/clickhouse-server/clickhouse-server3.log > /test_output/clickhouse-server3.log.gz ||:
+    mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
+    mv /var/log/clickhouse-server/stderr3.log /test_output/ ||:
 fi

@@ -68,6 +68,28 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm /etc/clickhouse-server/config.d/zookeeper.xml
     rm /etc/clickhouse-server/config.d/test_keeper_port.xml
+
+    # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
+    # And we have to copy configs...
+    mkdir /etc/clickhouse-server2
+    mkdir /etc/clickhouse-server3
+    chown clickhouse /etc/clickhouse-server2
+    chown clickhouse /etc/clickhouse-server3
+    chgrp clickhouse /etc/clickhouse-server2
+    chgrp clickhouse /etc/clickhouse-server3
+    sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server2
+    sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server3
+    rm /etc/clickhouse-server2/config.d/macros.xml
+    rm /etc/clickhouse-server3/config.d/macros.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > /etc/clickhouse-server2/config.d/macros.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > /etc/clickhouse-server3/config.d/macros.xml
+
+    sudo mkdir /var/lib/clickhouse2
+    sudo mkdir /var/lib/clickhouse3
+    sudo chown clickhouse /var/lib/clickhouse2
+    sudo chown clickhouse /var/lib/clickhouse3
+    sudo chgrp clickhouse /var/lib/clickhouse2
+    sudo chgrp clickhouse /var/lib/clickhouse3
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

@@ -1,19 +1,4 @@
 <yandex>
-    <zookeeper>
-        <node index="1">
-            <host>localhost</host>
-            <port>9181</port>
-        </node>
-        <node index="2">
-            <host>localhost</host>
-            <port>19181</port>
-        </node>
-        <node index="3">
-            <host>localhost</host>
-            <port>29181</port>
-        </node>
-    </zookeeper>
-
     <test_keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
@@ -50,26 +35,4 @@
             </server>
         </raft_configuration>
     </test_keeper_server>
-
-    <remote_servers>
-        <test_cluster_database_replicated>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>localhost</host>
-                    <port>19000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>29000</port>
-                </replica>
-            </shard>
-        </test_cluster_database_replicated>
-    </remote_servers>
-
 </yandex>
