@@ -23,13 +23,6 @@
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
 
-/// Custom memcpy - only for x86_64 and not for Arcadia.
-#if defined(__x86_64__) && !defined(ARCADIA_BUILD)
-#include <memcpy.h> // Y_IGNORE
-#else
-void init_memcpy() {}
-#endif
-
 
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER
@@ -348,8 +341,6 @@ int main(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
-
-    init_memcpy();
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

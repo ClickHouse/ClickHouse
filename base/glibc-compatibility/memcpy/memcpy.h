@@ -2,27 +2,13 @@
 
 #include <emmintrin.h>
 
-#if defined(__clang__) && defined(__has_feature)
-#    define ch_has_feature __has_feature
-#endif
-#if !defined(MEMORY_SANITIZER)
-#    if defined(ch_has_feature)
-#        if ch_has_feature(memory_sanitizer)
-#            define MEMORY_SANITIZER 1
-#        endif
-#    elif defined(__MEMORY_SANITIZER__)
-#        define MEMORY_SANITIZER 1
-#    endif
-#endif
 
-
-//extern bool have_avx;
-void init_memcpy();
-
-
-static inline char * inline_memcpy(char * __restrict dst, const char * __restrict src, size_t size)
+static inline void * inline_memcpy(void * __restrict dst_, const void * __restrict src_, size_t size)
 {
-    char * ret = dst;
+    char * __restrict dst = reinterpret_cast<char * __restrict>(dst_);
+    const char * __restrict src = reinterpret_cast<const char * __restrict>(src_);
+
+    void * ret = dst;
 
 tail:
     if (size <= 16)
@@ -47,95 +33,6 @@ tail:
             *dst = *src;
         }
     }
-/*
-#if !defined(MEMORY_SANITIZER)  /// Asm code is not instrumented by MSan, skip this branch
-    else if (have_avx)
-    {
-        if (size <= 32)
-        {
-            __builtin_memcpy(dst, src, 8);
-            __builtin_memcpy(dst + 8, src + 8, 8);
-
-            dst += 16;
-            src += 16;
-            size -= 16;
-
-            goto tail;
-        }
-
-        if (size <= 256)
-        {
-            __asm__(
-                "vmovups    -0x20(%[s],%[size],1), %%ymm0\n"
-                "vmovups    %%ymm0, -0x20(%[d],%[size],1)\n"
-                : [d]"+r"(dst), [s]"+r"(src)
-                : [size]"r"(size)
-                : "ymm0", "memory");
-
-            while (size > 32)
-            {
-                __asm__(
-                    "vmovups    (%[s]), %%ymm0\n"
-                    "vmovups    %%ymm0, (%[d])\n"
-                    : [d]"+r"(dst), [s]"+r"(src)
-                    :
-                    : "ymm0", "memory");
-
-                dst += 32;
-                src += 32;
-                size -= 32;
-            }
-        }
-        else
-        {
-            size_t padding = (32 - (reinterpret_cast<size_t>(dst) & 31)) & 31;
-
-            if (padding > 0)
-            {
-                __asm__(
-                    "vmovups    (%[s]), %%ymm0\n"
-                    "vmovups    %%ymm0, (%[d])\n"
-                    : [d]"+r"(dst), [s]"+r"(src)
-                    :
-                    : "ymm0", "memory");
-
-                dst += padding;
-                src += padding;
-                size -= padding;
-            }
-
-            while (size >= 256)
-            {
-                __asm__(
-                    "vmovups    (%[s]), %%ymm0\n"
-                    "vmovups    0x20(%[s]), %%ymm1\n"
-                    "vmovups    0x40(%[s]), %%ymm2\n"
-                    "vmovups    0x60(%[s]), %%ymm3\n"
-                    "vmovups    0x80(%[s]), %%ymm4\n"
-                    "vmovups    0xa0(%[s]), %%ymm5\n"
-                    "vmovups    0xc0(%[s]), %%ymm6\n"
-                    "vmovups    0xe0(%[s]), %%ymm7\n"
-                    "add        $0x100,%[s]\n"
-                    "vmovaps    %%ymm0, (%[d])\n"
-                    "vmovaps    %%ymm1, 0x20(%[d])\n"
-                    "vmovaps    %%ymm2, 0x40(%[d])\n"
-                    "vmovaps    %%ymm3, 0x60(%[d])\n"
-                    "vmovaps    %%ymm4, 0x80(%[d])\n"
-                    "vmovaps    %%ymm5, 0xa0(%[d])\n"
-                    "vmovaps    %%ymm6, 0xc0(%[d])\n"
-                    "vmovaps    %%ymm7, 0xe0(%[d])\n"
-                    "add        $0x100, %[d]\n"
-                    : [d]"+r"(dst), [s]"+r"(src)
-                    :
-                    : "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "memory");
-
-                size -= 256;
-            }
-
-            goto tail;
-        }
-    }
-#endif*/
     else
     {
         if (size <= 128)
