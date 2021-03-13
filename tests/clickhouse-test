@@ -107,7 +107,7 @@ def remove_control_characters(s):
 
 def get_db_engine(args, database_name):
     if args.replicated_database:
-        return " ON CLUSTER test_cluster_database_replicated ENGINE=Replicated('/test/clickhouse/db/{}', 's1', 'r1')".format(database_name)
+        return " ON CLUSTER test_cluster_database_replicated ENGINE=Replicated('/test/clickhouse/db/{}', '{{shard}}', '{{replica}}')".format(database_name)
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
