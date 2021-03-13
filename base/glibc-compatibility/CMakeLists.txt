@@ -1,5 +1,8 @@
 if (GLIBC_COMPATIBILITY)
     add_subdirectory(memcpy)
+    if(TARGET memcpy)
+        set(MEMCPY_LIBRARY memcpy)
+    endif()
 
     enable_language(ASM)
     include(CheckIncludeFile)
@@ -44,10 +47,10 @@ if (GLIBC_COMPATIBILITY)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility memcpy)
+    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
     install(
-        TARGETS glibc-compatibility memcpy
+        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
         EXPORT global
         ARCHIVE DESTINATION lib
     )
