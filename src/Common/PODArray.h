@@ -597,11 +597,6 @@ public:
                 std::swap(dest.c_end, src.c_end);
                 std::swap(dest.c_end_of_storage, src.c_end_of_storage);
             }
-
-#ifndef NDEBUG
-            this->protect();
-            rhs.protect();
-#endif
         };
 
         if (!this->isInitialized() && !rhs.isInitialized())
@@ -664,11 +659,6 @@ public:
             std::swap(this->c_end, rhs.c_end);
             std::swap(this->c_end_of_storage, rhs.c_end_of_storage);
         }
-
-#ifndef NDEBUG
-        this->protect();
-        rhs.protect();
-#endif
     }
 
     template <typename... TAllocatorParams>
