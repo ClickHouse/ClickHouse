@@ -72,7 +72,7 @@ namespace
     }
 
 
-    Block dataToBlock(const Block & sample_block, const void * data)
+    Block dataToBlock(const Block & sample_block, const ClickHouseLibrary::RawClickHouseLibraryTable data)
     {
         if (!data)
             throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
@@ -150,8 +150,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     );
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
 
-    if (auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
-            "ClickHouseDictionary_v3_libNew"))
+    if (auto lib_new = library->tryGet<ClickHouseLibrary::LibraryNewFunc>(ClickHouseLibrary::LIBRARY_CREATE_NEW_FUNC_NAME))
         lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
 }
 
@@ -165,17 +164,15 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , description{other.description}
     , settings{other.settings}
 {
-    if (auto lib_clone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
+    if (auto lib_clone = library->tryGet<ClickHouseLibrary::LibraryCloneFunc>(ClickHouseLibrary::LIBRARY_CLONE_FUNC_NAME))
         lib_data = lib_clone(other.lib_data);
-    else if (
-        auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
-            "ClickHouseDictionary_v3_libNew"))
+    else if (auto lib_new = library->tryGet<ClickHouseLibrary::LibraryNewFunc>(ClickHouseLibrary::LIBRARY_CREATE_NEW_FUNC_NAME))
         lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
 }
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
-    if (auto lib_delete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v3_libDelete"))
+    if (auto lib_delete = library->tryGet<ClickHouseLibrary::LibraryDeleteFunc>(ClickHouseLibrary::LIBRARY_DELETE_FUNC_NAME))
         lib_delete(lib_data);
 }
 
@@ -193,17 +190,14 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
         ++i;
     }
 
-    void * data_ptr = nullptr;
+    auto load_all_func = library->get<ClickHouseLibrary::LibraryLoadAllFunc>(ClickHouseLibrary::LIBRARY_LOAD_ALL_FUNC_NAME);
+    auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
+    auto data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
 
-    /// Get function pointer before dataNew call because library->get may throw.
-    auto func_load_all
-        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v3_loadAll");
+    ClickHouseLibrary::LibraryData data_ptr = data_new_func(lib_data);
+    SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
-    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
-
-    auto * data = func_load_all(data_ptr, &settings->strings, &columns);
-
+    ClickHouseLibrary::RawClickHouseLibraryTable data = load_all_func(data_ptr, &settings->strings, &columns);
     auto block = dataToBlock(description.sample_block, data);
 
     return std::make_shared<OneBlockInputStream>(block);
@@ -224,17 +218,14 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
         ++i;
     }
 
-    void * data_ptr = nullptr;
+    auto load_ids_func = library->get<ClickHouseLibrary::LibraryLoadIdsFunc>(ClickHouseLibrary::LIBRARY_LOAD_IDS_FUNC_NAME);
+    auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
+    auto data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
 
-    /// Get function pointer before dataNew call because library->get may throw.
-    auto func_load_ids
-        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
-            "ClickHouseDictionary_v3_loadIds");
+    ClickHouseLibrary::LibraryData data_ptr = data_new_func(lib_data);
+    SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
-    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
-
-    auto * data = func_load_ids(data_ptr, &settings->strings, &columns_pass, &ids_data);
+    ClickHouseLibrary::RawClickHouseLibraryTable data = load_ids_func(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
 
     return std::make_shared<OneBlockInputStream>(block);
@@ -262,15 +253,14 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
     ClickHouseLibrary::Table request_cols{.data = static_cast<ClickHouseLibrary::Row *>(holder.get()), .size = key_columns.size()};
 
-    void * data_ptr = nullptr;
-    /// Get function pointer before dataNew call because library->get may throw.
-    auto func_load_keys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
-        "ClickHouseDictionary_v3_loadKeys");
+    auto load_keys_func = library->get<ClickHouseLibrary::LibraryLoadKeysFunc>(ClickHouseLibrary::LIBRARY_LOAD_KEYS_FUNC_NAME);
+    auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
+    auto data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
 
-    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
+    ClickHouseLibrary::LibraryData data_ptr = data_new_func(lib_data);
+    SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
-    auto * data = func_load_keys(data_ptr, &settings->strings, &request_cols);
+    ClickHouseLibrary::RawClickHouseLibraryTable data = load_keys_func(data_ptr, &settings->strings, &request_cols);
     auto block = dataToBlock(description.sample_block, data);
 
     return std::make_shared<OneBlockInputStream>(block);
@@ -278,17 +268,19 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
 bool LibraryDictionarySource::isModified() const
 {
-    if (auto func_is_modified
-        = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_isModified"))
+    if (auto func_is_modified = library->tryGet<ClickHouseLibrary::LibraryIsModifiedFunc>(
+        ClickHouseLibrary::LIBRARY_IS_MODIFIED_FUNC_NAME))
         return func_is_modified(lib_data, &settings->strings);
+
     return true;
 }
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    if (auto func_supports_selective_load
-        = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_supportsSelectiveLoad"))
+    if (auto func_supports_selective_load = library->tryGet<ClickHouseLibrary::LibrarySupportsSelectiveLoadFunc>(
+            ClickHouseLibrary::LIBRARY_SUPPORTS_SELECTIVE_LOAD_FUNC_NAME))
         return func_supports_selective_load(lib_data, &settings->strings);
+
     return true;
 }
 
