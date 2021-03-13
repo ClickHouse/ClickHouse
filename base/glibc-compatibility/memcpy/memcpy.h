@@ -87,6 +87,9 @@
   * How to test the memcpy implementation for performance:
   * 1. Test on real production workload.
   * 2. For synthetic test, see utils/memcpy-bench, but make sure you will do the best to exhaust the wide range of scenarios.
+  *
+  * TODO: Add self-tuning memcpy with bayesian bandits algorithm for large sizes.
+  * See https://habr.com/en/company/yandex/blog/457612/
   */
 
 
