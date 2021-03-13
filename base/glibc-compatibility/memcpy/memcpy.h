@@ -40,6 +40,7 @@
   * - rep movsb;
   * Performance will depend on the size threshold, on the CPU model, on the "erms" flag
   * ("Enhansed Rep MovS" - it indicates that performance of "rep movsb" is decent for large sizes)
+  * https://stackoverflow.com/questions/43343231/enhanced-rep-movsb-for-memcpy
   *
   * Using AVX-512 can be bad due to throttling.
   * Using AVX can be bad if most code is using SSE due to switching penalty
