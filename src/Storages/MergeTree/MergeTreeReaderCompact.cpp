@@ -220,14 +220,14 @@ void MergeTreeReaderCompact::readData(
 
         auto serialization = type_in_storage->getDefaultSerialization();
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
+        serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
         column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
     }
     else
     {
         auto serialization = type->getDefaultSerialization();
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
 
     /// The buffer is left in inconsistent state after reading single offsets

@@ -439,6 +439,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             name,
             underlying_type,
             initial_type,
+            initial_type->getDefaultSerialization(),
             type,
             expression,
             null_value,

@@ -868,6 +868,8 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     const IColumn & data, const Offsets & offsets,
     const Field & index, PaddedPODArray<UInt64> & matched_idxs)
 {
+    std::cerr << "index type: " << index.getTypeName() << "\n";
+    std::cerr << "index: " << toString(index) << "\n";
     const auto * data_numeric = checkAndGetColumn<ColumnVector<DataType>>(&data);
     if (!data_numeric)
         return false;
