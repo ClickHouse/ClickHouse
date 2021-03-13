@@ -3,17 +3,19 @@ toc_priority: 16
 toc_title: Recipes Dataset
 ---
 
-# Датасет рецептов
+# Набор данных с рецептами
 
-Датасет RecipeNLG доступен для загрузки [здесь](https://recipenlg.cs.put.poznan.pl/dataset). Он содержит 2.2 миллиона рецептов. Его размер чуть меньше 1 ГБ.
+Набор данных с рецептами от RecipeNLG доступен для загрузки [здесь](https://recipenlg.cs.put.poznan.pl/dataset). Он содержит 2.2 миллиона рецептов, а его размер чуть меньше 1 ГБ.
 
-## Загрузите и распакуйте датасет
+## Загрузите и распакуйте набор данных
 
-Примите Правила и условия и загрузите его [here](https://recipenlg.cs.put.poznan.pl/dataset). Распакуйте zip-архив и вы получите файл датасета`full_dataset.csv`.
+1. Перейдите на страницу загрузки [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
+1. Примите Правила и условия и скачайте zip-архив с набором данных.
+1. Распакуйте zip-архив и вы получите файл `full_dataset.csv`.
 
 ## Создайте таблицу
 
-Запустите клиент ClickHouse и выполните следующий запрос для создания таблицы:
+Запустите клиент ClickHouse и выполните следующий запрос для создания таблицы `recipes`:
 
 ``` sql
 CREATE TABLE recipes
@@ -29,7 +31,7 @@ CREATE TABLE recipes
 
 ## Добавьте данные в таблицу
 
-Выполните следующую команду:
+Чтобы добавить данные из файла `full_dataset.csv` в таблицу `recipes` выполните команду:
 
 ``` bash
 clickhouse-client --query "
@@ -46,35 +48,44 @@ clickhouse-client --query "
 " --input_format_with_names_use_header 0 --format_csv_allow_single_quote 0 --input_format_allow_errors_num 10 < full_dataset.csv
 ```
 
-Это пример того анализа пользовательских CSV-файлов, с применением нескольких настроек.
+Это один из примеров анализа пользовательских CSV-файлов, с применением специальных настроек.
 
 Пояснение:
-- датасет представлен в формате CSV и требует некоторой предварительной обработки при вставке; для предварительной обработки используется табличная функция [input](../../sql-reference/table-functions/input.md);
+- набор данных представлен в формате CSV и требует некоторой предварительной обработки при вставке; для предварительной обработки используется табличная функция [input](../../sql-reference/table-functions/input.md);
 - структура CSV-файла задается в аргументе табличной функции `input`;
 - поле `num` (номер строки) не нужно — оно считывается из файла, но игнорируется;
 - тут используется `FORMAT CSVWithNames`, но заголовок в CSV будет проигнорирован (параметром командной строки `--input_format_with_names_use_header 0`), поскольку заголовок не содержит имени первого поля;
 - в файле CSV для разделения строк используются только двойные кавычки; но некоторые строки не заключены в двойные кавычки, и чтобы одинарная кавычка не рассматривалась как заключающая — используется параметр `--format_csv_allow_single_quote 0`;
 - некоторые строки из CSV не могут быть считаны, так как некоторые значения в начале содержат последовательность `\M/`; только значения, начинающиеся с обратной косой черты в CSV, могут быть `\N`, что анализируется как SQL `NULL`. Чтобы пропустить 10 некорректных записей, используется параметр `--input_format_allow_errors_num 10`;
-- представлены массивы для ингредиентов, направлений и полей NER; эти массивы представлены в необычном виде: они сериализуются в строку формата JSON, а затем помещаются в CSV - теперь они представлены в формате `String`. Чтобы преобразовать строку в массив используется функция [JSONExtract](../../sql-reference/functions/json-functions.md).
+- представлены массивы для ингредиентов, направлений и полей NER; эти массивы представлены в необычном виде: они сериализуются в строку формата JSON, а затем помещаются в CSV — теперь они представлены в формате `String`. Чтобы преобразовать строку в массив используется функция [JSONExtract](../../sql-reference/functions/json-functions.md).
 
-## Validate the inserted data
+## Проверьте добавленные данные
 
-By checking the row count:
+Чтобы проверить добавленные данные, узнайте количество строк в таблице:
 
+Запрос:
+
+``` sql
+SELECT count() FROM recipes;
 ```
-SELECT count() FROM recipes
 
+Результат:
+
+``` text
 ┌─count()─┐
 │ 2231141 │
 └─────────┘
 ```
 
+## Примеры запросов
 
-## Example queries
+### Самые популярные ингридиенты по упоминанию в рецептах:
 
-### Top components by the number of recipes:
+В этом примере вы узнаете как использовать функцию [arrayJoin](../../sql-reference/functions/array-join.md) для умножения данных на элементы массива.
 
-```
+Запрос:
+
+``` sql
 SELECT
     arrayJoin(NER) AS k,
     count() AS c
@@ -82,7 +93,11 @@ FROM recipes
 GROUP BY k
 ORDER BY c DESC
 LIMIT 50
+```
 
+Результат:
+
+``` text
 ┌─k────────────────────┬──────c─┐
 │ salt                 │ 890741 │
 │ sugar                │ 620027 │
@@ -139,11 +154,11 @@ LIMIT 50
 50 rows in set. Elapsed: 0.112 sec. Processed 2.23 million rows, 361.57 MB (19.99 million rows/s., 3.24 GB/s.)
 ```
 
-In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to multiply data by array elements.
+### Самые сложные рецепты с клубникой
 
-### The most complex recipes with strawberry
+Запрос:
 
-```
+``` sql
 SELECT
     title,
     length(NER),
@@ -152,7 +167,11 @@ FROM recipes
 WHERE has(NER, 'strawberry')
 ORDER BY length(directions) DESC
 LIMIT 10
+```
 
+Результат:
+
+``` text
 ┌─title────────────────────────────────────────────────────────────┬─length(NER)─┬─length(directions)─┐
 │ Chocolate-Strawberry-Orange Wedding Cake                         │          24 │                126 │
 │ Strawberry Cream Cheese Crumble Tart                             │          19 │                 47 │
@@ -169,17 +188,21 @@ LIMIT 10
 10 rows in set. Elapsed: 0.215 sec. Processed 2.23 million rows, 1.48 GB (10.35 million rows/s., 6.86 GB/s.)
 ```
 
-In this example, we involve [has](../../sql-reference/functions/array-functions/#hasarr-elem) function to filter by array elements and sort by the number of directions.
+В этом примере используется функция [has](../../sql-reference/functions/array-functions.md#hasarr-elem) для фильтрации по элементам массива и сортировки по количеству шагов (`directions`).
 
-There is a wedding cake that requires the whole 126 steps to produce!
+Существует свадебный торт, который требует целых 126 шагов для производства! Посмотрим эти шаги:
 
-Show that directions:
+Запрос:
 
-```
+``` sql
 SELECT arrayJoin(directions)
 FROM recipes
 WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
+```
 
+Результат:
+
+``` text
 ┌─arrayJoin(directions)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Position 1 rack in center and 1 rack in bottom third of oven and preheat to 350F.                                                                                           │
 │ Butter one 5-inch-diameter cake pan with 2-inch-high sides, one 8-inch-diameter cake pan with 2-inch-high sides and one 12-inch-diameter cake pan with 2-inch-high sides.   │
@@ -314,4 +337,6 @@ WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
 
 ### Online playground
 
-The dataset is also available in the [Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+Этот набор данных также доступен в [Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting-started/example-datasets/recipes/) <!--hide-->
