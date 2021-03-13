@@ -46,7 +46,7 @@ SKIP_LIST = [
     "01293_client_interactive_vertical_singleline",  # expect-test
     "01293_system_distribution_queue",  # FLAKY
     "01293_show_clusters",
-    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
     "01294_system_distributed_on_cluster",
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
