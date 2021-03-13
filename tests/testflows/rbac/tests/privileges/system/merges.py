@@ -18,7 +18,7 @@ def privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         table_name = f"table_name_{getuid()}"
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[user_name,user_name,table_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -40,13 +40,14 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[role_name,user_name,table_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM MERGES", "table"),
     ("SYSTEM STOP MERGES", "table"),
@@ -61,8 +62,8 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, table_nam
     if node is None:
         node = self.context.node
 
-    Suite(test=start_merges, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
-    Suite(test=stop_merges, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
+    Suite(test=start_merges)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
+    Suite(test=stop_merges)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
 
 @TestSuite
 def start_merges(self, privilege, on, grant_target_name, user_name, table_name, node=None):
@@ -78,11 +79,19 @@ def start_merges(self, privilege, on, grant_target_name, user_name, table_name, 
     with table(node, table_name):
 
         with Scenario("SYSTEM START MERGES without privilege"):
-            with When("I check the user can't start merges"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't start merges"):
                 node.query(f"SYSTEM START MERGES {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM START MERGES with privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -90,6 +99,7 @@ def start_merges(self, privilege, on, grant_target_name, user_name, table_name, 
                 node.query(f"SYSTEM START MERGES {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM START MERGES with revoked privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -114,11 +124,19 @@ def stop_merges(self, privilege, on, grant_target_name, user_name, table_name, n
     with table(node, table_name):
 
         with Scenario("SYSTEM STOP MERGES without privilege"):
-            with When("I check the user can't stop merges"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't stop merges"):
                 node.query(f"SYSTEM STOP MERGES {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM STOP MERGES with privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -126,6 +144,7 @@ def stop_merges(self, privilege, on, grant_target_name, user_name, table_name, n
                 node.query(f"SYSTEM STOP MERGES {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM STOP MERGES with revoked privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -140,6 +159,8 @@ def stop_merges(self, privilege, on, grant_target_name, user_name, table_name, n
 @Name("system merges")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_Merges("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM MERGES.
