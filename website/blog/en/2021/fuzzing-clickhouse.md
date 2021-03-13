@@ -6,6 +6,7 @@ author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
 tags: ['fuzzing', 'testing']
 ---
 
+
 Testing is a major problem in software development: there is never enough of it. It becomes especially true for a database management system, whose task is to interpret a query language that works on the persistent state managed by the system in a distributed fashion. Each of these three functions is hard enough to test even in isolation, and it gets much worse when you combine them. As ClickHouse developers, we know this from experience. Despite a large amount of automated testing of all kinds we routinely perform as part of our continuous integration system, new bugs and regressions are creeping in. We are always looking for the ways to improve our test coverage, and this article will describe our recent development in this area &mdash; the AST-based query fuzzer.
 
 ## How to Test a SQL DBMS
