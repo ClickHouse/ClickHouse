@@ -144,7 +144,10 @@ private:
     };
 
     void addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception);
-
+#ifdef __GNUC__
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wattributes"
+#endif
     struct ProcessingUnit
     {
         std::atomic<ProcessingUnitStatus> status{ProcessingUnitStatus::READY_TO_INSERT};
@@ -178,7 +181,9 @@ private:
     [[maybe_unused]] CachelinePadding padding2;
     std::condition_variable collector_condvar;
     std::condition_variable writer_condvar;
-
+#ifdef __GNUC__
+#  pragma GCC diagnostic pop
+#endif
     void finishAndWait();
 
     void onBackgroundException()
