@@ -242,7 +242,7 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string 
             if (key_attribute.name == attribute_name)
                 return key_attribute;
 
-        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{"No such attribute '" + attribute_name + "' in keys", ErrorCodes::BAD_ARGUMENTS};
     }
 
     size_t attribute_index = it->second;
