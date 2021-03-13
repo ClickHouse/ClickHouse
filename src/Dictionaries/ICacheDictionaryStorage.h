@@ -31,6 +31,7 @@ struct KeyState
     inline bool isNotFound() const { return state == State::not_found; }
     inline bool isDefault() const { return is_default; }
     inline void setDefault() { is_default = true; }
+    inline void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
     /// Valid only if keyState is found or expired
     inline size_t getFetchedColumnIndex() const { return fetched_column_index; }
 
