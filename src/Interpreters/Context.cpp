@@ -1835,9 +1835,8 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
     std::lock_guard lock(shared->clusters_mutex);
 
     /// Do not update clusters if this part of config wasn't changed.
-    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name)) {
+    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
         return;
-    }
 
     auto old_clusters_config = shared->clusters_config;
     shared->clusters_config = config;
