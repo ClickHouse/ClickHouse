@@ -726,9 +726,10 @@ struct ConvertImplGenericToString
         WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
         FormatSettings format_settings;
+        auto serialization = type.getDefaultSerialization();
         for (size_t i = 0; i < size; ++i)
         {
-            type.getDefaultSerialization()->serializeText(col_from, i, write_buffer, format_settings);
+            serialization->serializeText(col_from, i, write_buffer, format_settings);
             writeChar(0, write_buffer);
             offsets_to[i] = write_buffer.count();
         }
@@ -1109,11 +1110,12 @@ struct ConvertImplGenericFromString
             size_t current_offset = 0;
 
             FormatSettings format_settings;
+            auto serialization = data_type_to.getDefaultSerialization();
             for (size_t i = 0; i < size; ++i)
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.getDefaultSerialization()->deserializeWholeText(column_to, read_buffer, format_settings);
+                serialization->deserializeWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, result_type);

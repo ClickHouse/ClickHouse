@@ -174,7 +174,7 @@ public:
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache = nullptr) const;
+        SubstreamsCache * cache) const;
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
