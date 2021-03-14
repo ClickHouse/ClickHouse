@@ -5,28 +5,28 @@ toc_title: PostgreSQL
 
 # PostgreSQL {#postgresql}
 
-Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
+Позволяет подключаться к БД на удаленном сервере [PostgreSQL](https://www.postgresql.org). Поддерживает операции чтения и записи (запросы `SELECT` и `INSERT`) для обмена данными между ClickHouse и PostgreSQL.
 
-Gives the real-time access to table list and table structure from remote PostgreSQL with the help of `SHOW TABLES` and `DESCRIBE TABLE` queries.
+Позволяет в реальном времени получать от удаленного сервера PostgreSQL информацию о таблицах БД и их структуре с помощью запросов `SHOW TABLES` и `DESCRIBE TABLE`.
 
-Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `use_table_cache` parameter (see the Engine Parameters below) it set to `1`, the table structure is cached and not checked for being modified, but can be updated with `DETACH` and `ATTACH` queries.
+Поддерживает операции изменения структуры таблиц (`ALTER TABLE ... ADD|DROP COLUMN`). Если параметр `use_table_cache` (см. ниже раздел Параметры движка) установлен в значение `1`, структура таблицы кешируется, и изменения в структуре не отображаются мгновенно, но могут быть получены с помощью запросов `DETACH` и `ATTACH`.
 
-## Creating a Database {#creating-a-database}
+## Создание БД {#creating-a-database}
 
 ``` sql
 CREATE DATABASE test_database 
 ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
 ```
 
-**Engine Parameters**
+**Параметры движка**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `user` — PostgreSQL user.
--   `password` — User password.
--   `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+-   `host:port` — адрес сервера PostgreSQL.
+-   `database` — имя удаленной БД.
+-   `user` — пользователь PostgreSQL.
+-   `password` — пароль пользователя.
+-   `use_table_cache` —  определяет кеширование структуры таблиц БД. Необязательный параметр. Значение по умолчанию: `0`.
 
-## Data Types Support {#data_types-support}
+## Поддерживаемые типы данных {#data_types-support}
 
 | PostgerSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
@@ -45,9 +45,9 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
  
 
-## Examples of Use {#examples-of-use}
+## Примеры использования {#examples-of-use}
 
-Database in ClickHouse, exchanging data with the PostgreSQL server:
+Обмен данными между БД ClickHouse и сервером PostgreSQL:
 
 ``` sql
 CREATE DATABASE test_database 
@@ -76,7 +76,7 @@ SHOW TABLES FROM test_database;
 └────────────┘
 ```
 
-Reading data from the PostgreSQL table:
+Чтение данных из таблицы PostgreSQL:
 
 ``` sql
 SELECT * FROM test_database.test_table;
@@ -88,7 +88,7 @@ SELECT * FROM test_database.test_table;
 └────┴───────┘
 ```
 
-Writing data to the PostgreSQL table:
+Запись данных в таблицу PostgreSQL:
 
 ``` sql
 INSERT INTO test_database.test_table VALUES (3,4);
@@ -102,13 +102,13 @@ SELECT * FROM test_database.test_table;
 └────────┴───────┘
 ```
 
-Consider the table structure was modified in PostgreSQL: 
+Пусть структура таблицы была изменена в PostgreSQL: 
 
 ``` sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text
 ```
 
-As the `use_table_cache` parameter was set to `1` when the database was created, the table structure in ClickHouse was cached and therefore not modified:
+Поскольку при создании БД параметр `use_table_cache` был установлен в значение `1`, структура таблицы в ClickHouse была кеширована и поэтому не изменилась:
 
 ``` sql
 DESCRIBE TABLE test_database.test_table;
@@ -120,7 +120,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-After detaching the table and attaching it again, the structure was updated:
+После того как таблицу «отцепили» и затем снова «прицепили», структура обновилась:
 
 ``` sql
 DETACH TABLE test_database.test_table;
@@ -135,4 +135,4 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/database-engines/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/database-engines/postgresql/) <!--hide-->
