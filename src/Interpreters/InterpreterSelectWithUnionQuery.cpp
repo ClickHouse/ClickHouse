@@ -43,7 +43,7 @@ struct CustomizeASTSelectWithUnionQueryNormalize
             return;
         }
 
-        selects.push_back(ast_select);
+        selects.push_back(std::move(ast_select));
     }
 
     void visit(ASTSelectWithUnionQuery & ast, ASTPtr &) const
@@ -76,10 +76,10 @@ struct CustomizeASTSelectWithUnionQueryNormalize
                     for (auto child = inner_union->list_of_selects->children.rbegin();
                          child != inner_union->list_of_selects->children.rend();
                          ++child)
-                        selects.push_back(*child);
+                        selects.push_back(std::move(*child));
                 }
                 else
-                    selects.push_back(select_list[i + 1]);
+                    selects.push_back(std::move(select_list[i + 1]));
             }
             /// flatten all left nodes and current node to a UNION DISTINCT list
             else if (union_modes[i] == ASTSelectWithUnionQuery::Mode::DISTINCT)
@@ -108,10 +108,10 @@ struct CustomizeASTSelectWithUnionQueryNormalize
                 /// Inner_union is an UNION ALL list, just lift it up
                 for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
                      ++child)
-                    selects.push_back(*child);
+                    selects.push_back(std::move(*child));
             }
             else
-                selects.push_back(select_list[0]);
+                selects.push_back(std::move(select_list[0]));
         }
 
         // reverse children list
