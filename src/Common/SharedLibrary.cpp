@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int CANNOT_DLSYM;
 }
 
-SharedLibrary::SharedLibrary(const std::string_view & path, int flags)
+SharedLibrary::SharedLibrary(std::string_view path, int flags)
 {
     handle = dlopen(path.data(), flags);
     if (!handle)
@@ -31,7 +31,7 @@ SharedLibrary::~SharedLibrary()
         std::terminate();
 }
 
-void * SharedLibrary::getImpl(const std::string_view & name, bool no_throw)
+void * SharedLibrary::getImpl(std::string_view name, bool no_throw)
 {
     dlerror();
 
