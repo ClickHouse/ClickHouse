@@ -155,7 +155,6 @@ option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" 
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.
-    # Implies ${ENABLE_FASTMEMCPY}
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
@@ -536,7 +535,7 @@ macro (add_executable target)
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:clickhouse_memcpy>)
+        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
