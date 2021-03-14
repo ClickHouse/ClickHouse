@@ -21,7 +21,7 @@
 
 #include "sysdep_x86.h"
 
-#ifdef	__ASSEMBLER__
+#ifdef    __ASSEMBLER__
 
 /* Syntactic details of assembler.  */
 
@@ -29,11 +29,11 @@
    the register as saved relative to %rsp instead of relative to the CFA.
    Expression is DW_OP_drop, DW_OP_breg7 (%rsp is register 7), sleb128 offset
    from %rsp.  */
-#define cfi_offset_rel_rsp(regn, off)	.cfi_escape 0x10, regn, 0x4, 0x13, \
-					0x77, off & 0x7F | 0x80, off >> 7
+#define cfi_offset_rel_rsp(regn, off)    .cfi_escape 0x10, regn, 0x4, 0x13, \
+                    0x77, off & 0x7F | 0x80, off >> 7
 
 /* If compiled for profiling, call `mcount' at the start of each function.  */
-#ifdef	PROF
+#ifdef    PROF
 /* The mcount code relies on a normal frame pointer being on the stack
    to locate our caller, so push one just for its benefit.  */
 #define CALL_MCOUNT                                                          \
@@ -45,31 +45,31 @@
   popq %rbp;                                                                 \
   cfi_def_cfa(rsp,8);
 #else
-#define CALL_MCOUNT		/* Do nothing.  */
+#define CALL_MCOUNT        /* Do nothing.  */
 #endif
 
-#define	PSEUDO(name, syscall_name, args)				      \
-lose:									      \
-  jmp JUMPTARGET(syscall_error)						      \
-  .globl syscall_error;							      \
-  ENTRY (name)								      \
-  DO_CALL (syscall_name, args);						      \
+#define    PSEUDO(name, syscall_name, args)                      \
+lose:                                          \
+  jmp JUMPTARGET(syscall_error)                              \
+  .globl syscall_error;                                  \
+  ENTRY (name)                                      \
+  DO_CALL (syscall_name, args);                              \
   jb lose
 
 #undef JUMPTARGET
 #ifdef SHARED
 # ifdef BIND_NOW
-#  define JUMPTARGET(name)	*name##@GOTPCREL(%rip)
+#  define JUMPTARGET(name)    *name##@GOTPCREL(%rip)
 # else
-#  define JUMPTARGET(name)	name##@PLT
+#  define JUMPTARGET(name)    name##@PLT
 # endif
 #else
 /* For static archives, branch to target directly.  */
-# define JUMPTARGET(name)	name
+# define JUMPTARGET(name)    name
 #endif
 
 /* Long and pointer size in bytes.  */
-#define LP_SIZE	8
+#define LP_SIZE    8
 
 /* Instruction to operate on long and pointer.  */
 #define LP_OP(insn) insn##q
@@ -78,24 +78,24 @@ lose:									      \
 #define ASM_ADDR .quad
 
 /* Registers to hold long and pointer.  */
-#define RAX_LP	rax
-#define RBP_LP	rbp
-#define RBX_LP	rbx
-#define RCX_LP	rcx
-#define RDI_LP	rdi
-#define RDX_LP	rdx
-#define RSI_LP	rsi
-#define RSP_LP	rsp
-#define R8_LP	r8
-#define R9_LP	r9
-#define R10_LP	r10
-#define R11_LP	r11
-#define R12_LP	r12
-#define R13_LP	r13
-#define R14_LP	r14
-#define R15_LP	r15
+#define RAX_LP    rax
+#define RBP_LP    rbp
+#define RBX_LP    rbx
+#define RCX_LP    rcx
+#define RDI_LP    rdi
+#define RDX_LP    rdx
+#define RSI_LP    rsi
+#define RSP_LP    rsp
+#define R8_LP    r8
+#define R9_LP    r9
+#define R10_LP    r10
+#define R11_LP    r11
+#define R12_LP    r12
+#define R13_LP    r13
+#define R14_LP    r14
+#define R15_LP    r15
 
-#else	/* __ASSEMBLER__ */
+#else    /* __ASSEMBLER__ */
 
 /* Long and pointer size in bytes.  */
 #define LP_SIZE "8"
@@ -107,23 +107,23 @@ lose:									      \
 #define ASM_ADDR ".quad"
 
 /* Registers to hold long and pointer.  */
-#define RAX_LP	"rax"
-#define RBP_LP	"rbp"
-#define RBX_LP	"rbx"
-#define RCX_LP	"rcx"
-#define RDI_LP	"rdi"
-#define RDX_LP	"rdx"
-#define RSI_LP	"rsi"
-#define RSP_LP	"rsp"
-#define R8_LP	"r8"
-#define R9_LP	"r9"
-#define R10_LP	"r10"
-#define R11_LP	"r11"
-#define R12_LP	"r12"
-#define R13_LP	"r13"
-#define R14_LP	"r14"
-#define R15_LP	"r15"
+#define RAX_LP    "rax"
+#define RBP_LP    "rbp"
+#define RBX_LP    "rbx"
+#define RCX_LP    "rcx"
+#define RDI_LP    "rdi"
+#define RDX_LP    "rdx"
+#define RSI_LP    "rsi"
+#define RSP_LP    "rsp"
+#define R8_LP    "r8"
+#define R9_LP    "r9"
+#define R10_LP    "r10"
+#define R11_LP    "r11"
+#define R12_LP    "r12"
+#define R13_LP    "r13"
+#define R14_LP    "r14"
+#define R15_LP    "r15"
 
-#endif	/* __ASSEMBLER__ */
+#endif    /* __ASSEMBLER__ */
 
-#endif	/* _X86_64_SYSDEP_H */
+#endif    /* _X86_64_SYSDEP_H */
