@@ -850,7 +850,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+То же, что и [runningDifference](./other_functions.md#other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## runningConcurrency {#runningconcurrency}
 

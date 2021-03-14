@@ -907,7 +907,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## runningConcurrency {#runningconcurrency}
 
