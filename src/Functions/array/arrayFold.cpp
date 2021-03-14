@@ -19,28 +19,9 @@ struct ArrayFoldImpl
         return accum_type;
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    static ColumnPtr execute(const ColumnArray & /*array*/, ColumnPtr mapped)
     {
-        std::cerr << " **** ArrayFoldImpl **** " << std::endl;
-        std::cerr << "     array: "  << array.dumpStructure()   << std::endl;
-        std::cerr << "     mapped: " << mapped->dumpStructure() << std::endl;
-
-        ColumnPtr res;
-        if (mapped->size() == 0)
-        {
-            res = mapped;
-        }
-        else
-        {
-            std::cerr << "     mapped[0]: " << (*mapped)[0].dump() << std::endl;
-            // std::cerr << "     mapped[1]: " << (*mapped)[1].dump() << std::endl;
-            res = mapped->cut(0, 1);
-        }
-        std::cerr << " ^^^^ ArrayFoldImpl ^^^^" << std::endl;
-        return res;
-
-        // return ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr());
-        // return ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr());
+        return (mapped->size() == 0) ? mapped : mapped->cut(0, 1);
     }
 };
 
