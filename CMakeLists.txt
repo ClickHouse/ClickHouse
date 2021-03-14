@@ -240,9 +240,7 @@ else()
     message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
 endif()
 
-if(NOT DISABLE_CPU_OPTIMIZE)
-    include(cmake/cpu_features.cmake)
-endif()
+include(cmake/cpu_features.cmake)
 
 option(ARCH_NATIVE "Add -march=native compiler flag")
 
