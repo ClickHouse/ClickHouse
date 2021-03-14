@@ -168,7 +168,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnection>(connection->conn_str()),
+                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnection>(*connection),
                 ColumnsDescription{*columns}, ConstraintsDescription{}, context);
 
         if (cache_tables)
