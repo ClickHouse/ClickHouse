@@ -11,7 +11,7 @@ set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 target_link_libraries (date_lut2 PRIVATE common ${PLATFORM_LIBS})
 target_link_libraries (date_lut3 PRIVATE common ${PLATFORM_LIBS})
 target_link_libraries (date_lut_default_timezone PRIVATE common ${PLATFORM_LIBS})
-target_link_libraries (local_date_time_comparison PRIVATE common)
+target_link_libraries (local_date_time_comparison PRIVATE common ${PLATFORM_LIBS})
 target_link_libraries (realloc-perf PRIVATE common)
 add_check(local_date_time_comparison)
 

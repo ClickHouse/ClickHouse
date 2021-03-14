@@ -1,4 +1,4 @@
-# LDAP {#external-authenticators-ldap} 
+# LDAP {#external-authenticators-ldap}
 
 LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
 
@@ -84,11 +84,12 @@ Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be c
 
 When SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled, users that are authenticated by LDAP servers can also be created using the [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement.
 
+
 Query:
 
-```sql
+
 CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
-```
+
 
 ## LDAP Exernal User Directory {#ldap-external-user-directory}
 
