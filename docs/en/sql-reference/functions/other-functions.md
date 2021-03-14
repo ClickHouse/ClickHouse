@@ -911,15 +911,15 @@ Same as for [runningDifference](../../sql-reference/functions/other-functions.md
 
 ## runningConcurrency {#runningconcurrency}
 
-Calculates the number of events that are concurrent at event start time.
+Calculates the number of concurrent events.
+Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
+The function calculates the total number of active (concurrent) events for each event start time.
 
 **Syntax**
 
 ``` sql
 runningConcurrency(start, end)
 ```
-
-Each event has a start time and an end time. Columns with these two values must be of the same data type. The start time is included in the event, while the end time is excluded. The function calculates the total number of active events for each start time in the specified period.
 
 !!! warning "Warning"
     Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
