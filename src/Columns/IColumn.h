@@ -207,6 +207,10 @@ public:
     /// Returns pointer to the position after the read data.
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
+    /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
+    /// Returns a pointer to the position after the deserialized data.
+    virtual const char * skipSerializedInArena(const char *) const = 0;
+
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.

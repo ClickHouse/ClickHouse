@@ -60,6 +60,27 @@ static Names extractColumnNames(const ASTPtr & node)
     }
 }
 
+/** Is used to order Graphite::Retentions by age and precision descending.
+  * Throws exception if not both age and precision are less or greater then another.
+  */
+static bool compareRetentions(const Graphite::Retention & a, const Graphite::Retention & b)
+{
+    if (a.age > b.age && a.precision > b.precision)
+    {
+        return true;
+    }
+    else if (a.age < b.age && a.precision < b.precision)
+    {
+        return false;
+    }
+    String error_msg = "age and precision should only grow up: "
+        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
+        + std::to_string(b.age) + ":" + std::to_string(b.precision);
+    throw Exception(
+        error_msg,
+        ErrorCodes::BAD_ARGUMENTS);
+}
+
 /** Read the settings for Graphite rollup from config.
   * Example
   *
@@ -157,8 +178,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
 }
@@ -654,25 +674,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
-
-        size_t index_granularity_bytes = 0;
-        size_t min_index_granularity_bytes = 0;
-
-        index_granularity_bytes = storage_settings->index_granularity_bytes;
-        min_index_granularity_bytes = storage_settings->min_index_granularity_bytes;
-
-        /* the min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default
-         * if index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
-         * min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
-         * index_granularity_bytes SETTING of 1b can create really large parts with large marks.
-        */
-        if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
-        {
-            throw Exception(
-                "index_granularity_bytes: " + std::to_string(index_granularity_bytes)
-                    + " is lesser than specified min_index_granularity_bytes: " + std::to_string(min_index_granularity_bytes),
-                ErrorCodes::BAD_ARGUMENTS);
-        }
     }
     else
     {

@@ -275,7 +275,8 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterConstraint("1.0"),
     RQ_SRS_006_RBAC_Privileges_AlterConstraint_TableEngines("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
