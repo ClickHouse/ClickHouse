@@ -1,3 +1,5 @@
+#pragma once
+
 #include "PostgreSQLConnection.h"
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
