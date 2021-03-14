@@ -63,19 +63,19 @@ enum LogLevel
 
 void log(LogLevel level, CString msg);
 
-extern std::string LIBRARY_CREATE_NEW_FUNC_NAME;
-extern std::string LIBRARY_CLONE_FUNC_NAME;
-extern std::string LIBRARY_DELETE_FUNC_NAME;
+extern std::string_view LIBRARY_CREATE_NEW_FUNC_NAME;
+extern std::string_view LIBRARY_CLONE_FUNC_NAME;
+extern std::string_view LIBRARY_DELETE_FUNC_NAME;
 
-extern std::string LIBRARY_DATA_NEW_FUNC_NAME;
-extern std::string LIBRARY_DATA_DELETE_FUNC_NAME;
+extern std::string_view LIBRARY_DATA_NEW_FUNC_NAME;
+extern std::string_view LIBRARY_DATA_DELETE_FUNC_NAME;
 
-extern std::string LIBRARY_LOAD_ALL_FUNC_NAME;
-extern std::string LIBRARY_LOAD_IDS_FUNC_NAME;
-extern std::string LIBRARY_LOAD_KEYS_FUNC_NAME;
+extern std::string_view LIBRARY_LOAD_ALL_FUNC_NAME;
+extern std::string_view LIBRARY_LOAD_IDS_FUNC_NAME;
+extern std::string_view LIBRARY_LOAD_KEYS_FUNC_NAME;
 
-extern std::string LIBRARY_IS_MODIFIED_FUNC_NAME;
-extern std::string LIBRARY_SUPPORTS_SELECTIVE_LOAD_FUNC_NAME;
+extern std::string_view LIBRARY_IS_MODIFIED_FUNC_NAME;
+extern std::string_view LIBRARY_SUPPORTS_SELECTIVE_LOAD_FUNC_NAME;
 
 using LibraryContext = void *;
 
