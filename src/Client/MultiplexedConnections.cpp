@@ -158,7 +158,7 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
@@ -206,7 +206,7 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked({});
 
         switch (packet.type)
         {
@@ -253,7 +253,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -265,7 +265,11 @@ Packet MultiplexedConnections::receivePacketUnlocked(std::function<void(Poco::Ne
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket(std::move(async_callback));
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        packet = current_connection->receivePacket();
+    }
 
     switch (packet.type)
     {

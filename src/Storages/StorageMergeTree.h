@@ -150,8 +150,9 @@ private:
     {
         FutureMergedMutatedPart future_part;
         ReservationPtr reserved_space;
-
         StorageMergeTree & storage;
+        // Optional tagger to maintain volatile parts for the JBOD balancer
+        std::optional<CurrentlySubmergingEmergingTagger> tagger;
 
         CurrentlyMergingPartsTagger(
             FutureMergedMutatedPart & future_part_,
