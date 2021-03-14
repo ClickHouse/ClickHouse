@@ -1,6 +1,6 @@
 ---
 toc_priority: 18
-toc_title: "\u0420\u043e\u0434\u043d\u043e\u0439\u0020\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0020\u0028\u0054\u0043\u0050\u0029"
+toc_title: "Родной интерфейс (TCP)"
 ---
 
 # Родной интерфейс (TCP) {#rodnoi-interfeis-tcp}

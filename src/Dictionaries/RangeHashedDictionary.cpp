@@ -52,7 +52,6 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
-    extern const int NOT_IMPLEMENTED;
 }
 
 bool RangeHashedDictionary::Range::isCorrectDate(const RangeStorageType & date)
@@ -93,7 +92,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_values_column) const
+    const ColumnPtr & default_values_column) const
 {
     ColumnPtr result;
 
@@ -178,10 +177,76 @@ ColumnPtr RangeHashedDictionary::getColumn(
     return result;
 }
 
-ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns &, const DataTypes &) const
+ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Has not supported", getDictionaryID().getNameForLogs());
+    auto range_storage_column = key_columns[1];
+    ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types[1], ""};
+
+    auto range_column_storage_type = std::make_shared<DataTypeInt64>();
+    auto range_column_updated = castColumnAccurate(column_to_cast, range_column_storage_type);
+
+    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<RangeStorageType> range_backup_storage;
+
+    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, range_column_updated, range_backup_storage);
+
+    const auto & attribute = attributes.front();
+
+    ColumnUInt8::Ptr result;
+
+    auto type_call = [&](const auto & dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        result = hasKeysImpl<ValueType>(attribute, ids, dates);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+
+    return result;
+}
+
+template <typename AttributeType>
+ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
+    const Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    const PaddedPODArray<RangeStorageType> & dates) const
+{
+    auto result = ColumnUInt8::create(ids.size());
+    auto& out = result->getData();
+
+    const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
+
+    for (const auto row : ext::range(0, ids.size()))
+    {
+        const auto it = attr.find(ids[row]);
+
+        if (it)
+        {
+            const auto date = dates[row];
+            const auto & ranges_and_values = it->getMapped();
+            const auto val_it = std::find_if(
+                std::begin(ranges_and_values),
+                std::end(ranges_and_values),
+                [date](const Value<AttributeType> & v)
+                {
+                    return v.range.contains(date);
+                });
+
+            if (val_it != std::end(ranges_and_values))
+                out[row] = true;
+            else
+                out[row] = false;
+        }
+        else
+            out[row] = false;
+    }
+
+    return result;
 }
 
 void RangeHashedDictionary::createAttributes()
@@ -450,7 +515,9 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 
 template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
-    PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const
+    PaddedPODArray<Key> & ids,
+    PaddedPODArray<RangeType> & start_dates,
+    PaddedPODArray<RangeType> & end_dates) const
 {
     const auto & attribute = attributes.front();
 
@@ -458,11 +525,9 @@ void RangeHashedDictionary::getIdsAndDates(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
 
-        if constexpr (std::is_same_v<AttributeType, String>)
-            getIdsAndDates<StringRef>(attribute, ids, start_dates, end_dates);
-        else
-            getIdsAndDates<AttributeType>(attribute, ids, start_dates, end_dates);
+        getIdsAndDates<ValueType>(attribute, ids, start_dates, end_dates);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -506,13 +571,20 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names &
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
 
-    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, RangeType, Key>;
-    auto dict_ptr = std::static_pointer_cast<const RangeHashedDictionary>(shared_from_this());
-    return std::make_shared<BlockInputStreamType>(
-        dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
+    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeType>;
+
+    auto stream = std::make_shared<BlockInputStreamType>(
+        shared_from_this(),
+        max_block_size,
+        column_names,
+        std::move(ids),
+        std::move(start_dates),
+        std::move(end_dates));
+
+    return stream;
 }
 
-struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
+struct RangeHashedDictionaryCallGetBlockInputStreamImpl
 {
     BlockInputStreamPtr stream;
     const RangeHashedDictionary * dict;
@@ -532,7 +604,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 {
     using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
-    RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
+    RangeHashedDictionaryCallGetBlockInputStreamImpl callable;
     callable.dict = this;
     callable.column_names = &column_names;
     callable.max_block_size = max_block_size;
