@@ -33,6 +33,6 @@ toc_title: "Введение"
 | [jdbc](../../sql-reference/table-functions/jdbc.md)             | Создаёт таблицу с движком [JDBC](../../engines/table-engines/integrations/jdbc.md).                                                         |
 | [odbc](../../sql-reference/table-functions/odbc.md)             | Создаёт таблицу с движком [ODBC](../../engines/table-engines/integrations/odbc.md).                                                         |
 | [hdfs](../../sql-reference/table-functions/hdfs.md)             | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                         |
-| [s3](../../sql-reference/table-functions/s3.md)                 | Создаёт таблицу с движком  [S3](../../engines/table-engines/integrations/s3.md).                                                            |
+| [s3](../../sql-reference/table-functions/s3.md)                 | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md).                                                            |
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/) <!--hide-->
