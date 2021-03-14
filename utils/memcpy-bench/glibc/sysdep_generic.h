@@ -1,3 +1,5 @@
+#pragma once
+
 /* Generic asm macros used on many machines.
    Copyright (C) 1991-2020 Free Software Foundation, Inc.
    This file is part of the GNU C Library.

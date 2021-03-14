@@ -1,3 +1,5 @@
+#pragma once
+
 /* Definitions for x86 syntax variations.
    Copyright (C) 1992-2020 Free Software Foundation, Inc.
    This file is part of the GNU C Library.  Its master source is NOT part of
