@@ -1,5 +1,5 @@
 ---
-toc_folder_title: "\u041d\u0430\u0447\u0430\u043b\u043e\u0020\u0440\u0430\u0431\u043e\u0442\u044b"
+toc_folder_title: "Начало работы"
 toc_hidden: true
 toc_priority: 8
 toc_title: hidden

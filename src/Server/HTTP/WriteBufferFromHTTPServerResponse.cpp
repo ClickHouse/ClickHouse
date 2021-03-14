@@ -171,6 +171,8 @@ void WriteBufferFromHTTPServerResponse::finalize()
     try
     {
         next();
+        if (out)
+            out->finalize();
         out.reset();
     }
     catch (...)

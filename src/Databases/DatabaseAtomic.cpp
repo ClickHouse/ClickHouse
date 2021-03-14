@@ -108,6 +108,13 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
 
 void DatabaseAtomic::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
+    if (auto * mv = dynamic_cast<StorageMaterializedView *>(tryGetTable(table_name, context).get()))
+    {
+        /// Remove the inner table (if any) to avoid deadlock
+        /// (due to attempt to execute DROP from the worker thread)
+        mv->dropInnerTable(no_delay, context);
+    }
+
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
     StoragePtr table;
@@ -131,10 +138,7 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
     }
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
-    /// Remove the inner table (if any) to avoid deadlock
-    /// (due to attempt to execute DROP from the worker thread)
-    if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
-        mv->dropInnerTable(no_delay, context);
+
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
