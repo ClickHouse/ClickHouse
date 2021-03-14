@@ -17,4 +17,3 @@ Zero as an argument is considered “false,” while any non-zero value is consi
 
 ## xor {#xor}
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/logical_functions/) <!--hide-->

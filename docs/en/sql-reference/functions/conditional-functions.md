@@ -202,4 +202,3 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->
