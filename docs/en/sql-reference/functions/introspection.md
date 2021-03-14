@@ -369,4 +369,3 @@ Result:
 └──────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/introspection/) <!--hide-->

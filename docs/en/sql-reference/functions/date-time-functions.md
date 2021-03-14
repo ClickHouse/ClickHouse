@@ -1070,4 +1070,3 @@ Result:
 └────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
