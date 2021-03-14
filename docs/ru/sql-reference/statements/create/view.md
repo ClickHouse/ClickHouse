@@ -60,6 +60,6 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
  
 Представления выглядят так же, как обычные таблицы. Например, они перечисляются в результате запроса `SHOW TABLES`.
 
-Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
+Чтобы удалить представление, следует использовать `DROP VIEW`, больше подробностей написано в документации для запроса [DROP](../../../sql-reference/statements/drop.md#drop-view).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/view) <!--hide-->
