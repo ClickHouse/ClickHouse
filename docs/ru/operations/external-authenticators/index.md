@@ -10,6 +10,6 @@ ClickHouse поддерживает аунтетификацию и управл
 
 Поддерживаются следующие внешние аутентификаторы и каталоги:
 
-- [LDAP](./ldap.md#external-authenticators-ldap) [Authenticator](./ldap.md#ldap-external-authenticator) и [Directory](./ldap.md#ldap-external-user-directory)
+- [LDAP](./ldap.md#external-authenticators-ldap) [аутентификатор](./ldap.md#ldap-external-authenticator) и [каталог](./ldap.md#ldap-external-user-directory)
 
 [Original article](https://clickhouse.tech/docs/ru/operations/external-authenticators/index.md) <!--hide-->
