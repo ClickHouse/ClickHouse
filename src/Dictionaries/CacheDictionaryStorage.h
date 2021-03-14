@@ -33,8 +33,6 @@ struct CacheDictionaryStorageConfiguration
     const DictionaryLifetime lifetime;
 };
 
-
-
 /// TODO: Add documentation
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
@@ -167,7 +165,6 @@ private:
         const size_t element_index;
         const bool is_default;
     };
-
 
     template <typename KeysStorageFetchResult>
     KeysStorageFetchResult fetchColumnsForKeysImpl(
