@@ -592,19 +592,30 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 
 
 AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_)
-    , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
-    , deserializer(output.getHeader(), file_reader.dataSchema(), format_settings_)
+    : IRowInputFormat(header_, in_, params_),
+      format_settings(format_settings_)
 {
-    file_reader.init();
+}
+
+void AvroRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    file_reader_ptr.reset();
 }
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
-    if (file_reader.hasMore())
+    if (!file_reader_ptr)
     {
-        file_reader.decr();
-        deserializer.deserializeRow(columns, file_reader.decoder(), ext);
+        file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
+        deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), format_settings);
+        file_reader_ptr->init();
+    }
+
+    if (file_reader_ptr->hasMore())
+    {
+        file_reader_ptr->decr();
+        deserializer_ptr->deserializeRow(columns, file_reader_ptr->decoder(), ext);
         return true;
     }
     return false;

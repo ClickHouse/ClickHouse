@@ -107,12 +107,15 @@ class AvroRowInputFormat : public IRowInputFormat
 {
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void resetParser() override;
+
     String getName() const override { return "AvroRowInputFormat"; }
 
 private:
-    avro::DataFileReaderBase file_reader;
-    AvroDeserializer deserializer;
+    std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
+    std::unique_ptr<AvroDeserializer> deserializer_ptr;
+    const FormatSettings & format_settings;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.

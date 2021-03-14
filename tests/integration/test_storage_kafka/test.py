@@ -9,6 +9,7 @@ import io
 
 import avro.schema
 import avro.io
+import avro.datafile
 from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 from confluent_kafka import admin
@@ -143,9 +144,6 @@ def kafka_produce_protobuf_social(topic, start_index, num_messages):
     print(("Produced {} messages for topic {}".format(num_messages, topic)))
 
 def avro_message(value):
-    # type: (CachedSchemaRegistryClient, dict) -> str
-
-
     schema = avro.schema.make_avsc_object({
         'name': 'row',
         'type': 'record',
@@ -157,13 +155,83 @@ def avro_message(value):
             {'name': 'val3', 'type': 'int'}
         ]
     })
-    writer = avro.io.DatumWriter(schema)
     bytes_writer = io.BytesIO()
-    encoder = avro.io.BinaryEncoder(bytes_writer)
-    writer.write(value, encoder)
+    # writer = avro.io.DatumWriter(schema)
+    # encoder = avro.io.BinaryEncoder(bytes_writer)
+    # writer.write(value, encoder)
+
+
+    # DataFileWrite seems to be mandatory to get schema encoded
+    writer = avro.datafile.DataFileWriter(bytes_writer, avro.io.DatumWriter(), schema)
+    if isinstance(value, list):
+        for v in value:
+            writer.append(v)
+    else:
+        writer.append(value)
+    writer.flush()
     raw_bytes = bytes_writer.getvalue()
 
+    writer.close()
+    bytes_writer.close()
     return raw_bytes
+
+@pytest.mark.timeout(180)
+def test_avro_kafka(kafka_cluster):
+    data_sample = [
+                avro_message({'id': 0, 'blockNo': 0, 'val1': str('AM'), 'val2': 0.5, "val3": 1}),
+                avro_message([{'id': id, 'blockNo': 0, 'val1': str('AM'),
+                               'val2': 0.5, "val3": 1} for id in range(1, 16)]),
+                avro_message({'id': 0, 'blockNo': 0, 'val1': str('AM'), 'val2': 0.5, "val3": 1}),
+            ]
+    instance.query('''
+            DROP TABLE IF EXISTS test.avro_kafka;
+
+            CREATE TABLE test.avro_kafka (
+                id Int64,
+                blockNo UInt16,
+                val1 String,
+                val2 Float32,
+                val3 UInt8
+            ) ENGINE = Kafka()
+                        SETTINGS kafka_broker_list = 'kafka1:19092',
+                        kafka_topic_list = 'test_avro_kafka',
+                        kafka_group_name = 'test_avro_kafka_group',
+                        kafka_format = 'Avro',
+                        kafka_flush_interval_ms = 1000;
+            ''')
+
+
+    time.sleep(3)
+    # kafka_produce("test_avro_kafka", [] + [''] + data_sample)
+    kafka_produce("test_avro_kafka", data_sample)
+    time.sleep(3)
+
+    topic_name = 'test_avro_kafka'
+    # shift offsets by 1 if format supports empty value
+    offsets =  [0, 1, 2]
+    result = instance.query('SELECT *, _topic, _partition, _offset FROM test.avro_kafka')
+    print("result", result)
+    expected = '''\
+0	0	AM	0.5	1	{topic_name}	0	{offset_0}
+1	0	AM	0.5	1	{topic_name}	0	{offset_1}
+2	0	AM	0.5	1	{topic_name}	0	{offset_1}
+3	0	AM	0.5	1	{topic_name}	0	{offset_1}
+4	0	AM	0.5	1	{topic_name}	0	{offset_1}
+5	0	AM	0.5	1	{topic_name}	0	{offset_1}
+6	0	AM	0.5	1	{topic_name}	0	{offset_1}
+7	0	AM	0.5	1	{topic_name}	0	{offset_1}
+8	0	AM	0.5	1	{topic_name}	0	{offset_1}
+9	0	AM	0.5	1	{topic_name}	0	{offset_1}
+10	0	AM	0.5	1	{topic_name}	0	{offset_1}
+11	0	AM	0.5	1	{topic_name}	0	{offset_1}
+12	0	AM	0.5	1	{topic_name}	0	{offset_1}
+13	0	AM	0.5	1	{topic_name}	0	{offset_1}
+14	0	AM	0.5	1	{topic_name}	0	{offset_1}
+15	0	AM	0.5	1	{topic_name}	0	{offset_1}
+0	0	AM	0.5	1	{topic_name}	0	{offset_2}
+'''.format(topic_name=topic_name, offset_0=offsets[0], offset_1=offsets[1], offset_2=offsets[2])
+    assert TSV(result) == TSV(expected), 'Proper result for format: avro_kafka'
+
 
 def avro_confluent_message(schema_registry_client, value):
     # type: (CachedSchemaRegistryClient, dict) -> str
@@ -315,6 +383,8 @@ def test_kafka_json_as_string(kafka_cluster):
                                            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
     instance.query('''
+        DROP TABLE IF EXISTS test.kafka
+
         CREATE TABLE test.kafka (field String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -625,12 +695,12 @@ def test_kafka_formats(kafka_cluster):
             'data_sample': [
                 avro_message({'id': 0, 'blockNo': 0, 'val1': str('AM'), 'val2': 0.5, "val3": 1}),
 
-                b''.join([avro_message({'id': id, 'blockNo': 0, 'val1': str('AM'),
-                                                               'val2': 0.5, "val3": 1}) for id in range(1, 16)]),
+                avro_message([{'id': id, 'blockNo': 0, 'val1': str('AM'),
+                                                               'val2': 0.5, "val3": 1} for id in range(1, 16)]),
 
                 avro_message({'id': 0, 'blockNo': 0, 'val1': str('AM'), 'val2': 0.5, "val3": 1}),
             ],
-            'supports_empty_value': True,
+            'supports_empty_value': False,
         }
         # 'Arrow' : {
         #     # Not working at all: DB::Exception: Error while opening a table: Invalid: File is too small: 0, Stack trace (when copying this message, always include the lines below):
