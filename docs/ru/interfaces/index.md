@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u0418\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u044B"
+toc_folder_title: "Интерфейсы"
 toc_priority: 14
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Интерфейсы {#interfaces}
