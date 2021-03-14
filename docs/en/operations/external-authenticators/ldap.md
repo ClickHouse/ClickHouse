@@ -9,7 +9,9 @@ For both of these approaches, an internally named LDAP server must be defined in
 
 ## LDAP Server Definition {#ldap-server-definition}
 
-To define LDAP server you must add `ldap_servers` section to the `config.xml`. For example,
+To define LDAP server you must add `ldap_servers` section to the `config.xml`.
+
+**Example**
 
 ```xml
 <yandex>
@@ -87,9 +89,9 @@ When SQL-driven [Access Control and Account Management](../access-rights.md#acce
 
 Query:
 
-
+```sql
 CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
-
+```
 
 ## LDAP Exernal User Directory {#ldap-external-user-directory}
 
