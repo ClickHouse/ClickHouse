@@ -2570,7 +2570,7 @@ SELECT * FROM test2;
 - 0 — выключено.
 - 1 — включено.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `0`. 
 
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
