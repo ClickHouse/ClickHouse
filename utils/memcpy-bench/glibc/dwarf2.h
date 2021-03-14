@@ -21,7 +21,7 @@
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _DWARF2_H
-#define _DWARF2_H	1
+#define _DWARF2_H    1
 
 /* This file is derived from the DWARF specification (a public document)
    Revision 2.0.0 (July 27, 1993) developed by the UNIX International
@@ -88,19 +88,19 @@ enum dwarf_tag
     /* SGI/MIPS Extensions */
     DW_TAG_MIPS_loop = 0x4081,
     /* GNU extensions */
-    DW_TAG_format_label = 0x4101,	/* for FORTRAN 77 and Fortran 90 */
-    DW_TAG_function_template = 0x4102,	/* for C++ */
-    DW_TAG_class_template = 0x4103,	/* for C++ */
+    DW_TAG_format_label = 0x4101,    /* for FORTRAN 77 and Fortran 90 */
+    DW_TAG_function_template = 0x4102,    /* for C++ */
+    DW_TAG_class_template = 0x4103,    /* for C++ */
     DW_TAG_GNU_BINCL = 0x4104,
     DW_TAG_GNU_EINCL = 0x4105
   };
 
-#define DW_TAG_lo_user	0x4080
-#define DW_TAG_hi_user	0xffff
+#define DW_TAG_lo_user    0x4080
+#define DW_TAG_hi_user    0xffff
 
 /* flag that tells whether entry has a child or not */
 #define DW_children_no   0
-#define	DW_children_yes  1
+#define    DW_children_yes  1
 
 /* Form names and codes.  */
 enum dwarf_form
@@ -215,8 +215,8 @@ enum dwarf_attribute
     DW_AT_body_end = 0x2106
   };
 
-#define DW_AT_lo_user	0x2000	/* implementation-defined range start */
-#define DW_AT_hi_user	0x3ff0	/* implementation-defined range end */
+#define DW_AT_lo_user    0x2000    /* implementation-defined range start */
+#define DW_AT_hi_user    0x3ff0    /* implementation-defined range end */
 
 /* Location atom names and codes.  */
 
@@ -369,8 +369,8 @@ enum dwarf_location_atom
     DW_OP_nop = 0x96
   };
 
-#define DW_OP_lo_user	0x80	/* implementation-defined range start */
-#define DW_OP_hi_user	0xff	/* implementation-defined range end */
+#define DW_OP_lo_user    0x80    /* implementation-defined range start */
+#define DW_OP_hi_user    0xff    /* implementation-defined range end */
 
 /* Type encodings.  */
 
@@ -387,8 +387,8 @@ enum dwarf_type
     DW_ATE_unsigned_char = 0x8
   };
 
-#define	DW_ATE_lo_user 0x80
-#define	DW_ATE_hi_user 0xff
+#define    DW_ATE_lo_user 0x80
+#define    DW_ATE_hi_user 0xff
 
 /* Array ordering names and codes.  */
 enum dwarf_array_dim_ordering
@@ -517,17 +517,17 @@ enum dwarf_call_frame_info
     DW_CFA_GNU_negative_offset_extended = 0x2f
   };
 
-#define DW_CIE_ID	  0xffffffff
-#define DW_CIE_VERSION	  1
+#define DW_CIE_ID      0xffffffff
+#define DW_CIE_VERSION      1
 
 #define DW_CFA_extended   0
 #define DW_CFA_low_user   0x1c
 #define DW_CFA_high_user  0x3f
 
-#define DW_CHILDREN_no		     0x00
-#define DW_CHILDREN_yes		     0x01
+#define DW_CHILDREN_no             0x00
+#define DW_CHILDREN_yes             0x01
 
-#define DW_ADDR_none		0
+#define DW_ADDR_none        0
 
 /* Source language names and codes.  */
 
@@ -548,8 +548,8 @@ enum dwarf_source_language
   };
 
 
-#define DW_LANG_lo_user 0x8000	/* implementation-defined range start */
-#define DW_LANG_hi_user 0xffff	/* implementation-defined range start */
+#define DW_LANG_lo_user 0x8000    /* implementation-defined range start */
+#define DW_LANG_hi_user 0xffff    /* implementation-defined range start */
 
 /* Names and codes for macro information.  */
 
@@ -566,25 +566,25 @@ enum dwarf_macinfo_record_type
 
 /* @@@ For use with GNU frame unwind information.  */
 
-#define DW_EH_PE_absptr		0x00
-#define DW_EH_PE_omit		0xff
+#define DW_EH_PE_absptr        0x00
+#define DW_EH_PE_omit        0xff
 
-#define DW_EH_PE_uleb128	0x01
-#define DW_EH_PE_udata2		0x02
-#define DW_EH_PE_udata4		0x03
-#define DW_EH_PE_udata8		0x04
-#define DW_EH_PE_sleb128	0x09
-#define DW_EH_PE_sdata2		0x0A
-#define DW_EH_PE_sdata4		0x0B
-#define DW_EH_PE_sdata8		0x0C
-#define DW_EH_PE_signed		0x08
+#define DW_EH_PE_uleb128    0x01
+#define DW_EH_PE_udata2        0x02
+#define DW_EH_PE_udata4        0x03
+#define DW_EH_PE_udata8        0x04
+#define DW_EH_PE_sleb128    0x09
+#define DW_EH_PE_sdata2        0x0A
+#define DW_EH_PE_sdata4        0x0B
+#define DW_EH_PE_sdata8        0x0C
+#define DW_EH_PE_signed        0x08
 
-#define DW_EH_PE_pcrel		0x10
-#define DW_EH_PE_textrel	0x20
-#define DW_EH_PE_datarel	0x30
-#define DW_EH_PE_funcrel	0x40
-#define DW_EH_PE_aligned	0x50
+#define DW_EH_PE_pcrel        0x10
+#define DW_EH_PE_textrel    0x20
+#define DW_EH_PE_datarel    0x30
+#define DW_EH_PE_funcrel    0x40
+#define DW_EH_PE_aligned    0x50
 
-#define DW_EH_PE_indirect	0x80
+#define DW_EH_PE_indirect    0x80
 
 #endif /* dwarf2.h */

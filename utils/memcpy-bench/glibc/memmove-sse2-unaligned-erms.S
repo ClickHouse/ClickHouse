@@ -17,7 +17,7 @@
    <https://www.gnu.org/licenses/>.  */
 
 #if 1
-# define MEMMOVE_SYMBOL(p,s)	p##_sse2_##s
+# define MEMMOVE_SYMBOL(p,s)    p##_sse2_##s
 #else
 weak_alias (__mempcpy, mempcpy)
 #endif

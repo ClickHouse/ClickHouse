@@ -18,33 +18,33 @@
 
 #include "sysdep.h"
 
-#define VEC_SIZE	16
-#define VEC(i)		xmm##i
-#define PREFETCHNT	prefetchnta
-#define VMOVNT		movntdq
+#define VEC_SIZE    16
+#define VEC(i)        xmm##i
+#define PREFETCHNT    prefetchnta
+#define VMOVNT        movntdq
 /* Use movups and movaps for smaller code sizes.  */
-#define VMOVU		movups
-#define VMOVA		movaps
+#define VMOVU        movups
+#define VMOVA        movaps
 
-#define SECTION(p)		p
+#define SECTION(p)        p
 
 #ifdef USE_MULTIARCH
 # if 0
-#  define MEMCPY_SYMBOL(p,s)		memcpy
+#  define MEMCPY_SYMBOL(p,s)        memcpy
 # endif
 #else
 # if defined SHARED
-#  define MEMCPY_SYMBOL(p,s)		__memcpy
+#  define MEMCPY_SYMBOL(p,s)        __memcpy
 # else
-#  define MEMCPY_SYMBOL(p,s)		memcpy
+#  define MEMCPY_SYMBOL(p,s)        memcpy
 # endif
 #endif
 #if !defined USE_MULTIARCH
-# define MEMPCPY_SYMBOL(p,s)		__mempcpy
+# define MEMPCPY_SYMBOL(p,s)        __mempcpy
 #endif
 #ifndef MEMMOVE_SYMBOL
-# define MEMMOVE_CHK_SYMBOL(p,s)	p
-# define MEMMOVE_SYMBOL(p,s)		memmove
+# define MEMMOVE_CHK_SYMBOL(p,s)    p
+# define MEMMOVE_SYMBOL(p,s)        memmove
 #endif
 
 #include "memmove-vec-unaligned-erms.S"
