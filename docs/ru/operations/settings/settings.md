@@ -2552,6 +2552,26 @@ SELECT * FROM test2;
 
 Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
 
+## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
+
+Позволяет выполнять запрос `SELECT` к таблице на движке `File`, на содержащем файл.
+
+Возможные значения:
+- 0 — запрос `SELECT` генерирует исключение.
+- 1 — запрос `SELECT` возвращает пустой результат.
+
+Значение по умолчанию: `0`.
+
+## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
+
+Включает или выключает возможность удаления до вставки данных в таблицу на движке File.
+
+Возможные значения:
+- 0 — выключено.
+- 1 — включено.
+
+Значение по умолчанию: `0`.
+
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
 Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).

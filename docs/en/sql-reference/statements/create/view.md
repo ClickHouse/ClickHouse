@@ -90,7 +90,7 @@ Live views work similarly to how a query in a distributed table works. But inste
 
     See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
-You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query
+You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query.
 
 ```sql
 WATCH [db.]live_view
@@ -128,7 +128,7 @@ INSERT INTO mt VALUES (2);
 INSERT INTO mt VALUES (3);
 ```
 
-or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
+Or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
 
 ```sql
 WATCH [db.]live_view EVENTS
@@ -163,9 +163,9 @@ SELECT * FROM [db.]live_view WHERE ...
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
-### With Timeout {#live-view-with-timeout}
+### WITH TIMEOUT {#live-view-with-timeout}
 
-When a live view is create with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
+When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
@@ -180,7 +180,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 ```
 
-### With Refresh {#live-view-with-refresh}
+### WITH REFRESH {#live-view-with-refresh}
 
 When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
 
@@ -246,8 +246,7 @@ You can use the following settings to control the behaviour of live views.
 
 - `allow_experimental_live_view` - enable live views. Default is `0`.
 - `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default is `15` seconds.
-- `max_live_view_insert_blocks_before_refresh` - maximum number of inserted blocks after which
-   mergeable blocks are dropped and query is re-executed. Default is `64` inserts.
+- `max_live_view_insert_blocks_before_refresh` - maximum number of inserted blocks after which mergeable blocks are dropped and query is re-executed. Default is `64` inserts.
 - `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default is `5` seconds.
 - `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
 
