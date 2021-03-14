@@ -122,11 +122,17 @@ Contribute all new information in English language. Other languages are translat
     | Cell     C1 | Cell     C2 | Cell     C3 |
     ```
 
-{## <a name="adding-a-new-file"/>
+<a name="adding-a-new-file"/>
 
 ### Adding a New File
 
-When adding a new file:
+When you add a new file, it should end with a link like:
+
+`[Original article](https://clickhouse.tech/docs/<path-to-the-page>) <!--hide-->`
+
+and there should be **a new empty line** after it.
+
+{## When adding a new file:
 
 - Make symbolic links for all other languages. You can use the following commands:
 
