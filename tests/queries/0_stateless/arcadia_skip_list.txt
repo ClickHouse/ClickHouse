@@ -176,7 +176,7 @@
 01560_timeseriesgroupsum_segfault
 00976_ttl_with_old_parts
 01584_distributed_buffer_cannot_find_column
-01018_ip_dictionary
+01018_ip_dictionary_long
 01582_distinct_subquery_groupby
 01558_ttest
 01558_ttest_scipy
@@ -212,3 +212,13 @@
 01017_uniqCombined_memory_usage
 01747_join_view_filter_dictionary
 01748_dictionary_table_dot
+00950_dict_get
+01683_flat_dictionary
+01681_cache_dictionary_simple_key
+01682_cache_dictionary_complex_key
+01684_ssd_cache_dictionary_simple_key
+01685_ssd_cache_dictionary_complex_key
+01304_polygons_sym_difference
+01305_polygons_union
+01306_polygons_intersection
+01702_system_query_log
