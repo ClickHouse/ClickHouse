@@ -915,15 +915,16 @@ Calculates the number of concurrent events.
 Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
 The function calculates the total number of active (concurrent) events for each event start time.
 
+
+!!! warning "Warning"
+    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
+    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
+
 **Syntax**
 
 ``` sql
 runningConcurrency(start, end)
 ```
-
-!!! warning "Warning"
-    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
-    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
 
 **Arguments**
 
