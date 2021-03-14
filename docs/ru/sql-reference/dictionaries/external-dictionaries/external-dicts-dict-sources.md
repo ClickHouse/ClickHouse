@@ -68,6 +68,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)      
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
 
@@ -624,4 +625,52 @@ SOURCE(REDIS(
 -   `storage_type` – способ хранения ключей. Необходимо использовать `simple` для источников с одним столбцом ключей, `hash_map` – для источников с двумя столбцами ключей. Источники с более, чем двумя столбцами ключей, не поддерживаются. Может отсутствовать, значение по умолчанию `simple`.
 -   `db_index` – номер базы данных. Может отсутствовать, значение по умолчанию 0.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
+
+Пример настроек:
+
+``` xml
+<source>
+    <postgresql>
+        <db>clickhouse</db>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>mysecretpassword</password>
+        <table>test_table</table>
+        <invalidate_query>SELECT value FROM test_table WHERE id = 0</invalidate_query>
+    </postgresql>
+</source>
+<layout>
+    <hashed/>
+</layout>
+<structure>
+    <id>
+        <name>id</name>
+        <type>UInt32</type>
+    </id>
+    <attribute>
+        <name>id</name>
+        <type>UInt32</type>
+        <null_value></null_value>
+    </attribute>
+    <attribute>
+        <name>value</name>
+        <type>UInt32</type>
+        <null_value></null_value>
+    </attribute>
+</structure>
+<lifetime>1</lifetime>      
+```
+
+Описание настроек:
+
+- `db` — имя удаленной БД.
+- `host` — сервер PostgreSQL.
+- `port` – порт на сервере PostgreSQL. Если порт не указан, используется порт по умолчанию.
+- `user` — пользователь PostgreSQL.
+- `password` — пароль пользователя.
+- `table` — имя таблицы удаленной БД.
+- `invalidate_query` — Запрос для проверки статуса словаря. Необязательный параметр. См. подробнееRead в разделе [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/dictionaries/external-dicts-dict-sources/) <!--hide-->

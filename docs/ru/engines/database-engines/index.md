@@ -4,7 +4,7 @@ toc_priority: 27
 toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 ---
 
-# Движки баз данных {#dvizhki-baz-dannykh}
+# Движки баз данных {#database-engines}
 
 Движки баз данных обеспечивают работу с таблицами.
 
@@ -17,5 +17,9 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 -   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
+
+-   [Atomic](../../engines/database-engines/atomic.md)
+
+-   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/database_engines/) <!--hide-->
