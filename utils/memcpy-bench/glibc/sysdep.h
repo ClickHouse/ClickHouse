@@ -1,3 +1,5 @@
+#pragma once
+
 /* Assembler macros for x86-64.
    Copyright (C) 2001-2020 Free Software Foundation, Inc.
    This file is part of the GNU C Library.

@@ -1,3 +1,5 @@
+#pragma once
+
 /* Declarations and definitions of codes relating to the DWARF2 symbolic
    debugging information format.
    Copyright (C) 1992-2020 Free Software Foundation, Inc.
@@ -563,7 +565,7 @@ enum dwarf_macinfo_record_type
   };
 
 #endif /* !ASSEMBLER */
-
+
 /* @@@ For use with GNU frame unwind information.  */
 
 #define DW_EH_PE_absptr        0x00
