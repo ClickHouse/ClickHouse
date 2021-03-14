@@ -1956,8 +1956,8 @@ Default value: 16.
 
 **See Also**
 
--   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine
--   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine.
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine.
 
 ## validate_polygons {#validate_polygons}
 
@@ -2658,8 +2658,6 @@ Result:
 
 Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
-
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
 Allows to select data from a file engine table without file.
@@ -2679,3 +2677,16 @@ Possible values:
 - 1 — Enabled.
 
 Default value: `0`.
+
+## allow_experimental_geo_types {#allow-experimental-geo-types}
+
+Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
+
+Possible values:
+
+-   0 — Working with geo data types is disabled.
+-   1 — Working with geo data types is enabled.
+
+Default value: `0`.
+
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

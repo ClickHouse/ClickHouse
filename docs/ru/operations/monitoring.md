@@ -1,6 +1,6 @@
 ---
 toc_priority: 45
-toc_title: "\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433"
+toc_title: "Мониторинг"
 ---
 
 # Мониторинг {#monitoring}
