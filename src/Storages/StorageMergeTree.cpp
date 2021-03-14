@@ -332,12 +332,25 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
         }
 
-        reserved_space = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
+        reserved_space = storage.balancedReservation(
+            metadata_snapshot,
+            total_size,
+            max_volume_index,
+            future_part.name,
+            future_part.part_info,
+            future_part.parts,
+            &tagger,
+            &ttl_infos);
+
+        if (!reserved_space)
+            reserved_space
+                = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
     }
+
     if (!reserved_space)
     {
         if (is_mutation)
-            throw Exception("Not enough space for mutating part '" + future_part_.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception("Not enough space for mutating part '" + future_part.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
         else
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
     }
