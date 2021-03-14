@@ -55,7 +55,7 @@
 - `tls_key_file` — путь к файлу ключа сертификата.
 - `tls_ca_cert_file` — путь к файлу ЦС сертификата.
 - `tls_ca_cert_dir` — путь к каталогу, содержащая сертификаты ЦС. 
-- `tls_cipher_suite` — разрешить набор шифров (в нотации OpenSSL).
+- `tls_cipher_suite` — разрешенный набор шифров (в нотации OpenSSL).
 
 ## LDAP внешний аутентификатор {#ldap-external-authenticator}
 
@@ -87,7 +87,7 @@
 Запрос:
 
 ```sql
-CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server';
+CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 ```
 
 ## Внешний пользовательский каталог LDAP {#ldap-external-user-directory}

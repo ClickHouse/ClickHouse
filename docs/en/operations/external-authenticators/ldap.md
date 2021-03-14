@@ -87,7 +87,7 @@ When SQL-driven [Access Control and Account Management](../access-rights.md#acce
 Query:
 
 ```sql
-CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server';
+CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 ```
 
 ## LDAP Exernal User Directory {#ldap-external-user-directory}
