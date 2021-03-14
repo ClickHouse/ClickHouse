@@ -5,6 +5,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/SessionExpiryQueue.h>
+#include <Coordination/SnapshotableHashTable.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -17,17 +18,19 @@ struct NuKeeperStorageRequest;
 using NuKeeperStorageRequestPtr = std::shared_ptr<NuKeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = std::unordered_set<std::string>;
+using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
+
+struct NuKeeperStorageSnapshot;
 
 class NuKeeperStorage
 {
 public:
-    int64_t session_id_counter{0};
+    int64_t session_id_counter{1};
 
     struct Node
     {
         String data;
         Coordination::ACLs acls{};
-        bool is_ephemeral = false;
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
@@ -50,10 +53,9 @@ public:
 
     using RequestsForSessions = std::vector<RequestForSession>;
 
-    using Container = std::unordered_map<std::string, Node>;
+    using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionAndTimeout = std::unordered_map<int64_t, long>;
     using SessionIDs = std::vector<int64_t>;
 
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
@@ -72,9 +74,9 @@ public:
 
     void clearDeadWatches(int64_t session_id);
 
-    int64_t getZXID()
+    int64_t getZXID() const
     {
-        return zxid++;
+        return zxid;
     }
 
 public:
@@ -88,9 +90,40 @@ public:
         return result;
     }
 
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    void addSessionID(int64_t session_id, int64_t session_timeout_ms)
+    {
+        session_and_timeout.emplace(session_id, session_timeout_ms);
+        session_expiry_queue.update(session_id, session_timeout_ms);
+    }
+
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid);
 
     void finalize();
+
+    void enableSnapshotMode()
+    {
+        container.enableSnapshotMode();
+    }
+
+    void disableSnapshotMode()
+    {
+        container.disableSnapshotMode();
+    }
+
+    Container::const_iterator getSnapshotIteratorBegin() const
+    {
+        return container.begin();
+    }
+
+    void clearGarbageAfterSnapshot()
+    {
+        container.clearOutdatedNodes();
+    }
+
+    const SessionAndTimeout & getActiveSessions() const
+    {
+        return session_and_timeout;
+    }
 
     std::unordered_set<int64_t> getDeadSessions()
     {
