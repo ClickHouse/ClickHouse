@@ -18,6 +18,7 @@ namespace DB
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated;
 
 class ZooKeeperMetadataTransaction;
@@ -56,15 +57,16 @@ struct HostID
 
 struct DDLLogEntry
 {
+    UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
+    std::optional<SettingsChanges> settings;
 
-    static constexpr int CURRENT_VERSION = 1;
-
+    void setSettingsIfRequired(const Context & context);
     String toString() const;
-
     void parse(const String & data);
+    void assertVersion() const;
 };
 
 struct DDLTaskBase
@@ -191,5 +193,7 @@ public:
 
     ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
 };
+
+ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 
 }

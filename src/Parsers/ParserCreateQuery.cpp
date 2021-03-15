@@ -780,6 +780,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ASTPtr table;
     ASTPtr to_table;
+    ASTPtr to_inner_uuid;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -830,9 +831,16 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    // TO [db.]table
-    if (ParserKeyword{"TO"}.ignore(pos, expected))
+
+    if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
+        ParserLiteral literal_p;
+        if (!literal_p.parse(pos, to_inner_uuid, expected))
+            return false;
+    }
+    else if (ParserKeyword{"TO"}.ignore(pos, expected))
+    {
+        // TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
@@ -883,6 +891,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (to_table)
         query->to_table_id = getTableIdentifier(to_table);
+    if (to_inner_uuid)
+        query->to_inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.get<String>());
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

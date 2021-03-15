@@ -176,7 +176,7 @@
 01560_timeseriesgroupsum_segfault
 00976_ttl_with_old_parts
 01584_distributed_buffer_cannot_find_column
-01018_ip_dictionary
+01018_ip_dictionary_long
 01582_distinct_subquery_groupby
 01558_ttest
 01558_ttest_scipy
@@ -221,3 +221,4 @@
 01304_polygons_sym_difference
 01305_polygons_union
 01306_polygons_intersection
+01702_system_query_log

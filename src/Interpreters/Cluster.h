@@ -110,7 +110,9 @@ public:
             const String & password_,
             UInt16 clickhouse_port,
             bool secure_ = false,
-            Int64 priority_ = 1);
+            Int64 priority_ = 1,
+            UInt32 shard_index_ = 0,
+            UInt32 replica_index_ = 0);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
