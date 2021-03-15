@@ -91,8 +91,10 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
 
 void PartialSortingTransform::transform(Chunk & chunk)
 {
+    const auto rows_num = chunk.getNumRows();
+
     if (read_rows)
-        read_rows->add(chunk.getNumRows());
+        read_rows->add(rows_num);
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -101,7 +103,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
       */
     if (!threshold_block_columns.empty())
     {
-        UInt64 rows_num = block.rows();
         auto block_columns = extractColumns(block, description);
 
         size_t result_size_hint = getFilterMask(
@@ -134,7 +135,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
         }
     }
 
-    chunk.setColumns(block.getColumns(), block.rows());
+    chunk.setColumns(block.getColumns(), rows_num);
 }
 
 }
