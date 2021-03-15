@@ -164,6 +164,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in);
+            if (time < 0)
+                time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }

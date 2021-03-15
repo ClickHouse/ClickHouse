@@ -769,9 +769,11 @@ inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb
 template <>
 inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
-    time_t tmp = 0;
-    readDateTimeText(tmp, rb, *time_zone);
-    x = tmp;
+    time_t time = 0;
+    readDateTimeText(time, rb, *time_zone);
+    if (time < 0)
+        time = 0;
+    x = time;
 }
 
 
