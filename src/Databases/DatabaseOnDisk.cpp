@@ -231,8 +231,8 @@ void DatabaseOnDisk::createTable(
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
+        removeDetachedPermanentlyFlag(context, table_name, table_metadata_path, true);
         attachTable(table_name, table, getTableDataPath(create));
-        removeDetachedPermanentlyFlag(table_name, table_metadata_path);
         return;
     }
 
@@ -270,12 +270,12 @@ void DatabaseOnDisk::createTable(
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, context);
 
-    removeDetachedPermanentlyFlag(table_name, table_metadata_path);
+    removeDetachedPermanentlyFlag(context, table_name, table_metadata_path, false);
 }
 
 /// If the table was detached permanently we will have a flag file with
 /// .sql.detached extension, is not needed anymore since we attached the table back
-void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(const Context &, const String & table_name, const String & table_metadata_path, bool) const
 {
     try
     {

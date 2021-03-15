@@ -145,6 +145,16 @@ void DiskDecorator::removeRecursive(const String & path)
     delegate->removeRecursive(path);
 }
 
+void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
+{
+    delegate->removeSharedFile(path, keep_s3);
+}
+
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    delegate->removeSharedRecursive(path, keep_s3);
+}
+
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
     delegate->setLastModified(path, timestamp);

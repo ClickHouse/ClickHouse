@@ -70,8 +70,10 @@ function recreate_lazy_func4()
 function test_func()
 {
     while true; do
-        $CLICKHOUSE_CLIENT -q "SYSTEM STOP TTL MERGES";
+        for table in log tlog slog tlog2; do
+            $CLICKHOUSE_CLIENT -q "SYSTEM STOP TTL MERGES $CURR_DATABASE.$table" >& /dev/null
         done
+    done
 }
 
 
