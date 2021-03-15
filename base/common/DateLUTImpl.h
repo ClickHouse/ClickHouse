@@ -944,16 +944,70 @@ public:
     }
 
 
+    struct DateComponents
+    {
+        uint16_t year;
+        uint8_t month;
+        uint8_t day;
+    };
+
+    struct TimeComponents
+    {
+        uint8_t hour;
+        uint8_t minute;
+        uint8_t second;
+    };
+
+    struct DateTimeComponents
+    {
+        DateComponents date;
+        TimeComponents time;
+    };
+
+    inline DateComponents toDateComponents(time_t t) const
+    {
+        const Values & values = getValues(t);
+        return { values.year, values.month, values.day_of_month };
+    }
+
+    inline DateTimeComponents toDateTimeComponents(time_t t) const
+    {
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
+
+        DateTimeComponents res;
+
+        res.date.year = values.year;
+        res.date.month = values.month;
+        res.date.day = values.day_of_month;
+
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
+
+        res.time.second = time % 60;
+        res.time.minute = time / 60 % 60;
+        res.time.hour = time / 3600;
+
+        /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
+        if (unlikely(res.time.hour > 23))
+            res.time.hour = 23;
+
+        return res;
+    }
+
+
     inline UInt64 toNumYYYYMMDDhhmmss(time_t t) const
     {
-        const Values & values = find(t);
+        DateTimeComponents components = toDateTimeComponents(t);
+
         return
-              toSecond(t)
-            + toMinute(t) * 100
-            + toHour(t) * 10000
-            + UInt64(values.day_of_month) * 1000000
-            + UInt64(values.month) * 100000000
-            + UInt64(values.year) * 10000000000;
+              components.time.second
+            + components.time.minute * 100
+            + components.time.hour * 10000
+            + UInt64(components.date.day) * 1000000
+            + UInt64(components.date.month) * 100000000
+            + UInt64(components.date.year) * 10000000000;
     }
 
     inline time_t YYYYMMDDhhmmssToTime(UInt64 num) const
@@ -972,16 +1026,19 @@ public:
 
     inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
     {
-        LUTIndex index = findIndex(t);
-        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        index += delta;
-        index &= date_lut_mask;
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
 
-        if (time_offset >= lut[index].time_at_offset_change())
-            time_offset -= lut[index].amount_of_offset_change();
+        const LUTIndex new_index = index + delta;
 
-        return lut[index].date + time_offset;
+        if (time >= lut[new_index].time_at_offset_change())
+            time -= lut[new_index].amount_of_offset_change();
+
+        return lut[new_index].date + time;
     }
 
     inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
@@ -1033,12 +1090,17 @@ public:
     {
         const auto result_day = addMonthsIndex(t, delta);
 
-        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        if (time_offset >= lut[result_day].time_at_offset_change())
-            time_offset -= lut[result_day].amount_of_offset_change();
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
 
-        return lut[result_day].date + time_offset;
+        if (time >= lut[result_day].time_at_offset_change())
+            time -= lut[result_day].amount_of_offset_change();
+
+        return lut[result_day].date + time;
     }
 
     inline ExtendedDayNum NO_SANITIZE_UNDEFINED addMonths(ExtendedDayNum d, Int64 delta) const
@@ -1077,12 +1139,17 @@ public:
     {
         auto result_day = addYearsIndex(t, delta);
 
-        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        if (time_offset >= lut[result_day].time_at_offset_change())
-            time_offset -= lut[result_day].amount_of_offset_change();
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
 
-        return lut[result_day].date + time_offset;
+        if (time >= lut[result_day].time_at_offset_change())
+            time -= lut[result_day].amount_of_offset_change();
+
+        return lut[result_day].date + time;
     }
 
     inline ExtendedDayNum addYears(ExtendedDayNum d, Int64 delta) const
@@ -1093,29 +1160,25 @@ public:
 
     inline std::string timeToString(time_t t) const
     {
-        const Values & values = getValues(t);
+        DateTimeComponents components = toDateTimeComponents(t);
 
         std::string s {"0000-00-00 00:00:00"};
 
-        s[0] += values.year / 1000;
-        s[1] += (values.year / 100) % 10;
-        s[2] += (values.year / 10) % 10;
-        s[3] += values.year % 10;
-        s[5] += values.month / 10;
-        s[6] += values.month % 10;
-        s[8] += values.day_of_month / 10;
-        s[9] += values.day_of_month % 10;
+        s[0] += components.date.year / 1000;
+        s[1] += (components.date.year / 100) % 10;
+        s[2] += (components.date.year / 10) % 10;
+        s[3] += components.date.year % 10;
+        s[5] += components.date.month / 10;
+        s[6] += components.date.month % 10;
+        s[8] += components.date.day / 10;
+        s[9] += components.date.day % 10;
 
-        auto hour = toHour(t);
-        auto minute = toMinute(t);
-        auto second = toSecond(t);
-
-        s[11] += hour / 10;
-        s[12] += hour % 10;
-        s[14] += minute / 10;
-        s[15] += minute % 10;
-        s[17] += second / 10;
-        s[18] += second % 10;
+        s[11] += components.time.hour / 10;
+        s[12] += components.time.hour % 10;
+        s[14] += components.time.minute / 10;
+        s[15] += components.time.minute % 10;
+        s[17] += components.time.second / 10;
+        s[18] += components.time.second % 10;
 
         return s;
     }
