@@ -1,6 +1,6 @@
 ---
 toc_priority: 31
-toc_title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441"
+toc_title: "Синтаксис"
 ---
 
 # Синтаксис {#sintaksis}

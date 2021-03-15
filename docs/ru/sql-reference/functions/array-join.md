@@ -1,6 +1,6 @@
 ---
 toc_priority: 61
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u044f\u0020\u0041\u0072\u0072\u0061\u0079\u004a\u006f\u0069\u006e"
+toc_title: "Функция ArrayJoin"
 ---
 
 # Функция ArrayJoin {#functions_arrayjoin}

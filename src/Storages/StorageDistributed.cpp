@@ -530,7 +530,7 @@ void StorageDistributed::read(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
