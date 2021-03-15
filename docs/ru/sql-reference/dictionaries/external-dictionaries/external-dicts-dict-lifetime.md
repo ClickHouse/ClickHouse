@@ -1,6 +1,6 @@
 ---
 toc_priority: 42
-toc_title: "\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439"
+toc_title: "Обновление словарей"
 ---
 
 # Обновление словарей {#obnovlenie-slovarei}

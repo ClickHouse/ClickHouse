@@ -26,7 +26,7 @@ SKIP_LIST = [
     "00990_metric_log_table_not_empty",
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01018_Distributed__shard_num",
-    "01018_ip_dictionary",
+    "01018_ip_dictionary_long",
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
     "01054_cache_dictionary_overflow_cell",
