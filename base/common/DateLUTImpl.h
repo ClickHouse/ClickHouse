@@ -985,9 +985,18 @@ public:
         if (time >= values.time_at_offset_change())
             time += values.amount_of_offset_change();
 
-        res.time.second = time % 60;
-        res.time.minute = time / 60 % 60;
-        res.time.hour = time / 3600;
+        if (unlikely(time < 0))
+        {
+            res.time.second = 0;
+            res.time.minute = 0;
+            res.time.hour = 0;
+        }
+        else
+        {
+            res.time.second = time % 60;
+            res.time.minute = time / 60 % 60;
+            res.time.hour = time / 3600;
+        }
 
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
