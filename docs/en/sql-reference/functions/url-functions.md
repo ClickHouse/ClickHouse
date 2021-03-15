@@ -55,7 +55,7 @@ Type: `String`.
 **Example**
 
 ``` sql
-SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
+SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 ```
 
 ``` text
@@ -98,7 +98,7 @@ Type: `String`.
 **Example**
 
 ``` sql
-SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
+SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 ```
 
 ``` text

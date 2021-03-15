@@ -35,7 +35,7 @@ The function returns the nearest number of the specified order. In case when giv
 round(expression [, decimal_places])
 ```
 
-**Arguments:**
+**Arguments**
 
 -   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
 -   `decimal-places` — An integer value.
