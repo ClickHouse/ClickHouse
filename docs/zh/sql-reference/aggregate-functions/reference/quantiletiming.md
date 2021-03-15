@@ -4,53 +4,53 @@ toc_priority: 204
 
 # quantileTiming {#quantiletiming}
 
-With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+使用确定的精度计算数字数据序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
 
-The result is deterministic (it doesn’t depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
+结果是确定性的（它不依赖于查询处理顺序）。该函数针对描述加载网页时间或后端响应时间等分布的序列进行了优化。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
+当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileTiming(level)(expr)
 ```
 
-Alias: `medianTiming`.
+别名: `medianTiming`。
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 当 `level=0.5`时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `expr` — 求值[表达式](../../../sql-reference/syntax.md#syntax-expressions) 返回 [Float\*](../../../sql-reference/data-types/float.md) 类型数值。
 
--   `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
+    - 如果输入负值，那结果是不可预期的。
+    - 如果输入值大于30000（页面加载时间大于30s），那我们假设为30000。
 
-    -   If negative values are passed to the function, the behavior is undefined.
-    -   If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+**精度**
 
-**Accuracy**
+计算是准确的，如果:
 
-The calculation is accurate if:
 
--   Total number of values doesn’t exceed 5670.
--   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+-   值的总数不超过5670。
+-   总数值超过5670，但页面加载时间小于1024ms。
 
-Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
+否则，计算结果将四舍五入到16毫秒的最接近倍数。
 
-!!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+!!! note "注"
+    对于计算页面加载时间分位数， 此函数比[quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile)更有效和准确。
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定层次的分位数。
 
-Type: `Float32`.
+类型: `Float32`。
 
-!!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+!!! note "注"
+如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf)被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 参见 [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─response_time─┐
@@ -66,13 +66,13 @@ Input table:
 └───────────────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileTiming(response_time) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileTiming(response_time)─┐
@@ -80,7 +80,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-**See Also**
+**参见**
 
--   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
--   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-   [中位数](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [分位数](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
