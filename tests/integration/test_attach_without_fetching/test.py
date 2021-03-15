@@ -38,22 +38,25 @@ def start_cluster():
 
 def check_data(nodes, detached_parts):
     for node in nodes:
+        print("> Replication queue for", node.name, "\n> table\treplica_name\tsource_replica\ttype\tposition\n",
+            node.query("SELECT table, replica_name, source_replica, type, position FROM system.replication_queue"))
+
         node.query("SYSTEM SYNC REPLICA test")
 
+        print("> Checking data integrity for", node.name)
+
         for i in range(10):
-            assert node.query("SELECT count() FROM test WHERE n % 10 == " + str(i)) == \
-                "0\n" if i in detached_parts else "10\n"
+            assert_eq_with_retry(node, "SELECT count() FROM test WHERE n % 10 == " + str(i),
+                "0\n" if i in detached_parts else "10\n")
 
-        assert node.query("SELECT count() FROM system.parts WHERE table='test'") == \
-            str(10 - len(detached_parts)) + "\n"
-
-        # We don't check for system.detached_parts count = len(detached parts) as the newly downloaded data
-        # is not removed from detached_parts (so this is wrong)
+        assert_eq_with_retry(node, "SELECT count() FROM system.parts WHERE table='test'",
+            str(10 - len(detached_parts)) + "\n")
 
         res: str = node.query("SELECT * FROM test ORDER BY n")
 
         for other in nodes:
             if other != node:
+                print("> Checking data consistency,", other.name, "vs", node.name)
                 assert_eq_with_retry(other, "SELECT * FROM test ORDER BY n", res)
 
 
@@ -82,9 +85,19 @@ def test_attach_without_fetching(start_cluster):
     # 2. Create the third replica
     fill_node(node_3)
 
-    # 3. Attach the first part and check if it has been fetched correctly.
+    # 3. Break the part data on the second node to corrupt the checksums.
+    # Replica 3 should download the data from replica 1 as there is no local data.
+    # Replica 2 should also download the data from 1 as the checksums won't match.
+    print("Checking attach with corrupted checksums")
+    corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
+    node_1.query("ALTER TABLE test ATTACH PARTITION 1")
+    check_data([node_1, node_2, node_3], detached_parts=[0])
+
+    # 4. Attach the first part and check if it has been fetched correctly.
     # Replica 1 should attach the local data from detached/.
     # Replica 3 should download the data from replica 1 as there is no local data and other connections are broken.
+    print("Checking attach with valid checksums")
+
     with PartitionManager() as pm:
         # If something goes wrong and replica 1 wants to fetch data, the test will fail.
         pm.partition_instances(node_1, node_2)
@@ -92,11 +105,4 @@ def test_attach_without_fetching(start_cluster):
 
         node_2.query("ALTER TABLE test ATTACH PART '0_0_0_0'")
 
-        check_data([node_1, node_2, node_3], detached_parts=[1])
-
-    # 4. Break the part data on the second node to corrupt the checksums.
-    # Replica 3 should download the data from replica 1 as there is no local data.
-    # Replica 2 should also download the data from 1 as the checksums won't match.
-    corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
-    node_1.query("ALTER TABLE test ATTACH PARTITION 1")
-    check_data([node_1, node_2, node_3], detached_parts=[])
+        check_data([node_1, node_2, node_3], detached_parts=[])

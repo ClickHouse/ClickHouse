@@ -1381,7 +1381,14 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             MergeTreeData::MutableDataPartPtr iter_part_ptr =
                 createPart(part_name, part_iter, single_disk_volume, part_to_path);
 
-            if (part_checksum != iter_part_ptr->checksums.getTotalChecksumHex())
+            const String iter_part_checksums = iter_part_ptr->checksums.getTotalChecksumHex();
+
+            LOG_TRACE(log, "Candidate part: {}, path: {}, checksums: {}", part_name, part_to_path, iter_part_checksums);
+
+            for (auto && [name, checksum] : iter_part_ptr->checksums.files)
+                LOG_TRACE(log, "> File {}, file size {}", name, checksum.file_size);
+
+            if (part_checksum != iter_part_checksums)
                 continue;
 
             return iter_part_ptr;
@@ -1405,19 +1412,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::ATTACH_PART)
-    {
-        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
-        {
-            Transaction transaction(*this);
-
-            if (renameTempPartAndAdd(part, nullptr, &transaction))
-                checkPartChecksumsAndCommit(transaction, part);
-
-            return true;
-        }
-    }
-
     const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
     if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
@@ -1439,6 +1433,27 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             return true;
         }
+    }
+
+    if (entry.type == LogEntry::ATTACH_PART)
+    {
+        LOG_TRACE(log, "Trying to find part in detached/");
+
+        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
+        {
+            LOG_TRACE(log, "Found valid part {} to attach from local data, preparing the transaction",
+                part->name);
+
+            Transaction transaction(*this);
+
+            // don't need the replaced parts
+            renameTempPartAndReplace(part, nullptr, &transaction);
+            checkPartChecksumsAndCommit(transaction, part);
+
+            return true;
+        }
+
+        LOG_TRACE(log, "Didn't find part with the correct checksums, will fetch it from other replica");
     }
 
     if (is_get_or_attach && entry.source_replica == replica_name)
@@ -1831,18 +1846,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-<<<<<<< HEAD
-    static std::atomic_uint total_fetches {0};
-
     if (storage_settings_ptr->replicated_max_parallel_fetches &&
         total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
         throw Exception("Too many total fetches from replicas, maximum: " +
             storage_settings_ptr->replicated_max_parallel_fetches.toString(),
-=======
-    if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-    {
-        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
->>>>>>> upstream/master
             ErrorCodes::TOO_MANY_FETCHES);
 
     ++total_fetches;
