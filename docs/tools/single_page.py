@@ -30,11 +30,17 @@ def generate_anchor_from_path(path):
 
 
 def replace_link(match, path):
-    link = match.group(1)
+    title = match.group(1)
+    link = match.group(2)
+
+    # Not a relative link
+    if link.startswith('http'):
+        return match.group(0)
+
     if link.endswith('/'):
         link = link[0:-1] + '.md'
 
-    return '(#{})'.format(generate_anchor_from_path(os.path.normpath(os.path.join(os.path.dirname(path), link))))
+    return '[{}](#{})'.format(title, generate_anchor_from_path(os.path.normpath(os.path.join(os.path.dirname(path), link))))
 
 
 # Concatenates Markdown files to a single file.
@@ -52,8 +58,7 @@ def concatenate(lang, docs_path, single_page_file, nav):
     logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))
     assert files_count > 0, f'Empty single-page for {lang}'
 
-    # (../anything) or (../anything#anchor) or (xyz-abc.md) or (xyz-abc.md#anchor)
-    relative_link_regexp = re.compile(r'\((\.\./[^)#]+|[\w\-]+\.md)(?:#[^\)]*)?\)')
+    link_regexp = re.compile(r'(\[[^\]]+\])\(([^)#]+)(?:#[^\)]+)?\)')
 
     for path in files_to_concatenate:
         try:
@@ -75,9 +80,9 @@ def concatenate(lang, docs_path, single_page_file, nav):
 
                         # Replace links within the docs.
 
-                        if re.search(relative_link_regexp, line):
+                        if re.search(link_regexp, line):
                             line = re.sub(
-                                relative_link_regexp,
+                                link_regexp,
                                 lambda match: replace_link(match, path),
                                 line)
 
