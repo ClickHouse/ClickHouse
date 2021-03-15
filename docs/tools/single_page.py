@@ -28,13 +28,15 @@ anchor_not_allowed_chars = re.compile(r'[^\w\-]')
 def generate_anchor_from_path(path):
     return re.sub(anchor_not_allowed_chars, '-', path)
 
+absolute_link = re.compile(r'^https?://')
+
 
 def replace_link(match, path):
     title = match.group(1)
     link = match.group(2)
 
     # Not a relative link
-    if link.startswith('http'):
+    if re.search(absolute_link, link):
         return match.group(0)
 
     if link.endswith('/'):
