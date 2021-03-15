@@ -3,19 +3,31 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include "PostgreSQLConnection.h"
 #include <common/logger_useful.h>
+#include <IO/Operators.h>
 
 
 namespace DB
 {
 
-PostgreSQLConnection::PostgreSQLConnection(std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
+PostgreSQLConnection::PostgreSQLConnection(
+        const String & connection_str_,
+        const String & address_)
+    : connection_str(connection_str_)
+    , address(address_)
 {
-    address = host + ':' + std::to_string(port);
-    connection_str = formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password));
+}
+
+
+PostgreSQLConnection::PostgreSQLConnection(
+        ConnectionPtr connection_,
+        const String & connection_str_,
+        const String & address_)
+    : connection(std::move(connection_))
+    , connection_str(connection_str_)
+    , address(address_)
+{
 }
 
 
@@ -26,17 +38,25 @@ PostgreSQLConnection::PostgreSQLConnection(const PostgreSQLConnection & other)
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::conn()
+PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::get()
 {
     connect();
     return connection;
 }
 
 
+PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::tryGet()
+{
+    if (tryConnect())
+        return connection;
+    return nullptr;
+}
+
+
 void PostgreSQLConnection::connect()
 {
     if (!connection || !connection->is_open())
-        connection = std::make_unique<pqxx::connection>(connection_str);
+        connection = std::make_shared<pqxx::connection>(connection_str);
 }
 
 
@@ -60,19 +80,6 @@ bool PostgreSQLConnection::tryConnect()
     }
 
     return true;
-}
-
-
-std::string PostgreSQLConnection::formatConnectionString(
-    std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
-{
-    WriteBufferFromOwnString out;
-    out << "dbname=" << quote << dbname
-        << " host=" << quote << host
-        << " port=" << port
-        << " user=" << quote << user
-        << " password=" << quote << password;
-    return out.str();
 }
 
 }

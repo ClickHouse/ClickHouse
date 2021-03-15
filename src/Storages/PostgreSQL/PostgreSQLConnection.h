@@ -12,39 +12,45 @@
 namespace DB
 {
 
-/// Tiny connection class to make it more convenient to use.
-/// Connection is not made until actually used.
+
 class PostgreSQLConnection
 {
+
 public:
     using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
-    PostgreSQLConnection(std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
+    PostgreSQLConnection(
+        const String & connection_str_,
+        const String & address_);
+
+    PostgreSQLConnection(
+        ConnectionPtr connection_,
+        const String & connection_str_,
+        const String & address_);
 
     PostgreSQLConnection(const PostgreSQLConnection & other);
 
-    PostgreSQLConnection operator =(const PostgreSQLConnection &) = delete;
-
-    bool tryConnect();
-
-    ConnectionPtr conn();
-
     const std::string & getAddress() { return address; }
 
-    std::string & conn_str() { return connection_str; }
+    ConnectionPtr get();
+
+    ConnectionPtr tryGet();
+
+    bool connected() { return tryConnect(); }
 
 private:
     void connect();
 
-    static std::string formatConnectionString(
-        std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
+    bool tryConnect();
 
     ConnectionPtr connection;
-    std::string connection_str, address;
+    std::string connection_str;
+    std::string address;
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 }
+
 
 #endif

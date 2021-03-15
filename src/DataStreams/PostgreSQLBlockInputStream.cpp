@@ -28,13 +28,14 @@ namespace ErrorCodes
 }
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    ConnectionPtr connection_,
+    PostgreSQLConnectionPoolPtr connection_pool_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
     : query_str(query_str_)
     , max_block_size(max_block_size_)
-    , connection(connection_)
+    , connection_pool(connection_pool_)
+    , connection(connection_pool->get())
 {
     description.init(sample_block);
     for (const auto idx : ext::range(0, description.sample_block.columns()))
@@ -111,6 +112,9 @@ void PostgreSQLBlockInputStream::readSuffix()
         stream->complete();
         tx->commit();
     }
+
+    if (connection->is_open())
+        connection_pool->put(connection);
 }
 
 
