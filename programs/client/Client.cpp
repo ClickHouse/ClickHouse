@@ -1413,13 +1413,18 @@ private:
 
                         if (formatted_twice != fuzzed_text)
                         {
+                            fmt::print(stderr, "The query formatting is broken.\n");
+
                             printChangedSettings();
 
-                            fmt::print(stderr, "The query formatting is broken. Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
+                            fmt::print(stderr, "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
                                 formatted_twice, fuzzed_text);
-                            fmt::print(stderr, "AST parsed back:\n'{}'\nSource AST:\n'{}'\n",
-                                parsed_formatted_query->dumpTree(),
-                                ast_to_process->dumpTree());
+                            fmt::print(stderr, "In more detail:\n");
+                            fmt::print(stderr, "AST-1:\n'{}'\n", ast_to_process->dumpTree());
+                            fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", fuzzed_text);
+                            fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", parsed_formatted_query->dumpTree());
+                            fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", formatted_twice);
+                            fmt::print(stderr, "Text-1 must be equal to Text-2, but it is not.\n");
 
                             exit(1);
                         }
