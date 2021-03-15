@@ -115,4 +115,3 @@ SELECT alphaTokens('abca1abc')
 └─────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/splitting_merging_functions/) <!--hide-->
