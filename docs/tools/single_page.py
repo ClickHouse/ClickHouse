@@ -40,7 +40,7 @@ def replace_link(match, path):
     if link.endswith('/'):
         link = link[0:-1] + '.md'
 
-    return '[{}](#{})'.format(title, generate_anchor_from_path(os.path.normpath(os.path.join(os.path.dirname(path), link))))
+    return '{}(#{})'.format(title, generate_anchor_from_path(os.path.normpath(os.path.join(os.path.dirname(path), link))))
 
 
 # Concatenates Markdown files to a single file.
