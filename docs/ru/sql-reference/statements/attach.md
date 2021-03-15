@@ -19,5 +19,4 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 Этот запрос используется при старте сервера. Сервер хранит метаданные таблиц в виде файлов с запросами `ATTACH`, которые он просто исполняет при запуске (за исключением системных таблиц, которые явно создаются на сервере).
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/attach/) <!--hide-->
 
