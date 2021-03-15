@@ -25,7 +25,7 @@ namespace DB
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
@@ -115,7 +115,7 @@ public:
 private:
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
-    const FormatSettings & format_settings;
+    bool allow_missing_fields;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
