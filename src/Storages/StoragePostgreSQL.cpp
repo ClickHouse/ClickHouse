@@ -298,7 +298,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() < 5 || engine_args.size() > 6)
-            throw Exception("Storage PostgreSQL requires 5-6 parameters: "
+            throw Exception("Storage PostgreSQL requires from 5 to 6 parameters: "
                             "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema']",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
