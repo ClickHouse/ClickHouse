@@ -17,7 +17,7 @@ CREATE TABLE indices_mutaions1
     i64 Int64,
     i32 Int32,
     INDEX idx (i64, u64 * i64) TYPE minmax GRANULARITY 1
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00975/indices_mutaions', 'r1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/indices_mutaions', 'r1')
 PARTITION BY i32
 ORDER BY u64
 SETTINGS index_granularity = 2;
@@ -27,7 +27,7 @@ CREATE TABLE indices_mutaions2
     i64 Int64,
     i32 Int32,
     INDEX idx (i64, u64 * i64) TYPE minmax GRANULARITY 1
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00975/indices_mutaions', 'r2')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/indices_mutaions', 'r2')
 PARTITION BY i32
 ORDER BY u64
 SETTINGS index_granularity = 2;"
