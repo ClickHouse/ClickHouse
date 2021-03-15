@@ -3,8 +3,6 @@ from kerberos.tests.common import *
 from kerberos.requirements.requirements import *
 
 import time
-import datetime
-import itertools
 
 
 @TestScenario
@@ -130,42 +128,42 @@ def invalid_client_ticket(self):
         ch_nodes[2].cmd("kdestroy")
 
 
-@TestScenario
-@Requirements(
-    RQ_SRS_016_Kerberos_KerberosNotAvailable_ValidTickets("1.0")
-)
-def kerberos_unreachable_valid_tickets(self):
-    """ClickHouse SHALL accept Kerberos authentication if no Kerberos server is reachable
-    but both CH-server and client have valid tickets.
-    """
-    ch_nodes = self.context.ch_nodes
-
-    with Given("kinit for client"):
-        kinit_no_keytab(node=ch_nodes[2])
-
-    with And("setting up server principal"):
-        create_server_principal(node=ch_nodes[0])
-
-    with And("make sure server obtained ticket"):
-        ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
-
-    with And("I kill kerberos-server"):
-        self.context.krb_server.stop()
-
-    with When("I attempt to authenticate as kerberos_user"):
-        r = ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
-
-    with Then("I expect the user to be default"):
-        assert r.output == "kerberos_user", error()
-
-    with Finally("I start kerberos server again"):
-        self.context.krb_server.start()
-        ch_nodes[2].cmd("kdestroy")
-        while True:
-            kinit_no_keytab(node=ch_nodes[2])
-            if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
-                break
-        ch_nodes[2].cmd("kdestroy")
+# @TestCase
+# @Requirements(
+#     RQ_SRS_016_Kerberos_KerberosNotAvailable_ValidTickets("1.0")
+# )
+# def kerberos_unreachable_valid_tickets(self):
+#     """ClickHouse SHALL accept Kerberos authentication if no Kerberos server is reachable
+#     but both CH-server and client have valid tickets.
+#     """
+#     ch_nodes = self.context.ch_nodes
+#
+#     with Given("kinit for client"):
+#         kinit_no_keytab(node=ch_nodes[2])
+#
+#     with And("setting up server principal"):
+#         create_server_principal(node=ch_nodes[0])
+#
+#     with And("make sure server obtained ticket"):
+#         ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
+#
+#     with And("I kill kerberos-server"):
+#         self.context.krb_server.stop()
+#
+#     with When("I attempt to authenticate as kerberos_user"):
+#         r = ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
+#
+#     with Then("I expect the user to be default"):
+#         assert r.output == "kerberos_user", error()
+#
+#     with Finally("I start kerberos server again"):
+#         self.context.krb_server.start()
+#         ch_nodes[2].cmd("kdestroy")
+#         while True:
+#             kinit_no_keytab(node=ch_nodes[2])
+#             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
+#                 break
+#         ch_nodes[2].cmd("kdestroy")
 
 
 @TestScenario
@@ -196,39 +194,39 @@ def kerberos_not_configured(self):
         ch_nodes[0].query("DROP USER unkerberized")
 
 
-@TestScenario
-@Requirements(
-    RQ_SRS_016_Kerberos_KerberosServerRestarted("1.0")
-)
-def kerberos_server_restarted(self):
-    """ClickHouse SHALL accept Kerberos authentication if Kerberos server was restarted.
-    """
-    ch_nodes = self.context.ch_nodes
-    krb_server = self.context.krb_server
-
-    with Given("I obtain keytab for user"):
-        kinit_no_keytab(node=ch_nodes[2])
-    with And("I create server principal"):
-        create_server_principal(node=ch_nodes[0])
-    with And("I obtain server ticket"):
-        ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]), no_checks=True)
-    with By("I dump, restart and restore kerberos server"):
-        krb_server.cmd("kdb5_util dump dump.dmp", shell_command="/bin/sh")
-        krb_server.restart()
-        krb_server.cmd("kdb5_util load dump.dmp", shell_command="/bin/sh")
-
-    with When("I attempt to authenticate"):
-        r = ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
-
-    with And("I wait for kerberos to be healthy"):
-        ch_nodes[2].cmd("kdestroy")
-        while True:
-            kinit_no_keytab(node=ch_nodes[2])
-            if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
-                break
-
-    with Then(f"I expect kerberos_user"):
-        assert r.output == "kerberos_user", error()
+# @TestScenario
+# @Requirements(
+#     RQ_SRS_016_Kerberos_KerberosServerRestarted("1.0")
+# )
+# def kerberos_server_restarted(self):
+#     """ClickHouse SHALL accept Kerberos authentication if Kerberos server was restarted.
+#     """
+#     ch_nodes = self.context.ch_nodes
+#     krb_server = self.context.krb_server
+#
+#     with Given("I obtain keytab for user"):
+#         kinit_no_keytab(node=ch_nodes[2])
+#     with And("I create server principal"):
+#         create_server_principal(node=ch_nodes[0])
+#     with And("I obtain server ticket"):
+#         ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]), no_checks=True)
+#     with By("I dump, restart and restore kerberos server"):
+#         krb_server.cmd("kdb5_util dump dump.dmp", shell_command="/bin/sh")
+#         krb_server.restart()
+#         krb_server.cmd("kdb5_util load dump.dmp", shell_command="/bin/sh")
+#
+#     with When("I attempt to authenticate"):
+#         r = ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
+#
+#     with And("I wait for kerberos to be healthy"):
+#         ch_nodes[2].cmd("kdestroy")
+#         while True:
+#             kinit_no_keytab(node=ch_nodes[2])
+#             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
+#                 break
+#
+#     with Then(f"I expect kerberos_user"):
+#         assert r.output == "kerberos_user", error()
 
 
 @TestScenario
@@ -279,41 +277,41 @@ def user_deleted(self):
         assert "Authentication failed: password is incorrect or there is no user with such name" in r.output, error()
 
 
-@TestScenario
-@Requirements(
-    RQ_SRS_016_Kerberos_Performance("1.0")
-)
-def authentication_performance(self):
-    """ClickHouse's performance for Kerberos authentication SHALL shall be comparable to regular authentication.
-    """
-    ch_nodes = self.context.ch_nodes
-
-    with Given("I obtain keytab for a user"):
-        kinit_no_keytab(node=ch_nodes[2])
-
-    with And("I create server principal"):
-        create_server_principal(node=ch_nodes[0])
-
-    with And("I create a password-identified user"):
-        ch_nodes[0].query("CREATE USER pwd_user IDENTIFIED WITH plaintext_password BY 'pwd'")
-
-    with When("I measure kerberos auth time"):
-        start_time_krb = time.time()
-        for i in range(100):
-            ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
-        krb_time = (time.time() - start_time_krb) / 100
-
-    with And("I measure password auth time"):
-        start_time_usual = time.time()
-        for i in range(100):
-            ch_nodes[2].cmd(f"echo 'SELECT 1' | curl 'http://pwd_user:pwd@clickhouse1:8123/' -d @-")
-        usual_time = (time.time() - start_time_usual) / 100
-
-    with Then("measuring the performance compared to password auth"):
-        metric("percentage_improvement", units="%", value=100*(krb_time - usual_time)/usual_time)
-
-    with Finally("I drop pwd_user"):
-        ch_nodes[0].query("DROP USER pwd_user")
+# @TestScenario
+# @Requirements(
+#     RQ_SRS_016_Kerberos_Performance("1.0")
+# )
+# def authentication_performance(self):
+#     """ClickHouse's performance for Kerberos authentication SHALL shall be comparable to regular authentication.
+#     """
+#     ch_nodes = self.context.ch_nodes
+#
+#     with Given("I obtain keytab for a user"):
+#         kinit_no_keytab(node=ch_nodes[2])
+#
+#     with And("I create server principal"):
+#         create_server_principal(node=ch_nodes[0])
+#
+#     with And("I create a password-identified user"):
+#         ch_nodes[0].query("CREATE USER pwd_user IDENTIFIED WITH plaintext_password BY 'pwd'")
+#
+#     with When("I measure kerberos auth time"):
+#         start_time_krb = time.time()
+#         for i in range(100):
+#             ch_nodes[2].cmd(test_select_query(node=ch_nodes[0]))
+#         krb_time = (time.time() - start_time_krb) / 100
+#
+#     with And("I measure password auth time"):
+#         start_time_usual = time.time()
+#         for i in range(100):
+#             ch_nodes[2].cmd(f"echo 'SELECT 1' | curl 'http://pwd_user:pwd@clickhouse1:8123/' -d @-")
+#         usual_time = (time.time() - start_time_usual) / 100
+#
+#     with Then("measuring the performance compared to password auth"):
+#         metric("percentage_improvement", units="%", value=100*(krb_time - usual_time)/usual_time)
+#
+#     with Finally("I drop pwd_user"):
+#         ch_nodes[0].query("DROP USER pwd_user")
 
 
 
