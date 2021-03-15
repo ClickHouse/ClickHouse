@@ -807,7 +807,14 @@ public:
             return toFirstDayNumOfYear(v);
 
         const LUTIndex i = toLUTIndex(v);
-        return toDayNum(years_lut[lut[i].year / years * years - DATE_LUT_MIN_YEAR]);
+
+        UInt16 year = lut[i].year / years * years;
+
+        /// For example, rounding down 1925 to 100 years will be 1900, but it's less than min supported year.
+        if (unlikely(year < DATE_LUT_MIN_YEAR))
+            year = DATE_LUT_MIN_YEAR;
+
+        return toDayNum(years_lut[year - DATE_LUT_MIN_YEAR]);
     }
 
     inline ExtendedDayNum toStartOfQuarterInterval(ExtendedDayNum d, UInt64 quarters) const
