@@ -12,10 +12,14 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/ASTLiteral.h>
 
+namespace DB
+{
+
 namespace
 {
-using namespace DB;
-inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+
+inline void readTextHelper(
+    time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     switch (settings.date_time_input_format)
     {
@@ -27,16 +31,16 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
             return;
     }
 }
+
 }
 
-namespace DB
-{
 
 TimezoneMixin::TimezoneMixin(const String & time_zone_name)
     : has_explicit_time_zone(!time_zone_name.empty()),
     time_zone(DateLUT::instance(time_zone_name)),
     utc_time_zone(DateLUT::instance("UTC"))
-{}
+{
+}
 
 DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
     : TimezoneMixin(time_zone_name)
@@ -45,7 +49,8 @@ DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
 
 DataTypeDateTime::DataTypeDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
-{}
+{
+}
 
 String DataTypeDateTime::doGetName() const
 {
@@ -87,7 +92,7 @@ void DataTypeDateTime::deserializeWholeText(IColumn & column, ReadBuffer & istr,
 void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x;
-    ::readText(x, istr, settings, time_zone, utc_time_zone);
+    readTextHelper(x, istr, settings, time_zone, utc_time_zone);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -103,7 +108,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
     time_t x;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
-        ::readText(x, istr, settings, time_zone, utc_time_zone);
+        readTextHelper(x, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
     else /// Just 1504193808 or 01504193808
@@ -125,7 +130,7 @@ void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     time_t x;
     if (checkChar('"', istr))
     {
-        ::readText(x, istr, settings, time_zone, utc_time_zone);
+        readTextHelper(x, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
     else
@@ -154,7 +159,7 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     if (maybe_quote == '\'' || maybe_quote == '\"')
         ++istr.position();
 
-    ::readText(x, istr, settings, time_zone, utc_time_zone);
+    readTextHelper(x, istr, settings, time_zone, utc_time_zone);
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
