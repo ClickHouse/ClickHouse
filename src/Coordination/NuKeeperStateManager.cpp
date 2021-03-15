@@ -26,7 +26,7 @@ NuKeeperStateManager::NuKeeperStateManager(
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
     , log_store(nuraft::cs_new<NuKeeperLogStore>(
-                    config.getString(config_prefix + ".log_storage_path"),
+                    config.getString(config_prefix + ".log_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/logs"),
                     coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
@@ -64,9 +64,9 @@ NuKeeperStateManager::NuKeeperStateManager(
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
-void NuKeeperStateManager::loadLogStore(size_t start_log_index)
+void NuKeeperStateManager::loadLogStore(size_t last_commited_index, size_t logs_to_keep)
 {
-    log_store->init(start_log_index);
+    log_store->init(last_commited_index, logs_to_keep);
 }
 
 void NuKeeperStateManager::flushLogStore()

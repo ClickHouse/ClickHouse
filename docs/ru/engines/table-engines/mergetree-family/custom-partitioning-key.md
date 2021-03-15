@@ -1,6 +1,6 @@
 ---
 toc_priority: 32
-toc_title: "\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u043b\u044c\u043d\u044b\u0439\u0020\u043a\u043b\u044e\u0447\u0020\u043f\u0430\u0440\u0442\u0438\u0446\u0438\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Произвольный ключ партиционирования"
 ---
 
 
@@ -129,4 +129,3 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse позволяет производить различные манипуляции с кусками: удалять, копировать из одной таблицы в другую или создавать их резервные копии. Подробнее см. в разделе [Манипуляции с партициями и кусками](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md#alter_manipulations-with-partitions).
 
-[Оригинальная статья:](https://clickhouse.tech/docs/ru/operations/table_engines/custom_partitioning_key/) <!--hide-->
