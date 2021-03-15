@@ -6,22 +6,19 @@ shopt -s nullglob
 # check to see if this file is being run or sourced from another script
 _is_sourced() {
 	# https://unix.stackexchange.com/a/215279
-	[ "${#FUNCNAME[@]}" -ge 2 ] \
-		&& [ "${FUNCNAME[0]}" = '_is_sourced' ] \
-		&& [ "${FUNCNAME[1]}" = 'source' ]
+    [ "${#FUNCNAME[@]}" -ge 2 ] \
+        && [ "${FUNCNAME[0]}" = '_is_sourced' ] \
+        && [ "${FUNCNAME[1]}" = 'source' ]
 }
 
 get_variables() {
-    declare -g CLICKHOUSE_DO_NOT_CHOWN INIT_ON_EVERY_START
-    CLICKHOUSE_DO_NOT_CHOWN="${CLICKHOUSE_DO_NOT_CHOWN:-1}"
+    CLICKHOUSE_DO_NOT_CHOWN="${CLICKHOUSE_DO_NOT_CHOWN:-0}"
     # Backwards compatibility
     INIT_ON_EVERY_START="${INIT_ON_EVERY_START:-1}"
 
-    declare -g CLICKHOUSE_UID CLICKHOUSE_GID
     CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
     CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
 
-    declare -g gosu USER GROUP
     # support --user
     if [ "$(id -u)" = "0" ]; then
         USER=$CLICKHOUSE_UID
@@ -38,10 +35,9 @@ get_variables() {
         USER="$(id -u)"
         GROUP="$(id -g)"
         gosu=""
-        CLICKHOUSE_DO_NOT_CHOWN=0
+        CLICKHOUSE_DO_NOT_CHOWN=1
     fi
 
-    declare -g CLICKHOUSE_CONFIG SERVER_ARGS
     CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
     SERVER_ARGS="$SERVER_ARGS --config-file=$CLICKHOUSE_CONFIG"
 
@@ -50,11 +46,9 @@ get_variables() {
         exit 1
     fi
     
-    declare -g HTTP_PORT
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
 
-    declare -g DATA_DIR TMP_DIR USER_PATH LOG_PATH LOG_DIR ERROR_LOG_PATH ERROR_LOG_DIR FORMAT_SCHEMA_PATH
     # get CH directories locations
     DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=path || true)"
     TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
@@ -65,7 +59,6 @@ get_variables() {
     ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH" || true)"
     FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
-    declare -g CLICKHOUSE_USER CLICKHOUSE_PASSWORD CLICKHOUSE_DB CLICKHOUSE_ACCESS_MANAGEMENT
     CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
     CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
     CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
@@ -78,6 +71,7 @@ get_variables() {
 }
 
 setup_dirs() {
+    echo "Setup directory permission:"
     for dir in "$DATA_DIR" \
     "$ERROR_LOG_DIR" \
     "$LOG_DIR" \
@@ -92,9 +86,9 @@ setup_dirs() {
             echo "Couldn't create necessary directory: $dir"
             exit 1
         fi
-
-        if [ "$CLICKHOUSE_DO_NOT_CHOWN" = "1" ]; then
+        if [ "$CLICKHOUSE_DO_NOT_CHOWN" = "0" ]; then
             # ensure proper directories permissions
+            echo "Grant access to $USER $GROUP for directory $dir:"
             chown -R "$USER:$GROUP" "$dir"
         elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
             echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
@@ -106,8 +100,9 @@ setup_dirs() {
 create_clickhouse_user() {
     # if clickhouse user is defined - create it (user "default" already exists out of box)
     if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
-    echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
-    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+        if [ ! -f "/etc/clickhouse-server/users.d/default-user.xml" ]; then
+            echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
+            cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
     <yandex>
     <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
     <users>
@@ -127,6 +122,9 @@ create_clickhouse_user() {
     </users>
     </yandex>
 EOT
+        else
+            echo "User $CLICKHOUSE_USER already exist, skip user creation"
+        fi
     fi
 }
 
@@ -188,30 +186,28 @@ _main() {
     if [ "${1:0:1}" = '-' ]; then
 		set -- clickhouse-server "$@"
 	fi
+    ls -la /etc/clickhouse-server/users.d/
     if [ "$1" = 'clickhouse-server' ]; then
         get_variables
-
-        # Skip user creation if the container was initialyzed erlier
-        if [ -z "$DATABASE_ALREADY_EXISTS" ]; then
-            create_clickhouse_user
-        fi
+        create_clickhouse_user
         # Backwards compatibility:
         # Modify dir permission, create users and parse init_files
         # only INIT_ON_EVERY_START is equal to 1 (default)
         # 
-        # To skup this step set INIT_ON_EVERY_START env. variable to 0
+        # To skip this step set INIT_ON_EVERY_START env. variable to 0
         if [ "$INIT_ON_EVERY_START" = "1" ]; then
             setup_dirs
             docker_process_init_files
         fi
+        
     fi
 
     # SERVER_ARGS and gosu variables are defined in get_variables.
     # These variables are defined only if the first argument is clickhouse-server
-    exec $gosu "$@" "$SERVER_ARGS"
+    exec $gosu "$@" $SERVER_ARGS
 }
 
 # If we are sourced from elsewhere, don't perform any further actions
 if ! _is_sourced; then
-	_main "$@"
+    _main "$@"
 fi
