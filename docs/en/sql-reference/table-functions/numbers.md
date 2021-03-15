@@ -25,4 +25,3 @@ Examples:
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/numbers/) <!--hide-->

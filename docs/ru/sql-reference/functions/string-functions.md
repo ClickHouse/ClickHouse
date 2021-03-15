@@ -1,6 +1,6 @@
 ---
 toc_priority: 40
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u043c\u0438"
+toc_title: "Функции для работы со строками"
 ---
 
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
@@ -94,6 +94,8 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ## repeat {#repeat}
 
 Повторяет строку определенное количество раз и объединяет повторяемые значения в одну строку.
+
+Синоним: `REPEAT`.
 
 **Синтаксис**
 
@@ -273,9 +275,13 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 
 Производит кодирование строки s в base64-представление.
 
+Синоним: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
+
+Синоним: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -639,4 +645,3 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 
 -   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

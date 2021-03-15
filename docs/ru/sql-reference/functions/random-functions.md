@@ -1,6 +1,6 @@
 ---
 toc_priority: 51
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438\u0020\u043f\u0441\u0435\u0432\u0434\u043e\u0441\u043b\u0443\u0447\u0430\u0439\u043d\u044b\u0445\u0020\u0447\u0438\u0441\u0435\u043b"
+toc_title: "Функции генерации псевдослучайных чисел"
 ---
 
 # Функции генерации псевдослучайных чисел {#functions-for-generating-pseudo-random-numbers}
@@ -107,4 +107,3 @@ FROM numbers(3)
 └───────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/random_functions/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
 toc_priority: 58
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0432\u043d\u0435\u0448\u043d\u0438\u043c\u0438\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u044f\u043c\u0438"
+toc_title: "Функции для работы с внешними словарями"
 ---
 
 # Функции для работы с внешними словарями {#ext_dict_functions}
@@ -198,4 +198,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ext_dict_functions/) <!--hide-->

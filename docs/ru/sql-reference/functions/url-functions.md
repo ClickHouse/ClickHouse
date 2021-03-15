@@ -1,6 +1,6 @@
 ---
 toc_priority: 54
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0055\u0052\u004c"
+toc_title: "Функции для работы с URL"
 ---
 
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}
@@ -405,4 +405,3 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/url_functions/) <!--hide-->

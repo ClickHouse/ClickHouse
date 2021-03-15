@@ -151,6 +151,7 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
+            contrib/abseil-cpp
             contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
@@ -356,7 +357,6 @@ function run_tests
 
         # JSON functions
         01666_blns
-        01674_htm_xml_coarse_parse
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"

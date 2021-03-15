@@ -1,6 +1,6 @@
 ---
 toc_priority: 35
-toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
+toc_title: "Массивы"
 ---
 
 # Массивы {#functions-for-working-with-arrays}
@@ -1455,4 +1455,3 @@ select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
 └────────────────────────────────────────---──┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/array_functions/) <!--hide-->

@@ -1541,4 +1541,3 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

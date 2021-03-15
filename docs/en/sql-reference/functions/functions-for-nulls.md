@@ -13,6 +13,8 @@ Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal
 isNull(x)
 ```
 
+Alias: `ISNULL`.
+
 **Arguments**
 
 -   `x` — A value with a non-compound data type.
@@ -307,4 +309,3 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

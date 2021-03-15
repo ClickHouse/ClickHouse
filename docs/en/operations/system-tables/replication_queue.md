@@ -70,7 +70,7 @@ num_tries:              36
 last_exception:         Code: 226, e.displayText() = DB::Exception: Marks file '/opt/clickhouse/data/merge/visits_v2/tmp_fetch_20201130_121373_121384_2/CounterID.mrk' doesn't exist (version 20.8.7.15 (official build))
 last_attempt_time:      2020-12-08 17:35:54
 num_postponed:          0
-postpone_reason:        
+postpone_reason:
 last_postpone_time:     1970-01-01 03:00:00
 ```
 

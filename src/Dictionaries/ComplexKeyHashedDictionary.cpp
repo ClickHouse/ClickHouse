@@ -41,7 +41,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_values_column) const
+    const ColumnPtr & default_values_column) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -563,7 +563,13 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & att
 BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
-    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeys(), column_names);
+    auto vector_keys = getKeys();
+
+    PaddedPODArray<StringRef> keys;
+    keys.reserve(vector_keys.size());
+    keys.assign(vector_keys.begin(), vector_keys.end());
+
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
 
 void registerDictionaryComplexKeyHashed(DictionaryFactory & factory)
