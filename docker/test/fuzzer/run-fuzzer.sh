@@ -4,7 +4,9 @@
 set -eux
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -20,7 +22,7 @@ function clone
     rm -rf ch ||:
     mkdir ch
     cd ch
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
     tar -xvf clickhouse_no_subs.tar.gz
     tree ||:
     ls -lath ||:
@@ -29,7 +31,7 @@ function clone
 function download
 {
     wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse" &
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
     wait
 
     chmod +x clickhouse
@@ -78,6 +80,8 @@ function fuzz
     if [[ -n "$NEW_TESTS" ]]
     then
         NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
+    else
+        NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
     clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
