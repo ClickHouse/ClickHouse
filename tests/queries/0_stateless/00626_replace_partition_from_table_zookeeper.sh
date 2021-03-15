@@ -12,19 +12,22 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function query_with_retry
 {
-    retry=0
+    local query="$1" && shift
+
+    local retry=0
     until [ $retry -ge 5 ]
     do
-        result=$($CLICKHOUSE_CLIENT $2 --query="$1" 2>&1)
+        local result
+        result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
         if [ "$?" == 0 ]; then
             echo -n "$result"
             return
         else
-            retry=$(($retry + 1))
+            retry=$((retry + 1))
             sleep 3
         fi
     done
-    echo "Query '$1' failed with '$result'"
+    echo "Query '$query' failed with '$result'"
 }
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS src;"
@@ -139,7 +142,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE src;"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r1;"
-query_with_retry "OPTIMIZE TABLE dst_r1 PARTITION 1;" "--replication_alter_partitions_sync=0 --optimize_throw_if_noop=1"
+query_with_retry "OPTIMIZE TABLE dst_r1 PARTITION 1;" --replication_alter_partitions_sync=0 --optimize_throw_if_noop=1
 
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r1;"
