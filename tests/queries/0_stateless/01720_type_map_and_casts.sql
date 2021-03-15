@@ -67,7 +67,7 @@ ENGINE = MergeTree() ORDER BY d;
 
 INSERT INTO table_map_with_key_integer SELECT '2020-01-01', map(-1, 'a', 0, 'b', toInt128(1234567898765432123456789), 'c', toInt128(-1234567898765432123456789), 'd');
 
-SELECT 'Map(Int128, Int32)';
+SELECT 'Map(Int128, String)';
 
 SELECT m FROM table_map_with_key_integer;
 SELECT m[toInt128(-1)], m[toInt128(0)], m[toInt128(1234567898765432123456789)], m[toInt128(-1234567898765432123456789)] FROM table_map_with_key_integer;
