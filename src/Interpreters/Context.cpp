@@ -60,6 +60,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
@@ -753,7 +754,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -1833,12 +1834,17 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
 {
     std::lock_guard lock(shared->clusters_mutex);
 
+    /// Do not update clusters if this part of config wasn't changed.
+    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
+        return;
+
+    auto old_clusters_config = shared->clusters_config;
     shared->clusters_config = config;
 
     if (!shared->clusters)
         shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
     else
-        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 }
 
 

@@ -23,4 +23,3 @@ toc_title: "Эксплуатация"
 - [Настройки](settings/index.md#settings)
 - [Утилиты](utilities/index.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/) <!--hide-->
