@@ -96,4 +96,3 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 -   [Движок таблиц ‘MySQL’](../../sql-reference/table-functions/mysql.md)
 -   [Использование MySQL как источника данных для внешнего словаря](../../sql-reference/table-functions/mysql.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table_functions/mysql/) <!--hide-->

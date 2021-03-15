@@ -807,4 +807,3 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`. 
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/mergetree/) <!--hide-->

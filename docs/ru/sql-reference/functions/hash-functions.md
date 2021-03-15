@@ -484,4 +484,3 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->

@@ -43,4 +43,3 @@ num
 3
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/) <!--hide-->

@@ -36,4 +36,3 @@ ClickHouse позволяет использовать запрос `ALTER TABLE
 
 Для автоматизации этого подхода доступен инструмент от сторонних разработчиков: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/backup/) <!--hide-->

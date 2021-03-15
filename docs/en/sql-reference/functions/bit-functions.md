@@ -250,4 +250,3 @@ Result:
 └───────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->

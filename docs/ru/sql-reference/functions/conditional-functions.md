@@ -111,4 +111,3 @@ SELECT if(0, plus(2, 2), plus(2, 6));
 └────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/conditional_functions/) <!--hide-->

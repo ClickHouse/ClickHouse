@@ -185,4 +185,3 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->

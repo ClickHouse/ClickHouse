@@ -151,4 +151,3 @@ regionToTopContinent(id[, geobase])
 
 `ua` и `uk` обозначают одно и то же - украинский язык.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ym_dict_functions/) <!--hide-->
