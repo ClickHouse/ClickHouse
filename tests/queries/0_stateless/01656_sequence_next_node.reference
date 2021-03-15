@@ -459,3 +459,33 @@
 (max_args)	10	\N
 (max_args)	11	\N
 (forward, head, A) id = 12	A
+(forward, head, 1)	1	A
+(forward, head, 1)	2	\N
+(forward, head, 1)	3	\N
+(forward, head, 1, A)	1	B
+(forward, head, 1, A)	2	\N
+(forward, head, 1, A)	3	\N
+(forward, head, 1, A->B)	1	C
+(forward, head, 1, A->B)	2	\N
+(forward, head, 1, A->B)	3	\N
+(backward, tail, 1)	1	\N
+(backward, tail, 1)	2	A
+(backward, tail, 1)	3	\N
+(backward, tail, 1, A)	1	\N
+(backward, tail, 1, A)	2	B
+(backward, tail, 1, A)	3	\N
+(backward, tail, 1, A->B)	1	\N
+(backward, tail, 1, A->B)	2	C
+(backward, tail, 1, A->B)	3	\N
+(forward, first_match, 1, B)	1	C
+(forward, first_match, 1, B)	2	A
+(forward, first_match, 1, B)	3	D
+(forward, first_match, 1, B->C)	1	D
+(forward, first_match, 1, B->C)	2	\N
+(forward, first_match, 1, B->C)	3	\N
+(backward, first_match, 1, B)	1	A
+(backward, first_match, 1, B)	2	C
+(backward, first_match, 1, B)	3	B
+(backward, first_match, 1, B->C)	1	\N
+(backward, first_match, 1, B->C)	2	\N
+(backward, first_match, 1, B->C)	3	\N

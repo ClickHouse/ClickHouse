@@ -49,6 +49,7 @@ struct NodeBase
 
     DataTypeDateTime::FieldType event_time;
     std::bitset<MaxEventsSize> events_bitset;
+    bool can_be_base;
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
@@ -68,6 +69,7 @@ struct NodeBase
         writeBinary(event_time, buf);
         UInt64 ulong_bitset = events_bitset.to_ulong();
         writeBinary(ulong_bitset, buf);
+        writeBinary(can_be_base, buf);
     }
 
     static Node * read(ReadBuffer & buf, Arena * arena)
@@ -83,6 +85,7 @@ struct NodeBase
         UInt64 ulong_bitset;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
+        readBinary(node->can_be_base, buf);
 
         return node;
     }
@@ -146,13 +149,15 @@ struct SequenceNextNodeGeneralData
 };
 
 /// Implementation of sequenceFirstNode
-template <typename T, typename Node, SeqDirection Direction, SeqBase Base>
+template <typename T, typename Node, SeqDirection Direction, SeqBase Base, size_t MinRequiredArgs>
 class SequenceNextNodeImpl final
-    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, SequenceNextNodeImpl<T, Node, Direction, Base>>
+    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, SequenceNextNodeImpl<T, Node, Direction, Base, MinRequiredArgs>>
 {
     using Data = SequenceNextNodeGeneralData<Node>;
     static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
+    static constexpr size_t EventColumn = 2;
+    static constexpr size_t BaseCondition = 1;
 
     DataTypePtr & data_type;
     UInt8 events_size;
@@ -160,10 +165,10 @@ class SequenceNextNodeImpl final
 
 public:
     SequenceNextNodeImpl(const DataTypePtr & data_type_, const DataTypes & arguments, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, SequenceNextNodeImpl<T, Node, Direction, Base>>(
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, SequenceNextNodeImpl<T, Node, Direction, Base, MinRequiredArgs>>(
             {data_type_}, {})
         , data_type(this->argument_types[0])
-        , events_size(arguments.size() - 2)
+        , events_size(arguments.size() - MinRequiredArgs)
         , max_elems(max_elems_)
     {
     }
@@ -196,7 +201,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        Node * node = Node::allocate(*columns[1], row_num, arena);
+        Node * node = Node::allocate(*columns[EventColumn], row_num, arena);
 
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
@@ -208,9 +213,11 @@ public:
         /// +          4 (bit of event3)
         node->events_bitset.reset();
         for (UInt8 i = 0; i < events_size; ++i)
-            if (assert_cast<const ColumnVector<UInt8> *>(columns[2 + i])->getData()[row_num])
+            if (assert_cast<const ColumnVector<UInt8> *>(columns[MinRequiredArgs + i])->getData()[row_num])
                 node->events_bitset.set(i);
         node->event_time = timestamp;
+
+        node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[BaseCondition])->getData()[row_num];
 
         data(place).value.push_back(node, arena);
     }
@@ -306,19 +313,31 @@ public:
 
     inline UInt32 getBaseIndex(Data & data, bool & exist) const
     {
+        exist = false;
+        if (data.value.size() == 0)
+            return 0;
+
         switch (Base)
         {
             case HEAD:
-                exist = true;
-                return 0;
+                if (data.value[0]->can_be_base)
+                {
+                    exist = true;
+                    return 0;
+                }
+                break;
 
             case TAIL:
-                exist = true;
-                return data.value.size() - 1;
+                if (data.value[data.value.size() - 1]->can_be_base)
+                {
+                    exist = true;
+                    return data.value.size() - 1;
+                }
+                break;
 
             case FIRST_MATCH:
                 for (UInt64 i = 0; i < data.value.size(); ++i)
-                    if (data.value[i]->events_bitset.test(0))
+                    if (data.value[i]->events_bitset.test(0) && data.value[i]->can_be_base)
                     {
                         exist = true;
                         return i;
@@ -329,7 +348,7 @@ public:
                 for (UInt64 i = 0; i < data.value.size(); ++i)
                 {
                     auto reversed_i = data.value.size() - i - 1;
-                    if (data.value[reversed_i]->events_bitset.test(0))
+                    if (data.value[reversed_i]->events_bitset.test(0) && data.value[reversed_i]->can_be_base)
                     {
                         exist = true;
                         return reversed_i;
@@ -338,7 +357,6 @@ public:
                 break;
         }
 
-        exist = false;
         return 0;
     }
 
