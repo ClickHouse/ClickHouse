@@ -103,4 +103,3 @@ SELECT * FROM postgresql_table WHERE str IN ('test')
 -   [Табличная функция ‘postgresql’](../../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL в качестве истояника для внешнего словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/postgresql/) <!--hide-->

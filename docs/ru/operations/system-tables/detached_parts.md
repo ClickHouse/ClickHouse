@@ -4,4 +4,3 @@
 Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION\|PART](../../sql_reference/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
 Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../../sql_reference/alter/#alter_drop-detached).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/detached_parts) <!--hide-->

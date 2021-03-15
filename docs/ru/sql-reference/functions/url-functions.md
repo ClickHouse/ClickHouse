@@ -405,4 +405,3 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/url_functions/) <!--hide-->

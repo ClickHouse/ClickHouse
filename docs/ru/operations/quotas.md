@@ -107,4 +107,3 @@ toc_title: "Квоты"
 
 При перезапуске сервера, квоты сбрасываются.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/quotas/) <!--hide-->

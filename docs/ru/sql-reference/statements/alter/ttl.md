@@ -83,4 +83,3 @@ SELECT * FROM table_with_ttl;
 
 - Подробнее о [свойстве TTL](../../../engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/ttl/) <!--hide-->

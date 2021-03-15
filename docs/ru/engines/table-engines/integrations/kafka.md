@@ -193,4 +193,3 @@ ClickHouse может поддерживать учетные данные Kerbe
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/kafka/) <!--hide-->

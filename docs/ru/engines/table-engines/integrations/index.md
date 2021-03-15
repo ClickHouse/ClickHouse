@@ -20,4 +20,3 @@ toc_priority: 30
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/) <!--hide-->

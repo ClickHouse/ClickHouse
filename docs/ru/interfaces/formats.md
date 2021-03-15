@@ -1390,4 +1390,3 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->
