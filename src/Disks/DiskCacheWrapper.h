@@ -40,6 +40,8 @@ public:
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
+    void removeSharedFile(const String & path, bool keep_s3) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     ReservationPtr reserve(UInt64 bytes) override;
 

@@ -42,8 +42,7 @@ LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse
 SELECT 'TEST_SMALL';
 SELECT 'VALUE FROM RAM BUFFER';
 
--- NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 42 }
+SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 43 }
 
 SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple('1', toInt32(3)));
 SELECT dictGetInt32('01280_db.ssd_dict', 'b', tuple('1', toInt32(3)));

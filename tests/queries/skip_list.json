@@ -165,6 +165,7 @@
         "00534_functions_bad_arguments4",
         "00534_functions_bad_arguments9",
         "00564_temporary_table_management",
+        "00600_replace_running_query",
         "00626_replace_partition_from_table_zookeeper",
         "00652_replicated_mutations_zookeeper",
         "00687_top_and_offset",
@@ -282,7 +283,7 @@
         "01293_pretty_max_value_width",
         "01293_show_settings",
         "01294_create_settings_profile",
-        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
         "01295_create_row_policy",
         "01296_create_row_policy_in_current_database",
         "01297_create_quota",
@@ -409,6 +410,7 @@
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
         "00604_show_create_database",
+        "00600_replace_running_query",
         "00612_http_max_query_size",
         "00619_union_highlite",
         "00620_optimize_on_nonleader_replica_zookeeper",
@@ -477,7 +479,7 @@
         "01018_ddl_dictionaries_select",
         "01018_ddl_dictionaries_special",
         "01018_dictionaries_from_dictionaries",
-        "01018_ip_dictionary",
+        "01018_ip_dictionary_long",
         "01021_only_tuple_columns",
         "01023_materialized_view_query_context",
         "01031_mutations_interpreter_and_context",
@@ -566,7 +568,7 @@
         "01281_unsucceeded_insert_select_queries_counter",
         "01293_system_distribution_queue",
         "01294_lazy_database_concurrent",
-        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
         "01294_system_distributed_on_cluster",
         "01296_create_row_policy_in_current_database",
         "01297_create_quota",
@@ -649,6 +651,7 @@
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
         "01683_flat_dictionary",
