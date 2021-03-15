@@ -655,6 +655,24 @@ for size in 4096 16384 50000 65536 100000 1000000 10000000 100000000; do
     done;
 done | tee result.tsv
 
+clickhouse-local --structure '
+    name String,
+    size UInt64,
+    iterations UInt64,
+    threads UInt16,
+    generator UInt8,
+    memcpy UInt8,
+    elapsed UInt64
+' --query "
+    SELECT
+        size, name,
+        avg(1000 * elapsed / size / iterations) AS s,
+        count() AS c
+    FROM table
+    GROUP BY size, name
+    ORDER BY size ASC, s DESC
+" --output-format PrettyCompact < result.tsv
+
 )" << std::endl;
         std::cout << desc << std::endl;
         return 1;
