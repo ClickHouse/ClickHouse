@@ -6,7 +6,7 @@ toc_title: Atomic
 
 # Atomic {#atomic}
 
-Поддерживает неблокирующие запросы `DROP` и `RENAME TABLE` и запросы `EXCHANGE TABLES t1 AND t2`. Движок Atomic используется по умолчанию.
+Поддерживает неблокирующие запросы `DROP` и `RENAME TABLE` и запросы `EXCHANGE TABLES t1 AND t2`. Движок `Atomic` используется по умолчанию.
 
 ## Создание БД {#creating-a-database}
 
