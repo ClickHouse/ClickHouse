@@ -16,7 +16,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
@@ -752,6 +752,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
+}
+
+void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, const Context &) const
+{
+    elem.query_kind = "System";
 }
 
 }

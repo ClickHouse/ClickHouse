@@ -12,7 +12,7 @@ Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted
 avgWeighted(x, weight)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Values.
 -   `weight` — Weights of the values.

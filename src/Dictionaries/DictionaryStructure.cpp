@@ -147,7 +147,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         id.emplace(config, structure_prefix + ".id");
     else if (has_key)
     {
-        key.emplace(getAttributes(config, structure_prefix + ".key", false, false));
+        key.emplace(getAttributes(config, structure_prefix + ".key", true));
         if (key->empty())
             throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
     }
@@ -196,7 +196,13 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             has_expressions = true;
     }
 
-    attributes = getAttributes(config, structure_prefix);
+    attributes = getAttributes(config, structure_prefix, false);
+
+    for (size_t i = 0; i < attributes.size(); ++i)
+    {
+        const auto & attribute_name = attributes[i].name;
+        attribute_name_to_index[attribute_name] = i;
+    }
 
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
@@ -223,24 +229,27 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     }
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const
 {
-    auto find_iter
-        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-    if (find_iter != attributes.end())
-        return *find_iter;
+    auto it = attribute_name_to_index.find(attribute_name);
 
-    if (key && access_to_key_from_attributes)
+    if (it == attribute_name_to_index.end())
     {
-        find_iter = std::find_if(key->begin(), key->end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-        if (find_iter != key->end())
-            return *find_iter;
+        if (!access_to_key_from_attributes)
+            throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+        for (const auto & key_attribute : *key)
+            if (key_attribute.name == attribute_name)
+                return key_attribute;
+
+        throw Exception{"No such attribute '" + attribute_name + "' in keys", ErrorCodes::BAD_ARGUMENTS};
     }
 
-    throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    size_t attribute_index = it->second;
+    return attributes[attribute_index];
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name, const DataTypePtr & type) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name, const DataTypePtr & type) const
 {
     const auto & attribute = getAttribute(attribute_name);
 
@@ -249,6 +258,14 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const String & att
             ErrorCodes::TYPE_MISMATCH};
 
     return attribute;
+}
+
+size_t DictionaryStructure::getKeysSize() const
+{
+    if (id)
+        return 1;
+    else
+        return key->size();
 }
 
 std::string DictionaryStructure::getKeyDescription() const
@@ -329,13 +346,17 @@ static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const bool hierarchy_allowed,
-    const bool allow_null_values)
+    bool complex_key_attributes)
 {
+    /// If we request complex key attributes they does not support hierarchy and does not allow null values
+    const bool hierarchy_allowed = !complex_key_attributes;
+    const bool allow_null_values = !complex_key_attributes;
+
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(config_prefix, config_elems);
     auto has_hierarchy = false;
 
+    std::unordered_set<String> attribute_names;
     std::vector<DictionaryAttribute> res_attributes;
 
     const FormatSettings format_settings;
@@ -358,6 +379,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
 
+        auto insert_result = attribute_names.insert(name);
+        bool inserted = insert_result.second;
+
+        if (!inserted)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary attributes names must be unique. Attribute name ({}) is not unique",
+                name);
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);

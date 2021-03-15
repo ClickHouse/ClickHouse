@@ -113,22 +113,26 @@ private:
         const MarkRanges & ranges,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
+        size_t & total_granules,
+        size_t & granules_dropped,
         Poco::Logger * log);
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
-    void selectPartsToRead(
+    static void selectPartsToRead(
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read) const;
+        const PartitionIdToMaxBlock * max_block_numbers_to_read);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     void selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         const Context & query_context) const;
