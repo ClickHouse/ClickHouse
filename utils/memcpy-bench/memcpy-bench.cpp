@@ -33,6 +33,9 @@ void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_d
         dst += bytes_to_copy;
         src += bytes_to_copy;
         size -= bytes_to_copy;
+
+        /// Execute at least one SSE instruction as a penalty after running AVX code.
+        __asm__ volatile ("pxor %%xmm7, %%xmm7" ::: "xmm7");
     }
 }
 
@@ -76,16 +79,9 @@ uint64_t test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size
     uint64_t elapsed_ns = watch.elapsed();
 
     /// Validation
-    size_t sum = 0;
-    size_t reference = 0;
     for (size_t i = 0; i < size; ++i)
-    {
-        sum += dst[i];
-        reference += uint8_t(i);
-    }
-
-    if (sum != reference)
-        throw std::logic_error("Incorrect result");
+        if (dst[i] != uint8_t(i))
+            throw std::logic_error("Incorrect result");
 
     std::cout << name;
     return elapsed_ns;
@@ -676,11 +672,9 @@ done | tee result.tsv
     }
     else
     {
-        iterations = 10000000000ULL * num_threads / size;
+        iterations = 10000000000ULL / size;
 
         if (generator_variant == 1)
-            iterations /= 100;
-        if (generator_variant == 2)
             iterations /= 10;
     }
 
