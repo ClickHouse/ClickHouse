@@ -176,7 +176,7 @@ private:
     void sendExternalTables();
 
     /// Set part uuids to a query context, collected from remote replicas.
-    /// Return true if duplicates found.
+    /// Return true if no duplicate found.
     bool setPartUUIDs(const std::vector<UUID> & uuids);
 
     /// Cancell query and restart it with info about duplicated UUIDs
