@@ -1,6 +1,6 @@
 # system.data_type_families {#system_tables-data_type_families}
 
-Содержит информацию о поддерживаемых [типах данных](../../sql-reference/data-types/).
+Содержит информацию о поддерживаемых [типах данных](../../sql-reference/data-types/index.md).
 
 Столбцы:
 
