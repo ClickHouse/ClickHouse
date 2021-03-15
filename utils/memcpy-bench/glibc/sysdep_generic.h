@@ -1,22 +1,22 @@
 #pragma once
 
 /* Generic asm macros used on many machines.
-   Copyright (C) 1991-2020 Free Software Foundation, Inc.
-   This file is part of the GNU C Library.
+    Copyright (C) 1991-2020 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
 
-   The GNU C Library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
+    The GNU C Library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
 
-   The GNU C Library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
+    The GNU C Library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
 
-   You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
-   <https://www.gnu.org/licenses/>.  */
+    You should have received a copy of the GNU Lesser General Public
+    License along with the GNU C Library; if not, see
+    <https://www.gnu.org/licenses/>.  */
 
 #define C_SYMBOL_NAME(name) name
 #define HIDDEN_JUMPTARGET(name) 0x0
@@ -31,8 +31,8 @@
 #define ASM_LINE_SEP ;
 
 #define strong_alias(original, alias)                \
-  .globl C_SYMBOL_NAME (alias) ASM_LINE_SEP        \
-  C_SYMBOL_NAME (alias) = C_SYMBOL_NAME (original)
+    .globl C_SYMBOL_NAME (alias) ASM_LINE_SEP        \
+    C_SYMBOL_NAME (alias) = C_SYMBOL_NAME (original)
 
 #ifndef C_LABEL
 
@@ -43,7 +43,7 @@
 
 #ifdef __ASSEMBLER__
 /* Mark the end of function named SYM.  This is used on some platforms
-   to generate correct debugging information.  */
+    to generate correct debugging information.  */
 # ifndef END
 #  define END(sym)
 # endif
@@ -81,35 +81,35 @@
 # define CFI_STARTPROC    ".cfi_startproc"
 # define CFI_ENDPROC    ".cfi_endproc"
 # define CFI_DEF_CFA(reg, off)    \
-   ".cfi_def_cfa " CFI_STRINGIFY(reg) "," CFI_STRINGIFY(off)
+    ".cfi_def_cfa " CFI_STRINGIFY(reg) "," CFI_STRINGIFY(off)
 # define CFI_DEF_CFA_REGISTER(reg) \
-   ".cfi_def_cfa_register " CFI_STRINGIFY(reg)
+    ".cfi_def_cfa_register " CFI_STRINGIFY(reg)
 # define CFI_DEF_CFA_OFFSET(off) \
-   ".cfi_def_cfa_offset " CFI_STRINGIFY(off)
+    ".cfi_def_cfa_offset " CFI_STRINGIFY(off)
 # define CFI_ADJUST_CFA_OFFSET(off) \
-   ".cfi_adjust_cfa_offset " CFI_STRINGIFY(off)
+    ".cfi_adjust_cfa_offset " CFI_STRINGIFY(off)
 # define CFI_OFFSET(reg, off) \
-   ".cfi_offset " CFI_STRINGIFY(reg) "," CFI_STRINGIFY(off)
+    ".cfi_offset " CFI_STRINGIFY(reg) "," CFI_STRINGIFY(off)
 # define CFI_REL_OFFSET(reg, off) \
-   ".cfi_rel_offset " CFI_STRINGIFY(reg) "," CFI_STRINGIFY(off)
+    ".cfi_rel_offset " CFI_STRINGIFY(reg) "," CFI_STRINGIFY(off)
 # define CFI_REGISTER(r1, r2) \
-   ".cfi_register " CFI_STRINGIFY(r1) "," CFI_STRINGIFY(r2)
+    ".cfi_register " CFI_STRINGIFY(r1) "," CFI_STRINGIFY(r2)
 # define CFI_RETURN_COLUMN(reg) \
-   ".cfi_return_column " CFI_STRINGIFY(reg)
+    ".cfi_return_column " CFI_STRINGIFY(reg)
 # define CFI_RESTORE(reg) \
-   ".cfi_restore " CFI_STRINGIFY(reg)
+    ".cfi_restore " CFI_STRINGIFY(reg)
 # define CFI_UNDEFINED(reg) \
-   ".cfi_undefined " CFI_STRINGIFY(reg)
+    ".cfi_undefined " CFI_STRINGIFY(reg)
 # define CFI_REMEMBER_STATE \
-   ".cfi_remember_state"
+    ".cfi_remember_state"
 # define CFI_RESTORE_STATE \
-   ".cfi_restore_state"
+    ".cfi_restore_state"
 # define CFI_WINDOW_SAVE \
-   ".cfi_window_save"
+    ".cfi_window_save"
 # define CFI_PERSONALITY(enc, exp) \
-   ".cfi_personality " CFI_STRINGIFY(enc) "," CFI_STRINGIFY(exp)
+    ".cfi_personality " CFI_STRINGIFY(enc) "," CFI_STRINGIFY(exp)
 # define CFI_LSDA(enc, exp) \
-   ".cfi_lsda " CFI_STRINGIFY(enc) "," CFI_STRINGIFY(exp)
+    ".cfi_lsda " CFI_STRINGIFY(enc) "," CFI_STRINGIFY(exp)
 #endif
 
 #include "dwarf2.h"

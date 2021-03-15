@@ -1,22 +1,22 @@
 #pragma once
 
 /* Assembler macros for x86-64.
-   Copyright (C) 2001-2020 Free Software Foundation, Inc.
-   This file is part of the GNU C Library.
+    Copyright (C) 2001-2020 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
 
-   The GNU C Library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
+    The GNU C Library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
 
-   The GNU C Library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
+    The GNU C Library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
 
-   You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
-   <https://www.gnu.org/licenses/>.  */
+    You should have received a copy of the GNU Lesser General Public
+    License along with the GNU C Library; if not, see
+    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _X86_64_SYSDEP_H
 #define _X86_64_SYSDEP_H 1
@@ -28,35 +28,35 @@
 /* Syntactic details of assembler.  */
 
 /* This macro is for setting proper CFI with DW_CFA_expression describing
-   the register as saved relative to %rsp instead of relative to the CFA.
-   Expression is DW_OP_drop, DW_OP_breg7 (%rsp is register 7), sleb128 offset
-   from %rsp.  */
+    the register as saved relative to %rsp instead of relative to the CFA.
+    Expression is DW_OP_drop, DW_OP_breg7 (%rsp is register 7), sleb128 offset
+    from %rsp.  */
 #define cfi_offset_rel_rsp(regn, off)    .cfi_escape 0x10, regn, 0x4, 0x13, \
                     0x77, off & 0x7F | 0x80, off >> 7
 
 /* If compiled for profiling, call `mcount' at the start of each function.  */
 #ifdef    PROF
 /* The mcount code relies on a normal frame pointer being on the stack
-   to locate our caller, so push one just for its benefit.  */
+    to locate our caller, so push one just for its benefit.  */
 #define CALL_MCOUNT                                                          \
-  pushq %rbp;                                                                \
-  cfi_adjust_cfa_offset(8);                                                  \
-  movq %rsp, %rbp;                                                           \
-  cfi_def_cfa_register(%rbp);                                                \
-  call JUMPTARGET(mcount);                                                   \
-  popq %rbp;                                                                 \
-  cfi_def_cfa(rsp,8);
+    pushq %rbp;                                                                \
+    cfi_adjust_cfa_offset(8);                                                  \
+    movq %rsp, %rbp;                                                           \
+    cfi_def_cfa_register(%rbp);                                                \
+    call JUMPTARGET(mcount);                                                   \
+    popq %rbp;                                                                 \
+    cfi_def_cfa(rsp,8);
 #else
 #define CALL_MCOUNT        /* Do nothing.  */
 #endif
 
 #define    PSEUDO(name, syscall_name, args)                      \
 lose:                                          \
-  jmp JUMPTARGET(syscall_error)                              \
-  .globl syscall_error;                                  \
-  ENTRY (name)                                      \
-  DO_CALL (syscall_name, args);                              \
-  jb lose
+    jmp JUMPTARGET(syscall_error)                              \
+    .globl syscall_error;                                  \
+    ENTRY (name)                                      \
+    DO_CALL (syscall_name, args);                              \
+    jb lose
 
 #undef JUMPTARGET
 #ifdef SHARED
