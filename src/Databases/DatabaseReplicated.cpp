@@ -141,7 +141,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (hosts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts found");
-        Int32 cver = stat.cversion;
+        Int32 cversion = stat.cversion;
         std::sort(hosts.begin(), hosts.end());
 
         std::vector<zkutil::ZooKeeper::FutureGet> futures;
@@ -160,7 +160,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         }
 
         zookeeper->get(zookeeper_path + "/replicas", &stat);
-        if (success && cver == stat.version)
+        if (cversion != stat.cversion)
+            success = false;
+        if (success)
             break;
     }
     if (!success)
