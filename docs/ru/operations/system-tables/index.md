@@ -70,4 +70,3 @@ toc_title: "Системные таблицы"
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system-tables/) <!--hide-->

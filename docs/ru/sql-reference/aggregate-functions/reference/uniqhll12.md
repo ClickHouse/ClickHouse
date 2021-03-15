@@ -38,4 +38,3 @@ uniqHLL12(x[, ...])
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/) <!--hide-->

@@ -34,4 +34,3 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 -   [Настройки](../../engines/table-engines/integrations/kafka.md#table_engine-kafka-creating-a-table) Kafka
 -   [Настройки](../../engines/table-engines/special/join.md#join-limitations-and-settings) Join
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/table_engines) <!--hide-->

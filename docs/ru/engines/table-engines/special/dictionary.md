@@ -90,4 +90,3 @@ select * from products limit 1;
 └───────────────┴─────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/dictionary/) <!--hide-->

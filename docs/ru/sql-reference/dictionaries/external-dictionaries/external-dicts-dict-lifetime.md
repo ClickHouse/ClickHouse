@@ -86,4 +86,3 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

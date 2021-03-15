@@ -78,4 +78,3 @@ last_postpone_time:     1970-01-01 03:00:00
 
 -   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system.md/#query-language-system-replicated)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/replication_queue) <!--hide-->

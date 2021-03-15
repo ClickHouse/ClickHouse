@@ -301,4 +301,3 @@ SELECT mapValues(a) FROM test;
 └──────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/tuple-map-functions/) <!--hide-->

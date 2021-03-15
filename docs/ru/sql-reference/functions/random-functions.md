@@ -107,4 +107,3 @@ FROM numbers(3)
 └───────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/random_functions/) <!--hide-->

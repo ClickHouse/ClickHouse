@@ -172,4 +172,3 @@ If you want to convert the result to a number, you can use the ‘reverse’ and
 
 Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/encoding_functions/) <!--hide-->

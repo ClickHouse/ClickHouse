@@ -41,4 +41,3 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/url/) <!--hide-->

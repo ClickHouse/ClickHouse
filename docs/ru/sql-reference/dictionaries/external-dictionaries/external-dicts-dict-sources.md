@@ -725,4 +725,3 @@ Setting fields:
 -   `invalidate_query` – Запрос для проверки условия загрузки словаря. Необязательный параметр. Читайте больше в разделе [Обновление словарей](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

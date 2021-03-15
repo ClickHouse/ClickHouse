@@ -35,4 +35,3 @@ toc_title: "Введение"
 | [hdfs](../../sql-reference/table-functions/hdfs.md)             | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                         |
 | [s3](../../sql-reference/table-functions/s3.md)                 | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md).                                                            |
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/) <!--hide-->

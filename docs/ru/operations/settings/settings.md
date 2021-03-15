@@ -2563,4 +2563,3 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
