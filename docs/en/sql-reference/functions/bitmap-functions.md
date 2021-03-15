@@ -73,7 +73,7 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 -   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
 -   `range_start` – Range start point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `range_end` – Range end point(excluded). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `range_end` – Range end point (excluded). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
