@@ -2,7 +2,7 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTRowPolicyName.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <Access/User.h>

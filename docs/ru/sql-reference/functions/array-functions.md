@@ -1,6 +1,6 @@
 ---
 toc_priority: 35
-toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
+toc_title: "Массивы"
 ---
 
 # Массивы {#functions-for-working-with-arrays}
@@ -1352,6 +1352,52 @@ SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
 ```text
 ┌─res─┐
 │  10 │
+└─────┘
+```
+
+**Синтаксис** 
+
+``` sql
+arraySum(arr)
+```
+
+**Возвращаемое значение**
+
+-   Число.
+
+Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Параметры** 
+
+-   `arr` — [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT arraySum([2,3]) AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arraySum(x -> x*x, [2, 3]) AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│  13 │
 └─────┘
 ```
 

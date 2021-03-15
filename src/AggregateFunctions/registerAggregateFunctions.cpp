@@ -58,6 +58,8 @@ void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactor
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 
+void registerWindowFunctions(AggregateFunctionFactory & factory);
+
 
 void registerAggregateFunctions()
 {
@@ -103,6 +105,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionMannWhitney(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
+
+        registerWindowFunctions(factory);
     }
 
     {

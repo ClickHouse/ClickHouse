@@ -1,16 +1,34 @@
 #include <Processors/Transforms/WindowTransform.h>
 
-#include <Interpreters/ExpressionActions.h>
-
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
+
+// Interface for true window functions. It's not much of an interface, they just
+// accept the guts of WindowTransform and do 'something'. Given a small number of
+// true window functions, and the fact that the WindowTransform internals are
+// pretty much well defined in domain terms (e.g. frame boundaries), this is
+// somewhat acceptable.
+class IWindowFunction
+{
+public:
+    virtual ~IWindowFunction() = default;
+
+    // Must insert the result for current_row.
+    virtual void windowInsertResultInto(IColumn & to, const WindowTransform * transform) = 0;
+};
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
 // [compared] with [reference] +/- offset. Return value is -1/0/+1, like in
@@ -125,26 +143,29 @@ WindowTransform::WindowTransform(const Block & input_header_,
     for (const auto & f : functions)
     {
         WindowFunctionWorkspace workspace;
-        workspace.window_function = f;
-
-        const auto & aggregate_function
-            = workspace.window_function.aggregate_function;
+        workspace.aggregate_function = f.aggregate_function;
+        const auto & aggregate_function = workspace.aggregate_function;
         if (!arena && aggregate_function->allocatesMemoryInArena())
         {
             arena = std::make_unique<Arena>();
         }
 
-        workspace.argument_column_indices.reserve(
-            workspace.window_function.argument_names.size());
-        for (const auto & argument_name : workspace.window_function.argument_names)
+        workspace.argument_column_indices.reserve(f.argument_names.size());
+        for (const auto & argument_name : f.argument_names)
         {
             workspace.argument_column_indices.push_back(
                 input_header.getPositionByName(argument_name));
         }
+        workspace.argument_columns.assign(f.argument_names.size(), nullptr);
 
-        workspace.aggregate_function_state.reset(aggregate_function->sizeOfData(),
-            aggregate_function->alignOfData());
-        aggregate_function->create(workspace.aggregate_function_state.data());
+        workspace.window_function_impl = aggregate_function->asWindowFunction();
+        if (!workspace.window_function_impl)
+        {
+            workspace.aggregate_function_state.reset(
+                aggregate_function->sizeOfData(),
+                aggregate_function->alignOfData());
+            aggregate_function->create(workspace.aggregate_function_state.data());
+        }
 
         workspaces.push_back(std::move(workspace));
     }
@@ -183,8 +204,11 @@ WindowTransform::~WindowTransform()
     // Some states may be not created yet if the creation failed.
     for (auto & ws : workspaces)
     {
-        ws.window_function.aggregate_function->destroy(
-            ws.aggregate_function_state.data());
+        if (!ws.window_function_impl)
+        {
+            ws.aggregate_function->destroy(
+                ws.aggregate_function_state.data());
+        }
     }
 }
 
@@ -756,7 +780,13 @@ void WindowTransform::updateAggregationState()
 
     for (auto & ws : workspaces)
     {
-        const auto * a = ws.window_function.aggregate_function.get();
+        if (ws.window_function_impl)
+        {
+            // No need to do anything for true window functions.
+            continue;
+        }
+
+        const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
         if (reset_aggregation)
@@ -780,12 +810,15 @@ void WindowTransform::updateAggregationState()
         {
             auto & block = blockAt(block_number);
 
-            ws.argument_columns.clear();
-            for (const auto i : ws.argument_column_indices)
+            if (ws.cached_block_number != block_number)
             {
-                ws.argument_columns.push_back(block.input_columns[i].get());
+                for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
+                {
+                    ws.argument_columns[i] = block.input_columns[
+                        ws.argument_column_indices[i]].get();
+                }
+                ws.cached_block_number = block_number;
             }
-            ws.cached_block_number = block_number;
 
             // First and last blocks may be processed partially, and other blocks
             // are processed in full.
@@ -819,14 +852,20 @@ void WindowTransform::writeOutCurrentRow()
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         auto & ws = workspaces[wi];
-        const auto & f = ws.window_function;
-        const auto * a = f.aggregate_function.get();
-        auto * buf = ws.aggregate_function_state.data();
-
         IColumn * result_column = block.output_columns[wi].get();
-        // FIXME does it also allocate the result on the arena?
-        // We'll have to pass it out with blocks then...
-        a->insertResultInto(buf, *result_column, arena.get());
+
+        if (ws.window_function_impl)
+        {
+            ws.window_function_impl->windowInsertResultInto(*result_column, this);
+        }
+        else
+        {
+            const auto * a = ws.aggregate_function.get();
+            auto * buf = ws.aggregate_function_state.data();
+            // FIXME does it also allocate the result on the arena?
+            // We'll have to pass it out with blocks then...
+            a->insertResultInto(buf, *result_column, arena.get());
+        }
     }
 }
 
@@ -844,6 +883,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
         auto & block = blocks.back();
         block.input_columns = chunk.detachColumns();
 
+        // Even in case of `count() over ()` we should have a dummy input column.
+        // Not sure how reliable this is...
+        block.rows = block.input_columns[0]->size();
+
         for (auto & ws : workspaces)
         {
             // Aggregate functions can't work with constant columns, so we have to
@@ -855,13 +898,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
                         ->convertToFullColumnIfConst();
             }
 
-            block.output_columns.push_back(ws.window_function.aggregate_function
-                ->getReturnType()->createColumn());
+            block.output_columns.push_back(ws.aggregate_function->getReturnType()
+                ->createColumn());
+            block.output_columns.back()->reserve(block.rows);
         }
-
-        // Even in case of `count() over ()` we should have a dummy input column.
-        // Not sure how reliable this is...
-        block.rows = block.input_columns[0]->size();
     }
 
     // Start the calculations. First, advance the partition end.
@@ -893,6 +933,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
             if (!arePeers(peer_group_start, current_row))
             {
                 peer_group_start = current_row;
+                peer_group_start_row_number = current_row_number;
+                ++peer_group_number;
             }
 
             // Advance the frame start.
@@ -950,6 +992,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // The peer group start is updated at the beginning of the loop,
             // because current_row might now be past-the-end.
             advanceRowNumber(current_row);
+            ++current_row_number;
             first_not_ready_row = current_row;
             frame_ended = false;
             frame_started = false;
@@ -983,7 +1026,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
         prev_frame_start = partition_start;
         prev_frame_end = partition_start;
         assert(current_row == partition_start);
+        current_row_number = 1;
         peer_group_start = partition_start;
+        peer_group_start_row_number = 1;
+        peer_group_number = 1;
 
 //        fmt::print(stderr, "reinitialize agg data at start of {}\n",
 //            new_partition_start);
@@ -991,8 +1037,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // has started.
         for (auto & ws : workspaces)
         {
-            const auto & f = ws.window_function;
-            const auto * a = f.aggregate_function.get();
+            if (ws.window_function_impl)
+            {
+                continue;
+            }
+
+            const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
 
             a->destroy(buf);
@@ -1008,8 +1058,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
         for (auto & ws : workspaces)
         {
-            const auto & f = ws.window_function;
-            const auto * a = f.aggregate_function.get();
+            if (ws.window_function_impl)
+            {
+                continue;
+            }
+
+            const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
 
             a->create(buf);
@@ -1175,5 +1229,132 @@ void WindowTransform::work()
     }
 }
 
+// A basic implementation for a true window function. It pretends to be an
+// aggregate function, but refuses to work as such.
+struct WindowFunction
+    : public IAggregateFunctionHelper<WindowFunction>
+    , public IWindowFunction
+{
+    std::string name;
+
+    WindowFunction(const std::string & name_, const DataTypes & argument_types_,
+               const Array & parameters_)
+        : IAggregateFunctionHelper<WindowFunction>(argument_types_, parameters_)
+        , name(name_)
+    {}
+
+    IWindowFunction * asWindowFunction() override { return this; }
+
+    [[noreturn]] void fail() const
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function '{}' can only be used as a window function, not as an aggregate function",
+            getName());
+    }
+
+    String getName() const override { return name; }
+    void create(AggregateDataPtr __restrict) const override { fail(); }
+    void destroy(AggregateDataPtr __restrict) const noexcept override {}
+    bool hasTrivialDestructor() const override { return true; }
+    size_t sizeOfData() const override { return 0; }
+    size_t alignOfData() const override { return 1; }
+    void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override { fail(); }
+    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &) const override { fail(); }
+    void deserialize(AggregateDataPtr __restrict, ReadBuffer &, Arena *) const override { fail(); }
+    void insertResultInto(AggregateDataPtr __restrict, IColumn &, Arena *) const override { fail(); }
+};
+
+struct WindowFunctionRank final : public WindowFunction
+{
+    WindowFunctionRank(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {}
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeUInt64>(); }
+
+    void windowInsertResultInto(IColumn & to, const WindowTransform * transform) override
+    {
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(
+            transform->peer_group_start_row_number);
+    }
+};
+
+struct WindowFunctionDenseRank final : public WindowFunction
+{
+    WindowFunctionDenseRank(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {}
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeUInt64>(); }
+
+    void windowInsertResultInto(IColumn & to, const WindowTransform * transform) override
+    {
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(
+            transform->peer_group_number);
+    }
+};
+
+struct WindowFunctionRowNumber final : public WindowFunction
+{
+    WindowFunctionRowNumber(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {}
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeUInt64>(); }
+
+    void windowInsertResultInto(IColumn & to, const WindowTransform * transform) override
+    {
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(
+            transform->current_row_number);
+    }
+};
+
+void registerWindowFunctions(AggregateFunctionFactory & factory)
+{
+    // Why didn't I implement lag/lead yet? Because they are a mess. I imagine
+    // they are from the older generation of window functions, when the concept
+    // of frame was not yet invented, so they ignore the frame and use the
+    // partition instead. This means we have to track a separate frame for
+    // these functions, which would  make the window transform completely
+    // impenetrable to human mind. We can't just get away with materializing
+    // the whole partition like Postgres does, because using a linear amount
+    // of additional memory is not an option when we have a lot of data. We must
+    // be able to process at least the lag/lead in streaming fashion.
+    // Our best bet is probably rewriting, say `lag(value, offset)` to
+    // `any(value) over (rows between offset preceding and offset preceding)`,
+    // at the query planning stage.
+    // Functions like cume_dist() do require materializing the entire
+    // partition, but it's probably also simpler to implement them by rewriting
+    // to a (rows between unbounded preceding and unbounded following) frame,
+    // instead of adding separate logic for them.
+
+    factory.registerFunction("rank", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionRank>(name, argument_types,
+                parameters);
+        });
+
+    factory.registerFunction("dense_rank", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
+                parameters);
+        });
+
+    factory.registerFunction("row_number", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
+                parameters);
+        });
+}
 
 }

@@ -416,7 +416,9 @@ static void sanitizerDeathCallback()
     else
         log_message = "Terminate called without an active exception";
 
-    static const size_t buf_size = 1024;
+    /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
+    /// And the buffer should not be too small because our exception messages can be large.
+    static constexpr size_t buf_size = PIPE_BUF;
 
     if (log_message.size() > buf_size - 16)
         log_message.resize(buf_size - 16);
@@ -562,6 +564,7 @@ void debugIncreaseOOMScore()
     {
         DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
         buf.write(new_score.c_str(), new_score.size());
+        buf.close();
     }
     catch (const Poco::Exception & e)
     {
@@ -784,7 +787,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// Setup signal handlers.
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler, &handled_signals);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
     addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 

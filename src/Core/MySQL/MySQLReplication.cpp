@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace MySQLReplication
@@ -475,11 +476,11 @@ namespace MySQLReplication
                     {
                         const auto & dispatch = [](const size_t & precision, const size_t & scale, const auto & function) -> Field
                         {
-                            if (precision <= DecimalUtils::maxPrecision<Decimal32>())
+                            if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -740,7 +741,7 @@ namespace MySQLReplication
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);

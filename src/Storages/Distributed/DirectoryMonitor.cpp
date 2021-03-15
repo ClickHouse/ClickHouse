@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int EMPTY_DATA_PASSED;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -56,14 +57,26 @@ namespace
     constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
-    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory)
+    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, Poco::Logger * log)
     {
         ConnectionPoolPtrs pools;
 
         for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
         {
             Cluster::Address address = Cluster::Address::fromFullString(boost::copy_range<std::string>(*it));
-            pools.emplace_back(factory(address));
+            try
+            {
+                pools.emplace_back(factory(address));
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::INCORRECT_FILE_NAME)
+                {
+                    tryLogCurrentException(log);
+                    continue;
+                }
+                throw;
+            }
         }
 
         return pools;
@@ -263,7 +276,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     if (quit)
         return;
 
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
 
     const auto & files = getFiles();
     if (!files.empty())
@@ -290,7 +303,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 
 void StorageDistributedDirectoryMonitor::run()
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
 
     bool do_sleep = false;
     while (!quit)
@@ -307,12 +320,12 @@ void StorageDistributedDirectoryMonitor::run()
             {
                 do_sleep = !processFiles(files);
 
-                std::unique_lock metrics_lock(metrics_mutex);
+                std::lock_guard metrics_lock(metrics_mutex);
                 last_exception = std::exception_ptr{};
             }
             catch (...)
             {
-                std::unique_lock metrics_lock(metrics_mutex);
+                std::lock_guard metrics_lock(metrics_mutex);
 
                 do_sleep = true;
                 ++error_count;
@@ -331,7 +344,7 @@ void StorageDistributedDirectoryMonitor::run()
         const auto now = std::chrono::system_clock::now();
         if (now - last_decrease_time > decrease_error_count_period)
         {
-            std::unique_lock metrics_lock(metrics_mutex);
+            std::lock_guard metrics_lock(metrics_mutex);
 
             error_count /= 2;
             last_decrease_time = now;
@@ -351,16 +364,30 @@ void StorageDistributedDirectoryMonitor::run()
 
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
+    const auto pool_factory = [&storage, &name] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_number{number_index}
+        /// check new format shard{shard_index}_number{replica_index}
+        /// (shard_index and replica_index starts from 1)
         if (address.shard_index != 0)
         {
-            return shards_info[address.shard_index - 1].per_replica_pools[address.replica_index - 1];
+            if (!address.replica_index)
+                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                    "Wrong replica_index ({})", address.replica_index, name);
+
+            if (address.shard_index > shards_info.size())
+                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                    "No shard with shard_index={} ({})", address.shard_index, name);
+
+            const auto & shard_info = shards_info[address.shard_index - 1];
+            if (address.replica_index > shard_info.per_replica_pools.size())
+                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                    "No shard with replica_index={} ({})", address.replica_index, name);
+
+            return shard_info.per_replica_pools[address.replica_index - 1];
         }
 
         /// existing connections pool have a higher priority
@@ -398,7 +425,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.secure);
     };
 
-    auto pools = createPoolsForAddresses(name, pool_factory);
+    auto pools = createPoolsForAddresses(name, pool_factory, storage.log);
 
     const auto settings = storage.global_context.getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
@@ -426,10 +453,15 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
         }
     }
 
-    metric_pending_files.changeTo(files.size());
-
     {
-        std::unique_lock metrics_lock(metrics_mutex);
+        std::lock_guard metrics_lock(metrics_mutex);
+
+        if (files_count != files.size())
+            LOG_TRACE(log, "Files set to {} (was {})", files.size(), files_count);
+        if (bytes_count != new_bytes_count)
+            LOG_TRACE(log, "Bytes set to {} (was {})", new_bytes_count, bytes_count);
+
+        metric_pending_files.changeTo(files.size());
         files_count = files.size();
         bytes_count = new_bytes_count;
     }
@@ -482,9 +514,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
 
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
-    Poco::File{file_path}.remove();
-    metric_pending_files.sub();
-
+    markAsSend(file_path);
     LOG_TRACE(log, "Finished processing `{}`", file_path);
 }
 
@@ -634,7 +664,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
-                Poco::File{file_index_to_path.at(file_index)}.remove();
+                parent.markAsSend(file_index_to_path.at(file_index));
         }
         else
         {
@@ -720,16 +750,24 @@ BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(con
     return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
 }
 
-bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
+bool StorageDistributedDirectoryMonitor::addAndSchedule(size_t file_size, size_t ms)
 {
     if (quit)
         return false;
+
+    {
+        std::lock_guard metrics_lock(metrics_mutex);
+        metric_pending_files.add();
+        bytes_count += file_size;
+        ++files_count;
+    }
+
     return task_handle->scheduleAfter(ms, false);
 }
 
-StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus() const
+StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus()
 {
-    std::unique_lock metrics_lock(metrics_mutex);
+    std::lock_guard metrics_lock(metrics_mutex);
 
     return Status{
         path,
@@ -753,7 +791,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.readText(in);
         file_indices_to_skip.insert(batch.file_indices.begin(), batch.file_indices.end());
         batch.send();
-        metric_pending_files.sub(batch.file_indices.size());
     }
 
     std::unordered_map<BatchHeader, Batch, BatchHeader::Hash> header_to_batch;
@@ -823,7 +860,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         if (batch.isEnoughSize())
         {
             batch.send();
-            metric_pending_files.sub(batch.file_indices.size());
         }
     }
 
@@ -831,7 +867,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     {
         Batch & batch = kv.second;
         batch.send();
-        metric_pending_files.sub(batch.file_indices.size());
     }
 
     {
@@ -844,7 +879,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 }
 
-void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
+void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path)
 {
     const auto last_path_separator_pos = file_path.rfind('/');
     const auto & base_path = file_path.substr(0, last_path_separator_pos + 1);
@@ -857,12 +892,37 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     auto broken_dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path + "/broken/");
 
-    Poco::File{file_path}.renameTo(broken_file_path);
+    Poco::File file(file_path);
+
+    {
+        std::lock_guard metrics_lock(metrics_mutex);
+
+        size_t file_size = file.getSize();
+        --files_count;
+        bytes_count -= file_size;
+    }
+
+    file.renameTo(broken_file_path);
 
     LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
+void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_path)
+{
+    Poco::File file(file_path);
 
-bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
+    size_t file_size = file.getSize();
+
+    {
+        std::lock_guard metrics_lock(metrics_mutex);
+        metric_pending_files.sub();
+        --files_count;
+        bytes_count -= file_size;
+    }
+
+    file.remove();
+}
+
+bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
     /// mark file as broken if necessary
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
@@ -885,7 +945,7 @@ void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_rela
     std::lock_guard lock{mutex};
 
     {
-        std::unique_lock metrics_lock(metrics_mutex);
+        std::lock_guard metrics_lock(metrics_mutex);
         relative_path = new_relative_path;
         path = disk->getPath() + relative_path + '/';
     }

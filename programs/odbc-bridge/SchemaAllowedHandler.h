@@ -1,17 +1,18 @@
 #pragma once
 
+#include <Server/HTTP/HTTPRequestHandler.h>
+
 #include <Poco/Logger.h>
-#include <Poco/Net/HTTPRequestHandler.h>
 
 #if USE_ODBC
 
 namespace DB
 {
+
 class Context;
 
-
-/// This handler establishes connection to database, and retrieve whether schema is allowed.
-class SchemaAllowedHandler : public Poco::Net::HTTPRequestHandler
+/// This handler establishes connection to database, and retrieves whether schema is allowed.
+class SchemaAllowedHandler : public HTTPRequestHandler
 {
 public:
     SchemaAllowedHandler(size_t keep_alive_timeout_, Context &)
@@ -19,7 +20,7 @@ public:
     {
     }
 
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
     Poco::Logger * log;

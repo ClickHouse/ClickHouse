@@ -1,8 +1,9 @@
 #include <Interpreters/InterpreterGrantQuery.h>
+#include <Interpreters/QueryLog.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/RolesOrUsersSet.h>
@@ -207,6 +208,15 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     if (query.roles)
         roles_to_grant_or_revoke = RolesOrUsersSet{*query.roles}.getMatchingIDs();
     updateFromQueryImpl(role, query, roles_to_grant_or_revoke);
+}
+
+void InterpreterGrantQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, const Context &) const
+{
+    auto & query = query_ptr->as<ASTGrantQuery &>();
+    if (query.kind == Kind::GRANT)
+        elem.query_kind = "Grant";
+    else if (query.kind == Kind::REVOKE)
+        elem.query_kind = "Revoke";
 }
 
 }
