@@ -6,8 +6,6 @@
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
-#include "IO/ReadBuffer.h"
-#include "IO/ReadBufferFromString.h"
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
