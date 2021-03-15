@@ -19,7 +19,7 @@ SELECT if(cond, then, else)
 
 **Аргументы**
 
--   `cond` – условие, которое может быть равно 0 или нет. Может быть [UInt8](../../sql-reference/functions/conditional-functions.md) или `NULL`.
+-   `cond` – проверяемое условие. Может быть [UInt8](../../sql-reference/functions/conditional-functions.md) или `NULL`.
 -   `then` – возвращается результат выражения, если условие `cond` истинно.
 -   `else` – возвращается результат выражения, если условие `cond` ложно.
 
