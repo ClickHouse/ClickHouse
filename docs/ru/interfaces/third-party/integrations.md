@@ -105,4 +105,3 @@ toc_title: "Библиотеки для интеграции от сторонн
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
         
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

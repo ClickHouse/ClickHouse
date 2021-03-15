@@ -42,11 +42,18 @@ public:
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
+    void removeSharedFile(const String & path, bool keep_s3) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     Poco::Timestamp getLastModified(const String & path) override;
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     void truncateFile(const String & path, size_t size) override;
+    int open(const String & path, mode_t mode) const;
+    void close(int fd) const;
+    void sync(int fd) const;
+    String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
+    bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType::Type getType() const override { return delegate->getType(); }
     Executor & getExecutor() override;
     void onFreeze(const String & path) override;

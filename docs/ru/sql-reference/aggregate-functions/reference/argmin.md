@@ -63,4 +63,3 @@ SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
 └──────────────────────┴─────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/argmin/) <!--hide-->

@@ -240,4 +240,3 @@ SELECT bitCount(333)
 └───────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bit_functions/) <!--hide-->

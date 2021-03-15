@@ -63,4 +63,3 @@ SELECT argMax(user, salary), argMax(tuple(user, salary), salary), argMax(tuple(u
 └──────────────────────┴─────────────────────────────────────┴─────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/argmax/) <!--hide-->

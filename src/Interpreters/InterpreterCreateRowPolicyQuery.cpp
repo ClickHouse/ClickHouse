@@ -49,7 +49,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTagWithName(context.getUserName());
+        query.replaceCurrentUserTag(context.getUserName());
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 
@@ -58,7 +58,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, context.getUserID()};
 
-    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    query.replaceEmptyDatabase(context.getCurrentDatabase());
 
     if (query.alter)
     {
