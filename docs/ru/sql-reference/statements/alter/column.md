@@ -170,4 +170,3 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Для таблиц, которые не хранят данные самостоятельно (типа [Merge](../../../sql-reference/statements/alter/index.md) и [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа `Distributed`, вам также потребуется выполнить запрос `ALTER` для таблиц на всех удалённых серверах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/column/) <!--hide-->

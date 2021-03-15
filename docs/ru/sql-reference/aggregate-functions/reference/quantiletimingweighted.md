@@ -84,4 +84,3 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletiming weighted/) <!--hide-->

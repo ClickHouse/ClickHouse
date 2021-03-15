@@ -420,4 +420,3 @@ Removes the query string and fragment identifier. The question mark and number s
 
 Removes the ‘name’ URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->
