@@ -61,9 +61,6 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-Note: the command does NOT throw an exception if the specified part does not exist, 
-e.g. `ALTER TABLE mt DROP PART 'i_do_not_exist'` will succeed.
-
 ## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
 ``` sql
@@ -107,7 +104,8 @@ table on all replicas.
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2`. Note that data won’t be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2`.
+Note that data won't be deleted neither from `table1` nor from `table2`.
 
 For the query to run successfully, the following conditions must be met:
 
