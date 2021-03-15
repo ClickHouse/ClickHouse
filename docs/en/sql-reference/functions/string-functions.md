@@ -98,6 +98,8 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.
 
+Alias: `REPEAT`.
+
 **Syntax**
 
 ``` sql
@@ -276,9 +278,13 @@ Returns the string ‘s’ that was converted from the encoding in ‘from’ to
 
 Encodes ‘s’ string into base64
 
+Alias: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
+
+Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -642,4 +648,3 @@ Result:
 -   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
 
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

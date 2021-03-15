@@ -22,15 +22,18 @@ public:
             char * existing_memory = nullptr,
             size_t alignment = 0);
 
-    /// Flush all pending data and write zlib footer to the underlying buffer.
-    /// After the first call to this function, subsequent calls will have no effect and
-    /// an attempt to write to this buffer will result in exception.
-    void finish();
+    void finalize() override { finish(); }
 
     ~ZlibDeflatingWriteBuffer() override;
 
 private:
     void nextImpl() override;
+
+    void finishImpl();
+    /// Flush all pending data and write zlib footer to the underlying buffer.
+    /// After the first call to this function, subsequent calls will have no effect and
+    /// an attempt to write to this buffer will result in exception.
+    void finish();
 
     std::unique_ptr<WriteBuffer> out;
     z_stream zstr;

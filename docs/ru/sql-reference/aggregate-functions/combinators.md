@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "\u041a\u043e\u043c\u0431\u0438\u043d\u0430\u0442\u043e\u0440\u044b\u0020\u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043d\u044b\u0445\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0439"
+toc_title: "Комбинаторы агрегатных функций"
 ---
 
 
@@ -248,4 +248,3 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/combinators/) <!--hide-->

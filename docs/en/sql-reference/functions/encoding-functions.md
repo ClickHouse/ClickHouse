@@ -75,6 +75,8 @@ Result:
 
 Returns a string containing the argument’s hexadecimal representation.
 
+Alias: `HEX`.
+
 **Syntax**
 
 ``` sql
@@ -170,4 +172,3 @@ Accepts an integer. Returns a string containing the list of powers of two that t
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->

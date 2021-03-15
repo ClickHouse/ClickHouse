@@ -49,6 +49,8 @@ public:
 
     void startSynchronization();
 
+    void assertMySQLAvailable();
+
     static bool isMySQLSyncThread();
 
 private:
@@ -68,6 +70,9 @@ private:
     const int ER_ACCESS_DENIED_ERROR = 1045;
     const int ER_DBACCESS_DENIED_ERROR = 1044;
     const int ER_BAD_DB_ERROR = 1049;
+
+    // https://dev.mysql.com/doc/mysql-errors/8.0/en/client-error-reference.html
+    const int CR_SERVER_LOST = 2013;
 
     struct Buffers
     {
@@ -98,7 +103,7 @@ private:
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized();
+    bool prepareSynchronized(MaterializeMetadata & metadata);
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 
@@ -107,6 +112,8 @@ private:
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
     void executeDDLAtomic(const QueryEvent & query_event);
+
+    void setSynchronizationThreadException(const std::exception_ptr & exception);
 };
 
 }

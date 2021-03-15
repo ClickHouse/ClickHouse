@@ -41,4 +41,3 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 └───────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topkweighted/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
 toc_priority: 50
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0445\u044d\u0448\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Функции хэширования"
 ---
 
 # Функции хэширования {#funktsii-kheshirovaniia}
@@ -484,4 +484,3 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->

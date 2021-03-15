@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439\u0020\u0432\u0020\u043f\u0430\u043c\u044f\u0442\u0438"
+toc_title: "Хранение словарей в памяти"
 ---
 
 # Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
@@ -443,4 +443,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Данные должны полностью помещаться в оперативной памяти.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
