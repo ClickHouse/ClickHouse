@@ -69,4 +69,3 @@ SELECT count(DISTINCT num) FROM t
 
 Этот пример показывает, что `count(DISTINCT num)` выполняется с помощью функции `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/count/) <!--hide-->

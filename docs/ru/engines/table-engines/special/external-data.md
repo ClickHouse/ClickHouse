@@ -65,4 +65,3 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 
 При распределённой обработке запроса, временные таблицы передаются на все удалённые серверы.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/external_data/) <!--hide-->

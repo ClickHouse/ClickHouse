@@ -39,4 +39,3 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/generate/) <!--hide-->

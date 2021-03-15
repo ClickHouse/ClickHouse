@@ -90,6 +90,16 @@ void throwIfError(Aws::Utils::Outcome<Result, Error> & response)
     }
 }
 
+template <typename Result, typename Error>
+void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
+{
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
+    }
+}
+
 /**
  * S3 metadata file layout:
  * Number of S3 objects, Total size of all S3 objects.
@@ -609,6 +619,15 @@ void DiskS3::createDirectories(const String & path)
     Poco::File(metadata_path + path).createDirectories();
 }
 
+String DiskS3::getUniqueId(const String & path) const
+{
+    Metadata metadata(s3_root_path, metadata_path, path);
+    String id;
+    if (!metadata.s3_objects.empty())
+        id = metadata.s3_root_path + metadata.s3_objects[0].first;
+    return id;
+}
+
 DiskDirectoryIteratorPtr DiskS3::iterateDirectory(const String & path)
 {
     return std::make_unique<DiskS3DirectoryIterator>(metadata_path + path, path);
@@ -791,13 +810,6 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
     }
 }
 
-void DiskS3::removeFile(const String & path)
-{
-    AwsS3KeyKeeper keys;
-    removeMeta(path, keys);
-    removeAws(keys);
-}
-
 void DiskS3::removeFileIfExists(const String & path)
 {
     AwsS3KeyKeeper keys;
@@ -813,11 +825,20 @@ void DiskS3::removeDirectory(const String & path)
     Poco::File(metadata_path + path).remove();
 }
 
-void DiskS3::removeRecursive(const String & path)
+void DiskS3::removeSharedFile(const String & path, bool keep_s3)
+{
+    AwsS3KeyKeeper keys;
+    removeMeta(path, keys);
+    if (!keep_s3)
+        removeAws(keys);
+}
+
+void DiskS3::removeSharedRecursive(const String & path, bool keep_s3)
 {
     AwsS3KeyKeeper keys;
     removeMetaRecursive(path, keys);
-    removeAws(keys);
+    if (!keep_s3)
+        removeAws(keys);
 }
 
 bool DiskS3::tryReserve(UInt64 bytes)
@@ -954,6 +975,23 @@ bool DiskS3::checkObjectExists(const String & prefix)
     throwIfError(outcome);
 
     return !outcome.GetResult().GetContents().empty();
+}
+
+bool DiskS3::checkUniqueId(const String & id) const
+{
+    /// Check that we have right s3 and have access rights
+    /// Actually interprets id as s3 object name and checks if it exists
+    Aws::S3::Model::ListObjectsV2Request request;
+    request.SetBucket(bucket);
+    request.SetPrefix(id);
+    auto resp = client->ListObjectsV2(request);
+    throwIfError(resp);
+    Aws::Vector<Aws::S3::Model::Object> object_list = resp.GetResult().GetContents();
+
+    for (const auto & object : object_list)
+        if (object.GetKey() == id)
+            return true;
+    return false;
 }
 
 Aws::S3::Model::HeadObjectResult DiskS3::headObject(const String & source_bucket, const String & key)

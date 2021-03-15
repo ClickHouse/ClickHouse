@@ -61,4 +61,3 @@ ClickHouse:
 -   [Ключ и поля словаря](external-dicts-dict-structure.md)
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

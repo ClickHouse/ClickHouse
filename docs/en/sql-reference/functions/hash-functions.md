@@ -482,4 +482,3 @@ Result:
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/hash_functions/) <!--hide-->

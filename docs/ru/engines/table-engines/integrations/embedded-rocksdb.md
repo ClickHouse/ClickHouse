@@ -41,4 +41,3 @@ ENGINE = EmbeddedRocksDB
 PRIMARY KEY key;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/embedded-rocksdb/) <!--hide-->

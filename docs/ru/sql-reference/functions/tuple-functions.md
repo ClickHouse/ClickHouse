@@ -111,4 +111,3 @@ SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/tuple-functions/) <!--hide-->
