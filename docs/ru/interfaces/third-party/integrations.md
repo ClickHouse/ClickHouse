@@ -69,6 +69,9 @@ toc_title: "Библиотеки для интеграции от сторонн
 -   Гео
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+-   AutoML
+    -   [MindsDB](https://mindsdb.com/)
+        -   [MindsDB](https://github.com/mindsdb/mindsdb) - Слой предиктивной аналитики и искусственного интеллекта для СУБД ClickHouse.
 
 ## Экосистемы вокруг языков программирования {#ekosistemy-vokrug-iazykov-programmirovaniia}
 
