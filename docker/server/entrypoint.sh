@@ -186,7 +186,6 @@ _main() {
     if [ "${1:0:1}" = '-' ]; then
 		set -- clickhouse-server "$@"
 	fi
-    ls -la /etc/clickhouse-server/users.d/
     if [ "$1" = 'clickhouse-server' ]; then
         get_variables
         create_clickhouse_user
