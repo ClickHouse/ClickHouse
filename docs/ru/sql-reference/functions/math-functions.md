@@ -468,4 +468,3 @@ SELECT sign(-1);
 └──────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/math_functions/) <!--hide-->

@@ -44,4 +44,3 @@ SELECT * FROM dt;
 -   [Тип данных `DateTime`](../../sql-reference/data-types/datetime.md)
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/date/) <!--hide-->

@@ -34,4 +34,3 @@ toc_title: "Функции сравнения"
 
 ## greaterOrEquals, оператор `>=` {#function-greaterorequals}
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/comparison_functions/) <!--hide-->

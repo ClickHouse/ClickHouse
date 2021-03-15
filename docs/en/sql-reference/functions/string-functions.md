@@ -648,4 +648,3 @@ Result:
 -   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
 
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

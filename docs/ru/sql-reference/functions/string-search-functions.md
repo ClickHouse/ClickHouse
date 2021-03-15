@@ -757,4 +757,3 @@ SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
 └────────────────────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_search_functions/) <!--hide-->

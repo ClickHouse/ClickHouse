@@ -397,4 +397,3 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 └─────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bitmap_functions/) <!--hide-->
