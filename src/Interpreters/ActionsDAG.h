@@ -199,7 +199,7 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
+    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false, bool add_to_index = true);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
     const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
@@ -210,6 +210,8 @@ public:
             std::string result_name,
             const Context & context,
             bool can_replace = false);
+
+    void addNodeToIndex(const Node * node) { index.insert(const_cast<Node *>(node)); }
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -223,7 +225,7 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
-    void projectInput() { settings.project_input = true; }
+    void projectInput(bool project = true) { settings.project_input = project; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;
@@ -251,11 +253,15 @@ public:
     /// Create ActionsDAG which converts block structure from source to result.
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
+    /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
+    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
-        bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
+        bool ignore_constant_values = false,
+        bool add_casted_columns = false,
+        NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
     static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);

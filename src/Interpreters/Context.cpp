@@ -36,8 +36,11 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
+#include <Access/ExternalAuthenticators.h>
+#include <Access/GSSAcceptor.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -669,6 +672,12 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
     shared->access_control_manager.setExternalAuthenticatorsConfig(config);
 }
 
+std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
+{
+    auto lock = getLock();
+    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -683,29 +692,22 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
+void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
-    client_info.current_user = name;
+    client_info.current_user = credentials.getUserName();
     client_info.current_address = address;
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password = password.value_or("");
+    client_info.current_password.clear();
+    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
+        client_info.current_password = basic_credentials->getPassword();
 #endif
 
-    /// Find a user with such name and check the password.
-    UUID new_user_id;
-    if (password)
-        new_user_id = getAccessControlManager().login(name, *password, address.host());
-    else
-    {
-        /// Access w/o password is done under interserver-secret (remote_servers.secret)
-        /// So it is okay not to check client's host in this case (since there is trust).
-        new_user_id = getAccessControlManager().getIDOfLoggedUser(name);
-    }
-
+    /// Find a user with such name and check the credentials.
+    auto new_user_id = getAccessControlManager().login(credentials, address.host());
     auto new_access = getAccessControlManager().getContextAccess(
         new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
         settings, current_database, client_info);
@@ -720,12 +722,12 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    setUserImpl(name, password, address);
+    setUser(BasicCredentials(name, password), address);
 }
 
 void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
 {
-    setUserImpl(name, {} /* no password */, address);
+    setUser(AlwaysAllowCredentials(name), address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -751,7 +753,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)

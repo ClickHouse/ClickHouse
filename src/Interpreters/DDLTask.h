@@ -189,7 +189,7 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exception()); }
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
 };
 
 }

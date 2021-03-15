@@ -31,7 +31,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
-    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    query.replaceEmptyDatabase(context.getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names)
     {
