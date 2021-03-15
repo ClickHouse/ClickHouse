@@ -816,7 +816,7 @@ int main(int argc, char ** argv)
 for size in 4096 16384 50000 65536 100000 1000000 10000000 100000000; do
     for threads in 1 2 4 $(($(nproc) / 2)) $(nproc); do
         for distribution in 1 2 3 4 5; do
-            for variant in {1..12} {21..29}; do
+            for variant in {1..13} {21..29}; do
                 for i in {1..10}; do
                     ./memcpy-bench --tsv --size $size --variant $variant --threads $threads --distribution $distribution;
                 done;
