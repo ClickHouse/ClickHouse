@@ -3880,6 +3880,10 @@ bool StorageReplicatedMergeTree::optimize(
     bool deduplicate,
     const Context & query_context)
 {
+    /// NOTE: exclusive lock cannot be used here, since this may lead to deadlock (see comments below),
+    /// but it should be safe to use non-exclusive to avoid dropping parts that may be required for processing queue.
+    auto table_lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+
     assertNotReadonly();
 
     if (!is_leader)
