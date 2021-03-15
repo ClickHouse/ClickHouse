@@ -2096,10 +2096,10 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            // if (!need_render_progress)
-            //     block_out_stream = context.getOutputStreamParallelIfPossible(current_format, *out_buf, block);
-            // else
-            block_out_stream = context.getOutputStream(current_format, *out_buf, block);
+            if (!need_render_progress)
+                block_out_stream = context.getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+            else
+                block_out_stream = context.getOutputStream(current_format, *out_buf, block);
 
             block_out_stream->writePrefix();
         }
