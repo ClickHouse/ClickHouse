@@ -872,18 +872,18 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    std::optional<DataType> index_value;
-    Field::dispatch([&index_value](const auto & value)
+    std::optional<DataType> index_as_integer;
+    Field::dispatch([&](const auto & value)
     {
         using FieldType = std::decay_t<decltype(value)>;
         if constexpr (is_integer_v<FieldType> && std::is_convertible_v<FieldType, DataType>)
-            index_value = static_cast<DataType>(value);
+            index_as_integer = static_cast<DataType>(value);
     }, index);
 
-    if (!index_value)
+    if (!index_as_integer)
         return false;
 
-    MatcherNumberConst<DataType> matcher{data_numeric->getData(), *index_value};
+    MatcherNumberConst<DataType> matcher{data_numeric->getData(), *index_as_integer};
     executeMatchKeyToIndex(offsets, matched_idxs, matcher);
     return true;
 }
