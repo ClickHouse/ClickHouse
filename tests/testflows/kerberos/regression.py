@@ -30,8 +30,8 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         self.context.cluster = cluster
 
         Feature(run=load("kerberos.tests.generic", "generic"), flags=TE)
-        Feature(run=load("kerberos.tests.config", "config"), flags=TE)
-        Feature(run=load("kerberos.tests.parallel", "parallel"), flags=TE)
+        # Feature(run=load("kerberos.tests.config", "config"), flags=TE)
+        # Feature(run=load("kerberos.tests.parallel", "parallel"), flags=TE)
 
 
 if main():
