@@ -91,7 +91,7 @@ void DataTypeDateTime::deserializeWholeText(IColumn & column, ReadBuffer & istr,
 
 void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
     readTextHelper(x, istr, settings, time_zone, utc_time_zone);
     if (x < 0)
         x = 0;
@@ -107,7 +107,8 @@ void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_nu
 
 void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
+
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
         readTextHelper(x, istr, settings, time_zone, utc_time_zone);
@@ -131,7 +132,8 @@ void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
+
     if (checkChar('"', istr))
     {
         readTextHelper(x, istr, settings, time_zone, utc_time_zone);
@@ -157,7 +159,7 @@ void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, 
 
 void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
 
     if (istr.eof())
         throwReadAfterEOF();
