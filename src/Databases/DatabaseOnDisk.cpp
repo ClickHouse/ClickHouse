@@ -129,60 +129,6 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_buf.str();
 }
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
-{
-    auto & ast_create_query = query->as<ASTCreateQuery &>();
-
-    bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
-    if (ast_create_query.as_table_function && !has_structure)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
-                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.table));
-
-    assert(has_structure);
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
-    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
-
-    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
-
-    if (metadata.select.select_query)
-    {
-        query->replace(ast_create_query.select, metadata.select.select_query);
-    }
-
-    /// MaterializedView is one type of CREATE query without storage.
-    if (ast_create_query.storage)
-    {
-        ASTStorage & storage_ast = *ast_create_query.storage;
-
-        bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
-
-        if (is_extended_storage_def)
-        {
-            if (metadata.sorting_key.definition_ast)
-                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
-
-            if (metadata.primary_key.definition_ast)
-                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
-
-            if (metadata.sampling_key.definition_ast)
-                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
-
-            if (metadata.table_ttl.definition_ast)
-                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
-            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.ttl_table = nullptr;
-
-            if (metadata.settings_changes)
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
-        }
-    }
-}
-
-
 DatabaseOnDisk::DatabaseOnDisk(
     const String & name,
     const String & metadata_path_,
@@ -268,7 +214,7 @@ void DatabaseOnDisk::createTable(
         out.close();
     }
 
-    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, context);
+    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path);
 
     removeDetachedPermanentlyFlag(table_name, table_metadata_path);
 }
@@ -292,8 +238,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, co
 }
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                       const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       const Context & /*query_context*/)
+                                       const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
     try
     {
@@ -311,7 +256,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
 }
 
-void DatabaseOnDisk::detachTablePermanently(const Context &, const String & table_name)
+void DatabaseOnDisk::detachTablePermanently(const String & table_name)
 {
     auto table = detachTable(table_name);
 
@@ -407,8 +352,6 @@ void DatabaseOnDisk::renameTable(
             from_ordinary_to_atomic = true;
         else if (typeid_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database))
             from_atomic_to_ordinary = true;
-        else if (dynamic_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database) && getEngineName() == "Replicated")
-            from_atomic_to_ordinary = true;
         else
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -420,7 +363,6 @@ void DatabaseOnDisk::renameTable(
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, global_context);
     detachTable(table_name);
-    UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
         table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
@@ -433,7 +375,7 @@ void DatabaseOnDisk::renameTable(
         if (from_ordinary_to_atomic)
             create.uuid = UUIDHelpers::generateV4();
         if (from_atomic_to_ordinary)
-            std::swap(create.uuid, prev_uuid);
+            create.uuid = UUIDHelpers::Nil;
 
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
@@ -458,16 +400,12 @@ void DatabaseOnDisk::renameTable(
 
     Poco::File(table_metadata_path).remove();
 
-    if (from_atomic_to_ordinary)
+    /// Special case: usually no actions with symlinks are required when detaching/attaching table,
+    /// but not when moving from Atomic database to Ordinary
+    if (from_atomic_to_ordinary && table->storesDataOnDisk())
     {
-        auto & atomic_db = dynamic_cast<DatabaseAtomic &>(*this);
-        /// Special case: usually no actions with symlinks are required when detaching/attaching table,
-        /// but not when moving from Atomic database to Ordinary
-        if (table->storesDataOnDisk())
-            atomic_db.tryRemoveSymlink(table_name);
-        /// Forget about UUID, now it's possible to reuse it for new table
-        DatabaseCatalog::instance().removeUUIDMappingFinally(prev_uuid);
-        atomic_db.setDetachedTableNotInUseForce(prev_uuid);
+        auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
+        atomic_db.tryRemoveSymlink(table_name);
     }
 }
 

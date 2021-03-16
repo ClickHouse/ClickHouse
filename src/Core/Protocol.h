@@ -75,9 +75,8 @@ namespace Protocol
             TablesStatusResponse = 9, /// A response to TablesStatus request.
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
-            PartUUIDs = 12,           /// List of unique parts ids.
 
-            MAX = PartUUIDs,
+            MAX = TableColumns,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -99,7 +98,6 @@ namespace Protocol
                 "TablesStatusResponse",
                 "Log",
                 "TableColumns",
-                "PartUUIDs",
             };
             return packet <= MAX
                 ? data[packet]
@@ -134,9 +132,8 @@ namespace Protocol
             TablesStatusRequest = 5, /// Check status of tables on the server.
             KeepAlive = 6,           /// Keep the connection alive
             Scalar = 7,              /// A block of data (compressed or not).
-            IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
 
-            MAX = IgnoredPartUUIDs,
+            MAX = Scalar,
         };
 
         inline const char * toString(UInt64 packet)
@@ -150,7 +147,6 @@ namespace Protocol
                 "TablesStatusRequest",
                 "KeepAlive",
                 "Scalar",
-                "IgnoredPartUUIDs",
             };
             return packet <= MAX
                 ? data[packet]

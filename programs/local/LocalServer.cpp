@@ -240,7 +240,7 @@ try
 
     /// Skip networking
 
-    /// Sets external authenticators config (LDAP, Kerberos).
+    /// Sets external authenticators config (LDAP).
     global_context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
@@ -273,10 +273,9 @@ try
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(*global_context);
 
-    if (config().has("path"))
+    String path = global_context->getPath();
+    if (!path.empty())
     {
-        String path = global_context->getPath();
-
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
 

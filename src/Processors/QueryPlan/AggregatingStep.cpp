@@ -3,7 +3,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
-#include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 
 namespace DB
 {
@@ -96,11 +95,11 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     }
                 }
 
-                auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
+                auto transform = std::make_shared<AggregatingSortedTransform>(
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
-                    transform_params,
-                    group_by_sort_description);
+                    group_by_sort_description,
+                    max_block_size);
 
                 pipeline.addTransform(std::move(transform));
                 aggregating_sorted = collector.detachProcessors(1);

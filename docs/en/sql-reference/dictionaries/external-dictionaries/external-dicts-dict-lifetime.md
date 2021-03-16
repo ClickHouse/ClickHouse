@@ -19,8 +19,6 @@ Example of settings:
 </dictionary>
 ```
 
-or
-
 ``` sql
 CREATE DICTIONARY (...)
 ...
@@ -57,10 +55,10 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md):
 
 -   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
--   For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`. 
+-   For MyISAM tables, the time of modification is checked using a `SHOW TABLE STATUS` query.
 -   Dictionaries from other sources are updated every time by default.
 
-For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
+For MySQL (InnoDB), ODBC and ClickHouse sources, you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
 
 -   The dictionary table must have a field that always changes when the source data is updated.
 -   The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md).
@@ -86,3 +84,4 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

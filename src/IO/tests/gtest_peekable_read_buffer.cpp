@@ -9,6 +9,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 static void readAndAssert(DB::ReadBuffer & buf, const char * str)
@@ -39,7 +40,7 @@ try
     DB::ReadBufferFromString b4(s4);
 
     DB::ConcatReadBuffer concat({&b1, &b2, &b3, &b4});
-    DB::PeekableReadBuffer peekable(concat, 0);
+    DB::PeekableReadBuffer peekable(concat, 0, 16);
 
     ASSERT_TRUE(!peekable.eof());
     assertAvailable(peekable, "0123456789");
@@ -47,8 +48,6 @@ try
         DB::PeekableReadBufferCheckpoint checkpoint{peekable};
         readAndAssert(peekable, "01234");
     }
-
-#ifndef ABORT_ON_LOGICAL_ERROR
     bool exception = false;
     try
     {
@@ -61,7 +60,6 @@ try
         exception = true;
     }
     ASSERT_TRUE(exception);
-#endif
     assertAvailable(peekable, "56789");
 
     readAndAssert(peekable, "56");
@@ -72,10 +70,19 @@ try
     peekable.dropCheckpoint();
     assertAvailable(peekable, "789");
 
+    exception = false;
+    try
     {
         DB::PeekableReadBufferCheckpoint checkpoint{peekable, true};
-        peekable.ignore(20);
+        peekable.ignore(30);
     }
+    catch (DB::Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+        exception = true;
+    }
+    ASSERT_TRUE(exception);
     assertAvailable(peekable, "789qwertyuiop");
 
     readAndAssert(peekable, "789qwertyu");

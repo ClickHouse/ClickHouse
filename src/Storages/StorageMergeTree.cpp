@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
@@ -198,7 +199,7 @@ Pipe StorageMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe();
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -332,25 +333,12 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
         }
 
-        reserved_space = storage.balancedReservation(
-            metadata_snapshot,
-            total_size,
-            max_volume_index,
-            future_part.name,
-            future_part.part_info,
-            future_part.parts,
-            &tagger,
-            &ttl_infos);
-
-        if (!reserved_space)
-            reserved_space
-                = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
+        reserved_space = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
     }
-
     if (!reserved_space)
     {
         if (is_mutation)
-            throw Exception("Not enough space for mutating part '" + future_part.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception("Not enough space for mutating part '" + future_part_.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
         else
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
     }
@@ -637,7 +625,7 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                disk->remove(it->path());
             }
         }
     }
@@ -743,10 +731,6 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
         return {};
     }
-
-    /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part.merge_type))
-        global_context.getMergeList().bookMergeWithTTL();
 
     merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
     return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands{});
@@ -1456,7 +1440,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
             catch (const Exception & ex)
             {
                 if (disk->exists(tmp_checksums_path))
-                    disk->removeFile(tmp_checksums_path);
+                    disk->remove(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
