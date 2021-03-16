@@ -35,8 +35,7 @@ public:
 
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
-        const Context & context_,
-        bool is_subquery = false);
+        const Context & context_);
 
     virtual void ignoreWithTotals() override;
 

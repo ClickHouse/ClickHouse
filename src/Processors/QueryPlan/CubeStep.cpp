@@ -43,9 +43,4 @@ void CubeStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-const Aggregator::Params & CubeStep::getParams() const
-{
-    return params->params;
-}
-
 }

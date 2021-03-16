@@ -12,9 +12,6 @@ assignees: ''
 **Describe the bug**
 A clear and concise description of what works not as it is supposed to.
 
-**Does it reproduce on recent release?**
-[The list of releases](https://github.com/ClickHouse/ClickHouse/blob/master/utils/list-versions/version_date.tsv)
-
 **How to reproduce**
 * Which ClickHouse server version to use
 * Which interface to use, if matters

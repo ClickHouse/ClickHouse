@@ -48,7 +48,7 @@ public:
     static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 
     /// For scheduling via DistributedBlockOutputStream
-    bool addAndSchedule(size_t file_size, size_t ms);
+    bool scheduleAfter(size_t ms);
 
     /// system.distribution_queue interface
     struct Status
@@ -60,7 +60,7 @@ public:
         size_t bytes_count;
         bool is_blocked;
     };
-    Status getStatus();
+    Status getStatus() const;
 
 private:
     void run();
@@ -70,9 +70,9 @@ private:
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
-    void markAsBroken(const std::string & file_path);
-    void markAsSend(const std::string & file_path);
-    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e);
+    static bool isFileBrokenErrorCode(int code);
+    void markAsBroken(const std::string & file_path) const;
+    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
 
     std::string getLoggerName() const;
 
@@ -92,7 +92,7 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    std::mutex metrics_mutex;
+    mutable std::mutex metrics_mutex;
     size_t error_count = 0;
     size_t files_count = 0;
     size_t bytes_count = 0;
@@ -110,6 +110,9 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
+
+    /// Read insert query and insert settings for backward compatible.
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };

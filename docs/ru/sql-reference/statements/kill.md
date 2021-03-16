@@ -70,3 +70,4 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
 
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/kill/) <!--hide-->

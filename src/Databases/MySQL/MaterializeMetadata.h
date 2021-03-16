@@ -35,6 +35,7 @@ struct MaterializeMetadata
     size_t data_version = 1;
     size_t meta_version = 2;
     String binlog_checksum = "CRC32";
+    std::unordered_map<String, String> need_dumping_tables;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
@@ -44,13 +45,9 @@ struct MaterializeMetadata
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
-    void startReplication(
-        mysqlxx::PoolWithFailover::Entry & connection,
-        const String & database,
-        bool & opened_transaction,
-        std::unordered_map<String, String> & need_dumping_tables);
-
-    MaterializeMetadata(const String & path_);
+    MaterializeMetadata(
+        mysqlxx::PoolWithFailover::Entry & connection, const String & path
+        , const String & database, bool & opened_transaction);
 };
 
 }

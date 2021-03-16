@@ -48,3 +48,4 @@ SELECT x + y from t_null
 └────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/nullable/) <!--hide-->

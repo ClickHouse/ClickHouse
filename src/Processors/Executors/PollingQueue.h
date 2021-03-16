@@ -4,7 +4,6 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
-#include <Common/Epoll.h>
 
 namespace DB
 {
@@ -26,7 +25,7 @@ public:
     };
 
 private:
-    Epoll epoll;
+    int epoll_fd;
     int pipe_fd[2];
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;
