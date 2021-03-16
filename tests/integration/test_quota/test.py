@@ -384,9 +384,32 @@ def test_query_inserts():
     system_quota_usage(
         [["myQuota", "default", 31556952, 1, 1000, 0, 500, 1, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
-def test_consumption_show_tables_quota():
-    instance.query("SHOW TABLES")
-
+def test_consumption_of_show_tables():
+    assert instance.query("SHOW TABLES") == "test_table\n"
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N\\t19\\t\\\\N\\t1\\t1000\\t35\\t\\\\N\\t.*\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N.*",
+        instance.query("SHOW QUOTA"))
+
+def test_consumption_of_show_databases():
+    assert instance.query("SHOW DATABASES") == "default\nsystem\n"
+    assert re.match(
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t2\\t\\\\N.*",
+        instance.query("SHOW QUOTA"))
+
+def test_consumption_of_show_clusters():
+    assert len(instance.query("SHOW CLUSTERS")) > 0
+    assert re.match(
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
+        instance.query("SHOW QUOTA"))
+
+def test_consumption_of_show_processlist():
+    instance.query("SHOW PROCESSLIST")
+    assert re.match(
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N.*",
+        instance.query("SHOW QUOTA"))
+
+def test_consumption_of_show_privileges():
+    assert len(instance.query("SHOW PRIVILEGES")) > 0
+    assert re.match(
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"))

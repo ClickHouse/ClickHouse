@@ -265,6 +265,20 @@ void DiskCacheWrapper::removeRecursive(const String & path)
     DiskDecorator::removeRecursive(path);
 }
 
+void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
+{
+    if (cache_disk->exists(path))
+        cache_disk->removeSharedFile(path, keep_s3);
+    DiskDecorator::removeSharedFile(path, keep_s3);
+}
+
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    if (cache_disk->exists(path))
+        cache_disk->removeSharedRecursive(path, keep_s3);
+    DiskDecorator::removeSharedRecursive(path, keep_s3);
+}
+
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)
 {
     /// Don't create hardlinks for cache files to shadow directory as it just waste cache disk space.
