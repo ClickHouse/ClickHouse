@@ -147,12 +147,14 @@ def clear_ip_tables_and_restart_daemons():
     except subprocess.CalledProcessError as err:
         logging.info("Can't reload docker: " + str(err))
 
+    iptables_iter = 0
     try:
         for i in xrange(1000):
+            iptables_iter = i
             # when rules will be empty, it will raise exception
-            subprocess.check_call("iptables -D DOCKER-USER 1", shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-    except:
-        logging.info("All iptables rules cleared")
+            subprocess.check_output("iptables -D DOCKER-USER 1", shell=True)
+    except subprocess.CalledProcessError as err:
+        logging.info("All iptables rules cleared, " + iptables_iter + "iterations, last error: " + str(err))
 
 
 class ClickhouseIntegrationTestsRunner:
