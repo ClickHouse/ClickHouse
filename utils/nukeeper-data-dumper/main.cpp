@@ -22,8 +22,8 @@ void dumpMachine(std::shared_ptr<NuKeeperStateMachine> machine)
     {
         auto key = keys.front();
         keys.pop();
-        auto value = storage.container.getValue(key);
         std::cout << key << "\n";
+        auto value = storage.container.getValue(key);
         std::cout << "\tStat: {version: " << value.stat.version <<
             ", mtime: " << value.stat.mtime <<
             ", emphemeralOwner: " << value.stat.ephemeralOwner <<

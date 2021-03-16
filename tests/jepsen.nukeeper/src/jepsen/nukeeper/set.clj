@@ -1,12 +1,12 @@
 (ns jepsen.nukeeper.set
   (:require
-              [clojure.tools.logging :refer :all]
-              [jepsen
-               [checker :as checker]
-               [client :as client]
-               [generator :as gen]]
-              [jepsen.nukeeper.utils :refer :all]
-              [zookeeper :as zk])
+   [clojure.tools.logging :refer :all]
+   [jepsen
+    [checker :as checker]
+    [client :as client]
+    [generator :as gen]]
+   [jepsen.nukeeper.utils :refer :all]
+   [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
 (defrecord SetClient [k conn nodename]
@@ -26,8 +26,8 @@
       (do (info "LIST ON NODE" nodename (zk-list conn "/"))
           (info "EXISTS NODE" (zk/exists conn "/a-set"))
           (assoc op
-             :type :ok
-             :value (read-string (:data (zk-get-str conn k)))))
+                 :type :ok
+                 :value (read-string (:data (zk-get-str conn k)))))
               ;(catch Exception _ (assoc op :type :fail, :error :connect-error)))
       :add (try
              (do
