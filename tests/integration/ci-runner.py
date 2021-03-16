@@ -149,7 +149,7 @@ def clear_ip_tables_and_restart_daemons():
 
     iptables_iter = 0
     try:
-        for i in xrange(1000):
+        for i in range(1000):
             iptables_iter = i
             # when rules will be empty, it will raise exception
             subprocess.check_output("iptables -D DOCKER-USER 1", shell=True)
