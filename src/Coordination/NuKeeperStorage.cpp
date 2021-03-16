@@ -641,6 +641,13 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
             for (const auto & ephemeral_path : it->second)
             {
                 container.erase(ephemeral_path);
+                container.updateValue(parentPath(ephemeral_path), [&ephemeral_path] (NuKeeperStorage::Node & parent)
+                {
+                    --parent.stat.numChildren;
+                    ++parent.stat.cversion;
+                    parent.children.erase(getBaseName(ephemeral_path));
+                });
+
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
             }
