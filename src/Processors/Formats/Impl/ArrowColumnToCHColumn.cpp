@@ -4,7 +4,6 @@
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -59,6 +58,24 @@ namespace DB
             // Full list of types: contrib/arrow/cpp/src/arrow/type.h
     };
 
+    template <typename NestedColumnVector>
+    static void reserveArrayColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column, ColumnArray & array_column, NestedColumnVector & nested_column)
+    {
+        size_t nested_column_length = 0;
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = chunk.value_slice(array_idx);
+                nested_column_length += array->length();
+            }
+        }
+        array_column.reserve(arrow_column->length());
+        nested_column.reserve(nested_column_length);
+    }
+
 /// Inserts numeric data right into internal column data to reduce an overhead
     template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
     static void fillColumnWithNumericData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
@@ -74,6 +91,35 @@ namespace DB
 
             const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data());
             column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
+        }
+    }
+
+    template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
+    static void fillColumnWithArrayNumericData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
+
+        VectorType & nested_column = static_cast<VectorType &>(array_column.getData());
+        auto & nested_column_data = nested_column.getData();
+
+        reserveArrayColumn(arrow_column, array_column, nested_column);
+
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> chunk = list_chunk.value_slice(array_idx);
+                /// buffers[0] is a null bitmap and buffers[1] are actual values
+                std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
+
+                const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data());
+                nested_column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
+
+                column_array_offsets.emplace_back(column_array_offsets.back() + chunk->length());
+            }
         }
     }
 
@@ -118,6 +164,63 @@ namespace DB
         }
     }
 
+    static void fillColumnWithArrayStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = column_array.getOffsets();
+
+        ColumnString & nested_column = typeid_cast<ColumnString &>(column_array.getData());
+        PaddedPODArray<UInt8> & nested_column_chars = nested_column.getChars();
+        PaddedPODArray<UInt64> & nested_column_offsets = nested_column.getOffsets();
+
+        size_t chars_t_size = 0;
+        size_t number_size = 0;
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = chunk.value_slice(array_idx);
+                arrow::BinaryArray & binary_array = static_cast<arrow::BinaryArray &>(*(array));
+                const size_t binary_array_length = binary_array.length();
+
+                chars_t_size += binary_array.value_offset(binary_array_length - 1) + binary_array.value_length(binary_array_length - 1);
+                chars_t_size += binary_array_length; /// additional space for null bytes
+                number_size += binary_array_length;
+            }
+        }
+        column_array.reserve(arrow_column->length());
+
+        nested_column_chars.reserve(chars_t_size);
+        nested_column_offsets.reserve(number_size);
+
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
+                arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(array));
+                std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
+                const size_t chunk_length = chunk.length();
+
+                for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+                {
+                    if (!chunk.IsNull(offset_i) && buffer)
+                    {
+                        const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                        nested_column_chars.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+                    }
+                    nested_column_chars.emplace_back('\0');
+                    nested_column_offsets.emplace_back(nested_column_chars.size());
+                }
+                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+            }
+        }
+    }
+
     static void fillColumnWithBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
@@ -131,6 +234,38 @@ namespace DB
 
             for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
                 column_data.emplace_back(chunk.Value(bool_i));
+        }
+    }
+
+    static void fillColumnWithArrayBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
+
+        ColumnVector<UInt8> & nested_column = assert_cast<ColumnVector<UInt8> &>(array_column.getData());
+        auto & nested_column_data = nested_column.getData();
+
+        reserveArrayColumn(arrow_column, array_column, nested_column);
+
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
+
+                auto & chunk = static_cast<arrow::BooleanArray &>(*(array));
+                const size_t chunk_length = chunk.length();
+
+                /// buffers[0] is a null bitmap and buffers[1] are actual values
+                std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
+
+                for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
+                    nested_column_data.emplace_back(chunk.Value(bool_i));
+
+                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+            }
         }
     }
 
@@ -162,6 +297,47 @@ namespace DB
         }
     }
 
+    static void fillColumnWithArrayDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
+
+        ColumnVector<UInt16> & nested_column = assert_cast<ColumnVector<UInt16> &>(array_column.getData());
+        auto & nested_column_data = nested_column.getData();
+
+        reserveArrayColumn(arrow_column, array_column, nested_column);
+
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
+
+                auto & chunk = static_cast<arrow::Date32Array &>(*(array));
+                const size_t chunk_length = chunk.length();
+
+                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+                {
+                    UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
+                    if (days_num > DATE_LUT_MAX_DAY_NUM)
+                    {
+                        // TODO: will it rollback correctly?
+                        throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + internal_column->getName()
+                                        + "\" is greater than "
+                                          "max allowed Date value, which is "
+                                        + std::to_string(DATE_LUT_MAX_DAY_NUM),
+                                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+                    }
+
+                    nested_column_data.emplace_back(days_num);
+                }
+                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+            }
+        }
+    }
+
 /// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
     static void fillColumnWithDate64Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
@@ -175,6 +351,37 @@ namespace DB
             {
                 auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
                 column_data.emplace_back(timestamp);
+            }
+        }
+    }
+
+    static void fillColumnWithArrayDate64Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
+
+        ColumnVector<UInt32> & nested_column = typeid_cast<ColumnVector<UInt32> &>(array_column.getData());
+        auto & nested_column_data = nested_column.getData();
+
+        reserveArrayColumn(arrow_column, array_column, nested_column);
+
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
+
+                auto & chunk = static_cast<arrow::Date64Array &>(*(array));
+                const size_t chunk_length = chunk.length();
+
+                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+                {
+                    auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
+                    nested_column_data.emplace_back(timestamp);
+                }
+                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
             }
         }
     }
@@ -215,6 +422,56 @@ namespace DB
         }
     }
 
+    static void fillColumnWithArrayTimestampData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & array_column_offsets = array_column.getOffsets();
+
+        ColumnVector<UInt32> & nested_column = typeid_cast<ColumnVector<UInt32> &>(array_column.getData());
+        auto & nested_column_data = nested_column.getData();
+
+        reserveArrayColumn(arrow_column, array_column, nested_column);
+
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
+            {
+                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
+
+                auto & chunk = static_cast<arrow::TimestampArray &>(*array);
+                const auto & type = static_cast<const ::arrow::TimestampType &>(*chunk.type());
+                const size_t chunk_length = chunk.length();
+
+                UInt32 divide = 1;
+                const auto unit = type.unit();
+                switch (unit)
+                {
+                    case arrow::TimeUnit::SECOND:
+                        divide = 1;
+                        break;
+                    case arrow::TimeUnit::MILLI:
+                        divide = 1000;
+                        break;
+                    case arrow::TimeUnit::MICRO:
+                        divide = 1000000;
+                        break;
+                    case arrow::TimeUnit::NANO:
+                        divide = 1000000000;
+                        break;
+                }
+
+                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+                {
+                    auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / divide); // ms! TODO: check other 's' 'ns' ...
+                    nested_column_data.emplace_back(timestamp);
+                }
+                array_column_offsets.emplace_back(array_column_offsets.back() + chunk_length);
+            }
+        }
+    }
+
     static void fillColumnWithDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column = assert_cast<ColumnDecimal<Decimal128> &>(*internal_column);
@@ -231,26 +488,31 @@ namespace DB
         }
     }
 
-    static void fillColumnWithArrayData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithArrayDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
-        ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
-        ColumnArray::Offsets & offsets = column_array.getOffsets();
-        IColumn & nested_column = column_array.getData();
+        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
 
-        column_array.reserve(arrow_column->length());
+        ColumnDecimal<Decimal128> & nested_column = typeid_cast<ColumnDecimal<Decimal128> &>(array_column.getData());
+        auto & nested_column_data = nested_column.getData();
+
+        reserveArrayColumn(arrow_column, array_column, nested_column);
+
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            auto & chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
-            const auto & chunk_data = chunk.data();
-            for (int i = 0; i < chunk_data->length; ++i)
+            arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+            for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
-                const auto & array_val = chunk_data->GetValues<arrow::StringArray>(i);
-                for (int64_t array_i = 0; array_i < array_val->length(); ++array_i)
+                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
+                arrow::DecimalArray & chunk = static_cast<arrow::DecimalArray &>(*(array));
+                const size_t chunk_length = chunk.length();
+
+                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
                 {
-                    auto string_val = array_val->GetString(array_i);
-                    nested_column.insertData(string_val.c_str(), string_val.length());
+                    nested_column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
                 }
-                offsets.push_back(offsets.back(), array_val->length());
+                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
             }
         }
     }
@@ -299,6 +561,7 @@ namespace DB
 
             std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[header_column.name];
             arrow::Type::type arrow_type = arrow_column->type()->id();
+            arrow::Type::type list_nested_type;
 
             // TODO: check if a column is const?
             if (!column_type->isNullable() && arrow_column->null_count())
@@ -310,6 +573,7 @@ namespace DB
             const bool target_column_is_nullable = column_type->isNullable() || arrow_column->null_count();
 
             DataTypePtr internal_nested_type;
+            DataTypePtr array_nested_type;
 
             if (arrow_type == arrow::Type::DECIMAL)
             {
@@ -317,17 +581,21 @@ namespace DB
                 internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(),
                                                                                      decimal_type->scale());
             }
-            else if (arrow_type == arrow::Type::LIST) {
+            else if (arrow_type == arrow::Type::LIST)
+            {
                 const auto * list_type = static_cast<arrow::ListType *>(arrow_column->type().get());
-                const auto * nested_list_type = list_type->value_type().get();
+                list_nested_type = list_type->value_type()->id();
 
-                if (nested_list_type->id() == arrow::Type::STRING)
+                if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
+                                                                 [=](auto && elem) { return elem.first == list_nested_type; });
+                    internal_type_it != arrow_type_to_internal_type.end())
                 {
-                    const auto internal_nested_nested_type = DataTypeFactory::instance().get("String");
-                    internal_nested_type = std::make_shared<DataTypeArray>(internal_nested_nested_type);
+                    array_nested_type = DataTypeFactory::instance().get(internal_type_it->second);
+                    internal_nested_type = std::make_shared<DataTypeArray>(array_nested_type);
                 }
-                else {
-                    throw Exception{"The internal type \"" + nested_list_type->name() + "\" of an array column \"" + header_column.name
+                else 
+                {
+                    throw Exception{"The internal type \"" + list_type->value_type()->name() + "\" of an array column \"" + header_column.name
                                     + "\" is not supported for conversion from a " + format_name + " data format",
                                     ErrorCodes::CANNOT_CONVERT_TYPE};
                 }
@@ -378,7 +646,46 @@ namespace DB
                     fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
                     break;
                 case arrow::Type::LIST:
-                    fillColumnWithArrayData(arrow_column, read_column);
+                    if (array_nested_type) {
+                        switch (list_nested_type)
+                        {
+                            case arrow::Type::STRING:
+                            case arrow::Type::BINARY:
+                                //case arrow::Type::FIXED_SIZE_BINARY:
+                                fillColumnWithArrayStringData(arrow_column, read_column);
+                                break;
+                            case arrow::Type::BOOL:
+                                fillColumnWithArrayBooleanData(arrow_column, read_column);
+                                break;
+                            case arrow::Type::DATE32:
+                                fillColumnWithArrayDate32Data(arrow_column, read_column);
+                                break;
+                            case arrow::Type::DATE64:
+                                fillColumnWithArrayDate64Data(arrow_column, read_column);
+                                break;
+                            case arrow::Type::TIMESTAMP:
+                                fillColumnWithArrayTimestampData(arrow_column, read_column);
+                                break;
+                            case arrow::Type::DECIMAL:
+                                //fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column); // Have problems with trash values under NULL, but faster
+                                fillColumnWithArrayDecimalData(arrow_column, read_column /*, internal_nested_type*/);
+                                break;
+                            #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
+                                    case ARROW_NUMERIC_TYPE: \
+                                        fillColumnWithArrayNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
+                                        break;
+
+                                    FOR_ARROW_NUMERIC_TYPES(DISPATCH)
+                            #    undef DISPATCH
+                            default:
+                                throw Exception
+                                    {
+                                        "Unsupported " + format_name + " type \"" + arrow_column->type()->name() + "\" of an input column \""
+                                        + header_column.name + "\"",
+                                        ErrorCodes::UNKNOWN_TYPE
+                                    };
+                        }
+                    }
                     break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
         case ARROW_NUMERIC_TYPE: \
