@@ -472,17 +472,30 @@
         let max_rows = 10000 / response.meta.length;
         let row_num = 0;
 
+        let column_classes = response.meta.map(elem => elem.type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left');
+
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
             for (let col_idx in response.data[row_idx]) {
                 let td = document.createElement('td');
                 let cell = response.data[row_idx][col_idx];
+
                 let is_null = (cell === null);
-                let content = document.createTextNode(is_null ? 'ᴺᵁᴸᴸ' : cell);
-                td.appendChild(content);
+
+                /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+                let text;
+                if (is_null) {
+                    text = 'ᴺᵁᴸᴸ';
+                } else if (typeof(cell) === 'object') {
+                    text = JSON.stringify(cell);
+                } else {
+                    text = cell;
+                }
+
+                td.appendChild(document.createTextNode(text));
                 /// TODO: Execute regexp only once for each column.
-                td.className = response.meta[col_idx].type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left';
+                td.className = column_classes[col_idx];
                 if (is_null) {
                     td.className += ' null';
                 }
