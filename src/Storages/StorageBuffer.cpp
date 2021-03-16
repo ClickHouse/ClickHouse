@@ -4,7 +4,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/addMissingDefaults.h>
+#include <Processors/QueryPlan/AddingMissedStep.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
@@ -58,7 +58,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 
@@ -73,14 +72,14 @@ StorageBuffer::StorageBuffer(
     const StorageID & destination_id_,
     bool allow_materialized_)
     : IStorage(table_id_)
-    , buffer_context(context_.getBufferContext())
+    , global_context(context_.getGlobalContext())
     , num_shards(num_shards_), buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
     , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
-    , bg_pool(buffer_context.getBufferFlushSchedulePool())
+    , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -167,7 +166,7 @@ Pipe StorageBuffer::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe();
 }
 
 void StorageBuffer::read(
@@ -247,15 +246,10 @@ void StorageBuffer::read(
                 if (query_plan.isInitialized())
                 {
 
-                    auto actions = addMissingDefaults(
-                            query_plan.getCurrentDataStream().header,
-                            header_after_adding_defaults.getNamesAndTypesList(),
-                            metadata_snapshot->getColumns(),
-                            context);
-
-                    auto adding_missed = std::make_unique<ExpressionStep>(
+                    auto adding_missed = std::make_unique<AddingMissedStep>(
                             query_plan.getCurrentDataStream(),
-                            std::move(actions));
+                            header_after_adding_defaults,
+                            metadata_snapshot->getColumns(), context);
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
@@ -322,36 +316,20 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
+            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header, query_info.prewhere_info->prewhere_actions,
+                        query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+            });
+
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(
-                        header,
-                        query_info.prewhere_info->alias_actions);
+                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
                 });
             }
-
-            if (query_info.prewhere_info->row_level_filter)
-            {
-                pipe_from_buffers.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<FilterTransform>(
-                            header,
-                            query_info.prewhere_info->row_level_filter,
-                            query_info.prewhere_info->row_level_column_name,
-                            false);
-                });
-            }
-
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                        header,
-                        query_info.prewhere_info->prewhere_actions,
-                        query_info.prewhere_info->prewhere_column_name,
-                        query_info.prewhere_info->remove_prewhere_column);
-            });
         }
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
@@ -492,7 +470,7 @@ public:
         StoragePtr destination;
         if (storage.destination_id)
         {
-            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.buffer_context);
+            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.global_context);
             if (destination.get() == &storage)
                 throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
@@ -608,9 +586,9 @@ bool StorageBuffer::mayBenefitFromIndexForIn(
 
 void StorageBuffer::startup()
 {
-    if (buffer_context.getSettingsRef().readonly)
+    if (global_context.getSettingsRef().readonly)
     {
-        LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
+        LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
@@ -627,7 +605,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, buffer_context);
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, global_context);
     }
     catch (...)
     {
@@ -668,15 +646,6 @@ bool StorageBuffer::optimize(
     return true;
 }
 
-bool StorageBuffer::supportsPrewhere() const
-{
-    if (!destination_id)
-        return false;
-    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, buffer_context);
-    if (dest && dest.get() != this)
-        return dest->supportsPrewhere();
-    return false;
-}
 
 bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
@@ -783,7 +752,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, buffer_context));
+        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
         if (reset_block_structure)
             buffer.data.clear();
     }
@@ -865,7 +834,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
-    auto insert_context = Context(buffer_context);
+    auto insert_context = Context(global_context);
     insert_context.makeQueryContext();
 
     InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
@@ -927,9 +896,8 @@ void StorageBuffer::reschedule()
     flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
-void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
-    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -937,24 +905,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const C
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::Type::DROP_COLUMN)
-        {
-            const auto & deps_mv = name_deps[command.column_name];
-            if (!deps_mv.empty())
-            {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
-            }
-        }
     }
 }
 
 std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
-    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, buffer_context);
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
 
     if (underlying)
         underlying_rows = underlying->totalRows(settings);
@@ -984,7 +941,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) c
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
     auto table_id = getStorageID();
-    checkAlterIsPossible(params, context);
+    checkAlterIsPossible(params, context.getSettingsRef());
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     /// Flush all buffers to storages, so that no non-empty blocks of the old

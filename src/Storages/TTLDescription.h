@@ -99,18 +99,13 @@ struct TTLTableDescription
     /// ^~~~~~~~~~~~~~~definition~~~~~~~~~~~~~~~^
     ASTPtr definition_ast;
 
-    /// Unconditional main removing rows TTL. Can be only one for table.
+    /// Rows removing TTL
     TTLDescription rows_ttl;
-
-    /// Conditional removing rows TTLs.
-    TTLDescriptions rows_where_ttl;
 
     /// Moving data TTL (to other disks or volumes)
     TTLDescriptions move_ttl;
 
     TTLDescriptions recompression_ttl;
-
-    TTLDescriptions group_by_ttl;
 
     TTLTableDescription() = default;
     TTLTableDescription(const TTLTableDescription & other);

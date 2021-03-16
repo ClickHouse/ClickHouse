@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Server/HTTP/HTTPRequestHandler.h>
-
 #include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequestHandler.h>
 
 #if USE_ODBC
 
@@ -11,7 +10,7 @@
 namespace DB
 {
 
-class IdentifierQuoteHandler : public HTTPRequestHandler
+class IdentifierQuoteHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
     IdentifierQuoteHandler(size_t keep_alive_timeout_, Context &)
@@ -19,7 +18,7 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     Poco::Logger * log;

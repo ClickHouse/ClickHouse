@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// TODO: Remove this class
+
 /* BlockInputStream implementation for external dictionaries
  * read() returns blocks consisting of the in-memory contents of the dictionaries
  */
@@ -30,15 +30,12 @@ class DictionaryBlockInputStream : public DictionaryBlockInputStreamBase
 {
 public:
     DictionaryBlockInputStream(
-        std::shared_ptr<const IDictionaryBase> dictionary,
-        UInt64 max_block_size,
-        PaddedPODArray<Key> && ids,
-        const Names & column_names);
+        std::shared_ptr<const IDictionaryBase> dictionary, UInt64 max_block_size, PaddedPODArray<Key> && ids, const Names & column_names);
 
     DictionaryBlockInputStream(
         std::shared_ptr<const IDictionaryBase> dictionary,
         UInt64 max_block_size,
-        const PaddedPODArray<StringRef> & keys,
+        const std::vector<StringRef> & keys,
         const Names & column_names);
 
     using GetColumnsFunction = std::function<ColumnsWithTypeAndName(const Columns &, const std::vector<DictionaryAttribute> & attributes)>;
@@ -58,7 +55,7 @@ public:
     String getName() const override { return "Dictionary"; }
 
 protected:
-    Block getBlock(size_t start, size_t length) const override;
+    Block getBlock(size_t start, size_t size) const override;
 
 private:
     Block
@@ -67,7 +64,7 @@ private:
     ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids_to_fill) const;
 
     void fillKeyColumns(
-        const PaddedPODArray<StringRef> & keys,
+        const std::vector<StringRef> & keys,
         size_t start,
         size_t size,
         const DictionaryStructure & dictionary_structure,
@@ -108,7 +105,7 @@ template <typename Key>
 DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary_,
     UInt64 max_block_size_,
-    const PaddedPODArray<StringRef> & keys,
+    const std::vector<StringRef> & keys,
     const Names & column_names_)
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size_)
     , dictionary(dictionary_)
@@ -263,7 +260,7 @@ ColumnPtr DictionaryBlockInputStream<Key>::getColumnFromIds(const PaddedPODArray
 
 template <typename Key>
 void DictionaryBlockInputStream<Key>::fillKeyColumns(
-    const PaddedPODArray<StringRef> & keys,
+    const std::vector<StringRef> & keys,
     size_t start,
     size_t size,
     const DictionaryStructure & dictionary_structure,
@@ -278,7 +275,7 @@ void DictionaryBlockInputStream<Key>::fillKeyColumns(
     for (auto idx : ext::range(start, size))
     {
         const auto & key = keys[idx];
-        const auto *ptr = key.data;
+        auto ptr = key.data;
         for (auto & column : columns)
             ptr = column->deserializeAndInsertFromArena(ptr);
     }

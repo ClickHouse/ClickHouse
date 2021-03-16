@@ -74,6 +74,7 @@ target_link_libraries (common
         ${CITYHASH_LIBRARIES}
         boost::headers_only
         boost::system
+        FastMemcpy
         Poco::Net
         Poco::Net::SSL
         Poco::Util
