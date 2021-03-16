@@ -63,13 +63,12 @@
   [conn path data]
   (zk/create conn path :data (data/to-bytes (str data))))
 
-
 (defn clickhouse-alive?
   [node test]
   (info "Checking server alive on" node)
   (try
-      (c/exec (str binary-path "/clickhouse") :client :--query "SELECT 1")
-      (catch Exception _ false)))
+    (c/exec (str binary-path "/clickhouse") :client :--query "SELECT 1")
+    (catch Exception _ false)))
 
 (defn wait-clickhouse-alive!
   [node test & {:keys [maxtries] :or {maxtries 30}}]
@@ -82,17 +81,17 @@
   [node test]
   (info "Killing server on node" node)
   (c/su
-    (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)))
+   (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)))
 
 (defn start-clickhouse!
   [node test]
   (info "Starting server on node" node)
   (c/su
-    (cu/start-daemon!
-      {:pidfile pidfile
-       :logfile logfile
-       :chdir dir}
-      (str binary-path "/clickhouse")
-      :server
-      :--config "/etc/clickhouse-server/config.xml"))
+   (cu/start-daemon!
+    {:pidfile pidfile
+     :logfile logfile
+     :chdir dir}
+    (str binary-path "/clickhouse")
+    :server
+    :--config "/etc/clickhouse-server/config.xml"))
   (wait-clickhouse-alive! node test))

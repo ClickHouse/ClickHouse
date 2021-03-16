@@ -75,9 +75,9 @@
     db/LogFiles
     (log-files [_ test node]
       (c/su
-        (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
-        (c/cd dir
-            (c/exec :tar :czf "coordination.tar.gz" "coordination")))
+       (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
+       (c/cd dir
+             (c/exec :tar :czf "coordination.tar.gz" "coordination")))
       [logfile serverlog (str dir "/coordination.tar.gz")])))
 
 (def workloads
@@ -105,7 +105,8 @@
   :concurrency, ...), constructs a test map."
   [opts]
   (let [quorum (boolean (:quorum opts))
-        workload  ((get workloads (:workload opts)) opts)]
+        workload  ((get workloads (:workload opts)) opts)
+        current-nemesis (get custom-nemesis/custom-nemesises "killer")]
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)))
