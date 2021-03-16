@@ -100,6 +100,11 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
         first = false;
         settings.out << action.toString() << '\n';
     }
+
+    settings.out << prefix << "Positions:";
+    for (const auto & pos : expression->getResultPositions())
+        settings.out << ' ' << pos;
+    settings.out << '\n';
 }
 
 JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_)

@@ -45,9 +45,6 @@
     M(CreatedReadBufferAIOFailed, "") \
     M(CreatedReadBufferMMap, "") \
     M(CreatedReadBufferMMapFailed, "") \
-    M(CreatedWriteBufferOrdinary, "") \
-    M(CreatedWriteBufferAIO, "") \
-    M(CreatedWriteBufferAIOFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "") \
@@ -71,6 +68,9 @@
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.") \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
+    M(DistributedDelayedInserts, "Number of times the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.") \
+    M(DistributedRejectedInserts, "Number of times the INSERT of a block to a Distributed table was rejected with 'Too many bytes' exception due to high number of pending bytes.") \
+    M(DistributedDelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.") \
     M(DuplicatedInsertedBlocks, "Number of times the INSERTed block to a ReplicatedMergeTree table was deduplicated.") \
     \
     M(ZooKeeperInit, "") \

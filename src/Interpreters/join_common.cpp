@@ -1,9 +1,11 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteHelpers.h>
 
@@ -251,12 +253,22 @@ void createMissedColumns(Block & block)
     }
 }
 
-void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block)
+/// Append totals from right to left block, correct types if needed
+void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block)
 {
+    if (table_join.forceNullableLeft())
+        convertColumnsToNullable(block);
+
     if (Block totals_without_keys = totals)
     {
-        for (const auto & name : key_names_right)
+        for (const auto & name : table_join.keyNamesRight())
             totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+
+        for (auto & col : totals_without_keys)
+        {
+            if (table_join.rightBecomeNullable(col.type))
+                JoinCommon::convertColumnToNullable(col);
+        }
 
         for (size_t i = 0; i < totals_without_keys.columns(); ++i)
             block.insert(totals_without_keys.safeGetByPosition(i));
@@ -276,6 +288,20 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
     }
 }
 
+void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
+{
+    column.reserve(column.size() + count);
+    for (size_t i = 0; i < count; ++i)
+        type->insertDefaultInto(column);
+}
+
+bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
+{
+    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
+    return left_type_strict->equals(*right_type_strict);
+}
+
 }
 
 
@@ -290,19 +316,21 @@ NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sam
     table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
 
-    bool remap_keys = table_join.hasUsing();
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
-    for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+    if (table_join.hasUsing())
     {
-        const String & left_key_name = table_join.keyNamesLeft()[i];
-        const String & right_key_name = table_join.keyNamesRight()[i];
+        for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+        {
+            const String & left_key_name = table_join.keyNamesLeft()[i];
+            const String & right_key_name = table_join.keyNamesRight()[i];
 
-        size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
-        size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
+            size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
+            size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
 
-        if (remap_keys && !required_right_keys.has(right_key_name))
-            left_to_right_key_remap[left_key_pos] = right_key_pos;
+            if (!required_right_keys.has(right_key_name))
+                left_to_right_key_remap[left_key_pos] = right_key_pos;
+        }
     }
 
     /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys
@@ -387,9 +415,14 @@ void NotJoined::correctLowcardAndNullability(MutableColumns & columns_right)
 
 void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
 {
-    /// @note it's possible to make ColumnConst here and materialize it later
     for (size_t pos : column_indices_left)
-        block.getByPosition(pos).column = block.getByPosition(pos).column->cloneResized(rows_added);
+    {
+        auto & col = block.getByPosition(pos);
+
+        auto mut_col = col.column->cloneEmpty();
+        JoinCommon::addDefaultValues(*mut_col, col.type, rows_added);
+        col.column = std::move(mut_col);
+    }
 }
 
 void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const

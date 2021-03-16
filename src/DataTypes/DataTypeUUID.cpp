@@ -1,8 +1,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnsNumber.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
@@ -77,30 +75,6 @@ void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
     UUID value;
     readCSV(value, istr);
     assert_cast<ColumnUInt128 &>(column).getData().push_back(value);
-}
-
-void DataTypeUUID::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeUUID(UUID(assert_cast<const ColumnUInt128 &>(column).getData()[row_num])));
-}
-
-void DataTypeUUID::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    UUID uuid;
-    if (!protobuf.readUUID(uuid))
-        return;
-
-    auto & container = assert_cast<ColumnUInt128 &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(uuid);
-        row_added = true;
-    }
-    else
-        container.back() = uuid;
 }
 
 bool DataTypeUUID::equals(const IDataType & rhs) const

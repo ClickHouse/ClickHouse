@@ -69,3 +69,6 @@ def test_limited_fetches(started_cluster):
 
     assert max([len(parts) for parts in fetches_result]) == 3, "Strange, but we don't utilize max concurrent threads for fetches"
     assert(max(background_fetches_metric)) == 3, "Just checking metric consistent with table"
+
+    node1.query("DROP TABLE IF EXISTS t SYNC")
+    node2.query("DROP TABLE IF EXISTS t SYNC")

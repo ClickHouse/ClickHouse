@@ -24,8 +24,24 @@ template <typename A, typename B>
 struct DivideIntegralByConstantImpl
     : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
 {
-    using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
+    using Op = DivideIntegralImpl<A, B>;
+    using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
+
+    template <OpCase op_case>
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    {
+        if constexpr (op_case == OpCase::Vector)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        else if constexpr (op_case == OpCase::LeftConstant)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
+        else
+            vectorConstant(a, *b, c, size);
+    }
+
+    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
     static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
@@ -88,6 +104,8 @@ struct DivideIntegralByConstantImpl
 
 }
 
+namespace impl_
+{
 template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralImpl<UInt64, UInt8>> : DivideIntegralByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
 template <> struct BinaryOperationImpl<UInt64, UInt32, DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
@@ -107,7 +125,7 @@ template <> struct BinaryOperationImpl<Int32, Int8, DivideIntegralImpl<Int32, In
 template <> struct BinaryOperationImpl<Int32, Int16, DivideIntegralImpl<Int32, Int16>> : DivideIntegralByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralImpl<Int32, Int32>> : DivideIntegralByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, Int64>> : DivideIntegralByConstantImpl<Int32, Int64> {};
-
+}
 
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
 using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;

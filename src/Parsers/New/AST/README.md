@@ -13,7 +13,7 @@ Basic principles in code
 **predetermined order** and with **predetermined type**: some elements may be `nullptr` to preserve positions of other elements.
 - The order may be defined as a position in vector from the start, the last element, and some pattern of variable number of elements
 in between. It's convenient to define `enum ChildIndex : Uint8 {…}` with index numbers for each class.
-- If there is more than one variable pack of elements or the order can't be determenistic, then wrap elements into the lists and store the
+- If there is more than one variable pack of elements or the order can't be deterministic, then wrap elements into the lists and store the
 multi-level structure (see `ColumnExpr::ExprType::FUNCTION` for example).
 - Don't do multi-level structure just for nothing or to mimic the parse tree: the less is depth the better.
 - The whole grammar separates expressions for databases, tables and columns. That way we already assess the semantics on the parser level.

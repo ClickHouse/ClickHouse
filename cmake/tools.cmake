@@ -15,10 +15,6 @@ if (COMPILER_GCC)
 elseif (COMPILER_CLANG)
     # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-        # If you are developer you can figure out what exact versions of AppleClang are Ok,
-        # remove the following line and commit changes below.
-        message (FATAL_ERROR "AppleClang is not supported, you should install clang from brew.")
-
         # AppleClang 10.0.1 (Xcode 10.2) corresponds to LLVM/Clang upstream version 7.0.0
         # AppleClang 11.0.0 (Xcode 11.0) corresponds to LLVM/Clang upstream version 8.0.0
         set (XCODE_MINIMUM_VERSION 10.2)
@@ -79,8 +75,13 @@ if (OS_LINUX AND NOT LINKER_NAME)
 endif ()
 
 if (LINKER_NAME)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+    if (COMPILER_CLANG AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12.0.0 OR CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 12.0.0))
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LINKER_NAME}")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LINKER_NAME}")
+    else ()
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+    endif ()
 
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()

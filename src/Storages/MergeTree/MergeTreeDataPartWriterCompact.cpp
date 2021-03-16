@@ -24,9 +24,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , plain_file(data_part->volume->getDisk()->writeFile(
             part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
-            WriteMode::Rewrite,
-            settings.estimated_size,
-            settings.aio_threshold))
+            WriteMode::Rewrite))
     , plain_hashing(*plain_file)
     , marks_file(data_part->volume->getDisk()->writeFile(
         part_path + MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
@@ -36,14 +34,14 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
-        addStreams(column.name, *column.type, storage_columns.getCodecDescOrDefault(column.name, default_codec));
+        addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IDataType & type, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
     {
-        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        String stream_name = IDataType::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.count(stream_name))
@@ -66,7 +64,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
     };
 
     IDataType::SubstreamPath stream_path;
-    type.enumerateStreams(callback, stream_path);
+    column.type->enumerateStreams(callback, stream_path);
 }
 
 namespace
@@ -93,12 +91,12 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 
         result.emplace_back(Granule{
             .start_row = current_row,
-            .granularity_rows = expected_rows_in_mark,
-            .block_rows = std::min(rows_left_in_block, expected_rows_in_mark),
+            .rows_to_write = std::min(rows_left_in_block, expected_rows_in_mark),
             .mark_number = current_mark,
-            .mark_on_start = true
+            .mark_on_start = true,
+            .is_complete = (rows_left_in_block >= expected_rows_in_mark)
         });
-        current_row += expected_rows_in_mark;
+        current_row += result.back().rows_to_write;
         current_mark++;
     }
 
@@ -173,8 +171,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 {
     for (const auto & granule : granules)
     {
-        if (granule.granularity_rows)
-            data_written = true;
+        data_written = true;
 
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
@@ -186,7 +183,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = IDataType::getFileNameForStream(name_and_type->name, substream_path);
+                String stream_name = IDataType::getFileNameForStream(*name_and_type, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.
@@ -206,13 +203,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.granularity_rows);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        writeIntBinary(granule.block_rows, marks);
+        writeIntBinary(granule.rows_to_write, marks);
     }
 }
 
@@ -222,11 +219,11 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     {
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
         auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), /* last_block = */ true);
-        if (!granules_to_write.back().isCompleted())
+        if (!granules_to_write.back().is_complete)
         {
             /// Correct last mark as it should contain exact amount of rows.
             index_granularity.popMark();
-            index_granularity.appendMark(granules_to_write.back().block_rows);
+            index_granularity.appendMark(granules_to_write.back().rows_to_write);
         }
         writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }

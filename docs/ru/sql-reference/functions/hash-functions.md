@@ -1,6 +1,6 @@
 ---
 toc_priority: 50
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0445\u044d\u0448\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Функции хэширования"
 ---
 
 # Функции хэширования {#funktsii-kheshirovaniia}
@@ -153,15 +153,18 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 `URLHash(s, N)` - вычислить хэш от строки до N-го уровня в иерархии URL, без одного завершающего символа `/`, `?` или `#` на конце, если там такой есть.
 Уровни аналогичные URLHierarchy. Функция специфична для Яндекс.Метрики.
 
+## farmFingerprint64 {#farmfingerprint64}
+
 ## farmHash64 {#farmhash64}
 
-Генерирует 64-х битное значение [FarmHash](https://github.com/google/farmhash).
+Создает 64-битное значение [FarmHash](https://github.com/google/farmhash), независимое от платформы (архитектуры сервера), что важно, если значения сохраняются или используются для разбиения данных на группы.
 
 ``` sql
+farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
 
-Из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h) функция использует `Hash64`.
+Эти функции используют методы `Fingerprint64` и `Hash64` из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
 **Параметры**
 
@@ -481,4 +484,3 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->

@@ -193,13 +193,59 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE test")
 
 
-decimal_values = [0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
-timestamp_values = ['2015-05-18 07:40:01.123', '2019-09-16 19:20:11.123']
-timestamp_values_no_subsecond = ['2015-05-18 07:40:01', '2019-09-16 19:20:11']
+# test tool cannot support null by now. TSV format returns \N for null, so cannot compare using == directly
+# float_values = ['NULL']
+# float_values = [0] mysql returns 0 while clickhouse returns 0.0, so cannot compare using == directly
+int32_values = [0, 1, -1, 2147483647, -2147483648]
+uint32_values = [0, 1] # [FIXME] seems client have issue with value 4294967295, it returns -1 for it
+mint_values = [0, 1, -1, 8388607, -8388608]
+umint_values = [0, 1, 16777215]
+int16_values = [0, 1, -1, 32767, -32768]
+uint16_values = [0, 1, 65535]
+int8_values = [0, 1, -1, 127, -128]
+uint8_values = [0, 1, 255]
+# string_values = ["'ClickHouse'", 'NULL']
+string_values = ["'ClickHouse'"] 
+
+
+decimal_values = [0, 0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
+timestamp_values = ["'2015-05-18 07:40:01.123'", "'2019-09-16 19:20:11.123'"]
+timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'"]
 
 
 @pytest.mark.parametrize("case_name, mysql_type, expected_ch_type, mysql_values, setting_mysql_datatypes_support_level",
                          [
+                             # test common type mapping
+                             # ("common_types", "FLOAT", "Nullable(Float32)", float_values, ""),
+                             # ("common_types", "FLOAT UNSIGNED", "Nullable(Float32)", float_values, ""),
+
+                             ("common_types", "INT", "Nullable(Int32)", int32_values, ""),
+                             ("common_types", "INT NOT NULL", "Int32", int32_values, ""),
+                             ("common_types", "INT UNSIGNED NOT NULL", "UInt32", uint32_values, ""),
+                             ("common_types", "INT UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "INT UNSIGNED DEFAULT NULL", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "INT UNSIGNED DEFAULT '1'", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "INT(10)", "Nullable(Int32)", int32_values, ""),
+                             ("common_types", "INT(10) NOT NULL", "Int32", int32_values, ""),
+                             ("common_types", "INT(10) UNSIGNED NOT NULL", "UInt32", uint32_values, ""),
+                             ("common_types", "INT(10) UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "INT(10) UNSIGNED DEFAULT NULL", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "INT(10) UNSIGNED DEFAULT '1'", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "INTEGER", "Nullable(Int32)", int32_values, ""),
+                             ("common_types", "INTEGER UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
+
+                             ("common_types", "MEDIUMINT", "Nullable(Int32)", mint_values, ""),
+                             ("common_types", "MEDIUMINT UNSIGNED", "Nullable(UInt32)", umint_values, ""),
+
+                             ("common_types", "SMALLINT", "Nullable(Int16)", int16_values, ""),
+                             ("common_types", "SMALLINT UNSIGNED", "Nullable(UInt16)", uint16_values, ""),
+
+                             ("common_types", "TINYINT", "Nullable(Int8)", int8_values, ""),
+                             ("common_types", "TINYINT UNSIGNED", "Nullable(UInt8)", uint8_values, ""),
+
+                             ("common_types", "VARCHAR(10)", "Nullable(String)", string_values, ""),
+
+
                              ("decimal_default", "decimal NOT NULL", "Decimal(10, 0)", decimal_values,
                               "decimal,datetime64"),
                              ("decimal_default_nullable", "decimal", "Nullable(Decimal(10, 0))", decimal_values,
@@ -220,9 +266,8 @@ timestamp_values_no_subsecond = ['2015-05-18 07:40:01', '2019-09-16 19:20:11']
                               "decimal,datetime64"),
 
                              # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
-                             (
-                                     "decimal_40_6", "decimal(40, 6) NOT NULL", "String", decimal_values,
-                                     "decimal,datetime64"),
+                             ("decimal_40_6", "decimal(40, 6) NOT NULL", "String", decimal_values, 
+                              "decimal,datetime64"),
                              ("decimal_18_6", "decimal(18, 6) NOT NULL", "String", decimal_values, "datetime64"),
                              ("decimal_18_6", "decimal(18, 6) NOT NULL", "String", decimal_values, ""),
                              ("datetime_6", "DATETIME(6) NOT NULL", "DateTime", timestamp_values_no_subsecond,
@@ -240,7 +285,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         mysql_db='decimal_support',
         table_name=case_name,
         mysql_type=mysql_type,
-        mysql_values=', '.join('({})'.format(repr(x)) for x in mysql_values),
+        mysql_values=', '.join('({})'.format(x) for x in mysql_values),
         ch_mysql_db='mysql_db',
         ch_mysql_table='mysql_table_engine_' + case_name,
         expected_ch_type=expected_ch_type,

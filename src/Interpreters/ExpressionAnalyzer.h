@@ -1,14 +1,16 @@
 #pragma once
 
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/WindowDescription.h>
+#include <Interpreters/join_common.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 namespace DB
 {
@@ -55,10 +57,15 @@ struct ExpressionAnalyzerData
     NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+    /// Columns after window functions.
+    NamesAndTypesList columns_after_window;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
+
+    WindowDescriptions window_descriptions;
+    NamesAndTypesList window_columns;
 
     bool has_global_subqueries = false;
 
@@ -116,6 +123,11 @@ public:
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
 
+    /// A list of windows for window functions.
+    const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
+
+    void makeWindowDescriptions(ActionsDAGPtr actions);
+
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
@@ -169,6 +181,8 @@ class SelectQueryExpressionAnalyzer;
 /// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
 struct ExpressionAnalysisResult
 {
+    std::string dump() const;
+
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -176,6 +190,7 @@ struct ExpressionAnalysisResult
 
     bool need_aggregate = false;
     bool has_order_by   = false;
+    bool has_window = false;
 
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
@@ -185,22 +200,25 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ActionsDAGPtr before_join;
+    ActionsDAGPtr converting_join_columns;
     JoinPtr join;
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
-    ActionsDAGPtr before_order_and_select;
+    ActionsDAGPtr before_window;
+    ActionsDAGPtr before_order_by;
     ActionsDAGPtr before_limit_by;
     ActionsDAGPtr final_projection;
 
-    /// Columns from the SELECT list, before renaming them to aliases.
+    /// Columns from the SELECT list, before renaming them to aliases. Used to
+    /// perform SELECT DISTINCT.
     Names selected_columns;
 
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereDAGInfoPtr prewhere_info;
-    FilterInfoPtr filter_info;
+    FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -215,7 +233,7 @@ struct ExpressionAnalysisResult
         bool first_stage,
         bool second_stage,
         bool only_types,
-        const FilterInfoPtr & filter_info,
+        const FilterDAGInfoPtr & filter_info,
         const Block & source_header);
 
     /// Filter for row-level security.
@@ -256,6 +274,7 @@ public:
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
+    bool hasWindow() const { return !syntax->window_function_asts.empty(); }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
@@ -296,7 +315,9 @@ private:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    JoinPtr makeTableJoin(
+        const ASTTablesInSelectQueryElement & join_element,
+        const ColumnsWithTypeAndName & left_sample_columns);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -326,6 +347,7 @@ private:
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
+    void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

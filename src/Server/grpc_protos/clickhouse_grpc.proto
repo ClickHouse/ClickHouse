@@ -21,19 +21,19 @@ message NameAndType {
    string type = 2;
 }
 
-// Desribes an external table - a table which will exists only while a query is executing.
+// Describes an external table - a table which will exists only while a query is executing.
 message ExternalTable {
    // Name of the table. If omitted, "_data" is used.
    string name = 1;
-   
+
    // Columns of the table. Types are required, names can be omitted. If the names are omitted, "_1", "_2", ... is used.
    repeated NameAndType columns = 2;
 
    // Data to insert to the external table.
    // If a method with streaming input (i.e. ExecuteQueryWithStreamInput() or ExecuteQueryWithStreamIO()) is used,
-   // then data for insertion to the same external table can be splitted between multiple QueryInfos.
+   // then data for insertion to the same external table can be split between multiple QueryInfos.
    string data = 3;
-   
+
    // Format of the data to insert to the external table.
    string format = 4;
 
@@ -57,7 +57,7 @@ message QueryInfo {
 
    // Delimiter for input_data, inserted between input_data from adjacent QueryInfos.
    string input_data_delimiter = 6;
-   
+
    // Default output format. If not specified, 'TabSeparated' is used.
    string output_format = 7;
 
@@ -71,7 +71,7 @@ message QueryInfo {
    string session_id = 12;
    bool session_check = 13;
    uint32 session_timeout = 14;
-   
+
    // Set `cancel` to true to stop executing the query.
    bool cancel = 15;
 

@@ -46,6 +46,9 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 
 void CompressionCodecFactory::validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const
 {
+    if (family_name.empty())
+        throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));

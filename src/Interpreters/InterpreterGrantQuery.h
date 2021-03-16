@@ -21,6 +21,7 @@ public:
 
     static void updateUserFromQuery(User & user, const ASTGrantQuery & query);
     static void updateRoleFromQuery(Role & role, const ASTGrantQuery & query);
+    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, const Context &) const override;
 
 private:
     ASTPtr query_ptr;

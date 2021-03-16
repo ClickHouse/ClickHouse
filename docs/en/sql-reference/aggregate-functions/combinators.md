@@ -53,6 +53,11 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Distinct {#agg-functions-combinator-distinct}
+
+Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
 Changes behavior of an aggregate function.
@@ -67,7 +72,7 @@ If an aggregate function doesn’t have input values, with this combinator it re
 <aggFunction>OrDefault(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Aggregate function parameters.
 
@@ -127,7 +132,7 @@ This combinator converts a result of an aggregate function to the [Nullable](../
 <aggFunction>OrNull(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Aggregate function parameters.
 
@@ -184,7 +189,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `start` — Starting value of the whole required interval for `resampling_key` values.
 -   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
@@ -244,4 +249,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->
+

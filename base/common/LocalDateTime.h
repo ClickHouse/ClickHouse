@@ -169,20 +169,6 @@ public:
 static_assert(sizeof(LocalDateTime) == 8);
 
 
-inline std::ostream & operator<< (std::ostream & ostr, const LocalDateTime & datetime)
-{
-    ostr << std::setfill('0') << std::setw(4) << datetime.year();
-
-    ostr << '-' << (datetime.month() / 10) << (datetime.month() % 10)
-        << '-' << (datetime.day() / 10) << (datetime.day() % 10)
-        << ' ' << (datetime.hour() / 10) << (datetime.hour() % 10)
-        << ':' << (datetime.minute() / 10) << (datetime.minute() % 10)
-        << ':' << (datetime.second() / 10) << (datetime.second() % 10);
-
-    return ostr;
-}
-
-
 namespace std
 {
 inline string to_string(const LocalDateTime & datetime)

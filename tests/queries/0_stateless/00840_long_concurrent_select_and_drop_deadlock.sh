@@ -3,6 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 for _ in {1..200}; do echo "drop table if exists view_00840" | $CLICKHOUSE_CLIENT; echo "create view view_00840 as select count(*),database,table from system.columns group by database,table" | $CLICKHOUSE_CLIENT; done &

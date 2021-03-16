@@ -60,6 +60,7 @@ add_subdirectory (Processors)
 add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
+add_subdirectory (Coordination)
 
 
 set(dbms_headers)
@@ -79,6 +80,11 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Databases/PostgreSQL)
+    add_headers_and_sources(dbms Storages/PostgreSQL)
+endif()
+
 if (USE_ROCKSDB)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()
@@ -95,8 +101,8 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp)
-list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h)
+list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
+list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
@@ -175,6 +181,7 @@ add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_server Server)
+add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -185,6 +192,11 @@ add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+
+if (USE_NURAFT)
+    add_object_library(clickhouse_coordination Coordination)
+endif()
 
 set (DBMS_COMMON_LIBRARIES)
 # libgcc_s does not provide an implementation of an atomics library. Instead,
@@ -304,9 +316,13 @@ if (USE_CYRUS_SASL)
 endif()
 
 if (USE_KRB5)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
+if (USE_NURAFT)
+    dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -363,7 +379,7 @@ endif ()
 
 if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
-    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
         if (USE_STATIC_LIBRARIES)
             dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
@@ -435,6 +451,13 @@ if (USE_ROCKSDB)
     dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
 endif()
+
+if (USE_LIBPQXX)
+    dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
+endif()
+
+dbms_target_link_libraries(PRIVATE _boost_context)
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
