@@ -63,7 +63,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() + v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() + UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
@@ -80,7 +80,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator-(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() - v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() - UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
@@ -97,7 +97,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator*(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() * v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() * UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
@@ -109,13 +109,13 @@ private:
     template <typename T>
     friend inline LUTIndex operator/(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() / v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() / UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
     friend inline LUTIndex operator/(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v / index.toUnderType()) & date_lut_mask};
+        return LUTIndex{(UInt32(v) / index.toUnderType()) & date_lut_mask};
     }
 
 public:
