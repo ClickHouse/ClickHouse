@@ -12,4 +12,4 @@ The following external authenticators and directories are supported:
 
 - [LDAP](./ldap.md#external-authenticators-ldap) [Authenticator](./ldap.md#ldap-external-authenticator) and [Directory](./ldap.md#ldap-external-user-directory)
 
-[Original article](https://clickhouse.tech/docs/en/operations/external-authenticators/index.md) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/external-authenticators/index/) <!--hide-->
