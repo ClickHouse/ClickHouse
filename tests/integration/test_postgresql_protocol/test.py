@@ -41,7 +41,7 @@ def psql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgresql.yml')
     run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
-    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=180).containers.get(cluster.project_name + '_psql_1')
+    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=os.environ.get("DOCKER_API_VERSION"), timeout=180).containers.get(cluster.project_name + '_psql_1')
 
 
 @pytest.fixture(scope='module')

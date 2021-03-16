@@ -47,12 +47,12 @@ class HDFSApi(object):
 
         # logging.basicConfig(level=logging.DEBUG)
         # logging.getLogger().setLevel(logging.DEBUG)
-        requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logging.DEBUG)
-        requests_log.propagate = True
-        kerb_log = logging.getLogger("requests_kerberos")
-        kerb_log.setLevel(logging.DEBUG)
-        kerb_log.propagate = True
+        # requests_log = logging.getLogger("requests.packages.urllib3")
+        # requests_log.setLevel(logging.INFO)
+        # requests_log.propagate = True
+        # kerb_log = logging.getLogger("requests_kerberos")
+        # kerb_log.setLevel(logging.DEBUG)
+        # kerb_log.propagate = True
 
         if kerberized:
             self._run_kinit()

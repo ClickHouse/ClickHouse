@@ -11,9 +11,6 @@ import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(cluster):
     # Allows read-write access for bucket without authorization.

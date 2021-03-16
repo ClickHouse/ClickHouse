@@ -3,9 +3,6 @@ import logging
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 
 def check_proxy_logs(cluster, proxy_instance):
     logs = cluster.get_container_logs(proxy_instance)

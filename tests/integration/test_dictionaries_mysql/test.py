@@ -31,7 +31,7 @@ def started_cluster():
         cluster.start()
 
         # Create a MySQL database
-        mysql_connection = get_mysql_conn()
+        mysql_connection = get_mysql_conn(cluster)
         create_mysql_db(mysql_connection, 'test')
         mysql_connection.close()
 
@@ -54,7 +54,7 @@ def test_load_mysql_dictionaries(started_cluster):
 
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
-        prepare_mysql_table('test', str(n))
+        prepare_mysql_table(started_cluster, 'test', str(n))
 
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
@@ -72,8 +72,8 @@ def create_mysql_db(mysql_connection, name):
         cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
 
-def prepare_mysql_table(table_name, index):
-    mysql_connection = get_mysql_conn()
+def prepare_mysql_table(started_cluster, table_name, index):
+    mysql_connection = get_mysql_conn(started_cluster)
 
     # Create table
     create_mysql_table(mysql_connection, table_name + str(index))
@@ -89,16 +89,16 @@ def prepare_mysql_table(table_name, index):
     # Create CH Dictionary tables based on MySQL tables
     query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
 
-def get_mysql_conn():
+def get_mysql_conn(started_cluster):
     errors = []
     conn = None
     for _ in range(5):
         try:
             if conn is None:
-                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
+                conn = pymysql.connect(user='root', password='clickhouse', host=started_cluster.mysql_ip, port=started_cluster.mysql_port)
             else:
                 conn.ping(reconnect=True)
-            logging.debug("MySQL Connection establised: 127.0.0.1:{}".format(cluster.mysql_port))
+            logging.debug(f"MySQL Connection establised: {started_cluster.mysql_ip}:{started_cluster.mysql_port}")
             return conn
         except Exception as e:
             errors += [str(e)]

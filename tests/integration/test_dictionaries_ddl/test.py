@@ -66,7 +66,7 @@ def started_cluster():
     (node2, 'complex_node2_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))'),
 ])
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
-    mysql_conn = create_mysql_conn("root", "clickhouse", "localhost", started_cluster.mysql_port)
+    mysql_conn = create_mysql_conn("root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port)
     execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS clickhouse")
     execute_mysql_query(mysql_conn, "CREATE DATABASE clickhouse")
     execute_mysql_query(mysql_conn,
@@ -245,7 +245,7 @@ def test_file_dictionary_restrictions(started_cluster):
 
 
 def test_dictionary_with_where(started_cluster):
-    mysql_conn = create_mysql_conn("root", "clickhouse", "localhost", started_cluster.mysql_port)
+    mysql_conn = create_mysql_conn("root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port)
     execute_mysql_query(mysql_conn, "CREATE DATABASE IF NOT EXISTS clickhouse")
     execute_mysql_query(mysql_conn,
                         "CREATE TABLE clickhouse.special_table (key_field1 int, value1 text, PRIMARY KEY (key_field1))")

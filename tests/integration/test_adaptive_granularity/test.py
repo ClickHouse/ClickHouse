@@ -1,5 +1,6 @@
 import time
 
+import logging
 import pytest
 from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
@@ -268,15 +269,17 @@ def test_version_single_node_update(start_dynamic_cluster, n, tables):
     ]
 )
 def test_mixed_granularity_single_node(start_dynamic_cluster, node):
-    assert node.name == "node9" or node.name == "node10"
-    assert_eq_with_retry(node,
-                        "SELECT value FROM system.merge_tree_settings WHERE name='enable_mixed_granularity_parts'",
-                        '0') # check that enable_mixed_granularity_parts is off by default
-
     node.query(
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
     node.query(
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-09-01'), 1, 333), (toDate('2018-09-02'), 2, 444)")
+
+    path_to_part = node.query(
+        "SELECT path FROM system.parts WHERE table = 'table_with_default_granularity' AND active=1 ORDER BY partition DESC LIMIT 1").strip()
+
+    result = node.exec_in_container(["bash", "-c", "find {p} -name '*.mrk*'".format(
+        p=path_to_part)])  # check that we have non adaptive files
+    logging.info(f"path {path_to_part} result\n {result}")
 
     def callback(n):
         new_config = """
