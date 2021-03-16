@@ -19,6 +19,8 @@ CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
 TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
 
+# NOTE it must be less then timeout in Sandbox
+TASK_TIMEOUT = 7.5 * 60 * 60
 
 def get_tests_to_run(pr_info):
     result = set([])
@@ -162,6 +164,8 @@ class ClickhouseIntegrationTestsRunner:
         self.image_versions = self.params['docker_images_with_versions']
         self.shuffle_groups = self.params['shuffle_test_groups']
         self.flaky_check = 'flaky check' in self.params['context_name']
+        self.start_time = time.time()
+        self.soft_deadline_time = self.start_time + TASK_TIMEOUT
 
     def path(self):
         return self.result_path
@@ -299,13 +303,22 @@ class ClickhouseIntegrationTestsRunner:
         return image_cmd
 
     def run_test_group(self, repo_path, test_group, tests_in_group, num_tries):
-        image_cmd = self._get_runner_image_cmd(repo_path)
         counters = {
             "ERROR": [],
             "PASSED": [],
             "FAILED": [],
         }
         tests_times = defaultdict(float)
+
+        if self.soft_deadline_time < time.time():
+            for test in tests_in_group:
+                counters["ERROR"].append(test)
+                tests_times[test] = 0
+            log_name = None
+            log_path = None
+            return counters, tests_times, log_name, log_path
+
+        image_cmd = self._get_runner_image_cmd(repo_path)
         test_group_str = test_group.replace('/', '_').replace('.', '_')
 
         for i in range(num_tries):
@@ -379,7 +392,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_name, log_path = self.run_test_group(repo_path, "flaky", tests_to_run, 1)
+            counters, tests_times, _, log_path = self.run_test_group(repo_path, "flaky", tests_to_run, 1)
             log_paths.append(log_path)
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -389,7 +402,8 @@ class ClickhouseIntegrationTestsRunner:
             if counters["ERROR"]:
                 description_prefix = "Flaky tests found: "
                 logging.info("Found error tests: %s", ' '.join(counters["ERROR"]))
-                result_state = "error"
+                # NOTE "error" result state will restart the whole test task, so we use "failure" here
+                result_state = "failure"
                 break
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
@@ -412,7 +426,7 @@ class ClickhouseIntegrationTestsRunner:
                 text_state = "FAIL"
             else:
                 text_state = state
-            test_result += [(c + ' (✕' + str(final_retry) + ')', text_state, str(tests_times[c])) for c in counters[state]]
+            test_result += [(c + ' (✕' + str(final_retry) + ')', text_state, "{:.2f}".format(tests_times[c])) for c in counters[state]]
         status_text = description_prefix + ', '.join([str(n).lower().replace('failed', 'fail') + ': ' + str(len(c)) for n, c in counters.items()])
 
         return result_state, status_text, test_result, [test_logs] + log_paths
@@ -445,7 +459,7 @@ class ClickhouseIntegrationTestsRunner:
 
         for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_name, log_path = self.run_test_group(repo_path, group, tests, MAX_RETRY)
+            group_counters, group_test_times, _, log_path = self.run_test_group(repo_path, group, tests, MAX_RETRY)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))
@@ -481,9 +495,13 @@ class ClickhouseIntegrationTestsRunner:
                 text_state = "FAIL"
             else:
                 text_state = state
-            test_result += [(c, text_state, str(tests_times[c])) for c in counters[state]]
+            test_result += [(c, text_state, "{:.2f}".format(tests_times[c])) for c in counters[state]]
 
         status_text = "fail: {}, passed: {}, error: {}".format(len(counters['FAILED']), len(counters['PASSED']), len(counters['ERROR']))
+
+        if self.soft_deadline_time < time.time():
+            status_text = "Timeout, " + status_text
+            result_state = "failure"
 
         if not counters or sum(len(counter) for counter in counters.values()) == 0:
             status_text = "No tests found for some reason! It's a bug"
@@ -514,7 +532,7 @@ if __name__ == "__main__":
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Running tests")
-    state, description, test_results, logs = runner.run_impl(repo_path, build_path)
+    state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
 
     status = (state, description)
