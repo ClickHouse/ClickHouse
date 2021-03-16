@@ -173,6 +173,11 @@ namespace
             writer->writePrefix();
         }
 
+        void flush() override
+        {
+            writer->flush();
+        }
+
         void writeSuffix() override
         {
             writer->writeSuffix();
