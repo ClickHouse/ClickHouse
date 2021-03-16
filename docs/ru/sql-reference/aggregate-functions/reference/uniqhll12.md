@@ -10,7 +10,7 @@ toc_priority: 194
 uniqHLL12(x[, ...])
 ```
 
-**Параметры**
+**Аргументы**
 
 Функция принимает переменное число входных параметров. Параметры могут быть числовых типов, а также `Tuple`, `Array`, `Date`, `DateTime`, `String`.
 
@@ -38,4 +38,3 @@ uniqHLL12(x[, ...])
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/) <!--hide-->
