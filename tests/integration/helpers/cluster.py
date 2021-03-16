@@ -13,7 +13,6 @@ import subprocess
 import time
 import traceback
 import urllib.parse
-import shlex
 
 import cassandra.cluster
 import docker
@@ -45,13 +44,13 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
-def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
-    res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell)
+def run_and_check(args, env=None, shell=False):
+    res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
-        print('Stderr:\n{}\n'.format(res.stderr.decode('utf-8')))
-        print('Stdout:\n{}\n'.format(res.stdout.decode('utf-8')))
-        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
+        print('Stderr:\n{}\n'.format(res.stderr))
+        print('Stdout:\n{}\n'.format(res.stdout))
+        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr))
 
 
 def subprocess_check_call(args):
@@ -155,7 +154,6 @@ class ClickHouseCluster:
         self.minio_certs_dir = None
         self.minio_host = "minio1"
         self.minio_bucket = "root"
-        self.minio_bucket_2 = "root2"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -557,24 +555,23 @@ class ClickHouseCluster:
 
                 print("Connected to Minio.")
 
-                buckets = [self.minio_bucket, self.minio_bucket_2]
+                if minio_client.bucket_exists(self.minio_bucket):
+                    minio_client.remove_bucket(self.minio_bucket)
 
-                for bucket in buckets:
-                    if minio_client.bucket_exists(bucket):
-                        minio_client.remove_bucket(bucket)
-                    minio_client.make_bucket(bucket)
-                    print("S3 bucket '%s' created", bucket)
+                minio_client.make_bucket(self.minio_bucket)
+
+                print(("S3 bucket '%s' created", self.minio_bucket))
 
                 self.minio_client = minio_client
                 return
             except Exception as ex:
-                print("Can't connect to Minio: %s", str(ex))
+                print(("Can't connect to Minio: %s", str(ex)))
                 time.sleep(1)
 
         raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
-        sr_client = CachedSchemaRegistryClient({"url":'http://localhost:8081'})
+        sr_client = CachedSchemaRegistryClient('http://localhost:8081')
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -731,7 +728,7 @@ class ClickHouseCluster:
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
-            subprocess_check_call(clickhouse_start_cmd)
+            subprocess.check_output(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
             start_deadline = time.time() + 20.0  # seconds
@@ -869,8 +866,6 @@ services:
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
-            - IPC_LOCK
-            - SYS_NICE
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -1053,25 +1048,32 @@ class ClickHouseInstance:
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 
-    def stop_clickhouse(self, start_wait_sec=5, kill=False):
+    def kill_clickhouse(self, stop_start_wait_sec=5):
+        pid = self.get_process_pid("clickhouse")
+        if not pid:
+            raise Exception("No clickhouse found")
+        self.exec_in_container(["bash", "-c", "kill -9 {}".format(pid)], user='root')
+        time.sleep(stop_start_wait_sec)
+
+    def restore_clickhouse(self, retries=100):
+        pid = self.get_process_pid("clickhouse")
+        if pid:
+            raise Exception("ClickHouse has already started")
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        from helpers.test_tools import assert_eq_with_retry
+        # wait start
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
+
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
-            raise Exception("clickhouse can be stopped only with stay_alive=True instance")
+            raise Exception("clickhouse can be restarted only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-        time.sleep(start_wait_sec)
-
-    def start_clickhouse(self, stop_wait_sec=5):
-        if not self.stay_alive:
-            raise Exception("clickhouse can be started again only with stay_alive=True instance")
-
+        time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_wait_sec / 0.5), sleep_time=0.5)
-
-    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
-        self.stop_clickhouse(stop_start_wait_sec, kill)
-        self.start_clickhouse(stop_start_wait_sec)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
     def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         container_id = self.get_docker_handle().id
@@ -1081,23 +1083,6 @@ class ClickHouseInstance:
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
-
-    def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
-        start_time = time.time()
-        result = self.exec_in_container(
-            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Em {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
-
-        # if repetitions>1 grep will return success even if not enough lines were collected,
-        if repetitions>1 and len(result.splitlines()) < repetitions:
-            print("wait_for_log_line: those lines were found during {} seconds:".format(timeout))
-            print(result)
-            raise Exception("wait_for_log_line: Not enough repetitions: {} found, while {} expected".format(len(result.splitlines()), repetitions))
-
-        wait_duration = time.time() - start_time
-
-        print('{} log line matching "{}" appeared in a {} seconds'.format(repetitions, regexp, wait_duration))
-        return wait_duration
-
 
     def file_exists(self, path):
         return self.exec_in_container(
@@ -1426,7 +1411,7 @@ class ClickHouseKiller(object):
         self.clickhouse_node = clickhouse_node
 
     def __enter__(self):
-        self.clickhouse_node.stop_clickhouse(kill=True)
+        self.clickhouse_node.kill_clickhouse()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.clickhouse_node.start_clickhouse()
+        self.clickhouse_node.restore_clickhouse()

@@ -24,9 +24,8 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     if (split.second->trivial())
         return 0;
 
-    bool remove_filter = false;
     if (filter_step->removesFilterColumn())
-        remove_filter = split.second->removeUnusedResult(filter_step->getFilterColumnName());
+        split.second->removeUnusedInput(filter_step->getFilterColumnName());
 
     auto description = filter_step->getStepDescription();
 
@@ -38,7 +37,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
             filter_node.children.at(0)->step->getOutputStream(),
             std::move(split.first),
             filter_step->getFilterColumnName(),
-            remove_filter);
+            filter_step->removesFilterColumn());
 
     node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
 

@@ -70,7 +70,6 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
-        --test_keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
@@ -108,18 +107,6 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
-
-    echo "
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -133,7 +120,7 @@ function clone_root
                 git checkout FETCH_HEAD
                 echo 'Clonned merge head'
             else
-                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
+                git fetch
                 git checkout "$COMMIT_SHA"
                 echo 'Checked out to commit'
             fi
@@ -151,7 +138,6 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
-            contrib/abseil-cpp
             contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
@@ -177,7 +163,6 @@ function clone_submodules
             contrib/xz
             contrib/dragonbox
             contrib/fast_float
-            contrib/NuRaft
         )
 
         git submodule sync
@@ -197,7 +182,6 @@ function run_cmake
         "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
-        "-DENABLE_NURAFT=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -341,7 +325,7 @@ function run_tests
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert
 
-        01541_max_memory_usage_for_user_long
+        01541_max_memory_usage_for_user
 
         # Require python libraries like scipy, pandas and numpy
         01322_ttest_scipy
@@ -359,7 +343,7 @@ function run_tests
         01666_blns
     )
 
-    (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+    time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
     # substr is to remove semicolon after test name
     readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
@@ -376,7 +360,7 @@ function run_tests
         stop_server ||:
 
         # Clean the data so that there is no interference from the previous test run.
-        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files} ||:
 
         start_server
 

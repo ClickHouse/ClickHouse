@@ -12,6 +12,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/IDatabase.h>
+#include <Storages/StorageMemory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>

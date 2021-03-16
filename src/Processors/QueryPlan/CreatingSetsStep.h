@@ -34,7 +34,7 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(DataStreams input_streams_);
+    CreatingSetsStep(DataStreams input_streams_);
 
     String getName() const override { return "CreatingSets"; }
 
