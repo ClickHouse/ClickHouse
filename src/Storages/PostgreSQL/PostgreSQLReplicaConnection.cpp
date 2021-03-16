@@ -59,14 +59,14 @@ PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(const PostgreSQLReplica
 }
 
 
-PostgreSQLConnectionPoolPtr PostgreSQLReplicaConnection::get()
+WrappedPostgreSQLConnection PostgreSQLReplicaConnection::get()
 {
     for (size_t i = 0; i < num_retries; ++i)
     {
         for (auto & replica : replicas)
         {
-            if (replica.second->connected())
-                return replica.second;
+            if (replica.second->isConnected())
+                return replica.second->get();
         }
     }
 

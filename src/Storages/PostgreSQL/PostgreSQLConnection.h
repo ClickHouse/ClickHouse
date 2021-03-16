@@ -12,43 +12,64 @@
 namespace DB
 {
 
-
 class PostgreSQLConnection
 {
 
+using ConnectionPtr = std::shared_ptr<pqxx::connection>;
+
 public:
-    using ConnectionPtr = std::shared_ptr<pqxx::connection>;
-
     PostgreSQLConnection(
-        const String & connection_str_,
-        const String & address_);
-
-    PostgreSQLConnection(
-        ConnectionPtr connection_,
         const String & connection_str_,
         const String & address_);
 
     PostgreSQLConnection(const PostgreSQLConnection & other);
 
-    const std::string & getAddress() { return address; }
-
     ConnectionPtr get();
 
     ConnectionPtr tryGet();
 
-    bool connected() { return tryConnect(); }
+    bool isConnected() { return tryConnectIfNeeded(); }
+
+    bool available() { return ref_count.load() == 0; }
+
+    void incrementRef() { ref_count++; }
+
+    void decrementRef() { ref_count--; }
 
 private:
-    void connect();
+    void connectIfNeeded();
 
-    bool tryConnect();
+    bool tryConnectIfNeeded();
+
+    const std::string & getAddress() { return address; }
 
     ConnectionPtr connection;
-    std::string connection_str;
-    std::string address;
+    std::string connection_str, address;
+    std::atomic<uint8_t> ref_count;
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
+
+
+class WrappedPostgreSQLConnection
+{
+
+public:
+    WrappedPostgreSQLConnection(PostgreSQLConnectionPtr connection_) : connection(connection_) { connection->incrementRef(); }
+
+    WrappedPostgreSQLConnection(const WrappedPostgreSQLConnection & other) : connection(other.connection) {}
+
+    ~WrappedPostgreSQLConnection() { connection->decrementRef(); }
+
+    pqxx::connection & operator*() const { return *connection->get(); }
+
+    pqxx::connection * operator->() const { return connection->get().get(); }
+
+    bool isConnected() { return connection->isConnected(); }
+
+private:
+    PostgreSQLConnectionPtr connection;
+};
 
 }
 

@@ -14,22 +14,18 @@ namespace DB
 
 PostgreSQLConnectionPool::PostgreSQLConnectionPool(
     std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
-    : pool(POSTGRESQL_POOL_DEFAULT_SIZE)
 {
     address = host + ':' + std::to_string(port);
     connection_str = formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password));
-
-    /// No connection is made, just fill pool with non-connected connection objects.
-    for (size_t i = 0; i < POSTGRESQL_POOL_DEFAULT_SIZE; ++i)
-        pool.push(std::make_shared<PostgreSQLConnection>(connection_str, address));
+    initialize();
 }
 
 
 PostgreSQLConnectionPool::PostgreSQLConnectionPool(const PostgreSQLConnectionPool & other)
         : connection_str(other.connection_str)
         , address(other.address)
-        , pool(POSTGRESQL_POOL_DEFAULT_SIZE)
 {
+    initialize();
 }
 
 
@@ -46,48 +42,34 @@ std::string PostgreSQLConnectionPool::formatConnectionString(
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnectionPool::get()
+void PostgreSQLConnectionPool::initialize()
 {
-    PostgreSQLConnectionPtr connection = popConnection();
-    return connection->get();
+    /// No connection is made, just fill pool with non-connected connection objects.
+    for (size_t i = 0; i < POSTGRESQL_POOL_DEFAULT_SIZE; ++i)
+        pool.emplace_back(std::make_shared<PostgreSQLConnection>(connection_str, address));
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnectionPool::tryGet()
+
+WrappedPostgreSQLConnection PostgreSQLConnectionPool::get()
 {
-    PostgreSQLConnectionPtr connection = popConnection();
-    return connection->tryGet();
+    std::lock_guard lock(mutex);
+
+    for (const auto & connection : pool)
+    {
+        if (connection->available())
+            return WrappedPostgreSQLConnection(connection);
+    }
+
+    auto connection = std::make_shared<PostgreSQLConnection>(connection_str, address);
+    return WrappedPostgreSQLConnection(connection);
 }
 
 
-PostgreSQLConnectionPtr PostgreSQLConnectionPool::popConnection()
+bool PostgreSQLConnectionPool::isConnected()
 {
-    PostgreSQLConnectionPtr connection;
-    if (pool.tryPop(connection, POSTGRESQL_POOL_WAIT_POP_PUSH_MS))
-        return connection;
-
-    return std::make_shared<PostgreSQLConnection>(connection_str, address);
-}
-
-
-void PostgreSQLConnectionPool::put(PostgreSQLConnection::ConnectionPtr connection)
-{
-    pushConnection(std::make_shared<PostgreSQLConnection>(connection, connection_str, address));
-}
-
-
-void PostgreSQLConnectionPool::pushConnection(PostgreSQLConnectionPtr connection)
-{
-    pool.tryPush(connection, POSTGRESQL_POOL_WAIT_POP_PUSH_MS);
-}
-
-
-bool PostgreSQLConnectionPool::connected()
-{
-    PostgreSQLConnectionPtr connection = popConnection();
-    bool result = connection->connected();
-    pushConnection(connection);
-    return result;
+    auto connection = get();
+    return connection.isConnected();
 }
 
 }
