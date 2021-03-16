@@ -106,8 +106,30 @@ public:
     void second(unsigned char x) { m_second = x; }
 
     LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
+    LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    LocalDateTime toStartOfDate() { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
+    std::string toString() const
+    {
+        std::string s{"0000-00-00 00:00:00"};
+
+        s[0] += m_year / 1000;
+        s[1] += (m_year / 100) % 10;
+        s[2] += (m_year / 10) % 10;
+        s[3] += m_year % 10;
+        s[5] += m_month / 10;
+        s[6] += m_month % 10;
+        s[8] += m_day / 10;
+        s[9] += m_day % 10;
+
+        s[11] += m_hour / 10;
+        s[12] += m_hour % 10;
+        s[14] += m_minute / 10;
+        s[15] += m_minute % 10;
+        s[17] += m_second / 10;
+        s[18] += m_second % 10;
+
+        return s;
+    }
 
     bool operator< (const LocalDateTime & other) const
     {
