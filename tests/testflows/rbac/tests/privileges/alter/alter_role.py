@@ -17,7 +17,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=alter_role, flags=TE,
+        Suite(run=alter_role,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in alter_role.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=alter_role, flags=TE,
+        Suite(run=alter_role,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in alter_role.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
+    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("ALTER ROLE",),
 ])
@@ -58,14 +59,22 @@ def alter_role(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("ALTER ROLE without privilege"):
         alter_role_name = f"alter_role_{getuid()}"
+
         with role(node, alter_role_name):
 
-            with When("I check the user can't alter a role"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't alter a role"):
                 node.query(f"ALTER ROLE {alter_role_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
     with Scenario("ALTER ROLE with privilege"):
         alter_role_name = f"alter_role_{getuid()}"
+
         with role(node, alter_role_name):
 
             with When(f"I grant {privilege}"):
@@ -93,6 +102,7 @@ def alter_role(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("ALTER ROLE with revoked privilege"):
         alter_role_name = f"alter_role_{getuid()}"
+
         with role(node, alter_role_name):
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
@@ -108,6 +118,8 @@ def alter_role(self, privilege, grant_target_name, user_name, node=None):
 @Name("alter role")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterRole("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of ALTER ROLE.

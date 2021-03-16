@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageS3Settings.h>
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
 #include <ext/shared_ptr_helper.h>
@@ -57,7 +58,10 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 private:
-    S3::URI uri;
+    const S3::URI uri;
+    const String access_key_id;
+    const String secret_access_key;
+    const UInt64 max_connections;
     const Context & global_context;
 
     String format_name;
@@ -66,6 +70,9 @@ private:
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
     String name;
+    S3AuthSettings auth_settings;
+
+    void updateAuthSettings(const Context & context);
 };
 
 }

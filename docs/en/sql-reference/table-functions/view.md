@@ -37,7 +37,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT * FROM view(SELECT name FROM months)
+SELECT * FROM view(SELECT name FROM months);
 ```
 
 Result:
@@ -54,14 +54,15 @@ Result:
 You can use the `view` function as a parameter of the [remote](https://clickhouse.tech/docs/en/sql-reference/table-functions/remote/#remote-remotesecure) and [cluster](https://clickhouse.tech/docs/en/sql-reference/table-functions/cluster/#cluster-clusterallreplicas) table functions:
 
 ``` sql
-SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name))
+SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
 ```
 
 ``` sql
-SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name))
+SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 ```
 
 **See Also**
 
 -   [View Table Engine](https://clickhouse.tech/docs/en/engines/table-engines/special/view/)
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/view/) <!--hide-->
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/view/) <!--hide-->
