@@ -20,17 +20,6 @@ PostgreSQLConnection::PostgreSQLConnection(
 }
 
 
-PostgreSQLConnection::PostgreSQLConnection(
-        ConnectionPtr connection_,
-        const String & connection_str_,
-        const String & address_)
-    : connection(std::move(connection_))
-    , connection_str(connection_str_)
-    , address(address_)
-{
-}
-
-
 PostgreSQLConnection::PostgreSQLConnection(const PostgreSQLConnection & other)
         : connection_str(other.connection_str)
         , address(other.address)
@@ -40,31 +29,31 @@ PostgreSQLConnection::PostgreSQLConnection(const PostgreSQLConnection & other)
 
 PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::get()
 {
-    connect();
+    connectIfNeeded();
     return connection;
 }
 
 
 PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::tryGet()
 {
-    if (tryConnect())
+    if (tryConnectIfNeeded())
         return connection;
     return nullptr;
 }
 
 
-void PostgreSQLConnection::connect()
+void PostgreSQLConnection::connectIfNeeded()
 {
     if (!connection || !connection->is_open())
         connection = std::make_shared<pqxx::connection>(connection_str);
 }
 
 
-bool PostgreSQLConnection::tryConnect()
+bool PostgreSQLConnection::tryConnectIfNeeded()
 {
     try
     {
-        connect();
+        connectIfNeeded();
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {

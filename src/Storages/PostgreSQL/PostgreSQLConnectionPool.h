@@ -7,13 +7,15 @@
 #if USE_LIBPQXX
 #include <Common/ConcurrentBoundedQueue.h>
 #include "PostgreSQLConnection.h"
-#include <pqxx/pqxx> // Y_IGNORE
+
 
 namespace DB
 {
+class PostgreSQLReplicaConnection;
 
 class PostgreSQLConnectionPool
 {
+friend class PostgreSQLReplicaConnection;
 
 public:
 
@@ -23,36 +25,25 @@ public:
 
     PostgreSQLConnectionPool operator =(const PostgreSQLConnectionPool &) = delete;
 
-    /// Will throw if unable to setup connection.
-    PostgreSQLConnection::ConnectionPtr get();
+    WrappedPostgreSQLConnection get();
 
-    /// Will return nullptr if connection was not established.
-    PostgreSQLConnection::ConnectionPtr tryGet();
-
-    void put(PostgreSQLConnection::ConnectionPtr connection);
-
-    bool connected();
-
-    std::string & conn_str() { return connection_str; }
+protected:
+    bool isConnected();
 
 private:
     static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
     static constexpr inline auto POSTGRESQL_POOL_WAIT_POP_PUSH_MS = 100;
 
-    using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
+    using Pool = std::vector<PostgreSQLConnectionPtr>;
 
     static std::string formatConnectionString(
         std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
 
-    /// Try get connection from connection pool with timeout.
-    /// If pool is empty after timeout, make a new connection.
-    PostgreSQLConnectionPtr popConnection();
-
-    /// Put connection object back into pool.
-    void pushConnection(PostgreSQLConnectionPtr connection);
+    void initialize();
 
     std::string connection_str, address;
     Pool pool;
+    std::mutex mutex;
 };
 
 using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;
