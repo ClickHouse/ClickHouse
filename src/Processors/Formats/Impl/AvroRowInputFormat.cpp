@@ -597,21 +597,15 @@ AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, 
 {
 }
 
-void AvroRowInputFormat::resetParser()
+void AvroRowInputFormat::readPrefix()
 {
-    IRowInputFormat::resetParser();
-    file_reader_ptr.reset();
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
+    deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
+    file_reader_ptr->init();
 }
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
-    if (!file_reader_ptr)
-    {
-        file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
-        deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
-        file_reader_ptr->init();
-    }
-
     if (file_reader_ptr->hasMore())
     {
         file_reader_ptr->decr();
