@@ -13,6 +13,39 @@
 === Try load data from alltypes_plain.snappy.parquet
 6	1	0	0	0	0	0	0	04/01/09	0	1238544000
 7	0	1	1	1	10	1.1	10.1	04/01/09	1	1238544060
+=== Try load data from array_float.parquet
+idx1	[]
+idx2	[10.2,8.2,7.2]
+idx3	[10.2,8.2]
+idx4	[10.2]
+idx5	[10.2,8.2]
+idx6	[10.2]
+idx7	[10.2,8.2]
+idx8	[10.2,8.2]
+idx9	[10.2]
+idx10	[10.2,8.2]
+=== Try load data from array_int.parquet
+idx1	[100,101,102]
+idx2	[100,101]
+idx3	[100,101,102,101]
+idx4	[100]
+idx5	[100,101]
+idx6	[100,101]
+idx7	[100,101]
+idx8	[100,101]
+idx9	[100,101,102]
+idx10	[100,101,102]
+=== Try load data from array_string.parquet
+idx1	['This','is','a','test']
+idx2	['cigarette','smoke']
+idx3	['the','grocery','clerks']
+idx4	[]
+idx5	['wants','to','get','out']
+idx6	['me','up?']
+idx7	['then','I','put','him','back']
+idx8	['make','a','man']
+idx9	['Which','Heaven','to','gaudy','day','denies']
+idx10	['This','is','a','test']
 === Try load data from binary.parquet
 \0
 
