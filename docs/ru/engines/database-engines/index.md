@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u0414\u0432\u0438\u0436\u043a\u0438\u0020\u0431\u0430\u0437\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_folder_title: "Движки баз данных"
 toc_priority: 27
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Движки баз данных {#dvizhki-baz-dannykh}
@@ -18,4 +18,3 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/database_engines/) <!--hide-->

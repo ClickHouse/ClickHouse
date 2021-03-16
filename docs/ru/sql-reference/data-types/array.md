@@ -76,4 +76,3 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/array/) <!--hide-->

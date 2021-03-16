@@ -17,4 +17,3 @@ ClickHouse supports:
 -   [Built-in dictionaries](../../sql-reference/dictionaries/internal-dicts.md#internal_dicts) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
 -   [Plug-in (external) dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md#dicts-external-dicts) with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

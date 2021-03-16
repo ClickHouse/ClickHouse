@@ -872,7 +872,12 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64)
+    bool is_integer_field = Field::dispatch([](const auto & value)
+    {
+        return is_integer_v<std::decay_t<decltype(value)>>;
+    }, index);
+
+    if (!is_integer_field)
         return false;
 
     MatcherNumberConst<DataType> matcher{data_numeric->getData(), get<DataType>(index)};
@@ -910,6 +915,10 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<Int16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
 }
 
@@ -925,6 +934,10 @@ bool FunctionArrayElement::matchKeyToIndexConst(
         || matchKeyToIndexNumberConst<Int16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int256>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt256>(data, offsets, index, matched_idxs)
         || matchKeyToIndexStringConst(data, offsets, index, matched_idxs);
 }
 
@@ -949,7 +962,7 @@ ColumnPtr FunctionArrayElement::executeMap(
     {
         if (input_rows_count > 0 && !matchKeyToIndex(keys_data, offsets, arguments, indices_data))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments: {}, {} for function ",
+                "Illegal types of arguments: {}, {} for function {}",
                 arguments[0].type->getName(), arguments[1].type->getName(), getName());
     }
     else
