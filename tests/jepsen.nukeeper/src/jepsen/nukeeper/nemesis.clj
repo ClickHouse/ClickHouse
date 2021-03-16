@@ -4,7 +4,6 @@
             [jepsen.nukeeper.utils :refer :all]))
 
 
-
 (defn random-single-node-killer-nemesis
   []
   (nemesis/node-start-stopper

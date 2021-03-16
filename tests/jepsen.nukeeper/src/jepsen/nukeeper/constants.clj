@@ -5,5 +5,8 @@
 (def logdir "/var/log/clickhouse-server")
 (def logfile "/var/log/clickhouse-server/stderr.log")
 (def serverlog "/var/log/clickhouse-server/clickhouse-server.log")
+(def snapshotsdir "/var/lib/clickhouse/coordination/snapshots")
+(def coordinationdir "/var/lib/clickhouse/coordination")
+(def logsdir "/var/lib/clickhouse/coordination/logs")
 (def pidfile (str dir "/clickhouse.pid"))
 (def binary-path "/tmp")
