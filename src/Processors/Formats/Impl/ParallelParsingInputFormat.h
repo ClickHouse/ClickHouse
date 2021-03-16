@@ -248,7 +248,7 @@ private:
 #ifdef __GNUC__
 #  pragma GCC diagnostic pop
 #endif
-    /// We use deque instead of vector, because it does not require a move
+    /// We use deque instead of vector, because it does not require neither move constructor nor copy
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
 
