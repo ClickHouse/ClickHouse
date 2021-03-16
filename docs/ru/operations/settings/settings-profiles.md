@@ -77,4 +77,3 @@ SET profile = 'web'
 
 Профиль `web` — обычный профиль, который может быть установлен с помощью запроса `SET` или параметра URL при запросе по HTTP.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_profiles/) <!--hide-->

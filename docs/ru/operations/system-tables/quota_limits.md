@@ -17,4 +17,3 @@
 -   `max_read_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Максимальное количество байтов, считываемых из всех таблиц и табличных функций, участвующих в запросе.
 -   `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса, в секундах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/quota_limits) <!--hide-->
