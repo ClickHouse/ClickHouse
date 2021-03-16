@@ -843,6 +843,8 @@ def main(args):
     if total_tests_run == 0:
         print("No tests were run.")
         sys.exit(1)
+    else:
+        print("All tests have finished.")
 
     sys.exit(exit_code)
 
