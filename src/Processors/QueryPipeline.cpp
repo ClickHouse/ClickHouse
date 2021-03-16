@@ -182,8 +182,11 @@ void QueryPipeline::addExtremesTransform()
 {
     checkInitializedAndNotCompleted();
 
+    /// It is possible that pipeline already have extremes.
+    /// For example, it may be added from VIEW subquery.
+    /// In this case, recalculate extremes again - they should be calculated for different rows.
     if (pipe.getExtremesPort())
-        throw Exception("Extremes transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
+        pipe.dropExtremes();
 
     resize(1);
     auto transform = std::make_shared<ExtremesTransform>(getHeader());
@@ -298,7 +301,7 @@ void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
     pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
     pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
 
-    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams);
+    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
     addTransform(std::move(processor));
 }
 

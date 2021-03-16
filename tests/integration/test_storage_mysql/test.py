@@ -148,6 +148,13 @@ def test_table_function(started_cluster):
     assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '60000'
     conn.close()
 
+def test_binary_type(started_cluster):
+    conn = get_mysql_conn()
+    with conn.cursor() as cursor:
+        cursor.execute("CREATE TABLE clickhouse.binary_type (id INT PRIMARY KEY, data BINARY(16) NOT NULL)")
+    table_function = "mysql('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('binary_type')
+    node1.query("INSERT INTO {} VALUES (42, 'clickhouse')".format('TABLE FUNCTION ' + table_function))
+    assert node1.query("SELECT * FROM {}".format(table_function)) == '42\tclickhouse\\0\\0\\0\\0\\0\\0\n'
 
 def test_enum_type(started_cluster):
     table_name = 'test_enum_type'

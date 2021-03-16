@@ -37,7 +37,15 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
-service clickhouse-server restart && sleep 5
+
+service clickhouse-server restart
+
+# Wait for server to start accepting connections
+for _ in {1..120}; do
+    clickhouse-client --query "SELECT 1" && break
+    sleep 1
+done
+
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
@@ -52,4 +60,16 @@ fi
 # more idiologically correct.
 read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    ADDITIONAL_OPTIONS+=('--replicated-database')
+fi
+
 clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+
+./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
+if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
+    tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
+fi

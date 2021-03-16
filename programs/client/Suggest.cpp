@@ -1,5 +1,6 @@
 #include "Suggest.h"
 
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 
@@ -86,6 +87,9 @@ Suggest::Suggest()
 
 void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
 {
+    /// NOTE: Once you will update the completion list,
+    /// do not forget to update 01676_clickhouse_client_autocomplete.sh
+
     std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
@@ -103,6 +107,18 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         "SELECT name FROM system.settings"
         " UNION ALL "
         "SELECT cluster FROM system.clusters"
+        " UNION ALL "
+        "SELECT name FROM system.errors"
+        " UNION ALL "
+        "SELECT event FROM system.events"
+        " UNION ALL "
+        "SELECT metric FROM system.asynchronous_metrics"
+        " UNION ALL "
+        "SELECT metric FROM system.metrics"
+        " UNION ALL "
+        "SELECT macro FROM system.macros"
+        " UNION ALL "
+        "SELECT policy_name FROM system.storage_policies"
         " UNION ALL "
         "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
 
@@ -123,12 +139,17 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
     query << ") WHERE notEmpty(res)";
 
-    fetch(connection, timeouts, query.str());
+    Settings settings;
+    /// To show all rows from:
+    /// - system.errors
+    /// - system.events
+    settings.system_events_show_zero_values = true;
+    fetch(connection, timeouts, query.str(), settings);
 }
 
-void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
+void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings)
 {
-    connection.sendQuery(timeouts, query);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, &settings);
 
     while (true)
     {

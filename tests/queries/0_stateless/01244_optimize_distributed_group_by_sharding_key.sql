@@ -1,9 +1,5 @@
 -- TODO: correct testing with real unique shards
 
--- Avoid "Connection failed at try №1" messages.
-SET send_logs_level = 'fatal';
-SET connect_timeout_with_failover_ms = 5000;
-
 set optimize_distributed_group_by_sharding_key=1;
 
 drop table if exists dist_01247;
@@ -68,7 +64,7 @@ select 'OFFSET';
 select count(), * from dist_01247 group by number offset 1;
 -- this will emulate different data on for different shards
 select 'WHERE LIMIT OFFSET';
-select count(), * from dist_01247 where number = _shard_num-1 group by number limit 1 offset 1;
+select count(), * from dist_01247 where number = _shard_num-1 group by number order by number limit 1 offset 1;
 
 select 'LIMIT BY 1';
 select count(), * from dist_01247 group by number order by number limit 1 by number;

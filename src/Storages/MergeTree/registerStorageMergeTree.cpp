@@ -60,6 +60,27 @@ static Names extractColumnNames(const ASTPtr & node)
     }
 }
 
+/** Is used to order Graphite::Retentions by age and precision descending.
+  * Throws exception if not both age and precision are less or greater then another.
+  */
+static bool compareRetentions(const Graphite::Retention & a, const Graphite::Retention & b)
+{
+    if (a.age > b.age && a.precision > b.precision)
+    {
+        return true;
+    }
+    else if (a.age < b.age && a.precision < b.precision)
+    {
+        return false;
+    }
+    String error_msg = "age and precision should only grow up: "
+        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
+        + std::to_string(b.age) + ":" + std::to_string(b.precision);
+    throw Exception(
+        error_msg,
+        ErrorCodes::BAD_ARGUMENTS);
+}
+
 /** Read the settings for Graphite rollup from config.
   * Example
   *
@@ -157,8 +178,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
 }
@@ -231,25 +251,6 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 )";
 
     return help;
-}
-
-
-static void randomizePartTypeSettings(const std::unique_ptr<MergeTreeSettings> & storage_settings)
-{
-    static constexpr auto MAX_THRESHOLD_FOR_ROWS = 100000;
-    static constexpr auto MAX_THRESHOLD_FOR_BYTES = 1024 * 1024 * 10;
-
-    /// Create all parts in wide format with probability 1/3.
-    if (thread_local_rng() % 3 == 0)
-    {
-        storage_settings->min_rows_for_wide_part = 0;
-        storage_settings->min_bytes_for_wide_part = 0;
-    }
-    else
-    {
-        storage_settings->min_rows_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_ROWS}(thread_local_rng);
-        storage_settings->min_bytes_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_BYTES}(thread_local_rng);
-    }
 }
 
 
@@ -446,7 +447,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (is_extended_storage_def && arg_cnt == 0)
+        else if (is_extended_storage_def && (arg_cnt == 0 || !engine_args[arg_num]->as<ASTLiteral>() || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
@@ -469,16 +470,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             arg_cnt += 2;
         }
         else
-            throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool allow_uuid_macro = is_on_cluster || args.query.attach;
+        bool is_replicated_database = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
         if (!args.attach)
         {
+            if (is_replicated_database && !is_extended_storage_def)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
+
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
@@ -668,25 +674,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
-
-        size_t index_granularity_bytes = 0;
-        size_t min_index_granularity_bytes = 0;
-
-        index_granularity_bytes = storage_settings->index_granularity_bytes;
-        min_index_granularity_bytes = storage_settings->min_index_granularity_bytes;
-
-        /* the min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default
-         * if index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
-         * min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
-         * index_granularity_bytes SETTING of 1b can create really large parts with large marks.
-        */
-        if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
-        {
-            throw Exception(
-                "index_granularity_bytes: " + std::to_string(index_granularity_bytes)
-                    + " is lesser than specified min_index_granularity_bytes: " + std::to_string(min_index_granularity_bytes),
-                ErrorCodes::BAD_ARGUMENTS);
-        }
     }
     else
     {
@@ -735,20 +722,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
         ++arg_num;
+
+        if (args.storage_def->ttl_table && !args.attach)
+            throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    /// Allow to randomize part type for tests to cover more cases.
-    /// But if settings were set explicitly restrict it.
-    if (storage_settings->randomize_part_type
-        && !storage_settings->min_rows_for_wide_part.changed
-        && !storage_settings->min_bytes_for_wide_part.changed)
+    DataTypes data_types = metadata.partition_key.data_types;
+    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
     {
-        randomizePartTypeSettings(storage_settings);
-        LOG_INFO(&Poco::Logger::get(args.table_id.getNameForLogs() + " (registerStorageMergeTree)"),
-            "Applied setting 'randomize_part_type'. "
-            "Setting 'min_rows_for_wide_part' changed to {}. "
-            "Setting 'min_bytes_for_wide_part' changed to {}.",
-            storage_settings->min_rows_for_wide_part, storage_settings->min_bytes_for_wide_part);
+        for (size_t i = 0; i < data_types.size(); ++i)
+            if (isFloat(data_types[i]))
+                throw Exception(
+                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (arg_num != arg_cnt)
@@ -789,6 +774,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_skipping_indices = true,
         .supports_sort_order = true,
         .supports_ttl = true,
+        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("MergeTree", create, features);

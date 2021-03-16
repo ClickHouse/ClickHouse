@@ -60,6 +60,7 @@ SRCS(
     ASTTTLElement.cpp
     ASTTablesInSelectQuery.cpp
     ASTUserNameWithHost.cpp
+    ASTWindowDefinition.cpp
     ASTWithAlias.cpp
     ASTWithElement.cpp
     CommonParsers.cpp

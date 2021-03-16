@@ -2,7 +2,7 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTRowPolicyName.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <Access/User.h>
@@ -31,7 +31,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
-    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    query.replaceEmptyDatabase(context.getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names)
     {

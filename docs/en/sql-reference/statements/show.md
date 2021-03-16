@@ -231,7 +231,7 @@ Shows privileges for a user.
 ### Syntax {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]]
 ```
 
 If user is not specified, the query returns privileges for the current user.
@@ -245,7 +245,7 @@ Shows parameters that were used at a [user creation](../../sql-reference/stateme
 ### Syntax {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE USER [name | CURRENT_USER]
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
@@ -255,7 +255,7 @@ Shows parameters that were used at a [role creation](../../sql-reference/stateme
 ### Syntax {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE ROLE name
+SHOW CREATE ROLE name1 [, name2 ...]
 ```
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
@@ -265,7 +265,7 @@ Shows parameters that were used at a [row policy creation](../../sql-reference/s
 ### Syntax {#show-create-row-policy-syntax}
 
 ``` sql
-SHOW CREATE [ROW] POLICY name ON [database.]table
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
@@ -275,7 +275,7 @@ Shows parameters that were used at a [quota creation](../../sql-reference/statem
 ### Syntax {#show-create-quota-syntax}
 
 ``` sql
-SHOW CREATE QUOTA [name | CURRENT]
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
@@ -285,7 +285,7 @@ Shows parameters that were used at a [settings profile creation](../../sql-refer
 ### Syntax {#show-create-settings-profile-syntax}
 
 ``` sql
-SHOW CREATE [SETTINGS] PROFILE name
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
 
 ## SHOW USERS {#show-users-statement}
@@ -307,7 +307,6 @@ Returns a list of [roles](../../operations/access-rights.md#role-management). To
 ``` sql
 SHOW [CURRENT|ENABLED] ROLES
 ```
-
 ## SHOW PROFILES {#show-profiles-statement}
 
 Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
@@ -347,5 +346,151 @@ Returns a [quota](../../operations/quotas.md) consumption for all users or for c
 ``` sql
 SHOW [CURRENT] QUOTA
 ```
+## SHOW ACCESS {#show-access-statement}
 
-[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+Shows all [users](../../operations/access-rights.md#user-account-management), [roles](../../operations/access-rights.md#role-management), [profiles](../../operations/access-rights.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Syntax {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
+```
+## SHOW CLUSTER(s) {#show-cluster-statement}
+
+Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
+
+!!! info "Note"
+    `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
+
+### Syntax {#show-cluster-syntax}
+
+``` sql
+SHOW CLUSTER '<name>'
+SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+```
+### Examples 
+
+Query:
+
+``` sql
+SHOW CLUSTERS;
+```
+
+Result:
+
+```text
+┌─cluster──────────────────────────────────────┐
+│ test_cluster_two_shards                      │
+│ test_cluster_two_shards_internal_replication │
+│ test_cluster_two_shards_localhost            │
+│ test_shard_localhost                         │
+│ test_shard_localhost_secure                  │
+│ test_unavailable_shard                       │
+└──────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SHOW CLUSTERS LIKE 'test%' LIMIT 1;
+```
+
+Result:
+
+```text
+┌─cluster─────────────────┐
+│ test_cluster_two_shards │
+└─────────────────────────┘
+```
+
+Query:
+
+``` sql
+SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
+```
+
+Result:
+
+```text
+Row 1:
+──────
+cluster:                 test_shard_localhost
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               localhost
+host_address:            127.0.0.1
+port:                    9000
+is_local:                1
+user:                    default
+default_database:
+errors_count:            0
+estimated_recovery_time: 0
+```
+
+## SHOW SETTINGS {#show-settings}
+
+Returns a list of system settings and their values. Selects data from the [system.settings](../../operations/system-tables/settings.md) table.
+
+**Syntax**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Clauses**
+
+`LIKE|ILIKE` allow to specify a matching pattern for the setting name. It can contain globs such as `%` or `_`. `LIKE` clause is case-sensitive, `ILIKE` — case insensitive.
+
+When the `CHANGED` clause is used, the query returns only settings changed from their default values.
+
+**Examples**
+
+Query with the `LIKE` clause:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Result:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Query with the `ILIKE` clause:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Result:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Query with the `CHANGED` clause:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Result:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**See Also**
+
+-   [system.settings](../../operations/system-tables/settings.md) table
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/show/) <!--hide-->

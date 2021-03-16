@@ -25,6 +25,7 @@ public:
     bool supportsPrewhere() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
@@ -37,7 +38,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked

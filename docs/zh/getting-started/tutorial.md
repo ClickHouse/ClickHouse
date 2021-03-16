@@ -254,7 +254,6 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 ``` sql
@@ -450,7 +449,6 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 您可以使用`clickhouse-client`的交互模式执行这些查询（只需在终端中启动它，而不需要提前指定查询）。或者如果你愿意，可以尝试一些[替代接口](../interfaces/index.md)。

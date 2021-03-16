@@ -4,6 +4,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 
@@ -55,10 +56,13 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             auto subquery_it = data.subqueries.find(table_id.table_name);
             if (subquery_it != data.subqueries.end())
             {
+                auto old_alias = table.database_and_table_name->tryGetAlias();
                 table.children.clear();
                 table.database_and_table_name.reset();
                 table.subquery = subquery_it->second->clone();
-                dynamic_cast<ASTWithAlias &>(*table.subquery).alias = table_id.table_name;
+                table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
+                if (!old_alias.empty())
+                    table.subquery->setAlias(old_alias);
                 table.children.emplace_back(table.subquery);
             }
         }
@@ -78,8 +82,11 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 auto subquery_it = data.subqueries.find(table_id.table_name);
                 if (subquery_it != data.subqueries.end())
                 {
+                    auto old_alias = func.arguments->children[1]->tryGetAlias();
                     func.arguments->children[1] = subquery_it->second->clone();
-                    dynamic_cast<ASTWithAlias &>(*func.arguments->children[1]).alias = table_id.table_name;
+                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = table_id.table_name;
+                    if (!old_alias.empty())
+                        func.arguments->children[1]->setAlias(old_alias);
                 }
             }
         }

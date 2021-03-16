@@ -1,6 +1,6 @@
 ---
 toc_priority: 66
-toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Прочие функции"
 ---
 
 # Прочие функции {#other-functions}
@@ -182,6 +182,103 @@ SELECT visibleWidth(NULL)
 
 Получить размер блока.
 В ClickHouse выполнение запроса всегда идёт по блокам (наборам кусочков столбцов). Функция позволяет получить размер блока, для которого её вызвали.
+
+## byteSize {#function-bytesize}
+
+Возвращает оценку в байтах размера аргументов в памяти в несжатом виде.
+
+**Синтаксис**
+
+```sql
+byteSize(argument [, ...])
+```
+
+**Параметры**
+
+-   `argument` — значение.
+
+**Возвращаемое значение**
+
+-   Оценка размера аргументов в памяти в байтах.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Для аргументов типа [String](../../sql-reference/data-types/string.md) функция возвращает длину строки + 9 (нуль-терминатор + длина)
+
+Запрос:
+
+```sql
+SELECT byteSize('string');
+```
+
+Результат:
+
+```text
+┌─byteSize('string')─┐
+│                 15 │
+└────────────────────┘
+```
+
+Запрос:
+
+```sql
+CREATE TABLE test
+(
+    `key` Int32,
+    `u8` UInt8,
+    `u16` UInt16,
+    `u32` UInt32,
+    `u64` UInt64,
+    `i8` Int8,
+    `i16` Int16,
+    `i32` Int32,
+    `i64` Int64,
+    `f32` Float32,
+    `f64` Float64
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
+
+SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+key:               1
+byteSize(UInt8):   1
+byteSize(UInt16):  2
+byteSize(UInt32):  4
+byteSize(UInt64):  8
+byteSize(Int8):    1
+byteSize(Int16):   2
+byteSize(Int32):   4
+byteSize(Int64):   8
+byteSize(Float32): 4
+byteSize(Float64): 8
+```
+
+Если функция принимает несколько аргументов, то она возвращает их совокупный размер в байтах.
+
+Запрос:
+
+```sql
+SELECT byteSize(NULL, 1, 0.3, '');
+```
+
+Результат:
+
+```text
+┌─byteSize(NULL, 1, 0.3, '')─┐
+│                         19 │
+└────────────────────────────┘
+```
 
 ## materialize(x) {#materializex}
 
@@ -562,7 +659,7 @@ SELECT
 
 ## neighbor {#neighbor}
 
-Функция позволяет получить доступ к значению в колонке `column`, находящемуся на смещении `offset` относительно текущей строки. Является частичной реализацией [оконных функций](https://en.wikipedia.org/wiki/SQL_window_function) `LEAD()` и `LAG()`.
+Функция позволяет получить доступ к значению в столбце `column`, находящемуся на смещении `offset` относительно текущей строки. Является частичной реализацией [оконных функций](https://en.wikipedia.org/wiki/SQL_window_function) `LEAD()` и `LAG()`.
 
 **Синтаксис**
 
@@ -570,7 +667,13 @@ SELECT
 neighbor(column, offset[, default_value])
 ```
 
-Результат функции зависит от затронутых блоков данных и порядка данных в блоке. Если сделать подзапрос с ORDER BY и вызывать функцию извне подзапроса, можно будет получить ожидаемый результат.
+Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
+
+!!! warning "Предупреждение"
+    Функция может получить доступ к значению в столбце соседней строки только внутри обрабатываемого в данный момент блока данных.
+
+Порядок строк, используемый при вычислении функции `neighbor`, может отличаться от порядка строк, возвращаемых пользователю.
+Чтобы этого не случилось, вы можете сделать подзапрос с [ORDER BY](../../sql-reference/statements/select/order-by.md) и вызвать функцию изне подзапроса.
 
 **Параметры**
 
@@ -675,8 +778,13 @@ FROM numbers(16)
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
 
+!!! warning "Предупреждение"
+    Функция может взять значение предыдущей строки только внутри текущего обработанного блока данных.
+
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
-Если сделать подзапрос с ORDER BY и вызывать функцию извне подзапроса, можно будет получить ожидаемый результат.
+
+Порядок строк, используемый при вычислении функции `runningDifference`, может отличаться от порядка строк, возвращаемых пользователю.
+Чтобы этого не случилось, вы можете сделать подзапрос с [ORDER BY](../../sql-reference/statements/select/order-by.md) и вызвать функцию извне подзапроса.
 
 Пример:
 
@@ -1104,7 +1212,104 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Принимает состояние агрегатной функции. Возвращает результат агрегирования.
+Принимает состояние агрегатной функции. Возвращает результат агрегирования (или конечное состояние при использовании комбинатора [-State](../../sql-reference/aggregate-functions/combinators.md#state)).
+
+**Синтаксис** 
+
+``` sql
+finalizeAggregation(state)
+```
+
+**Параметры**
+
+-   `state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+
+**Возвращаемые значения**
+
+-   Значения, которые были агрегированы.
+
+Тип: соответствует типу агрегируемых значений.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(_subquery16)─┐
+│                               10 │
+└──────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(_subquery20)─┐
+│                               45 │
+└──────────────────────────────────┘
+```
+
+Обратите внимание, что значения `NULL` игнорируются. 
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
+│                                                          2 │
+└────────────────────────────────────────────────────────────┘
+```
+
+Комбинированный пример:
+
+Запрос:
+
+```sql
+WITH initializeAggregation('sumState', number) AS one_row_sum_state
+SELECT
+    number,
+    finalizeAggregation(one_row_sum_state) AS one_row_sum,
+    runningAccumulate(one_row_sum_state) AS cumulative_sum
+FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─one_row_sum─┬─cumulative_sum─┐
+│      0 │           0 │              0 │
+│      1 │           1 │              1 │
+│      2 │           2 │              3 │
+│      3 │           3 │              6 │
+│      4 │           4 │             10 │
+│      5 │           5 │             15 │
+│      6 │           6 │             21 │
+│      7 │           7 │             28 │
+│      8 │           8 │             36 │
+│      9 │           9 │             45 │
+└────────┴─────────────┴────────────────┘
+```
+
+**Смотрите также**
+
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1589,4 +1794,63 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 10	10	19	19	39	39
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->
+## errorCodeToName {#error-code-to-name}
+
+**Возвращаемое значение**
+
+-   Название переменной для кода ошибки.
+
+Тип: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Синтаксис**
+
+``` sql
+errorCodeToName(1)
+```
+
+Результат:
+
+``` text
+UNSUPPORTED_METHOD
+```
+
+## tcpPort {#tcpPort}
+
+Вовращает номер TCP порта, который использует сервер для [нативного протокола](../../interfaces/tcp.md).
+
+**Синтаксис**
+
+``` sql
+tcpPort()
+```
+
+**Параметры**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Номер TCP порта.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT tcpPort();
+```
+
+Результат:
+
+``` text
+┌─tcpPort()─┐
+│      9000 │
+└───────────┘
+```
+
+**Смотрите также**
+
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+

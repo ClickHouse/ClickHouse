@@ -23,9 +23,28 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
+### Install clang-11 (recommended) {#install-clang-11}
+
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
+
+```bash 
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
+
+For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
+
+#### Use clang-11 for Builds {#use-gcc-10-for-builds}
+
+``` bash
+$ export CC=clang-11
+$ export CXX=clang++-11
+```
+
 ### Install GCC 10 {#install-gcc-10}
 
-There are several ways to do this.
+We recommend building ClickHouse with clang-11, GCC-10 also supported, but it is not used for production builds.
+
+If you want to use GCC-10 there are several ways to install it.
 
 #### Install from Repository {#install-from-repository}
 
@@ -49,7 +68,7 @@ $ sudo apt-get install gcc-10 g++-10
 
 See [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-### Use GCC 10 for Builds {#use-gcc-10-for-builds}
+#### Use GCC 10 for Builds {#use-gcc-10-for-builds}
 
 ``` bash
 $ export CC=gcc-10
@@ -151,7 +170,7 @@ $ ./release
 Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. Two common ways to improve linking time are to use `lld` linker, and use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into serveral shared libraries. To enable these tweaks, pass the following flags to `cmake`:
 
 ```
--DCMAKE_C_FLAGS="-fuse-ld=lld" -DCMAKE_CXX_FLAGS="-fuse-ld=lld" -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+-DCMAKE_C_FLAGS="--ld-path=lld" -DCMAKE_CXX_FLAGS="--ld-path=lld" -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}

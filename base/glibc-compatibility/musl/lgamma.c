@@ -258,11 +258,3 @@ double lgamma_r(double x, int *signgamp)
 		r = nadj - r;
 	return r;
 }
-
-
-int signgam;
-
-double lgamma(double x)
-{
-	return lgamma_r(x, &signgam);
-}

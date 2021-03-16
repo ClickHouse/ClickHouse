@@ -10,6 +10,7 @@
 
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 REPLICAS=5
@@ -103,8 +104,10 @@ done
 sleep 1
 
 counter=0
+have_undone_mutations_query="select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0 and database='${CLICKHOUSE_DATABASE}'"
+have_all_tables_query="select count() FROM system.tables WHERE name LIKE 'concurrent_mutate_mt_%' and database='${CLICKHOUSE_DATABASE}'"
 
-while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0" 2>&1) ]]; do
+while true ; do
     if [ "$counter" -gt 120 ]
     then
         break
@@ -113,7 +116,13 @@ while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where tabl
     for i in $(seq $REPLICAS); do
         $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$i" 2> /dev/null
     done
+
     counter=$(($counter + 1))
+
+    # no active mutations and all tables attached
+    if [[ -z $($CLICKHOUSE_CLIENT --query "$have_undone_mutations_query" 2>&1) && $($CLICKHOUSE_CLIENT --query "$have_all_tables_query" 2>&1) == "$REPLICAS" ]]; then
+        break
+    fi
 done
 
 for i in $(seq $REPLICAS); do

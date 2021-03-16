@@ -208,8 +208,8 @@ This function returns the value for the specified `id`s and the date range that 
 Details of the algorithm:
 
 -   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   If there are overlapping ranges, it returns value for any (random) range.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
 
 Configuration example:
 
@@ -406,6 +406,14 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
+        <!-- This option increases memory usage. -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 or
@@ -435,6 +443,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
-Data is stored in a `trie`. It must completely fit into RAM.
+Data must completely fit into RAM.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

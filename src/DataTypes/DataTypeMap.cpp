@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -38,6 +39,8 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
     key_type = elems_[0];
     value_type = elems_[1];
 
+    assertKeyType();
+
     nested = std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(DataTypes{key_type, value_type}, Names{"keys", "values"}));
 }
@@ -45,7 +48,19 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
 DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_)
     : key_type(key_type_), value_type(value_type_)
     , nested(std::make_shared<DataTypeArray>(
-        std::make_shared<DataTypeTuple>(DataTypes{key_type_, value_type_}, Names{"keys", "values"}))) {}
+        std::make_shared<DataTypeTuple>(DataTypes{key_type_, value_type_}, Names{"keys", "values"})))
+{
+    assertKeyType();
+}
+
+void DataTypeMap::assertKeyType() const
+{
+    if (!key_type->isValueRepresentedByInteger() && !isStringOrFixedString(*key_type) && !WhichDataType(key_type).isNothing())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Type of Map key must be a type, that can be represented by integer or string,"
+            " but {} given", key_type->getName());
+}
+
 
 std::string DataTypeMap::doGetName() const
 {
@@ -63,6 +78,16 @@ static const IColumn & extractNestedColumn(const IColumn & column)
 static IColumn & extractNestedColumn(IColumn & column)
 {
     return assert_cast<ColumnMap &>(column).getNestedColumn();
+}
+
+DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    return nested->tryGetSubcolumnType(subcolumn_name);
+}
+
+ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
 }
 
 void DataTypeMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -204,7 +229,7 @@ void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuf
 
 void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
+    // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
@@ -226,7 +251,7 @@ void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, Writ
 
 void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
+    // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
@@ -278,34 +303,34 @@ void DataTypeMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const 
 }
 
 
-void DataTypeMap::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     nested->enumerateStreams(callback, path);
 }
 
-void DataTypeMap::serializeBinaryBulkStatePrefix(
+void DataTypeMap::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     nested->serializeBinaryBulkStatePrefix(settings, state);
 }
 
-void DataTypeMap::serializeBinaryBulkStateSuffix(
+void DataTypeMap::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     nested->serializeBinaryBulkStateSuffix(settings, state);
 }
 
-void DataTypeMap::deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+void DataTypeMap::deserializeBinaryBulkStatePrefixImpl(
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
 {
     nested->deserializeBinaryBulkStatePrefix(settings, state);
 }
 
 
-void DataTypeMap::serializeBinaryBulkWithMultipleStreams(
+void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -315,23 +340,15 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreams(
     nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
 }
 
-void DataTypeMap::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
-    nested->deserializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), limit, settings, state);
-}
-
-void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
-}
-
-void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
+    auto & column_map = assert_cast<ColumnMap &>(column);
+    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const

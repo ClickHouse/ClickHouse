@@ -18,6 +18,7 @@
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/getHashOfLoadedBinary.h>
 
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
@@ -61,6 +62,14 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
+
+int mainEntryClickHouseHashBinary(int, char **)
+{
+    /// Intentionally without newline. So you can run:
+    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
+    std::cout << getHashOfLoadedBinaryHex();
+    return 0;
+}
 
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
@@ -110,6 +119,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
 #endif
+    {"hash-binary", mainEntryClickHouseHashBinary},
 };
 
 
@@ -308,53 +318,11 @@ void checkRequiredInstructions()
     }
 }
 
-#ifdef __linux__
-/// clickhouse uses jemalloc as a production allocator
-/// and jemalloc relies on working MADV_DONTNEED,
-/// which doesn't work under qemu
-///
-/// but do this only under for linux, since only it return zeroed pages after MADV_DONTNEED
-/// (and jemalloc assumes this too, see contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in)
-void checkRequiredMadviseFlags()
-{
-    size_t size = 1 << 16;
-    void * addr = mmap(nullptr, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    if (addr == MAP_FAILED)
-    {
-        writeError("Can not mmap pages for MADV_DONTNEED check\n");
-        _Exit(1);
-    }
-    memset(addr, 'A', size);
-
-    if (!madvise(addr, size, MADV_DONTNEED))
-    {
-        /// Suboptimal, but should be simple.
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (reinterpret_cast<unsigned char *>(addr)[i] != 0)
-            {
-                writeError("MADV_DONTNEED does not zeroed page. jemalloc will be broken\n");
-                _Exit(1);
-            }
-        }
-    }
-
-    if (munmap(addr, size))
-    {
-        writeError("Can not munmap pages for MADV_DONTNEED check\n");
-        _Exit(1);
-    }
-}
-#endif
-
 struct Checker
 {
     Checker()
     {
         checkRequiredInstructions();
-#ifdef __linux__
-        checkRequiredMadviseFlags();
-#endif
     }
 } checker;
 

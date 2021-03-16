@@ -71,6 +71,12 @@ public:
         return chars.size() + offsets.size() * sizeof(offsets[0]);
     }
 
+    size_t byteSizeAt(size_t n) const override
+    {
+        assert(n < size());
+        return sizeAt(n) + sizeof(offsets[0]);
+    }
+
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + offsets.allocated_bytes();
@@ -183,6 +189,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         size_t string_size = sizeAt(n);
@@ -234,6 +242,8 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
 
+    bool hasEqualValues() const override;
+
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
 
@@ -254,6 +264,8 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
 
