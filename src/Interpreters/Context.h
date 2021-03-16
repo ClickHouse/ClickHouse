@@ -93,6 +93,8 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class AccessControlManager;
+class Credentials;
+class GSSAcceptorContext;
 class SettingsConstraints;
 class RemoteHostFilter;
 struct StorageID;
@@ -179,7 +181,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    boost::container::flat_set<UUID> current_roles;
+    std::vector<UUID> current_roles;
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
@@ -322,8 +324,11 @@ public:
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
 
-    /// Sets external authenticators config (LDAP).
+    /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Creates GSSAcceptorContext instance based on external authenticator params.
+    std::unique_ptr<GSSAcceptorContext> makeGSSAcceptorContext() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -332,11 +337,12 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the password and that the specified host is allowed.
-    /// Must be called before getClientInfo.
+    /// Sets the current user, checks the credentials and that the specified host is allowed.
+    /// Must be called before getClientInfo() can be called.
+    void setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address);
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
 
-    /// Sets the current user, *do not checks the password and that the specified host is allowed*.
+    /// Sets the current user, *does not check the password/credentials and that the specified host is allowed*.
     /// Must be called before getClientInfo.
     ///
     /// (Used only internally in cluster, if the secret matches)
@@ -348,7 +354,7 @@ public:
     String getUserName() const;
     std::optional<UUID> getUserID() const;
 
-    void setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_);
+    void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
@@ -782,9 +788,6 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
-
-    /// If the password is not set, the password will not be checked
-    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
 };
 
 

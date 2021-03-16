@@ -449,13 +449,13 @@ Result:
 └─────────────────────┴────────────────────────────────────────────┘
 ```
 
-**See also**
+**See Also**
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
 ## date\_add {#date_add}
 
-Adds specified date/time interval to the provided date.
+Adds the time interval or date interval to the provided date or date with time.
 
 **Syntax** 
 
@@ -468,21 +468,35 @@ Aliases: `dateAdd`, `DATE_ADD`.
 **Arguments**
 
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+    Possible values:
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
--   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
--   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+	
+-   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).  
+-   `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-Returns Date or DateTime with `value` expressed in `unit` added to `date`. 
+Date or date with time obtained by adding `value`, expressed in `unit`, to `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
+Query:
+
 ```sql
-select date_add(YEAR, 3, toDate('2018-01-01'));
+SELECT date_add(YEAR, 3, toDate('2018-01-01'));
 ```
+
+Result:
 
 ```text
 ┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
@@ -492,7 +506,7 @@ select date_add(YEAR, 3, toDate('2018-01-01'));
 
 ## date\_diff {#date_diff}
 
-Returns the difference between two Date or DateTime values.
+Returns the difference between two dates or dates with time values.
 
 **Syntax**
 
@@ -500,25 +514,33 @@ Returns the difference between two Date or DateTime values.
 date_diff('unit', startdate, enddate, [timezone])
 ```
 
-Aliases: `dateDiff`, `DATE_DIFF`. 
+Aliases: `dateDiff`, `DATE_DIFF`.
 
 **Arguments**
 
--   `unit` — The type of interval for result [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
+    Possible values:
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
 -   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 -   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
--   `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
 Difference between `enddate` and `startdate` expressed in `unit`.
 
-Type: `int`.
+Type: [Int](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -538,7 +560,7 @@ Result:
 
 ## date\_sub {#date_sub}
 
-Subtracts a time/date interval from the provided date.
+Subtracts the time interval or date interval from the provided date or date with time.
 
 **Syntax**
 
@@ -546,19 +568,30 @@ Subtracts a time/date interval from the provided date.
 date_sub(unit, value, date)
 ```
 
-Aliases: `dateSub`, `DATE_SUB`. 
+Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
 -   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+    Possible values:
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
--   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
--   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md) to subtract value from.
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+	
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).    
+-   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-Returns Date or DateTime with `value` expressed in `unit` subtracted from `date`. 
+Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -590,21 +623,35 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 **Arguments**
     
--   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
--   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)
+-   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+    Possible values:
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
 **Returned value**
 
-Returns Date or DateTime with the specified `value`  expressed in `unit` added to `date`. 
+Date or date with time with the specified `value` expressed in `unit` added to `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
     
 **Example**
+
+Query:
 
 ```sql
 select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 ```
+
+Result:
 
 ```text
 ┌─plus(toDate('2018-01-01'), toIntervalMonth(3))─┐
@@ -614,7 +661,7 @@ select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 
 ## timestamp\_sub {#timestamp_sub}
 
-Returns the difference between two dates in the specified unit.
+Subtracts the time interval from the provided date or date with time.
 
 **Syntax** 
 
@@ -626,21 +673,36 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Arguments**
 
--   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+    Possible values:
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
--   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md).   
--   `date`- [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+	
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).   
+-   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-Difference between `date` and the specified `value` expressed in `unit`.
+Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
+
+Query:
 
 ```sql
 select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
 ```
+
+Result:
 
 ```text
 ┌─minus(toDateTime('2018-12-18 01:02:03'), toIntervalMonth(5))─┐
@@ -1008,4 +1070,3 @@ Result:
 └────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->

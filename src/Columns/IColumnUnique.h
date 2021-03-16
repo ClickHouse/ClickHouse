@@ -172,6 +172,11 @@ public:
     {
         throw Exception("Method compareColumn is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    bool hasEqualValues() const override
+    {
+        throw Exception("Method hasEqualValues is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;
