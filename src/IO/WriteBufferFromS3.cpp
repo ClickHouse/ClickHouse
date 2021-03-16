@@ -50,11 +50,11 @@ WriteBufferFromS3::WriteBufferFromS3(
     , key(key_)
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size{minimum_upload_part_size_}
-    , temporary_buffer{std::make_unique<WriteBufferFromOwnString>()}
+    , temporary_buffer{Aws::MakeShared<Aws::StringStream>("temporary_buffer")}
     , last_part_size{0}
 {
-    if (is_multipart)
-        initiate();
+    // if (is_multipart)
+        // initiate();
 }
 
 
@@ -67,16 +67,16 @@ void WriteBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
 
-    if (is_multipart)
-    {
-        last_part_size += offset();
+    last_part_size += offset();
 
-        if (last_part_size > minimum_upload_part_size)
-        {
-            writePart(temporary_buffer->str());
-            last_part_size = 0;
-            temporary_buffer->restart();
-        }
+    if (upload_id.empty() && last_part_size > maximum_single_part_upload_size)
+        initiate();
+
+    if (!upload_id.empty() && last_part_size > minimum_upload_part_size)
+    {
+        writePart();
+        last_part_size = 0;
+        temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     }
 }
 
@@ -85,8 +85,9 @@ void WriteBufferFromS3::finalize()
 {
     next();
 
-    if (is_multipart)
-        writePart(temporary_buffer->str());
+    if (!upload_id.empty())
+        // writePart();
+		writePartParallel();
 
     complete();
 }
@@ -123,9 +124,9 @@ void WriteBufferFromS3::initiate()
 }
 
 
-void WriteBufferFromS3::writePart(const String & data)
+void WriteBufferFromS3::writePart()
 {
-    if (data.empty())
+    if (!temporary_buffer->tellp())
         return;
 
     if (part_tags.size() == S3_WARN_MAX_PARTS)
@@ -140,12 +141,12 @@ void WriteBufferFromS3::writePart(const String & data)
     req.SetKey(key);
     req.SetPartNumber(part_tags.size() + 1);
     req.SetUploadId(upload_id);
-    req.SetContentLength(data.size());
-    req.SetBody(std::make_shared<Aws::StringStream>(data));
+    req.SetContentLength(temporary_buffer->tellp());
+    req.SetBody(temporary_buffer);
 
     auto outcome = client_ptr->UploadPart(req);
 
-    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, data.size());
+    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, temporary_buffer->tellp());
 
     if (outcome.IsSuccess())
     {
@@ -157,10 +158,70 @@ void WriteBufferFromS3::writePart(const String & data)
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
+void WriteBufferFromS3::writePartParallel()
+{
+    if (temporary_buffer->tellp() <= 0)
+        return;
+
+    LOG_DEBUG(log, "writePartParallel");
+    // FILE * f = fopen("/home/fenglv/multipart.txt", "a+");
+    // fprintf(f, "in writePartParallel\n");
+    // fclose(f);
+
+    auto string = temporary_buffer->str();
+    auto total_size = string.size();
+    const char * data = string.data();
+
+    auto upload_thread = [&](size_t subpart_id, size_t part_number) {
+        /// split buffer
+        auto buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
+
+        size_t buffer_size = (subpart_size * (subpart_id + 1)) > total_size ? total_size - (subpart_size * subpart_id) : subpart_size;
+
+        buffer->write(data + (subpart_size * subpart_id), buffer_size);
+
+        Aws::S3::Model::UploadPartRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+        req.SetPartNumber(part_number);
+        req.SetUploadId(upload_id);
+        req.SetContentLength(buffer->tellp());
+        req.SetBody(buffer);
+
+        auto outcome = client_ptr->UploadPart(req);
+
+        LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, buffer->tellp());
+
+        if (outcome.IsSuccess())
+        {
+            auto etag = outcome.GetResult().GetETag();
+            part_tags[part_number - 1] = etag;
+            LOG_DEBUG(log, "Writing part finished. Total parts: {}, Upload_id: {}, Etag: {}", part_tags.size(), upload_id, etag);
+        }
+        else
+            throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+    };
+
+    size_t subpart_number = std::min(
+        S3_WARN_MAX_PARTS - part_tags.size(), (total_size % subpart_size) ? total_size / subpart_size + 1 : total_size / subpart_size);
+    size_t current_part_number = part_tags.size();
+
+    part_tags.resize(current_part_number + subpart_number);
+
+    std::vector<std::thread> threads;
+    threads.reserve(subpart_number);
+    for (size_t subpart_id = 0; subpart_id < subpart_number; ++subpart_id)
+    {
+        threads.emplace_back(upload_thread, subpart_id, current_part_number + subpart_id + 1);
+    }
+
+    for (auto & t : threads)
+        t.join();
+}
 
 void WriteBufferFromS3::complete()
 {
-    if (is_multipart)
+    if (!upload_id.empty())
     {
         if (part_tags.empty())
         {
@@ -213,9 +274,9 @@ void WriteBufferFromS3::complete()
         req.SetKey(key);
 
         /// This could be improved using an adapter to WriteBuffer.
-        const std::shared_ptr<Aws::IOStream> input_data = Aws::MakeShared<Aws::StringStream>("temporary buffer", temporary_buffer->str());
-        temporary_buffer = std::make_unique<WriteBufferFromOwnString>();
-        req.SetBody(input_data);
+        // const std::shared_ptr<Aws::IOStream> input_data = Aws::MakeShared<Aws::StringStream>("temporary buffer", temporary_buffer->str());
+        // temporary_buffer = std::make_unique<WriteBufferFromOwnString>();
+        req.SetBody(temporary_buffer);
 
         auto outcome = client_ptr->PutObject(req);
 

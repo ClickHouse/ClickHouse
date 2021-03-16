@@ -319,7 +319,7 @@ else ()
 endif ()
 
 if (WERROR)
-    add_warning(error)
+	#add_warning(error)
 endif ()
 
 # Make this extra-checks for correct library dependencies.

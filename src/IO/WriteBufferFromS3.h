@@ -11,6 +11,7 @@
 #    include <IO/HTTPCommon.h>
 #    include <IO/WriteBuffer.h>
 #    include <IO/WriteBufferFromString.h>
+#    include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 namespace Aws::S3
 {
@@ -19,6 +20,8 @@ class S3Client;
 
 namespace DB
 {
+const size_t subpart_size = 4 * 1024 * 1024;
+const size_t maximum_single_part_upload_size = 32 * 1024 * 1024;
 /* Perform S3 HTTP PUT request.
  */
 class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
@@ -30,7 +33,7 @@ private:
     String key;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     size_t minimum_upload_part_size;
-    std::unique_ptr<WriteBufferFromOwnString> temporary_buffer;
+    std::shared_ptr<Aws::StringStream> temporary_buffer;
     size_t last_part_size;
 
     /// Upload in S3 is made in parts.
@@ -58,7 +61,8 @@ public:
 
 private:
     void initiate();
-    void writePart(const String & data);
+    void writePart();
+    void writePartParallel();
     void complete();
 };
 
