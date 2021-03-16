@@ -1,5 +1,6 @@
 #include <memory>
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <random>
 #include <iostream>
@@ -14,14 +15,10 @@
 
 #include <Common/Stopwatch.h>
 
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wcast-align"
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#include "FastMemcpy.h"
-//#include "FastMemcpy_Avx.h"
-
 #include <emmintrin.h>
 #include <immintrin.h>
+
+#include <boost/program_options.hpp>
 
 
 template <typename F, typename MemcpyImpl>
@@ -36,6 +33,9 @@ void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_d
         dst += bytes_to_copy;
         src += bytes_to_copy;
         size -= bytes_to_copy;
+
+        /// Execute at least one SSE instruction as a penalty after running AVX code.
+        __asm__ volatile ("pxor %%xmm7, %%xmm7" ::: "xmm7");
     }
 }
 
@@ -47,7 +47,7 @@ size_t generatorUniform(RNG & rng) { return rng() % N; };
 
 
 template <typename F, typename MemcpyImpl>
-void test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator, MemcpyImpl && impl)
+uint64_t test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator, MemcpyImpl && impl, const char * name)
 {
     Stopwatch watch;
 
@@ -76,15 +76,15 @@ void test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t n
     for (auto & thread : threads)
         thread.join();
 
-    double elapsed_ns = watch.elapsed();
+    uint64_t elapsed_ns = watch.elapsed();
 
     /// Validation
-    size_t sum = 0;
     for (size_t i = 0; i < size; ++i)
-        sum += dst[i];
+        if (dst[i] != uint8_t(i))
+            throw std::logic_error("Incorrect result");
 
-    std::cerr << std::fixed << std::setprecision(3)
-        << "Processed in " << (elapsed_ns / 1e9) << "sec, " << (size * iterations * 1.0 / elapsed_ns) << " GB/sec (sum = " << sum << ")\n";
+    std::cout << name;
+    return elapsed_ns;
 }
 
 
@@ -101,8 +101,29 @@ static void * memcpy_erms(void * dst, const void * src, size_t size)
     return dst;
 }
 
+static void * memcpy_trivial(void * __restrict dst_, const void * __restrict src_, size_t size)
+{
+    char * __restrict dst = reinterpret_cast<char * __restrict>(dst_);
+    const char * __restrict src = reinterpret_cast<const char * __restrict>(src_);
+    void * ret = dst;
+
+    while (size > 0)
+    {
+        *dst = *src;
+        ++dst;
+        ++src;
+        --size;
+    }
+
+    return ret;
+}
+
 extern "C" void * memcpy_jart(void * dst, const void * src, size_t size);
 extern "C" void MemCpy(void * dst, const void * src, size_t size);
+
+void * memcpy_fast_sse(void * dst, const void * src, size_t size);
+void * memcpy_fast_avx(void * dst, const void * src, size_t size);
+void * memcpy_tiny(void * dst, const void * src, size_t size);
 
 
 static void * memcpySSE2(void * __restrict destination, const void * __restrict source, size_t size)
@@ -329,7 +350,7 @@ void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const uint8_t *
     if (padding > 0)
     {
         __m256i head = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src));
-        _mm256_storeu_si256((__m256i*)dst, head);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst), head);
         dst += padding;
         src += padding;
         size -= padding;
@@ -539,70 +560,141 @@ tail:
     return ret;
 }
 
+extern "C" void * __memcpy_erms(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_sse2_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_ssse3(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_ssse3_back(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_avx_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_avx_unaligned_erms(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_avx512_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size);
+
+
+#define VARIANT(N, NAME) \
+    if (memcpy_variant == N) \
+        return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
 
 template <typename F>
-void dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator)
+uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator)
 {
-    memcpy_type memcpy_libc = reinterpret_cast<memcpy_type>(dlsym(RTLD_NEXT, "memcpy"));
+    memcpy_type memcpy_libc_old = reinterpret_cast<memcpy_type>(dlsym(RTLD_NEXT, "memcpy"));
 
-    if (memcpy_variant == 1)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpy);
-    if (memcpy_variant == 2)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpy_libc);
-    if (memcpy_variant == 3)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpy_erms);
-    if (memcpy_variant == 4)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), MemCpy);
-    if (memcpy_variant == 5)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpySSE2);
-    if (memcpy_variant == 6)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpySSE2Unrolled2);
-    if (memcpy_variant == 7)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpySSE2Unrolled4);
-    if (memcpy_variant == 8)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpySSE2Unrolled8);
-//    if (memcpy_variant == 9)
-//        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpy_fast_avx);
-    if (memcpy_variant == 10)
-        test(dst, src, size, iterations, num_threads, std::forward<F>(generator), memcpy_my);
+    VARIANT(1, memcpy)
+    VARIANT(2, memcpy_trivial)
+    VARIANT(3, memcpy_libc_old)
+    VARIANT(4, memcpy_erms)
+    VARIANT(5, MemCpy)
+    VARIANT(6, memcpySSE2)
+    VARIANT(7, memcpySSE2Unrolled2)
+    VARIANT(8, memcpySSE2Unrolled4)
+    VARIANT(9, memcpySSE2Unrolled8)
+    VARIANT(10, memcpy_fast_sse)
+    VARIANT(11, memcpy_fast_avx)
+    VARIANT(12, memcpy_my)
+
+    VARIANT(21, __memcpy_erms)
+    VARIANT(22, __memcpy_sse2_unaligned)
+    VARIANT(23, __memcpy_ssse3)
+    VARIANT(24, __memcpy_ssse3_back)
+    VARIANT(25, __memcpy_avx_unaligned)
+    VARIANT(26, __memcpy_avx_unaligned_erms)
+    VARIANT(27, __memcpy_avx512_unaligned)
+    VARIANT(28, __memcpy_avx512_unaligned_erms)
+    VARIANT(29, __memcpy_avx512_no_vzeroupper)
+
+    return 0;
 }
 
-void dispatchVariants(size_t memcpy_variant, size_t generator_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads)
+uint64_t dispatchVariants(
+    size_t memcpy_variant, size_t generator_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads)
 {
     if (generator_variant == 1)
-        dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<16>);
+        return dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<16>);
     if (generator_variant == 2)
-        dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<256>);
+        return dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<256>);
     if (generator_variant == 3)
-        dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<4096>);
+        return dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<4096>);
     if (generator_variant == 4)
-        dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<65536>);
+        return dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<65536>);
     if (generator_variant == 5)
-        dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<1048576>);
+        return dispatchMemcpyVariants(memcpy_variant, dst, src, size, iterations, num_threads, generatorUniform<1048576>);
+
+    return 0;
 }
 
 
 int main(int argc, char ** argv)
 {
-    size_t size = 1000000000;
-    if (argc >= 2)
-        size = std::stoull(argv[1]);
+    boost::program_options::options_description desc("Allowed options");
+    desc.add_options()("help,h", "produce help message")
+        ("size", boost::program_options::value<size_t>()->default_value(1000000), "Bytes to copy on every iteration")
+        ("iterations", boost::program_options::value<size_t>(), "Number of iterations")
+        ("threads", boost::program_options::value<size_t>()->default_value(1), "Number of copying threads")
+        ("distribution", boost::program_options::value<size_t>()->default_value(4), "Distribution of chunk sizes to perform copy")
+        ("variant", boost::program_options::value<size_t>(), "Variant of memcpy implementation")
+        ("tsv", "Print result in tab-separated format")
+        ;
 
-    size_t iterations = 10;
-    if (argc >= 3)
-        iterations = std::stoull(argv[2]);
+    boost::program_options::variables_map options;
+    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    size_t num_threads = 1;
-    if (argc >= 4)
-        num_threads = std::stoull(argv[3]);
+    if (options.count("help") || !options.count("variant"))
+    {
+        std::cout << R"(Usage:
 
-    size_t memcpy_variant = 1;
-    if (argc >= 5)
-        memcpy_variant = std::stoull(argv[4]);
+for size in 4096 16384 50000 65536 100000 1000000 10000000 100000000; do
+    for threads in 1 2 4 $(($(nproc) / 2)) $(nproc); do
+        for distribution in 1 2 3 4 5; do
+            for variant in {1..12} {21..29}; do
+                for i in {1..10}; do
+                    ./memcpy-bench --tsv --size $size --variant $variant --threads $threads --distribution $distribution;
+                done;
+            done;
+        done;
+    done;
+done | tee result.tsv
 
-    size_t generator_variant = 1;
-    if (argc >= 6)
-        generator_variant = std::stoull(argv[5]);
+clickhouse-local --structure '
+    name String,
+    size UInt64,
+    iterations UInt64,
+    threads UInt16,
+    generator UInt8,
+    memcpy UInt8,
+    elapsed UInt64
+' --query "
+    SELECT
+        size, name,
+        avg(1000 * elapsed / size / iterations) AS s,
+        count() AS c
+    FROM table
+    GROUP BY size, name
+    ORDER BY size ASC, s DESC
+" --output-format PrettyCompact < result.tsv
+
+)" << std::endl;
+        std::cout << desc << std::endl;
+        return 1;
+    }
+
+    size_t size = options["size"].as<size_t>();
+    size_t num_threads = options["threads"].as<size_t>();
+    size_t memcpy_variant = options["variant"].as<size_t>();
+    size_t generator_variant = options["distribution"].as<size_t>();
+
+    size_t iterations;
+    if (options.count("iterations"))
+    {
+        iterations = options["iterations"].as<size_t>();
+    }
+    else
+    {
+        iterations = 10000000000ULL / size;
+
+        if (generator_variant == 1)
+            iterations /= 10;
+    }
 
     std::unique_ptr<uint8_t[]> src(new uint8_t[size]);
     std::unique_ptr<uint8_t[]> dst(new uint8_t[size]);
@@ -614,7 +706,25 @@ int main(int argc, char ** argv)
     /// Fill dst to avoid page faults.
     memset(dst.get(), 0, size);
 
-    dispatchVariants(memcpy_variant, generator_variant, dst.get(), src.get(), size, iterations, num_threads);
+    uint64_t elapsed_ns = dispatchVariants(memcpy_variant, generator_variant, dst.get(), src.get(), size, iterations, num_threads);
+
+    std::cout << std::fixed << std::setprecision(3);
+
+    if (options.count("tsv"))
+    {
+        std::cout
+            << '\t' << size
+            << '\t' << iterations
+            << '\t' << num_threads
+            << '\t' << generator_variant
+            << '\t' << memcpy_variant
+            << '\t' << elapsed_ns
+            << '\n';
+    }
+    else
+    {
+        std::cout << ": processed in " << (elapsed_ns / 1e9) << " sec, " << (size * iterations * 1.0 / elapsed_ns) << " GB/sec\n";
+    }
 
     return 0;
 }
