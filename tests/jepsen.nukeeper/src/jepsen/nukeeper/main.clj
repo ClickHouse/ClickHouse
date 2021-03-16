@@ -15,7 +15,8 @@
              [nemesis :as nemesis]
              [generator :as gen]
              [independent :as independent]
-             [tests :as tests]]
+             [tests :as tests]
+             [util :as util :refer [meh]]]
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
@@ -73,7 +74,11 @@
 
     db/LogFiles
     (log-files [_ test node]
-      [logfile serverlog])))
+      (c/su
+        (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
+        (c/cd dir
+            (c/exec :tar :czf "coordination.tar.gz" "coordination")))
+      [logfile serverlog (str dir "/coordination.tar.gz")])))
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."

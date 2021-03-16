@@ -9,18 +9,21 @@
               [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
-(defrecord SetClient [k conn]
+(defrecord SetClient [k conn nodename]
   client/Client
   (open! [this test node]
-    (assoc this :conn (zk-connect node 9181 30000)))
+    (assoc
+     (assoc this
+            :conn (zk-connect node 9181 30000))
+     :nodename node))
 
   (setup! [this test]
     (zk-create-if-not-exists conn k "#{}"))
 
-  (invoke! [_ test op]
+  (invoke! [this test op]
     (case (:f op)
       :read ;(try
-      (do (info "LIST ON NODE" (zk-list conn "/"))
+      (do (info "LIST ON NODE" nodename (zk-list conn "/"))
           (info "EXISTS NODE" (zk/exists conn "/a-set"))
           (assoc op
              :type :ok
@@ -40,7 +43,7 @@
 (defn workload
   "A generator, client, and checker for a set test."
   [opts]
-  {:client    (SetClient. "/a-set" nil)
+  {:client    (SetClient. "/a-set" nil nil)
    :checker   (checker/set)
    :generator (->> (range)
                    (map (fn [x] {:type :invoke, :f :add, :value x})))
