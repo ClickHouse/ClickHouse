@@ -2,6 +2,8 @@ import time
 
 import pytest
 import psycopg2
+from multiprocessing.dummy import Pool
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -162,6 +164,47 @@ def test_non_default_scema(started_cluster):
     ''')
     result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
     assert(result == expected)
+
+
+def test_concurrent_queries(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    node1.query('''
+        CREATE TABLE test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword')''')
+
+    cursor.execute('CREATE TABLE test_table (key integer, value integer)')
+
+    def node_insert(_):
+        for i in range(100):
+            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(100)", user='default')
+
+    busy_pool = Pool(10)
+    p = busy_pool.map_async(node_insert, range(10))
+    p.wait()
+    result = node1.query("SELECT count() FROM test_table", user='default')
+    print(result)
+    assert(int(result) == 10 * 100 * 100)
+
+    def node_select(_):
+        for i in range(5):
+            result = node1.query("SELECT * FROM test_table", user='default')
+
+    busy_pool = Pool(10)
+    p = busy_pool.map_async(node_select, range(10))
+    p.wait()
+
+    def node_insert_select(_):
+        for i in range(25):
+            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(100)", user='default')
+            result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
+
+    busy_pool = Pool(10)
+    p = busy_pool.map_async(node_insert_select, range(10))
+    p.wait()
+    result = node1.query("SELECT count() FROM test_table", user='default')
+    print(result)
+    assert(int(result) == 10 * 100 * 100  + 10 * 25 * 100)
 
 
 if __name__ == '__main__':
