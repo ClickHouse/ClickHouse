@@ -326,6 +326,7 @@ namespace S3
 
     URI::URI(const Poco::URI & uri_)
     {
+        full = uri_.toString();
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
@@ -398,6 +399,12 @@ namespace S3
         }
         else
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+
+    String URI::toString() const
+    {
+        return full;
     }
 }
 

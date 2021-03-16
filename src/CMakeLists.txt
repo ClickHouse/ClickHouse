@@ -423,7 +423,7 @@ endif ()
 
 if (USE_GRPC)
     dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
-    dbms_target_link_libraries (PUBLIC clickhouse_s3_task_server_protos)
+    dbms_target_link_libraries (PUBLIC clickhouse_s3_reader_protos)
 endif()
 
 if (USE_HDFS)

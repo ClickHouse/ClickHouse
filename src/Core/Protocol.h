@@ -76,8 +76,9 @@ namespace Protocol
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
             PartUUIDs = 12,           /// List of unique parts ids.
+            NextTaskReply = 13,    /// String that describes the next task (a file to read from S3)
 
-            MAX = PartUUIDs,
+            MAX = NextTaskReply,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -100,6 +101,7 @@ namespace Protocol
                 "Log",
                 "TableColumns",
                 "PartUUIDs",
+                "NextTaskReply"
             };
             return packet <= MAX
                 ? data[packet]
@@ -135,8 +137,9 @@ namespace Protocol
             KeepAlive = 6,           /// Keep the connection alive
             Scalar = 7,              /// A block of data (compressed or not).
             IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
+            NextTaskRequest = 9,     /// String which contains an id to request a new task
 
-            MAX = IgnoredPartUUIDs,
+            MAX = NextTaskRequest,
         };
 
         inline const char * toString(UInt64 packet)
@@ -151,6 +154,7 @@ namespace Protocol
                 "KeepAlive",
                 "Scalar",
                 "IgnoredPartUUIDs",
+                "NextTaskRequest"
             };
             return packet <= MAX
                 ? data[packet]

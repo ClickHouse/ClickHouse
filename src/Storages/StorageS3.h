@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include "TableFunctions/TableFunctionS3Distributed.h"
 
 #if USE_AWS_S3
 
@@ -9,6 +10,7 @@
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
 #include <ext/shared_ptr_helper.h>
+#include <IO/S3Common.h>
 
 namespace Aws::S3
 {
@@ -58,20 +60,30 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 private:
-    const S3::URI uri;
-    const String access_key_id;
-    const String secret_access_key;
-    const UInt64 max_connections;
+    struct ClientAuthentificaiton
+    {
+        const S3::URI uri;
+        const String access_key_id;
+        const String secret_access_key;
+        const UInt64 max_connections;
+        
+        std::shared_ptr<Aws::S3::S3Client> client;
+        S3AuthSettings auth_settings;
+    };
+
+    ClientAuthentificaiton client_auth;
 
     String format_name;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     String compression_method;
-    std::shared_ptr<Aws::S3::S3Client> client;
     String name;
-    S3AuthSettings auth_settings;
 
-    void updateAuthSettings(ContextPtr context);
+
+    friend class TableFunctionS3Distributed;
+
+    static Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri);
+    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };
 
 }
