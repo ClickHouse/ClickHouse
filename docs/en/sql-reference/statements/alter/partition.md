@@ -70,9 +70,6 @@ ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 Removes the specified part or all parts of the specified partition from `detached`.
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-Note: the command does NOT throw an exception if the specified part does not exist, 
-e.g. `ALTER TABLE mt DROP DETACHED PART[ITION] 'i_do_not_exist'` will succeed.
-
 ## ATTACH PARTITION\|PART {#alter_attach-partition}
 
 ``` sql

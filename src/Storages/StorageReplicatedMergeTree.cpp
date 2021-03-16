@@ -1357,43 +1357,33 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
 
 MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry& entry) const
 {
-    const MergeTreePartInfo target_part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-    const String& part_checksum = entry.part_checksum;
+    const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    const String part_new_name = actual_part_info.getPartName();
 
-    Poco::DirectoryIterator dir_end;
+    LOG_TRACE(log, "Trying to attach part {} from local data", part_new_name);
 
-    for (const String& path : getDataPaths())
-    {
-        for (Poco::DirectoryIterator it{path + "detached/"}; it != dir_end; ++it)
+    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+        for (const auto it = disk->iterateDirectory(relative_data_path + "detached/"); it->isValid(); it->next())
         {
-            MergeTreePartInfo part_iter;
+            MergeTreePartInfo part_info;
 
-            if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_iter, format_version) ||
-                part_iter.partition_id != target_part.partition_id)
+            if (!MergeTreePartInfo::tryParsePartName(it->name(), &part_info, format_version) ||
+                part_info.partition_id != actual_part_info.partition_id)
                 continue;
 
-            const String& part_name = part_iter.getPartName();
-            const String part_to_path = "detached/" + part_name;
+            const String part_old_name = part_info.getPartName();
+            const String part_path = "detached/" + part_old_name;
 
-            auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name,
-                getDiskForPart(part_name, "detached/"));
+            const VolumePtr volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
+            MergeTreeData::MutableDataPartPtr part = createPart(part_new_name, part_info, volume, part_path);
 
-            MergeTreeData::MutableDataPartPtr iter_part_ptr =
-                createPart(part_name, part_iter, single_disk_volume, part_to_path);
+            // We don't check consistency as in that case this method will throw.
+            // The faster way is to load invalid data and just check the checksums -- they won't match.
+            part->loadColumnsChecksumsIndexes(true, false);
 
-            const String iter_part_checksums = iter_part_ptr->checksums.getTotalChecksumHex();
-
-            LOG_TRACE(log, "Candidate part: {}, path: {}, checksums: {}", part_name, part_to_path, iter_part_checksums);
-
-            for (auto && [name, checksum] : iter_part_ptr->checksums.files)
-                LOG_TRACE(log, "> File {}, file size {}", name, checksum.file_size);
-
-            if (part_checksum != iter_part_checksums)
-                continue;
-
-            return iter_part_ptr;
+            if (entry.part_checksum == part->checksums.getTotalChecksumHex())
+                return part;
         }
-    }
 
     return {};
 }
@@ -1437,8 +1427,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     if (entry.type == LogEntry::ATTACH_PART)
     {
-        LOG_TRACE(log, "Trying to find part in detached/");
-
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
         {
             LOG_TRACE(log, "Found valid part {} to attach from local data, preparing the transaction",
@@ -1446,7 +1434,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this);
 
-            // don't need the replaced parts
             renameTempPartAndReplace(part, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
