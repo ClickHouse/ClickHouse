@@ -11,6 +11,10 @@
    (fn start [test node] (kill-clickhouse! node test))
    (fn stop [test node] (start-clickhouse! node test))))
 
+(defn hammer-time-nemesis
+  []
+  (nemesis/hammer-time "clickhouse"))
+
 (def custom-nemesises
   {"killer" {:nemesis (random-single-node-killer-nemesis)
              :generator
