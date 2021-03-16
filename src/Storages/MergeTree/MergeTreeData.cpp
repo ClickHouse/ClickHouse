@@ -3712,8 +3712,6 @@ MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & parti
     else
         id = getPartitionIDFromQuery(partition_ast, context);
 
-    LOG_DEBUG(log, "(Un)Freezing parts with {} {}", prefixed ? "prefix" : "partition ID", id);
-
     return [prefixed, id](const String & partition_id)
     {
         if (prefixed)
