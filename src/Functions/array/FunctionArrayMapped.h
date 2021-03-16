@@ -202,13 +202,13 @@ public:
                 {
                     const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                     if (!column_const_array)
-                        throw Exception("X2 Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
                     column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
                 if (!array_type)
-                    throw Exception("X3 Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception("Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (!offsets_column)
                 {
