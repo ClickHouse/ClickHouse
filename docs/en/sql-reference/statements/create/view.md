@@ -163,7 +163,7 @@ SELECT * FROM [db.]live_view WHERE ...
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
-### WITH TIMEOUT {#live-view-with-timeout}
+### WITH TIMEOUT Clause {#live-view-with-timeout}
 
 When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
 
@@ -180,7 +180,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 ```
 
-### WITH REFRESH {#live-view-with-refresh}
+### WITH REFRESH Clause {#live-view-with-refresh}
 
 When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
 
