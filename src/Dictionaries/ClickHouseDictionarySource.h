@@ -55,7 +55,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockInputStreamPtr createStreamForQuery(const String & query);
+    BlockInputStreamPtr createStreamForSelectiveLoad(const std::string & query);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

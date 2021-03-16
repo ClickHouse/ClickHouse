@@ -54,8 +54,8 @@ public:
     explicit RemoteQueryExecutorReadContext(IConnections & connections_);
     ~RemoteQueryExecutorReadContext();
 
-    bool checkTimeout(bool blocking = false) const;
-    bool checkTimeoutImpl(bool blocking) const;
+    bool checkTimeout() const;
+    bool checkTimeoutImpl() const;
 
     void setConnectionFD(int fd, const Poco::Timespan & timeout = 0, const std::string & fd_description = "");
     void setTimer() const;

@@ -51,12 +51,6 @@ const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 }
 
 template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
-{
-    return pos + sizeof(T);
-}
-
-template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);

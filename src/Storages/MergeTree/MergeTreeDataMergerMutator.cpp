@@ -1895,8 +1895,8 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsSizesOnDisk();
-    new_data_part->storage.lockSharedData(*new_data_part);
 }
+
 
 bool MergeTreeDataMergerMutator::checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const
 {

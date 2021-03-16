@@ -9,10 +9,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
@@ -37,7 +35,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int DIRECTORY_ALREADY_EXISTS;
@@ -407,7 +404,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 }
             }
 
-            remove(false);
+            remove();
 
             if (state == State::DeleteOnDestroy)
             {
@@ -937,8 +934,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::COMPACT)
-            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + volume->getDisk()->getName(),
-                ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
@@ -1019,12 +1015,10 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
-
-    storage.lockSharedData(*this);
 }
 
 
-void IMergeTreeDataPart::remove(bool keep_s3) const
+void IMergeTreeDataPart::remove() const
 {
     if (!isStoredOnDisk())
         return;
@@ -1054,7 +1048,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
         try
         {
-            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
+            volume->getDisk()->removeRecursive(to + "/");
         }
         catch (...)
         {
@@ -1077,7 +1071,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
+        volume->getDisk()->removeRecursive(to + "/");
     }
     else
     {
@@ -1090,16 +1084,16 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
+                volume->getDisk()->removeFile(to + "/" + file);
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
+                volume->getDisk()->removeFile(to + "/" + file);
 
-            volume->getDisk()->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            volume->getDisk()->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+            volume->getDisk()->removeFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+            volume->getDisk()->removeFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
             volume->getDisk()->removeDirectory(to);
         }
@@ -1109,7 +1103,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
+            volume->getDisk()->removeRecursive(to + "/");
         }
     }
 }
@@ -1174,6 +1168,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
         disk->removeRecursive(path_to_clone + relative_path + '/');
     }
     disk->createDirectories(path_to_clone);
+
     volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
     volume->getDisk()->removeFileIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
@@ -1310,21 +1305,6 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     return true;
 }
 
-String IMergeTreeDataPart::getUniqueId() const
-{
-    String id;
-
-    auto disk = volume->getDisk();
-
-    if (disk->getType() == DB::DiskType::Type::S3)
-        id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
-
-    return id;
-}
-
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
@@ -1341,4 +1321,3 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
-
