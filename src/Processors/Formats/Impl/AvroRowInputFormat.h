@@ -108,7 +108,7 @@ class AvroRowInputFormat : public IRowInputFormat
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void resetParser() override;
+    void readPrefix() override;
 
     String getName() const override { return "AvroRowInputFormat"; }
 
