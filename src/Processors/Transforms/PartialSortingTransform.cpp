@@ -91,7 +91,7 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
 
 void PartialSortingTransform::transform(Chunk & chunk)
 {
-    const auto rows_num = chunk.getNumRows();
+    auto rows_num = chunk.getNumRows();
 
     if (read_rows)
         read_rows->add(rows_num);
@@ -117,13 +117,15 @@ void PartialSortingTransform::transform(Chunk & chunk)
         {
             for (auto & column : block)
                 column.column = column.column->filter(filter, result_size_hint);
+
+            rows_num = block.rows();
         }
     }
 
     sortBlock(block, description, limit);
 
     /// Check if we can use this block for optimization.
-    if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
+    if (min_limit_for_partial_sort_optimization <= limit && limit <= rows_num)
     {
         auto block_columns = extractColumns(block, description);
 
@@ -134,6 +136,8 @@ void PartialSortingTransform::transform(Chunk & chunk)
             threshold_block_columns.swap(block_columns);
         }
     }
+
+    assert(block.columns() == 0 || block.rows() == rows_num);
 
     chunk.setColumns(block.getColumns(), rows_num);
 }
