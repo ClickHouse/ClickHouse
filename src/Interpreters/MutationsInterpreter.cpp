@@ -755,7 +755,7 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
-    auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    auto pipeline = plan.buildQueryPipeline();
     pipeline->addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);

@@ -1,6 +1,5 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -109,8 +108,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        in->setAsyncCallback(std::move(async_callback));
-
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -211,12 +208,6 @@ void Connection::receiveHello()
 {
     /// Receive hello packet.
     UInt64 packet_type = 0;
-
-    /// Prevent read after eof in readVarUInt in case of reset connection
-    /// (Poco should throw such exception while reading from socket but
-    /// sometimes it doesn't for unknown reason)
-    if (in->eof())
-        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -544,12 +535,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->next();
-}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
@@ -803,10 +788,6 @@ Packet Connection::receivePacket()
             case Protocol::Server::EndOfStream:
                 return res;
 
-            case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
-                return res;
-
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -817,9 +798,6 @@ Packet Connection::receivePacket()
     }
     catch (Exception & e)
     {
-        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
-        e.setRemoteException();
-
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -909,7 +887,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

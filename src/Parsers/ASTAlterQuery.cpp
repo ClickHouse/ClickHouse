@@ -344,32 +344,30 @@ void ASTAlterCommand::formatImpl(
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const
+
+ASTPtr ASTAlterCommandList::clone() const
 {
-    if (command_list)
+    auto res = std::make_shared<ASTAlterCommandList>();
+    for (ASTAlterCommand * command : commands)
+        res->add(command->clone());
+    return res;
+}
+
+void ASTAlterCommandList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+    for (size_t i = 0; i < commands.size(); ++i)
     {
-        if (command_list->children.empty())
-            return false;
-        for (const auto & child : command_list->children)
-        {
-            const auto & command = child->as<const ASTAlterCommand &>();
-            if (command.type != type)
-                return false;
-        }
-        return true;
+        static_cast<IAST *>(commands[i])->formatImpl(settings, state, frame);
+
+        std::string comma = (i < (commands.size() - 1)) ? "," : "";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << comma << (settings.hilite ? hilite_none : "");
+
+        settings.ostr << settings.nl_or_ws;
     }
-    return false;
 }
 
-bool ASTAlterQuery::isSettingsAlter() const
-{
-    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING);
-}
-
-bool ASTAlterQuery::isFreezeAlter() const
-{
-    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL);
-}
 
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const

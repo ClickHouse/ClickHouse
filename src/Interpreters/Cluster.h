@@ -1,23 +1,13 @@
 #pragma once
 
 #include <map>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
 
-namespace Poco
-{
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
-}
-
 namespace DB
 {
-
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -276,7 +266,7 @@ public:
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
-    void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
+    void updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix);
 
 public:
     using Impl = std::map<String, ClusterPtr>;

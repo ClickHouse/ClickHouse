@@ -99,40 +99,38 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-
-    if (layout->parameters)
-        for (const auto & param : layout->parameters->children)
+    for (const auto & param : layout->parameters->children)
+    {
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
         {
-            const ASTPair * pair = param->as<ASTPair>();
-            if (!pair)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
-                    param->formatForErrorMessage());
-            }
-
-            const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
-            if (!value_literal)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be a literal, got '{}' instead",
-                    pair->second->formatForErrorMessage());
-            }
-
-            const auto value_field = value_literal->value;
-
-            if (value_field.getType() != Field::Types::UInt64
-                && value_field.getType() != Field::Types::String)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
-                    value_field.getTypeName());
-            }
-
-            AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-            AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
-            layout_type_parameter_element->appendChild(value_to_append);
-            layout_type_element->appendChild(layout_type_parameter_element);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
         }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second->formatForErrorMessage());
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64
+            && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
+        layout_type_element->appendChild(layout_type_parameter_element);
+    }
 }
 
 /*
@@ -401,16 +399,10 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         {
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
-            function->prepare({});
-
-            /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
-            /// Such functions will return column with size equal to input_rows_count.
-            size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
+            auto result = function->execute({}, {}, 0);
 
             Field value;
             result->get(0, value);
-
             AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
             current_xml_element->appendChild(text_value);
         }

@@ -1,0 +1,49 @@
+<test>
+  <!-- "Strict" mode (key and iv length checks), non-empty plaintext.
+  Ciphers that are slow on every input are put here. -->
+
+    <substitutions>
+        <substitution>
+          <name>func</name>
+          <values>
+              <!-- decrypt + encrypt since it is really hard to compose decrypt-only case -->
+              <value>decrypt('aes-128-cfb1', encrypt('aes-128-cfb1', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-192-cfb1', encrypt('aes-192-cfb1', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-256-cfb1', encrypt('aes-256-cfb1', materialize(plaintext), key32, iv16), key32, iv16)</value>
+
+           </values>
+        </substitution>
+
+        <substitution>
+           <name>table_fast</name>
+           <values>
+               <value>numbers(50000)</value>
+           </values>
+        </substitution>
+
+        <substitution>
+           <name>table_slow</name>
+           <values>
+               <value>numbers(25000)</value>
+           </values>
+        </substitution>
+
+        <substitution>
+           <name>plaintext_fast</name>
+           <values>
+              <value>number</value>
+              <value>'paintext'</value>
+           </values>
+        </substitution>
+
+        <substitution>
+           <name>plaintext_slow</name>
+           <values>
+              <value>'\x12\x2B\xF9\x16\x93\xA4\xD6\x74\x22\xD9\x17\x5E\x38\xCD\x1D\x7B\xB0\x12\xEC\x43\x6B\xC7\x76\xFD\xA1\xA2\x4E\xFC\xBC\x19\x92\x3A\x12\x8B\xD4\xB3\x62\xA8\x9D\xBB\x3E\x0C\x08\x12\x67\x20\x7D\x02\x58\xCF\xE7\xD6\x06\xB8\xB0\x14\x0A\x70\xA1\x81\x94\x14\x24\x74'</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>WITH {plaintext_fast} as plaintext, repeat('k', 32) as key32, substring(key32, 1, 24) as key24, substring(key32, 1, 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table_fast} WHERE NOT ignore({func})</query>
+    <query>WITH {plaintext_slow} as plaintext, repeat('k', 32) as key32, substring(key32, 1, 24) as key24, substring(key32, 1, 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table_slow} WHERE NOT ignore({func})</query>
+</test>

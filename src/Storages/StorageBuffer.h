@@ -76,8 +76,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
-
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void startup() override;
@@ -89,17 +87,24 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Names & deduplicate_by_columns,
         const Context & context) override;
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override;
+    bool supportsPrewhere() const override
+    {
+        if (!destination_id)
+            return false;
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
+        if (dest && dest.get() != this)
+            return dest->supportsPrewhere();
+        return false;
+    }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
@@ -112,7 +117,7 @@ public:
 
 
 private:
-    const Context & buffer_context;
+    const Context & global_context;
 
     struct Buffer
     {
@@ -151,7 +156,7 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void backgroundFlush();
+    void flushBack();
     void reschedule();
 
     BackgroundSchedulePool & bg_pool;

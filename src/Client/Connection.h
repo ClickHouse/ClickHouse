@@ -5,9 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -18,8 +16,8 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>
@@ -27,12 +25,12 @@
 #include <atomic>
 #include <optional>
 
+
 namespace DB
 {
 
 class ClientInfo;
 class Pipe;
-struct Settings;
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData
@@ -65,7 +63,6 @@ struct Packet
     std::vector<String> multistring_message;
     Progress progress;
     BlockStreamProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -157,8 +154,6 @@ public:
     void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
-    /// Send parts' uuids to excluded them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -192,16 +187,6 @@ public:
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
-
-    Poco::Net::Socket * getSocket() { return socket.get(); }
-
-    /// Each time read from socket blocks and async_callback is set, it will be called. You can poll socket inside it.
-    void setAsyncCallback(AsyncCallback async_callback_)
-    {
-        async_callback = std::move(async_callback_);
-        if (in)
-            in->setAsyncCallback(std::move(async_callback));
-    }
 
 private:
     String host;
@@ -239,7 +224,7 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
     std::optional<UInt64> last_input_packet_type;
 
@@ -290,8 +275,6 @@ private:
 
     LoggerWrapper log_wrapper;
 
-    AsyncCallback async_callback = {};
-
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
@@ -315,22 +298,6 @@ private:
     void initBlockLogsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
-};
-
-class AsyncCallbackSetter
-{
-public:
-    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
-    {
-        connection->setAsyncCallback(std::move(async_callback));
-    }
-
-    ~AsyncCallbackSetter()
-    {
-        connection->setAsyncCallback({});
-    }
-private:
-    Connection * connection;
 };
 
 }

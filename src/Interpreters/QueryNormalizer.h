@@ -69,7 +69,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement &, const ASTPtr &, Data &);
     static void visit(ASTSelectQuery &, const ASTPtr &, Data &);
 
-    static void visitChildren(IAST * node, Data & data);
+    static void visitChildren(const ASTPtr &, Data & data);
 };
 
 }

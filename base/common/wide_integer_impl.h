@@ -5,11 +5,9 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
-#include <cmath>
 #include <cfloat>
-#include <cassert>
 #include <limits>
-
+#include <cassert>
 
 namespace wide
 {
@@ -241,23 +239,15 @@ struct integer<Bits, Signed>::_impl
     template <class T>
     constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept {
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
+        const T alpha = t / max_int;
 
-        /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
-        if (!std::isfinite(t))
-        {
-            self = 0;
-            return;
-        }
-
-        const T alpha = t / static_cast<T>(max_int);
-
-        if (alpha <= static_cast<T>(max_int))
+        if (alpha <= max_int)
             self = static_cast<uint64_t>(alpha);
         else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
             set_multiplier<double>(self, alpha);
 
         self *= max_int;
-        self += static_cast<uint64_t>(t - alpha * static_cast<T>(max_int)); // += b_i
+        self += static_cast<uint64_t>(t - alpha * max_int); // += b_i
     }
 
     constexpr static void wide_integer_from_bultin(integer<Bits, Signed>& self, double rhs) noexcept {
@@ -275,7 +265,7 @@ struct integer<Bits, Signed>::_impl
             "On your system long double has less than 64 precision bits,"
             "which may result in UB when initializing double from int64_t");
 
-        if ((rhs > 0 && rhs < static_cast<long double>(max_int)) || (rhs < 0 && rhs > static_cast<long double>(min_int)))
+        if ((rhs > 0 && rhs < max_int) || (rhs < 0 && rhs > min_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
@@ -925,11 +915,6 @@ public:
 };
 
 // Members
-
-template <size_t Bits, typename Signed>
-constexpr integer<Bits, Signed>::integer() noexcept
-    : items{}
-{}
 
 template <size_t Bits, typename Signed>
 template <typename T>

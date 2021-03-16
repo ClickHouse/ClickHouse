@@ -1,6 +1,6 @@
 ---
 toc_priority: 40
-toc_title: "Функции для работы со строками"
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u043c\u0438"
 ---
 
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
@@ -70,19 +70,19 @@ toc_title: "Функции для работы со строками"
 Заменяет некорректные символы UTF-8 на символ `�` (U+FFFD). Все идущие подряд некорректные символы схлопываются в один заменяющий символ.
 
 ``` sql
-toValidUTF8(input_string)
+toValidUTF8( input_string )
 ```
 
-**Аргументы**
+Параметры:
 
--   `input_string` — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
+-   input_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
 **Пример**
 
 ``` sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ```
 
 ``` text
@@ -95,18 +95,16 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 
 Повторяет строку определенное количество раз и объединяет повторяемые значения в одну строку.
 
-Синоним: `REPEAT`.
-
 **Синтаксис**
 
 ``` sql
 repeat(s, n)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `s` — строка для повторения. [String](../../sql-reference/functions/string-functions.md).
--   `n` — количество повторов. [UInt](../../sql-reference/functions/string-functions.md).
+-   `s` — Строка для повторения. [String](../../sql-reference/functions/string-functions.md).
+-   `n` — Количество повторов. [UInt](../../sql-reference/functions/string-functions.md).
 
 **Возвращаемое значение**
 
@@ -119,10 +117,10 @@ repeat(s, n)
 Запрос:
 
 ``` sql
-SELECT repeat('abc', 10);
+SELECT repeat('abc', 10)
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─repeat('abc', 10)──────────────┐
@@ -172,7 +170,7 @@ SELECT format('{} {}', 'Hello', 'World')
 concat(s1, s2, ...)
 ```
 
-**Аргументы**
+**Параметры**
 
 Значения типа String или FixedString.
 
@@ -187,10 +185,10 @@ concat(s1, s2, ...)
 Запрос:
 
 ``` sql
-SELECT concat('Hello, ', 'World!');
+SELECT concat('Hello, ', 'World!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─concat('Hello, ', 'World!')─┐
@@ -210,7 +208,7 @@ SELECT concat('Hello, ', 'World!');
 concatAssumeInjective(s1, s2, ...)
 ```
 
-**Аргументы**
+**Параметры**
 
 Значения типа String или FixedString.
 
@@ -242,10 +240,10 @@ SELECT * from key_val
 Запрос:
 
 ``` sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─concat(key1, key2)─┬─sum(value)─┐
@@ -275,13 +273,9 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
 
 Производит кодирование строки s в base64-представление.
 
-Синоним: `TO_BASE64`.
-
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
-
-Синоним: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -312,7 +306,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 SELECT startsWith('Hello, world!', 'He');
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─startsWith('Hello, world!', 'He')─┐
@@ -331,7 +325,7 @@ SELECT startsWith('Hello, world!', 'He');
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `trim_character` — один или несколько символов, подлежащие удалению. [String](../../sql-reference/functions/string-functions.md).
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
@@ -347,10 +341,10 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 Запрос:
 
 ``` sql
-SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )');
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
@@ -370,7 +364,7 @@ trimLeft(input_string)
 
 Алиас: `ltrim(input_string)`.
 
-**Аргументы**
+**Параметры**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -385,10 +379,10 @@ trimLeft(input_string)
 Запрос:
 
 ``` sql
-SELECT trimLeft('     Hello, world!     ');
+SELECT trimLeft('     Hello, world!     ')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trimLeft('     Hello, world!     ')─┐
@@ -408,7 +402,7 @@ trimRight(input_string)
 
 Алиас: `rtrim(input_string)`.
 
-**Аргументы**
+**Параметры**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -423,10 +417,10 @@ trimRight(input_string)
 Запрос:
 
 ``` sql
-SELECT trimRight('     Hello, world!     ');
+SELECT trimRight('     Hello, world!     ')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trimRight('     Hello, world!     ')─┐
@@ -446,7 +440,7 @@ trimBoth(input_string)
 
 Алиас: `trim(input_string)`.
 
-**Аргументы**
+**Параметры**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -461,10 +455,10 @@ trimBoth(input_string)
 Запрос:
 
 ``` sql
-SELECT trimBoth('     Hello, world!     ');
+SELECT trimBoth('     Hello, world!     ')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trimBoth('     Hello, world!     ')─┐
@@ -494,15 +488,14 @@ SELECT trimBoth('     Hello, world!     ');
 
 Заменяет литералы, последовательности литералов и сложные псевдонимы заполнителями.
 
-**Синтаксис**
-
+**Синтаксис** 
 ``` sql
 normalizeQuery(x)
 ```
 
-**Аргументы** 
+**Параметры** 
 
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -536,9 +529,9 @@ SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 normalizedQueryHash(x)
 ```
 
-**Аргументы** 
+**Параметры** 
 
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -562,86 +555,4 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 └─────┘
 ```
 
-## encodeXMLComponent {#encode-xml-component}
-
-Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
-
-Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
-
-**Синтаксис** 
-
-``` sql
-encodeXMLComponent(x)
-```
-
-**Аргументы** 
-
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, в которой зарезервированные символы экранированы.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT encodeXMLComponent('Hello, "world"!');
-SELECT encodeXMLComponent('<123>');
-SELECT encodeXMLComponent('&clickhouse');
-SELECT encodeXMLComponent('\'foo\'');
-```
-
-Результат:
-
-``` text
-Hello, &quot;world&quot;!
-&lt;123&gt;
-&amp;clickhouse
-&apos;foo&apos;
-```
-
-## decodeXMLComponent {#decode-xml-component}
-
-Заменяет символами предопределенные мнемоники XML: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
-Также эта функция заменяет числовые ссылки соответствующими символами юникод. Поддерживаются десятичная (например, `&#10003;`) и шестнадцатеричная (`&#x2713;`) формы.
-
-**Синтаксис**
-
-``` sql
-decodeXMLComponent(x)
-```
-
-**Аргументы**
-
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка с произведенными заменами.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT decodeXMLComponent('&apos;foo&apos;');
-SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
-```
-
-Результат:
-
-``` text
-'foo' 
-< Σ >
-```
-
-**Смотрите также**
-
--   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
-
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

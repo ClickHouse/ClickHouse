@@ -100,12 +100,6 @@ namespace CurrentMetrics
             amount -= value;
         }
 
-        void add(Value value = 1)
-        {
-            what->fetch_add(value, std::memory_order_relaxed);
-            amount += value;
-        }
-
         /// Subtract value before destructor.
         void destroy()
         {

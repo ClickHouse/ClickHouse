@@ -50,7 +50,6 @@ struct Test
             {
                 DB::WriteBufferFromFile wb(filename);
                 wb.write(reinterpret_cast<const char *>(&store), sizeof(store));
-                wb.close();
             }
 
             {

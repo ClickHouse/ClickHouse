@@ -68,15 +68,7 @@ include (cmake/find/ccache.cmake)
 
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling" OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 2G
-    set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*10)
-    set (RLIMIT_AS 10000000000)
-    # gcc10/gcc10/clang -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
-       set (RLIMIT_DATA 10000000000)
-    endif()
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=600)
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --rss=10000000 --cpu=600)
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -120,12 +112,6 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
-# Global libraries
-# See:
-# - default_libs.cmake
-# - sanitize.cmake
-add_library(global-libs INTERFACE)
-
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
@@ -155,6 +141,7 @@ option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" 
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.
+    # Implies ${ENABLE_FASTMEMCPY}
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
@@ -167,19 +154,17 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-if (OS_LINUX)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-    if (OBJCOPY_PATH)
-        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
 
-        if (ARCH_AMD64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
-        elseif (ARCH_AARCH64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
-        endif ()
-    else ()
-        message(FATAL_ERROR "Cannot find objcopy.")
+    if (ARCH_AMD64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+    elseif (ARCH_AARCH64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
     endif ()
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
 if (OS_DARWIN)
@@ -194,14 +179,13 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # Can be lld or ld-lld.
-    if (LINKER_NAME MATCHES "lld$")
+    if (LINKER_NAME STREQUAL "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
     # we use another tool for gdb-index, because gold linker removes section .debug_aranges, which used inside clickhouse stacktraces
     # http://sourceware-org.1504.n7.nabble.com/gold-No-debug-aranges-section-when-linking-with-gdb-index-td540965.html#a556932
-    elseif (LINKER_NAME MATCHES "gold$" AND ADD_GDB_INDEX_FOR_GOLD)
+    elseif (LINKER_NAME STREQUAL "gold" AND ADD_GDB_INDEX_FOR_GOLD)
         find_program (GDB_ADD_INDEX_EXE NAMES "gdb-add-index" DOC "Path to gdb-add-index executable")
         if (NOT GDB_ADD_INDEX_EXE)
             set (USE_GDB_ADD_INDEX 0)
@@ -212,19 +196,6 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         endif()
     endif ()
 endif()
-
-# Create BuildID when using lld. For other linkers it is created by default.
-if (LINKER_NAME MATCHES "lld$")
-    # SHA1 is not cryptographically secure but it is the best what lld is offering.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
-endif ()
-
-# Add a section with the hash of the compiled machine code for integrity checks.
-# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
-# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
-    set (USE_BINARY_HASH 1)
-endif ()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -240,7 +211,9 @@ else()
     message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
 endif()
 
-include(cmake/cpu_features.cmake)
+if(NOT DISABLE_CPU_OPTIMIZE)
+    include(cmake/cpu_features.cmake)
+endif()
 
 option(ARCH_NATIVE "Add -march=native compiler flag")
 
@@ -248,16 +221,16 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (COMPILER_GCC OR COMPILER_CLANG)
-    # to make numeric_limits<__int128> works with GCC
-    set (_CXX_STANDARD "gnu++2a")
+if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
+    # to make numeric_limits<__int128> works for unbundled build
+    set (_CXX_STANDARD "-std=gnu++2a")
 else()
-    set (_CXX_STANDARD "c++2a")
+    set (_CXX_STANDARD "-std=c++2a")
 endif()
 
 # cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
 
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -281,8 +254,6 @@ if (WITH_COVERAGE AND COMPILER_GCC)
     set(COVERAGE_OPTION "-lgcov")
     set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
-
-set(COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
@@ -328,7 +299,7 @@ if (COMPILER_CLANG)
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
 
     if (LLVM_AR_PATH)
         message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
@@ -337,7 +308,7 @@ if (COMPILER_CLANG)
         message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
     endif ()
 
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
 
     if (LLVM_RANLIB_PATH)
         message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
@@ -482,13 +453,10 @@ include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
-include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/rocksdb.cmake)
-include (cmake/find/libpqxx.cmake)
-include (cmake/find/nuraft.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
@@ -506,6 +474,9 @@ set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
+
+set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
+find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
@@ -533,18 +504,15 @@ macro (add_executable target)
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
+        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:clickhouse_memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # disabled for TSAN and gcc since libtsan.a provides overrides too
-        if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
-        endif()
+        # operator::new/delete for executables (MemoryTracker stuff)
+        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
     endif()
 endmacro()
 
@@ -555,8 +523,8 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 
 add_subdirectory (base)
-add_subdirectory (src)
 add_subdirectory (programs)
+add_subdirectory (src)
 add_subdirectory (tests)
 add_subdirectory (utils)
 

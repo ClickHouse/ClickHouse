@@ -54,20 +54,15 @@ public:
     DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name);
     ~DDLGuard();
 
-    /// Unlocks table name, keeps holding read lock for database name
-    void releaseTableLock() noexcept;
-
 private:
     Map & map;
     std::shared_mutex & db_mutex;
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
-    bool table_lock_removed = false;
-    bool is_database_guard = false;
-};
 
-using DDLGuardPtr = std::unique_ptr<DDLGuard>;
+    void removeTableLock();
+};
 
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
@@ -122,7 +117,7 @@ public:
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    DDLGuardPtr getDDLGuard(const String & database, const String & table);
+    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
 

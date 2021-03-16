@@ -1,6 +1,6 @@
 ---
 toc_priority: 61
-toc_title: "Инструкция для разработчиков"
+toc_title: "\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
 ---
 
 # Инструкция для разработчиков
@@ -210,7 +210,7 @@ Mac OS X:
 
 Для запуска сервера из под текущего пользователя, с выводом логов в терминал и с использованием примеров конфигурационных файлов, расположенных в исходниках, перейдите в директорию `ClickHouse/programs/server/` (эта директория находится не в директории build) и выполните:
 
-    ../../build/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 В этом случае, ClickHouse будет использовать конфигурационные файлы, расположенные в текущей директории. Вы можете запустить `clickhouse server` из любой директории, передав ему путь к конфигурационному файлу в аргументе командной строки `--config-file`.
 
@@ -259,8 +259,8 @@ Mac OS X:
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
