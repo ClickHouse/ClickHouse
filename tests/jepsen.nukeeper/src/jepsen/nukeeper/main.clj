@@ -2,7 +2,9 @@
   (:require [clojure.tools.logging :refer :all]
             [jepsen.nukeeper.utils :refer :all]
             [jepsen.nukeeper.set :as set]
+            [jepsen.nukeeper.nemesis :as custom-nemesis]
             [jepsen.nukeeper.register :as register]
+            [jepsen.nukeeper.constants :refer :all]
             [clojure.string :as str]
             [jepsen
              [checker :as checker]
@@ -22,14 +24,6 @@
             [zookeeper.data :as data]
             [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
-
-(def dir "/var/lib/clickhouse")
-(def binary "clickhouse")
-(def logdir "/var/log/clickhouse-server")
-(def logfile "/var/log/clickhouse-server/stderr.log")
-(def serverlog "/var/log/clickhouse-server/clickhouse-server.log")
-(def pidfile (str dir "/clickhouse.pid"))
-(def binary-path "/tmp")
 
 (defn cluster-config
   [test node config-template]
@@ -66,13 +60,13 @@
         (str binary-path "/clickhouse")
         :server
         :--config "/etc/clickhouse-server/config.xml")
-       (Thread/sleep 10000)))
+       (wait-clickhouse-alive! node test)))
 
     (teardown! [_ test node]
       (info node "tearing down clickhouse")
       (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
       (c/su
-       (c/exec :rm :-f (str binary-path "/clickhouse"))
+       ;(c/exec :rm :-f (str binary-path "/clickhouse"))
        (c/exec :rm :-rf dir)
        (c/exec :rm :-rf logdir)
        (c/exec :rm :-rf "/etc/clickhouse-server")))
@@ -111,10 +105,10 @@
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:8831b5baa571abc28340cf66a9279a4ce45fac64")
+            :db (db "rbtorrent:46832e8fa975b094a5591184b3c854700ed770f4")
             :pure-generators true
             :client (:client workload)
-            :nemesis (nemesis/partition-random-halves)
+            :nemesis (custom-nemesis/random-single-node-killer-nemesis)
             :checker (checker/compose
                       {:perf     (checker/perf)
                        :workload (:checker workload)})
