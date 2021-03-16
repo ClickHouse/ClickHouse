@@ -91,10 +91,19 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
 
 void PartialSortingTransform::transform(Chunk & chunk)
 {
-    auto rows_num = chunk.getNumRows();
-
+    if (chunk.getColumns().empty())
+    {
+        // Sometimes we can have Chunks w/o columns, e.g. in case of
+        // `select count() over () from numbers(4) where number < 2`.
+        // We don't have to modify this Chunk, but we have to preserve the input
+        // number of rows. The following code uses Block for sorting, and Block
+        // is incapable of recording the number of rows when there is no columns.
+        // The simplest solution is to specifically check for Chunk with no
+        // columns and not modify it, which is what we do here.
+        return;
+    }
     if (read_rows)
-        read_rows->add(rows_num);
+        read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -103,6 +112,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
       */
     if (!threshold_block_columns.empty())
     {
+        UInt64 rows_num = block.rows();
         auto block_columns = extractColumns(block, description);
 
         size_t result_size_hint = getFilterMask(
@@ -117,15 +127,13 @@ void PartialSortingTransform::transform(Chunk & chunk)
         {
             for (auto & column : block)
                 column.column = column.column->filter(filter, result_size_hint);
-
-            rows_num = block.rows();
         }
     }
 
     sortBlock(block, description, limit);
 
     /// Check if we can use this block for optimization.
-    if (min_limit_for_partial_sort_optimization <= limit && limit <= rows_num)
+    if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
     {
         auto block_columns = extractColumns(block, description);
 
@@ -137,9 +145,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
         }
     }
 
-    assert(block.columns() == 0 || block.rows() == rows_num);
-
-    chunk.setColumns(block.getColumns(), rows_num);
+    chunk.setColumns(block.getColumns(), block.rows());
 }
 
 }
