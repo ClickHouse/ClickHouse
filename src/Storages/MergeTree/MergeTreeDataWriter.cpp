@@ -268,7 +268,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     Int64 temp_index = data.insert_increment.get();
 
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
-    minmax_idx.update(block, data.minmax_idx_columns);
+    minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
 
@@ -326,6 +326,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
+
+    /// If optimize_on_insert is true, block may become empty after merge.
+    /// There is no need to create empty part.
+    if (expected_size == 0)
+        return nullptr;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();

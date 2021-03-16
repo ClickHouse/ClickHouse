@@ -21,8 +21,8 @@ bool isSupportedAlterType(int type);
 /// Pushes distributed DDL query to the queue.
 /// Returns DDLQueryStatusInputStream, which reads results of query execution on each host in the cluster.
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access);
 
 
 class DDLQueryStatusInputStream final : public IBlockInputStream

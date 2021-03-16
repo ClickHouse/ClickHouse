@@ -170,4 +170,3 @@ Configuration fields:
 
 -   [Functions for working with external dictionaries](../../../sql-reference/functions/ext-dict-functions.md).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

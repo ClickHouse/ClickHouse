@@ -104,6 +104,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
+        table->checkMutationIsPossible(mutation_commands, context.getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate();
         table->mutate(mutation_commands, context);
     }
@@ -136,7 +137,7 @@ BlockIO InterpreterAlterQuery::execute()
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);
-        table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
+        table->checkAlterIsPossible(alter_commands, context);
         table->alter(alter_commands, context, alter_lock);
     }
 
