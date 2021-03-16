@@ -24,17 +24,17 @@ NamesAndTypesList StorageSystemErrors::getNamesAndTypes()
 
 void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    auto add_row = [&](std::string_view name, size_t code, size_t value, UInt64 error_time_ms, const std::string & message, const std::string & stacktrace, bool remote)
+    auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
     {
-        if (value || context.getSettingsRef().system_events_show_zero_values)
+        if (error.count || context.getSettingsRef().system_events_show_zero_values)
         {
             size_t col_num = 0;
             res_columns[col_num++]->insert(name);
             res_columns[col_num++]->insert(code);
-            res_columns[col_num++]->insert(value);
-            res_columns[col_num++]->insert(error_time_ms / 1000);
-            res_columns[col_num++]->insert(message);
-            res_columns[col_num++]->insert(stacktrace);
+            res_columns[col_num++]->insert(error.count);
+            res_columns[col_num++]->insert(error.error_time_ms / 1000);
+            res_columns[col_num++]->insert(error.message);
+            res_columns[col_num++]->insert(error.stacktrace);
             res_columns[col_num++]->insert(remote);
         }
     };
@@ -47,8 +47,8 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &
         if (name.empty())
             continue;
 
-        add_row(name, i, error.local,  error.error_time_ms, error.message, error.stacktrace, false /* remote=0 */);
-        add_row(name, i, error.remote, error.error_time_ms, error.message, error.stacktrace, true  /* remote=1 */);
+        add_row(name, i, error.local,  /* remote= */ false);
+        add_row(name, i, error.remote, /* remote= */ true);
     }
 }
 

@@ -24,31 +24,37 @@ namespace ErrorCodes
     /// Returns statically allocated string.
     std::string_view getName(ErrorCode error_code);
 
-    struct ValuePair
+    struct Error
     {
-        Value local = 0;
-        Value remote = 0;
+        /// Number of times Exception with this ErrorCode had been throw.
+        Value count;
+        /// Time of the last error.
         UInt64 error_time_ms = 0;
+        /// Message for the last error.
         std::string message;
+        /// Stacktrace for the last error.
         std::string stacktrace;
-
-        ValuePair & operator+=(const ValuePair & value);
+    };
+    struct ErrorPair
+    {
+        Error local;
+        Error remote;
     };
 
     /// Thread-safe
-    struct ValuePairHolder
+    struct ErrorPairHolder
     {
     public:
-        void increment(const ValuePair & value_);
-        ValuePair get();
+        ErrorPair get();
+        void increment(bool remote, const std::string & message, const std::string & stacktrace);
 
     private:
-        ValuePair value;
+        ErrorPair value;
         std::mutex mutex;
     };
 
     /// ErrorCode identifier -> current value of error_code.
-    extern ValuePairHolder values[];
+    extern ErrorPairHolder values[];
 
     /// Get index just after last error_code identifier.
     ErrorCode end();

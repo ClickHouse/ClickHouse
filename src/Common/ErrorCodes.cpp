@@ -564,7 +564,7 @@ namespace ErrorCodes
 #undef M
 
     constexpr ErrorCode END = 3000;
-    ValuePairHolder values[END + 1]{};
+    ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
     {
@@ -595,35 +595,23 @@ namespace ErrorCodes
             error_code = end() - 1;
         }
 
-        ValuePair inc_value{
-            !remote,    /* local */
-            remote,     /* remote */
-            0,          /* error_time_ms */
-            message,    /* message */
-            stacktrace, /* stacktrace */
-        };
-        values[error_code].increment(inc_value);
+        values[error_code].increment(remote, message, stacktrace);
     }
 
-    ValuePair & ValuePair::operator+=(const ValuePair & value)
+    void ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & stacktrace)
     {
-        local  += value.local;
-        remote += value.remote;
-        message = value.message;
-        stacktrace = value.stacktrace;
-
         const auto now = std::chrono::system_clock::now();
-        error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 
-        return *this;
-    }
-
-    void ValuePairHolder::increment(const ValuePair & value_)
-    {
         std::lock_guard lock(mutex);
-        value += value_;
+
+        auto & error = remote ? value.remote : value.local;
+
+        ++error.count;
+        error.message = message;
+        error.stacktrace = stacktrace;
+        error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     }
-    ValuePair ValuePairHolder::get()
+    ErrorPair ErrorPairHolder::get()
     {
         std::lock_guard lock(mutex);
         return value;
