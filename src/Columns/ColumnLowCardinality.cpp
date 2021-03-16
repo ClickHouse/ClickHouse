@@ -247,6 +247,11 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
+const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
+{
+    return getDictionary().skipSerializedInArena(pos);
+}
+
 void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = size();

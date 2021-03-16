@@ -35,4 +35,3 @@ toc_title: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 
 `UInt128` пока не реализован.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/int_uint/) <!--hide-->

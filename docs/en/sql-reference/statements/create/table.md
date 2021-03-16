@@ -59,7 +59,7 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 ## NULL Or NOT NULL Modifiers {#null-modifiers}
 
-`NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
+`NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable).
 
 If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
 
@@ -109,16 +109,16 @@ It is not possible to set default values for elements in nested data structures.
 
 ## Primary Key {#primary-key}
 
-You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
+You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
 
 - Inside the column list
 
 ``` sql
-CREATE TABLE db.table_name 
-( 
-    name1 type1, name2 type2, ..., 
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...,
     PRIMARY KEY(expr1[, expr2,...])]
-) 
+)
 ENGINE = engine;
 ```
 
@@ -126,9 +126,9 @@ ENGINE = engine;
 
 ``` sql
 CREATE TABLE db.table_name
-( 
+(
     name1 type1, name2 type2, ...
-) 
+)
 ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
@@ -333,5 +333,3 @@ SELECT * FROM base.t1;
 │ 3 │
 └───┘
 ```
-
- [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/table) <!--hide-->

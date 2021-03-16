@@ -747,10 +747,7 @@ def verification_cooldown_performance(self, server, rbac=False, iterations=5000)
         no_vcd_time = repeat_requests(server=server, iterations=iterations, vcd_value="0", rbac=rbac)
         metric("login_with_vcd_value_0", units="seconds", value=no_vcd_time)
 
-    with Then("The performance with verification cooldown parameter set is better than the performance with no verification cooldown parameter."):
-        assert no_vcd_time > vcd_time, error()
-
-    with And("Log the performance improvement as a percentage."):
+    with Then("Log the performance improvement as a percentage"):
         metric("percentage_improvement", units="%", value=100*(no_vcd_time - vcd_time)/vcd_time)
 
 @TestOutline
