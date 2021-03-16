@@ -84,7 +84,7 @@
 
 Обратите внимание, что пользователь `my_user` ссылается на `my_ldap_server`. Этот LDAP сервер должен быть настроен в основном файле `config.xml`, как это было описано ранее.
 
-При включенном SQL-ориентированным [Управлением доступом](../access-rights.md#access-control) пользователи, аутентифицированные LDAP серверами, могут также быть созданы выражением [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement).
+При включенном SQL-ориентированным [Управлении доступом](../access-rights.md) пользователи, аутентифицированные LDAP серверами, могут также быть созданы выражением [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement).
 
 Запрос:
 
