@@ -1,4 +1,4 @@
-# LDAP {#external-authenticators-ldap} 
+# LDAP {#external-authenticators-ldap}
 
 LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
 
@@ -87,14 +87,13 @@ Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be c
 
 When SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled in ClickHouse, users that are authenticated by LDAP servers can also be created using the [CRATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement.
 
-
 ```sql
-CREATE USER my_user IDENTIFIED WITH ldap_server BY 'my_ldap_server'
+CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server'
 ```
 
 ## LDAP Exernal User Directory {#ldap-external-user-directory}
 
-In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. In order to achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
+In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. In order to achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in an `ldap` section inside the `users_directories` section of the `config.xml` file.
 
 At each login attempt, ClickHouse will try to find the user definition locally and authenticate it as usual, but if the user is not defined, ClickHouse will assume it exists in the external LDAP directory, and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled and roles are created using the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
 
@@ -153,4 +152,3 @@ Parameters:
         - `prefix` - prefix, that will be expected to be in front of each string in the original
           list of strings returned by the LDAP search. Prefix will be removed from the original
           strings and resulting strings will be treated as local role names. Empty, by default.
-

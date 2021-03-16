@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u0020\u0441\u043e\u0020\u0441\u0442\u043e\u043b\u0431\u0446\u0430\u043c\u0438"
+toc_title: "Манипуляции со столбцами"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
@@ -170,4 +170,3 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Для таблиц, которые не хранят данные самостоятельно (типа [Merge](../../../sql-reference/statements/alter/index.md) и [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа `Distributed`, вам также потребуется выполнить запрос `ALTER` для таблиц на всех удалённых серверах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/column/) <!--hide-->
