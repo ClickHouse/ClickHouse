@@ -29,17 +29,17 @@ def feature(self, node="clickhouse1"):
                 for i in range(roles):
                     node.query(f"DROP ROLE IF EXISTS role{i}")
 
-    with Scenario("I set default role for current user", flags = TE, requirements=[
+    with Scenario("I set default role for current user", requirements=[
             RQ_SRS_006_RBAC_SetRole_Default("1.0")]):
         with When("I set default role for current user"):
             node.query("SET ROLE DEFAULT")
 
-    with Scenario("I set no role for current user", flags = TE, requirements=[
+    with Scenario("I set no role for current user", requirements=[
             RQ_SRS_006_RBAC_SetRole_None("1.0")]):
             with When("I set no role for current user"):
                 node.query("SET ROLE NONE")
 
-    with Scenario("I set nonexistent role, throws exception", flags = TE, requirements=[
+    with Scenario("I set nonexistent role, throws exception", requirements=[
             RQ_SRS_006_RBAC_SetRole_None("1.0")]):
             with Given("I ensure that role role5 does not exist"):
                 node.query("DROP ROLE IF EXISTS role5")
@@ -47,7 +47,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk("role5")
                 node.query("SET ROLE role5", exitcode=exitcode, message=message)
 
-    with Scenario("I set nonexistent role, throws exception", flags = TE, requirements=[
+    with Scenario("I set nonexistent role, throws exception", requirements=[
             RQ_SRS_006_RBAC_SetRole_None("1.0")]):
             with Given("I ensure that role role5 does not exist"):
                 node.query("DROP ROLE IF EXISTS role5")
@@ -55,7 +55,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk("role5")
                 node.query("SET ROLE ALL EXCEPT role5", exitcode=exitcode, message=message)
 
-    with Scenario("I set one role for current user", flags = TE, requirements=[
+    with Scenario("I set one role for current user", requirements=[
             RQ_SRS_006_RBAC_SetRole("1.0")]):
         with setup(1):
             with Given("I have a user"):
@@ -67,7 +67,7 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the user"):
                 node.query("DROP USER user0")
 
-    with Scenario("I set multiple roles for current user", flags = TE, requirements=[
+    with Scenario("I set multiple roles for current user", requirements=[
             RQ_SRS_006_RBAC_SetRole("1.0")]):
         with setup(2):
             with Given("I have a user"):
@@ -79,12 +79,12 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the user"):
                 node.query("DROP USER user0")
 
-    with Scenario("I set all roles for current user", flags = TE, requirements=[
+    with Scenario("I set all roles for current user", requirements=[
             RQ_SRS_006_RBAC_SetRole_All("1.0")]):
         with When("I set all roles for current user"):
             node.query("SET ROLE ALL")
 
-    with Scenario("I set all roles except one for current user", flags = TE, requirements=[
+    with Scenario("I set all roles except one for current user", requirements=[
             RQ_SRS_006_RBAC_SetRole_AllExcept("1.0")]):
         with setup(1):
             with When("I run set role command"):

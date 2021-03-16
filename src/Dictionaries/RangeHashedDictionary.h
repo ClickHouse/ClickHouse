@@ -61,7 +61,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -92,8 +92,6 @@ private:
     using Collection = HashMap<UInt64, Values<T>>;
     template <typename T>
     using Ptr = std::unique_ptr<Collection<T>>;
-
-    using NullableSet = HashSet<Key, DefaultHash<Key>>;
 
     struct Attribute final
     {
@@ -159,6 +157,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType>
+    ColumnUInt8::Ptr hasKeysImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        const PaddedPODArray<RangeStorageType> & dates) const;
+
     template <typename T>
     static void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
@@ -181,7 +185,7 @@ private:
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
+    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

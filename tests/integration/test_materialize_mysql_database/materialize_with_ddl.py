@@ -579,13 +579,13 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("DROP USER 'test'@'%'")
 
 
-def restore_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+def restore_instance_mysql_connections(clickhouse_node, pm, action='REJECT'):
     pm._check_instance(clickhouse_node)
     pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
     pm._delete_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
     time.sleep(5)
 
-def drop_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+def drop_instance_mysql_connections(clickhouse_node, pm, action='REJECT'):
     pm._check_instance(clickhouse_node)
     pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
     pm._add_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
@@ -618,8 +618,6 @@ def network_partition_test(clickhouse_node, mysql_node, service_name):
 
         restore_instance_mysql_connections(clickhouse_node, pm)
 
-        clickhouse_node.query("DETACH DATABASE test_database")
-        clickhouse_node.query("ATTACH DATABASE test_database")
         check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
 
         clickhouse_node.query(
@@ -637,16 +635,27 @@ def network_partition_test(clickhouse_node, mysql_node, service_name):
 
 def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database;")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_auto;")
+
     mysql_node.query("DROP DATABASE IF EXISTS test_database;")
     mysql_node.query("CREATE DATABASE test_database;")
     mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
     mysql_node.query("INSERT INTO test_database.test_table VALUES (1)")
 
-    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_auto;")
+    mysql_node.query("CREATE DATABASE test_database_auto;")
+    mysql_node.query("CREATE TABLE test_database_auto.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    mysql_node.query("INSERT INTO test_database_auto.test_table VALUES (11)")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse') SETTINGS max_wait_time_when_mysql_unavailable=-1".format(service_name))
+    clickhouse_node.query("CREATE DATABASE test_database_auto ENGINE = MaterializeMySQL('{}:3306', 'test_database_auto', 'root', 'clickhouse')".format(service_name))
+
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+    check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table FORMAT TSV", '11\n')
 
     get_sync_id_query = "select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'"
     result = mysql_node.query_and_get_data(get_sync_id_query)
+    assert len(result) == 2
 
     for row in result:
         row_result = {}
@@ -658,7 +667,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
         # When you use KILL, a thread-specific kill flag is set for the thread. In most cases, it might take some time for the thread to die because the kill flag is checked only at specific intervals:
         time.sleep(3)
         clickhouse_node.query("SELECT * FROM test_database.test_table")
-    assert "Cannot read all data" in str(exception.value)
+        assert "Cannot read all data" in str(exception.value)
 
     clickhouse_node.query("DETACH DATABASE test_database")
     clickhouse_node.query("ATTACH DATABASE test_database")
@@ -667,8 +676,13 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
     mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
 
+    mysql_node.query("INSERT INTO test_database_auto.test_table VALUES (12)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table ORDER BY id FORMAT TSV", '11\n12\n')
+
     clickhouse_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_auto")
     mysql_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database_auto")
 
 
 def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
@@ -689,10 +703,9 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
         run_and_check(
             ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'stop'])
     finally:
-        with pytest.raises(QueryRuntimeException) as execption:
+        with pytest.raises(QueryRuntimeException) as exception:
             time.sleep(5)
             clickhouse_node.query("SELECT count() FROM kill_mysql_while_insert.test")
-        assert "Master maybe lost." in str(execption.value)
 
         run_and_check(
             ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'start'])

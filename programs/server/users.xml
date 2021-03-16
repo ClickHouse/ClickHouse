@@ -41,8 +41,17 @@
                  If you want to specify double SHA1, place it in 'password_double_sha1_hex' element.
                  Example: <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
 
-                 If you want to specify a previously defined LDAP server (see 'ldap_servers' in main config) for authentication, place its name in 'server' element inside 'ldap' element.
+                 If you want to specify a previously defined LDAP server (see 'ldap_servers' in the main config) for authentication,
+                  place its name in 'server' element inside 'ldap' element.
                  Example: <ldap><server>my_ldap_server</server></ldap>
+
+                 If you want to authenticate the user via Kerberos (assuming Kerberos is enabled, see 'kerberos' in the main config),
+                  place 'kerberos' element instead of 'password' (and similar) elements.
+                 The name part of the canonical principal name of the initiator must match the user name for authentication to succeed.
+                 You can also place 'realm' element inside 'kerberos' element to further restrict authentication to only those requests
+                  whose initiator's realm matches it. 
+                 Example: <kerberos />
+                 Example: <kerberos><realm>EXAMPLE.COM</realm></kerberos>
 
                  How to generate decent password:
                  Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'

@@ -44,4 +44,3 @@ ALTER USER user DEFAULT ROLE ALL
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/user/) <!--hide-->
