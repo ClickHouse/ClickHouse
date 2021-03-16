@@ -264,7 +264,7 @@ public:
                         }
                         iter_arrays.emplace_back(accumulator);
                         // Calculate function on arguments
-                        auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
+                        auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(ColumnArray::Offsets(column_first_array->getOffsets().size(), 1)));
                         auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
                         replicated_column_function->appendArguments(iter_arrays);
                         auto lambda_result = replicated_column_function->reduce().column;
