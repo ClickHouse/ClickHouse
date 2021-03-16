@@ -11,6 +11,7 @@
 #include "registerTableFunctions.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -41,7 +42,8 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Contex
     const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
     auto columns = fetchPostgreSQLTableStructure(
             connection->conn(),
-            remote_table_schema.empty() ? remote_table_name : remote_table_schema + '.' + remote_table_name,
+            remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
+                                        : doubleQuoteString(remote_table_schema) + '.' + doubleQuoteString(remote_table_name),
             use_nulls);
 
     return ColumnsDescription{*columns};

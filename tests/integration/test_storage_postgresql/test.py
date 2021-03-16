@@ -152,6 +152,17 @@ def test_non_default_scema(started_cluster):
     result = node1.query('SELECT * FROM {}'.format(table_function))
     assert(result == expected)
 
+    cursor.execute('''CREATE SCHEMA "test.nice.schema"''')
+    cursor.execute('''CREATE TABLE "test.nice.schema"."test.nice.table" (a integer)''')
+    cursor.execute('INSERT INTO "test.nice.schema"."test.nice.table" SELECT i FROM generate_series(0, 99) as t(i)')
+
+    node1.query('''
+        CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'test.nice.table', 'postgres', 'mysecretpassword', 'test.nice.schema');
+    ''')
+    result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
+    assert(result == expected)
+
 
 if __name__ == '__main__':
     cluster.start()
