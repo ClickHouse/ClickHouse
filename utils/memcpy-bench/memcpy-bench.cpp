@@ -6,10 +6,12 @@
 #include <iostream>
 #include <iomanip>
 #include <thread>
+#include <atomic>
 
 #include <dlfcn.h>
 
 #include <pcg_random.hpp>
+#include <Common/thread_local_rng.h>
 
 #include <common/defines.h>
 
@@ -19,6 +21,7 @@
 #include <immintrin.h>
 
 #include <boost/program_options.hpp>
+#include <fmt/format.h>
 
 
 template <typename F, typename MemcpyImpl>
@@ -88,7 +91,7 @@ uint64_t test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size
 }
 
 
-using memcpy_type = void * (*)(const void * __restrict, void * __restrict, size_t);
+using memcpy_type = void * (*)(void * __restrict, const void * __restrict, size_t);
 
 
 static void * memcpy_erms(void * dst, const void * src, size_t size)
@@ -119,7 +122,7 @@ static void * memcpy_trivial(void * __restrict dst_, const void * __restrict src
 }
 
 extern "C" void * memcpy_jart(void * dst, const void * src, size_t size);
-extern "C" void MemCpy(void * dst, const void * src, size_t size);
+extern "C" void * MemCpy(void * dst, const void * src, size_t size);
 
 void * memcpy_fast_sse(void * dst, const void * src, size_t size);
 void * memcpy_fast_avx(void * dst, const void * src, size_t size);
@@ -801,6 +804,308 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size);
 
 
+static ALWAYS_INLINE UInt32 rdtsc()
+{
+    UInt32 low;
+    UInt32 high;
+    __asm__ __volatile__ ("rdtsc" : "=a"(low), "=d"(high));
+    return low;
+}
+
+
+struct VariantWithStatistics
+{
+    std::atomic<memcpy_type> func{nullptr};
+    std::atomic<size_t> time = 0;
+    std::atomic<size_t> bytes = 0;
+    std::atomic<size_t> kind = 0;
+
+    constexpr VariantWithStatistics() = default;
+    constexpr explicit VariantWithStatistics(size_t kind_, memcpy_type func_) : func(func_), kind(kind_) {}
+
+    VariantWithStatistics(const VariantWithStatistics & rhs)
+    {
+        *this = rhs;
+    }
+
+    VariantWithStatistics & operator=(const VariantWithStatistics & rhs)
+    {
+        func.store(rhs.func.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        time.store(rhs.time.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        bytes.store(rhs.bytes.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        kind.store(rhs.kind.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+        return *this;
+    }
+};
+
+/// NOTE: I would like to use Thompson Sampling, but it's too heavy.
+
+struct MultipleVariantsWithStatistics
+{
+    static constexpr size_t num_cells = 16;
+    static constexpr size_t num_iterations_before_optimize = 10;
+    static constexpr size_t num_iterations_to_skip = 3;
+    static constexpr size_t num_optimize_iterations_to_skip = 0;
+    std::atomic<size_t> num_iterations_before_randomize = 20;
+
+    static constexpr VariantWithStatistics all_variants[num_cells]
+    {
+        VariantWithStatistics(1, memcpy),
+        VariantWithStatistics(2, memcpy_erms),
+        VariantWithStatistics(3, memcpy_fast_sse),
+        VariantWithStatistics(4, memcpy_fast_avx),
+        VariantWithStatistics(5, __memcpy_avx_unaligned),
+        VariantWithStatistics(6, __memcpy_avx_unaligned_erms),
+        VariantWithStatistics(7, __memcpy_ssse3),
+        VariantWithStatistics(8, __memcpy_ssse3_back),
+        VariantWithStatistics(9, memcpy_trivial),
+        VariantWithStatistics(10, __memcpy_erms),
+        VariantWithStatistics(11, memcpySSE2),
+        VariantWithStatistics(12, memcpySSE2Unrolled2),
+        VariantWithStatistics(13, memcpySSE2Unrolled4),
+        VariantWithStatistics(14, memcpySSE2Unrolled8),
+        VariantWithStatistics(15, MemCpy),
+        VariantWithStatistics(16, memcpy_jart)
+    };
+
+    VariantWithStatistics variants[num_cells];
+    std::atomic<size_t> count = 0;
+    std::atomic<size_t> optimize_iterations = 0;
+
+    std::mutex mutex;
+
+    MultipleVariantsWithStatistics()
+    {
+        for (size_t i = 0; i < num_cells; ++i)
+            variants[i] = all_variants[i];
+    }
+
+    ALWAYS_INLINE void * call(void * __restrict dst, const void * __restrict src, size_t size)
+    {
+        //std::cerr << size << "\n";
+
+        VariantWithStatistics & variant = variants[count % num_cells];
+
+        UInt32 time1 = rdtsc();
+        void * ret = variant.func.load(std::memory_order_relaxed)(dst, src, size);
+        UInt32 time2 = rdtsc();
+        UInt32 time = time2 - time1;
+
+        size_t current_count = ++count;
+
+        if (current_count <= num_cells * num_iterations_before_optimize)
+        {
+            if (time < size && current_count > num_cells * num_iterations_to_skip)
+            {
+                variant.bytes += size;
+                variant.time += time;
+            }
+
+            if (current_count == num_cells * num_iterations_before_optimize)
+                optimize();
+        }
+        else if (current_count == num_cells * num_iterations_before_randomize.load(std::memory_order_relaxed))
+            randomize();
+
+        return ret;
+    }
+
+    void optimize()
+    {
+        ++optimize_iterations;
+        if (optimize_iterations <= num_optimize_iterations_to_skip)
+        {
+            count = 0;
+            return;
+        }
+
+        std::lock_guard lock(mutex);
+
+        /// Take the fastest variant and replace slowest with it.
+
+        size_t min_idx = 0;
+        size_t max_idx = 0;
+
+        double min_time = 1e9;
+        double max_time = 0;
+
+        bool has_different_variants = false;
+        for (size_t idx = 0; idx < num_cells; ++idx)
+        {
+            VariantWithStatistics & variant = variants[idx];
+
+            double variant_time = variant.time.load(std::memory_order_relaxed);
+            double variant_bytes = variant.bytes.load(std::memory_order_relaxed);
+
+            double time = variant_time / variant_bytes;
+
+            // time += time / sqrt(sqrt(variant_bytes));
+
+            if (time < min_time)
+            {
+                min_time = time;
+                min_idx = idx;
+            }
+            if (time > max_time)
+            {
+                max_time = time;
+                max_idx = idx;
+            }
+
+            if (variant.kind != variants[0].kind)
+            {
+                has_different_variants = true;
+                count = 0;
+            }
+        }
+
+        if (!has_different_variants)
+        {
+            //std::cerr << "Replaced all variants to " << variants[0].kind << "\n";
+
+            std::cerr << variants[0].kind << " ";
+        }
+        else if (min_idx != max_idx)
+            // (variants[max_idx].kind != variants[min_idx].kind)
+            // (min_idx != max_idx)
+            // (max_time / min_time > 1.1)
+        {
+            /*std::cerr << fmt::format("Replacing {} (kind: {}, bytes: {}, time: {}) to {} (kind: {}, bytes: {}, time: {})\n",
+                max_idx, variants[max_idx].kind, variants[max_idx].bytes, variants[max_idx].time,
+                min_idx, variants[min_idx].kind, variants[min_idx].bytes, variants[min_idx].time);*/
+
+            //variants[min_idx].bytes /= 2;
+            //variants[min_idx].time /= 2;
+
+            variants[max_idx] = variants[min_idx];
+
+/*            if (variants[min_idx].kind == 6)
+            {
+                for (size_t idx = 0; idx < num_cells; ++idx)
+                    std::cerr << idx << ", " << variants[idx].kind << ": "
+                        << (static_cast<double>(variants[idx].time) / variants[idx].bytes)
+                        << ", " << variants[idx].bytes
+                        << "\n";
+            }*/
+        }
+    }
+
+    void randomize()
+    {
+        size_t random_cell = thread_local_rng() % num_cells;
+
+        std::lock_guard lock(mutex);
+
+        num_iterations_before_randomize += num_iterations_before_randomize / 2;
+        variants[0] = all_variants[random_cell];
+        count = 0;
+    }
+};
+
+
+
+/*__thread*/ MultipleVariantsWithStatistics variants;
+
+static uint8_t * memcpy_selftuned(uint8_t * __restrict dst, const uint8_t * __restrict src, size_t size)
+{
+    uint8_t * ret = dst;
+
+    if (size <= 16)
+    {
+        if (size >= 8)
+        {
+            __builtin_memcpy(dst + size - 8, src + size - 8, 8);
+            __builtin_memcpy(dst, src, 8);
+        }
+        else if (size >= 4)
+        {
+            __builtin_memcpy(dst + size - 4, src + size - 4, 4);
+            __builtin_memcpy(dst, src, 4);
+        }
+        else if (size >= 2)
+        {
+            __builtin_memcpy(dst + size - 2, src + size - 2, 2);
+            __builtin_memcpy(dst, src, 2);
+        }
+        else if (size >= 1)
+        {
+            *dst = *src;
+        }
+    }
+    else if (size <= 128)
+    {
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
+
+        while (size > 16)
+        {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+            dst += 16;
+            src += 16;
+            size -= 16;
+        }
+    }
+    else if (size < 30000)
+    {
+        /// Align destination to 16 bytes boundary.
+        size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+
+        if (padding > 0)
+        {
+            __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
+            dst += padding;
+            src += padding;
+            size -= padding;
+        }
+
+        /// Aligned unrolled copy.
+        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+
+        while (size >= 128)
+        {
+            c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
+            c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
+            c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
+            c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
+            c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
+            c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
+            c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
+            c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
+            src += 128;
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 4), c4);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 5), c5);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 6), c6);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 7), c7);
+            dst += 128;
+
+            size -= 128;
+        }
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
+
+        while (size > 16)
+        {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+            dst += 16;
+            src += 16;
+            size -= 16;
+        }
+    }
+    else
+    {
+        return static_cast<uint8_t*>(variants.call(dst, src, size));
+    }
+
+    return ret;
+}
+
+
+
 #define VARIANT(N, NAME) \
     if (memcpy_variant == N) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
@@ -833,6 +1138,8 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(27, __memcpy_avx512_unaligned)
     VARIANT(28, __memcpy_avx512_unaligned_erms)
     VARIANT(29, __memcpy_avx512_no_vzeroupper)
+
+    VARIANT(30, memcpy_selftuned)
 
     return 0;
 }
