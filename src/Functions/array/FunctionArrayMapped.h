@@ -157,7 +157,7 @@ public:
             {
                 const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                 if (!column_const_array)
-                    throw Exception("X1 Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
                 column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
@@ -233,17 +233,16 @@ public:
                                                           array_with_type_and_name.name));
             }
             if (Impl::isFolding())
-                arrays.emplace_back(arguments[arguments.size() - 1]); // TODO .last()
+                arrays.emplace_back(arguments.back());
 
-            if (Impl::isFolding() && (column_first_array->getData().size() > 0)) // TODO .size() -> .empty()
+            if (Impl::isFolding() && (! column_first_array->getData().empty()))
             {
                 size_t arr_cursor = 0;
                 MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
                 for (size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
                 {
                     // Make accumulator column for this row
-                    // TODO проверить с константой
-                    ColumnWithTypeAndName accumulator_column = arguments.back(); // TODO тут нужно ещё и позицию в аргументе извлекать
+                    ColumnWithTypeAndName accumulator_column = arguments.back();
                     ColumnPtr acc(accumulator_column.column->cut(irow, 1));
                     auto accumulator = ColumnWithTypeAndName(acc,
                                                              accumulator_column.type,
