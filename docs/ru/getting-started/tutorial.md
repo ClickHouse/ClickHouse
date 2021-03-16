@@ -644,7 +644,7 @@ If there are no replicas at the moment on replicated table creation, a new first
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
-ENGINE = ReplcatedMergeTree(
+ENGINE = ReplicatedMergeTree(
     '/clickhouse_perftest/tables/{shard}/hits',
     '{replica}'
 )

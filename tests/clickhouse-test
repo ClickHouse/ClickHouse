@@ -138,7 +138,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         os.environ["CLICKHOUSE_DATABASE"] = database
 
     # This is for .sh tests
-    os.environ.setdefault("CLICKHOUSE_LOG_COMMENT", case_file)
+    os.environ["CLICKHOUSE_LOG_COMMENT"] = case_file
 
     params = {
         'client': args.client + ' --database=' + database,
@@ -216,11 +216,12 @@ def get_processlist(args):
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
-    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
+        cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
         return subprocess.check_output(cmd, shell=True).decode('utf-8')
     except Exception as ex:
-        return "Error occured while receiving stack traces from gdb: {}".format(str(ex))
+        print("Error occured while receiving stack traces from gdb: {}".format(str(ex)))
+        return None
 
 
 # collect server stacktraces from system.stack_trace table
@@ -230,21 +231,26 @@ def get_stacktraces_from_clickhouse(client):
         return subprocess.check_output("{} --allow_introspection_functions=1 --query "
                "\"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), "
                "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
-               "FROM system.stack_trace format Vertical\"".format(client), shell=True).decode('utf-8')
+               "FROM system.stack_trace format Vertical\"".format(client), shell=True, stderr=subprocess.STDOUT).decode('utf-8')
     except Exception as ex:
-        return "Error occured while receiving stack traces from client: {}".format(str(ex))
+        print("Error occured while receiving stack traces from client: {}".format(str(ex)))
+        return None
 
 
 def get_server_pid(server_tcp_port):
-    cmd = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
-    try:
-        output = subprocess.check_output(cmd, shell=True)
-        if output:
-            return int(output)
-        else:
-            return None # server dead
-    except Exception:
-        return None
+    # lsof does not work in stress tests for some reason
+    cmd_lsof = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
+    cmd_pidof = "pidof -s clickhouse-server"
+    commands = [cmd_lsof, cmd_pidof]
+    output = None
+    for cmd in commands:
+        try:
+            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, universal_newlines=True)
+            if output:
+                return int(output)
+        except Exception as e:
+            print("Cannot get server pid with {}, got {}: {}".format(cmd, output, e))
+    return None # most likely server dead
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -806,21 +812,26 @@ def main(args):
 
             clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
             server_pid = get_server_pid(clickhouse_tcp_port)
+            bt = None
             if server_pid:
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
-
-                # It does not work in Sandbox
-                #print("\nCollecting stacktraces from system.stacktraces table:")
-                #print(get_stacktraces_from_clickhouse(args.client))
-
                 print("\nCollecting stacktraces from all running threads with gdb:")
-                print(get_stacktraces_from_gdb(server_pid))
-            else:
+                bt = get_stacktraces_from_gdb(server_pid)
+                if len(bt) < 1000:
+                    print("Got suspiciously small stacktraces: ", bt)
+                    bt = None
+            if bt is None:
+                print("\nCollecting stacktraces from system.stacktraces table:")
+                bt = get_stacktraces_from_clickhouse(args.client)
+            if bt is None:
                 print(
                     colored(
                         "\nUnable to locate ClickHouse server process listening at TCP port {}. "
                         "It must have crashed or exited prematurely!".format(clickhouse_tcp_port),
                         args, "red", attrs=["bold"]))
+            else:
+                print(bt)
+
 
             exit_code = 1
         else:
