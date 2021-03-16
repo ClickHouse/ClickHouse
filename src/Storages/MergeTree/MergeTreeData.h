@@ -126,6 +126,9 @@ public:
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
+    constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
+    constexpr static auto DETACHED_DIR_NAME = "detached";
+
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
     {
@@ -691,6 +694,8 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
+    Disks getDisksByType(DiskType::Type type) const { return getStoragePolicy()->getDisksByType(type); }
+
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
     /// Returns destination disk or volume for the TTL rule according to current storage policy
@@ -766,6 +771,18 @@ public:
     /// Return job to move parts between disks/volumes and so on.
     std::optional<JobAndPool> getDataMovingJob();
     bool areBackgroundMovesNeeded() const;
+
+    /// Lock part in zookeeper for use common S3 data in several nodes
+    /// Overridden in StorageReplicatedMergeTree
+    virtual void lockSharedData(const IMergeTreeDataPart &) const {}
+
+    /// Unlock common S3 data part in zookeeper
+    /// Overridden in StorageReplicatedMergeTree
+    virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
+
+    /// Fetch part only if some replica has it on shared storage like S3
+    /// Overridden in StorageReplicatedMergeTree
+    virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return false; }
 
     /// Parts that currently submerging (merging to bigger parts) or emerging
     /// (to be appeared after merging finished). These two variables have to be used
