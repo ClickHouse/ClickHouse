@@ -89,7 +89,7 @@ struct QueryState
         *this = QueryState();
     }
 
-    bool empty()
+    bool empty() const
     {
         return is_empty;
     }
@@ -169,6 +169,7 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
+    void receiveNextTaskRequest();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);

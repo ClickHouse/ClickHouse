@@ -20,6 +20,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
+#include "Core/Protocol.h"
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
@@ -548,6 +549,16 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
     writeVectorBinary(uuids, *out);
+    out->next();
+}
+
+
+void Connection::sendNextTaskRequest(const std::string & id)
+{
+    std::cout << "Connection::sendNextTaskRequest" << std::endl;
+    std::cout << StackTrace().toString() << std::endl;
+    writeVarUInt(Protocol::Client::NextTaskRequest, *out);
+    writeStringBinary(id, *out);
     out->next();
 }
 

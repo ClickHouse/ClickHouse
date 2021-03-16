@@ -1,7 +1,6 @@
-
 syntax = "proto3";
 
-package clickhouse.s3_task_server;
+package clickhouse.s3_reader;
 
 
 service S3TaskServer {
@@ -12,7 +11,6 @@ service S3TaskServer {
 message S3TaskRequest {
     string query_id = 1;
 }
-
 
 message S3TaskReply {
     string message = 1;

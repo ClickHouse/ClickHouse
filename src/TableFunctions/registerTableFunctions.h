@@ -21,6 +21,7 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
+void registerTableFunctionS3Distributed(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
 #endif
 

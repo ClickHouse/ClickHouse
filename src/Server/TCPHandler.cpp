@@ -25,6 +25,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageTaskManager.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,6 +34,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include "Core/Protocol.h"
 #include "TCPHandler.h"
 
 #if !defined(ARCADIA_BUILD)
@@ -963,10 +965,13 @@ bool TCPHandler::receivePacket()
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-//    std::cerr << "Server got packet: " << Protocol::Client::toString(packet_type) << "\n";
-
     switch (packet_type)
     {
+        case Protocol::Client::NextTaskRequest:
+            std::cout << "Protocol::Client::NextTaskRequest" << std::endl;
+            std::cout << StackTrace().toString() << std::endl;
+            receiveNextTaskRequest();
+            return false;
         case Protocol::Client::IgnoredPartUUIDs:
             /// Part uuids packet if any comes before query.
             receiveIgnoredPartUUIDs();
@@ -1004,6 +1009,16 @@ bool TCPHandler::receivePacket()
         default:
             throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
+}
+
+
+void TCPHandler::receiveNextTaskRequest()
+{
+    std::string id;
+    readStringBinary(id, *in);
+    LOG_DEBUG(log, "Got nextTaskRequest {}", id);
+    auto next = TaskSupervisor::instance().getNextTaskForId(id);
+    LOG_DEBUG(log, "Nexttask for id is {} ", next);
 }
 
 void TCPHandler::receiveIgnoredPartUUIDs()

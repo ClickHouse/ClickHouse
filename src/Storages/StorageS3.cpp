@@ -207,32 +207,26 @@ StorageS3::StorageS3(
     ContextPtr context_,
     const String & compression_method_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
-    , uri(uri_)
-    , access_key_id(access_key_id_)
-    , secret_access_key(secret_access_key_)
-    , max_connections(max_connections_)
+    , client_auth{uri_, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
 {
-    getContext()->getRemoteHostFilter().checkURL(uri_.uri);
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    updateAuthSettings(context_);
+    updateClientAndAuthSettings(context_, client_auth);
 }
 
 
-namespace
-{
-    /* "Recursive" directory listing with matched paths as a result.
+/* "Recursive" directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
-Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
+Strings StorageS3::listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
 {
     if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
     {
@@ -283,8 +277,6 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
     return result;
 }
 
-}
-
 
 Pipe StorageS3::read(
     const Names & column_names,
@@ -295,7 +287,7 @@ Pipe StorageS3::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    updateAuthSettings(local_context);
+    updateClientAndAuthSettings(local_context, client_auth);
 
     Pipes pipes;
     bool need_path_column = false;
@@ -308,7 +300,7 @@ Pipe StorageS3::read(
             need_file_column = true;
     }
 
-    for (const String & key : listFilesWithRegexpMatching(*client, uri))
+    for (const String & key : listFilesWithRegexpMatching(*client_auth.client, client_auth.uri))
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             need_path_column,
             need_file_column,
@@ -318,9 +310,9 @@ Pipe StorageS3::read(
             local_context,
             metadata_snapshot->getColumns(),
             max_block_size,
-            chooseCompressionMethod(uri.key, compression_method),
-            client,
-            uri.bucket,
+            chooseCompressionMethod(client_auth.uri.key, compression_method),
+            client_auth.client,
+            client_auth.uri.bucket,
             key));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -332,49 +324,49 @@ Pipe StorageS3::read(
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    updateAuthSettings(local_context);
+    updateClientAndAuthSettings(local_context, client_auth);
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name,
         metadata_snapshot->getSampleBlock(),
-        getContext(),
-        chooseCompressionMethod(uri.key, compression_method),
-        client,
-        uri.bucket,
-        uri.key,
+        context,
+        chooseCompressionMethod(client_auth.uri.key, compression_method),
+        client_auth.client,
+        client_auth.uri.bucket,
+        client_auth.uri.key,
         min_upload_part_size,
         max_single_part_upload_size);
 }
 
-void StorageS3::updateAuthSettings(ContextPtr local_context)
+void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentificaiton & upd)
 {
-    auto settings = local_context->getStorageS3Settings().getSettings(uri.uri.toString());
-    if (client && (!access_key_id.empty() || settings == auth_settings))
+    auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
+    if (upd.client && (!upd.access_key_id.empty() || settings == upd.auth_settings))
         return;
 
-    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+    Aws::Auth::AWSCredentials credentials(upd.access_key_id, upd.secret_access_key);
     HeaderCollection headers;
-    if (access_key_id.empty())
+    if (upd.access_key_id.empty())
     {
         credentials = Aws::Auth::AWSCredentials(settings.access_key_id, settings.secret_access_key);
         headers = settings.headers;
     }
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        local_context->getRemoteHostFilter(), local_context->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
-    client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.maxConnections = max_connections;
+    client_configuration.endpointOverride = upd.uri.endpoint;
+    client_configuration.maxConnections = upd.max_connections;
 
-    client = S3::ClientFactory::instance().create(
+    upd.client = S3::ClientFactory::instance().create(
         client_configuration,
-        uri.is_virtual_hosted_style,
+        upd.uri.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        settings.use_environment_credentials.value_or(getContext()->getConfigRef().getBool("s3.use_environment_credentials", false)));
+        settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)));
 
-    auth_settings = std::move(settings);
+    upd.auth_settings = std::move(settings);
 }
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
