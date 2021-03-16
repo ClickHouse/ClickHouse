@@ -579,7 +579,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        start_deadline = time.time() + 60.0  # seconds
+        start_deadline = time.time() + 120.0  # seconds
         node.wait_for_start(start_deadline)
         return node
 
@@ -916,13 +916,15 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 hdfs_api = self.make_hdfs_api()
-                self.wait_hdfs_to_start(hdfs_api, 120)
+                self.wait_hdfs_to_start(hdfs_api, 300)
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
+                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 hdfs_api = self.make_hdfs_api(kerberized=True)
                 self.wait_hdfs_to_start(hdfs_api, timeout=300)
@@ -964,7 +966,7 @@ class ClickHouseCluster:
             subprocess_check_call(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            start_deadline = time.time() + 60.0  # seconds
+            start_deadline = time.time() + 120.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -998,17 +1000,16 @@ class ClickHouseCluster:
                         sanitizer_assert_instance = line.split('|')[0].strip()
                         break
 
-            for instance in list(self.instances.values()):
+            for name, instance in self.instances.items():
                 try:
                     if not instance.is_up:
                         continue
                     if instance.contains_in_log(SANITIZER_SIGN):
                         sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN)
-                        logging.ERROR(f"Sanitizer in instance {instance.name} log {sanitizer_assert_instance}")
+                        logging.ERROR(f"Sanitizer in instance {name} log {sanitizer_assert_instance}")
 
                     if instance.contains_in_log("Fatal"):
                         fatal_log = instance.grep_in_log("Fatal")
-                        name = instance.name
                         logging.ERROR(f"Crash in instance {name} fatal log {fatal_log}")
                 except Exception as e:
                     logging.error(f"Failed to check fails in logs: {e}")
@@ -1324,7 +1325,7 @@ class ClickHouseInstance:
         from helpers.test_tools import assert_eq_with_retry
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_wait_sec / 0.5), sleep_time=0.5)
 
-    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=15, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 

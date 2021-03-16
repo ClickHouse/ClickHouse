@@ -78,7 +78,7 @@ def test_alter_replicated_on_cluster(started_cluster):
     assert node3.query("SELECT date FROM test_table_replicated") == '2019-10-01 00:00:00\n'
     assert node4.query("SELECT date FROM test_table_replicated") == '2019-10-01 00:00:00\n'
 
-    node3.query("ALTER TABLE test_table_replicated ON CLUSTER 'test_cluster_mixed' MODIFY COLUMN value String", settings={"replication_alter_partitions_sync": "2"})
+    node3.query_with_retry("ALTER TABLE test_table_replicated ON CLUSTER 'test_cluster_mixed' MODIFY COLUMN value String", settings={"replication_alter_partitions_sync": "2"})
 
     for node in [node2, node4]:
         node.query("INSERT INTO test_table_replicated VALUES(toDateTime('2019-10-02 00:00:00'), 2, 'Hello')")

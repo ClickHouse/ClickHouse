@@ -169,7 +169,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
 
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
+    conn = pymysql.connect(user='root', password='clickhouse', host=cluster.mysql_host, port=cluster.mysql_port)
     return conn
 
 

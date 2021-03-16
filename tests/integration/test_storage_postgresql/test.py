@@ -21,6 +21,7 @@ def get_postgres_conn(database=False):
 
 def create_postgres_db(conn, name):
     cursor = conn.cursor()
+    cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
     cursor.execute("CREATE DATABASE {}".format(name))
 
 

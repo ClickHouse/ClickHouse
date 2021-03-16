@@ -7,10 +7,6 @@ from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegis
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:

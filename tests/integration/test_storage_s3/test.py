@@ -11,9 +11,6 @@ import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 MINIO_INTERNAL_PORT = 9001
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
