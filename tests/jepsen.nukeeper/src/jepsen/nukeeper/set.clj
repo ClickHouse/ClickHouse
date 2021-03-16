@@ -22,13 +22,11 @@
 
   (invoke! [this test op]
     (case (:f op)
-      :read ;(try
-      (do (info "LIST ON NODE" nodename (zk-list conn "/"))
-          (info "EXISTS NODE" (zk/exists conn "/a-set"))
+      :read
+      (do
           (assoc op
                  :type :ok
                  :value (read-string (:data (zk-get-str conn k)))))
-              ;(catch Exception _ (assoc op :type :fail, :error :connect-error)))
       :add (try
              (do
                (zk-add-to-set conn k (:value op))

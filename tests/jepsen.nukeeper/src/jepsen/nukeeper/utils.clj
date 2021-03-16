@@ -61,7 +61,7 @@
 
 (defn zk-create-if-not-exists
   [conn path data]
-  (zk/create conn path :data (data/to-bytes (str data))))
+  (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
 
 (defn clickhouse-alive?
   [node test]
