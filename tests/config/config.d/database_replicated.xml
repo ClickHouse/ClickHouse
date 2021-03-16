@@ -72,4 +72,5 @@
         </test_cluster_database_replicated>
     </remote_servers>
 
+    <_functional_tests_helper_database_replicated_replace_args_macros>1</_functional_tests_helper_database_replicated_replace_args_macros>
 </yandex>
