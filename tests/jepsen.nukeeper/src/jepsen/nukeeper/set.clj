@@ -1,5 +1,7 @@
 (ns jepsen.nukeeper.set
-  (:require   [jepsen
+  (:require
+              [clojure.tools.logging :refer :all]
+              [jepsen
                [checker :as checker]
                [client :as client]
                [generator :as gen]]
@@ -18,9 +20,11 @@
   (invoke! [_ test op]
     (case (:f op)
       :read ;(try
-      (assoc op
+      (do (info "LIST ON NODE" (zk-list conn "/"))
+          (info "EXISTS NODE" (zk/exists conn "/a-set"))
+          (assoc op
              :type :ok
-             :value (read-string (:data (zk-get-str conn k))))
+             :value (read-string (:data (zk-get-str conn k)))))
               ;(catch Exception _ (assoc op :type :fail, :error :connect-error)))
       :add (try
              (do
