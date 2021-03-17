@@ -5,7 +5,7 @@ toc_title: DETACH
 
 # DETACH Statement {#detach}
 
-Deletes information about the table or materialized view from the server. The server stops knowing about their existence.
+Makes the server "forget" about the existence of the table or materialized view.
 
 Syntax:
 
