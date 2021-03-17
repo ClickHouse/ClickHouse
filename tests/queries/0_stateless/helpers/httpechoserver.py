@@ -67,7 +67,7 @@ class EchoCSVHTTPServer(BaseHTTPRequestHandler):
         return
 
 def start_server(requests_amount, test_data="Hello,2,-2,7.7\nWorld,2,-5,8.8"):
-    ostream = StringIO(test_data.decode("utf-8"))
+    ostream = StringIO(test_data)
 
     httpd = HTTPServer(HTTP_SERVER_ADDRESS, EchoCSVHTTPServer)
 
