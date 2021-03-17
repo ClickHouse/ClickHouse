@@ -137,8 +137,17 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD_PER_PART_WIDE * 6 + FILES_OVERHEAD
 
     node.query("SYSTEM START MERGES s3_test")
+
     # Wait for merges and old parts deletion
-    time.sleep(3)
+    for attempt in range(0, 10):
+        parts_count = node.query("SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' FORMAT Values")
+        if parts_count == "(1)":
+            break
+
+        if attempt == 9:
+            assert parts_count == "(1)"
+
+        time.sleep(1)
 
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
