@@ -17,10 +17,10 @@ separator должен быть константной строкой из ро�
 splitByChar(<separator>, <s>)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `separator` — Разделитель, состоящий из одного символа. [String](../../sql-reference/data-types/string.md).
--   `s` — Разбиваемая строка. [String](../../sql-reference/data-types/string.md).
+-   `separator` — разделитель, состоящий из одного символа. [String](../../sql-reference/data-types/string.md).
+-   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемые значения**
 
@@ -54,10 +54,10 @@ SELECT splitByChar(',', '1,2,3,abcde')
 splitByString(separator, s)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `separator` — Разделитель. [String](../../sql-reference/data-types/string.md).
--   `s` — Разбиваемая строка. [String](../../sql-reference/data-types/string.md).
+-   `separator` — разделитель. [String](../../sql-reference/data-types/string.md).
+-   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемые значения**
 
@@ -67,7 +67,7 @@ splitByString(separator, s)
 -   Задано несколько последовательных разделителей;
 -   Исходная строка `s` пуста.
 
-Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
+Тип: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 
 **Примеры**
 

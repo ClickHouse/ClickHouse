@@ -20,7 +20,7 @@ argMin(arg, val)
 argMin(tuple(arg, val))
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `arg` — аргумент.
 -   `val` — значение.

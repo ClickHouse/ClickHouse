@@ -48,6 +48,9 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
+
 #include <Core/Field.h>
 #include <Core/Settings.h>
 
@@ -83,6 +86,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
@@ -532,6 +536,17 @@ void StorageDistributed::read(
     Block header =
         InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
+    /// Return directly (with correct header) if no shard to query.
+    if (query_info.cluster->getShardsInfo().empty())
+    {
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+
+        return;
+    }
+
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
     bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
@@ -546,6 +561,10 @@ void StorageDistributed::read(
 
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, context, query_info);
+
+    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
+    if (!query_plan.isInitialized())
+        throw Exception("Pipeline is not initialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 
