@@ -779,7 +779,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / sum(queries) avg_real_per_query,
+        sum(real) / if(sum(queries), sum(queries), 1) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too
