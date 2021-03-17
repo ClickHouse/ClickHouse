@@ -30,7 +30,7 @@ public:
     bool supportsSelectiveLoad();
 
 private:
-    static Block dataToBlock(const Block & sample_block, const void * data);
+    static Block dataToBlock(const Block & sample_block, const ClickHouseLibrary::RawClickHouseLibraryTable data);
 
     std::string library_path;
     SharedLibraryPtr library;
