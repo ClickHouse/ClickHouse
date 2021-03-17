@@ -105,7 +105,6 @@ def test_drop_replica(start_cluster):
     with PartitionManager() as pm:
         ## make node_1_1 dead
         pm.drop_instance_zk_connections(node_1_1)
-        time.sleep(10)
 
         assert "doesn't exist" in node_1_3.query_and_get_error(
             "SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
