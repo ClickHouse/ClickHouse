@@ -28,16 +28,16 @@
 
 (defn cluster-config
   [test node config-template]
-  (let [nodes (:nodes test)]
-    (clojure.string/replace
-     (clojure.string/replace
-      (clojure.string/replace
-       (clojure.string/replace
-        (clojure.string/replace config-template #"\{quorum_reads\}" (str (boolean (:quorum test))))
-        #"\{srv1\}" (get nodes 0))
-       #"\{srv2\}" (get nodes 1))
-      #"\{srv3\}" (get nodes 2))
-     #"\{id\}" (str (inc (.indexOf nodes node))))))
+  (let [nodes (:nodes test)
+        replacement-map {#"\{srv1\}" (get nodes 0)
+                         #"\{srv2\}" (get nodes 1)
+                         #"\{srv3\}" (get nodes 2)
+                         #"\{id\}" (str (inc (.indexOf nodes node)))
+                         #"\{quorum_reads\}" (str (boolean (:quorum test)))
+                         #"\{snapshot_distance\}" (str (:snapshot-distance test))
+                         #"\{stale_log_gap\}" (str (:stale-log-gap test))
+                         #"\{reserved_log_items\}" (str (:reserved-log-items test))}]
+    (reduce #(clojure.string/replace %1 (get %2 0) (get %2 1)) config-template replacement-map)))
 
 (defn db
   [version]
@@ -90,9 +90,24 @@
   [["-w" "--workload NAME" "What workload should we run?"
     :missing  (str "--workload " (cli/one-of workloads))
     :validate [workloads (cli/one-of workloads)]]
+   [nil "--nemesis NAME" "Which nemesis will poison our lives?"
+    :missing  (str "--nemesis " (cli/one-of custom-nemesis/custom-nemesises))
+    :validate [custom-nemesis/custom-nemesises (cli/one-of custom-nemesis/custom-nemesises)]]
    ["-q" "--quorum" "Use quorum reads, instead of reading from any primary."]
    ["-r" "--rate HZ" "Approximate number of requests per second, per thread."
     :default  10
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   ["-s" "--snapshot-distance NUM" "Number of log entries to create snapshot"
+    :default 10000
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   [nil "--stale-log-gap NUM" "Number of log entries to send snapshot instead of separate logs"
+    :default 1000
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   [nil "--reserved-log-items NUM" "Number of log entries to keep after snapshot"
+    :default 1000
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--ops-per-key NUM" "Maximum number of operations on any given key."
@@ -106,24 +121,22 @@
   [opts]
   (let [quorum (boolean (:quorum opts))
         workload  ((get workloads (:workload opts)) opts)
-        current-nemesis (get custom-nemesis/custom-nemesises "killer")]
+        current-nemesis (get custom-nemesis/custom-nemesises (:nemesis opts))]
     (merge tests/noop-test
            opts
-           {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)))
+           {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) (name (:nemesis opts)))
             :os ubuntu/os
             :db (db "rbtorrent:a122093aee0bdcb70ca42d5e5fb4ba5544372f5f")
             :pure-generators true
             :client (:client workload)
-            :nemesis (custom-nemesis/logs-corruption-nemesis)
+            :nemesis (:nemesis current-nemesis)
             :checker (checker/compose
                       {:perf     (checker/perf)
                        :workload (:checker workload)})
             :generator (gen/phases
                         (->> (:generator workload)
                              (gen/stagger (/ (:rate opts)))
-                             (gen/nemesis
-                              (cycle [(gen/sleep 5)
-                                      {:type :info, :f :corrupt}]))
+                             (gen/nemesis (:generator current-nemesis))
                              (gen/time-limit (:time-limit opts)))
                         (gen/log "Healing cluster")
                         (gen/nemesis (gen/once {:type :info, :f :stop}))
