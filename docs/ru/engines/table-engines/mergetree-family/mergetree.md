@@ -517,7 +517,7 @@ CREATE TABLE table_for_aggregation
     y Int
 )
 ENGINE = MergeTree
-ORDER BY k1, k2
+ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
@@ -733,7 +733,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <max_connections>100</max_connections>
             <retry_attempts>10</retry_attempts>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
@@ -758,7 +757,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `proxy` — конфигурация прокси-сервера для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси-сервера. 
 -   `connect_timeout_ms` — таймаут подключения к сокету в миллисекундах. Значение по умолчанию: 10 секунд. 
 -   `request_timeout_ms` — таймаут выполнения запроса в миллисекундах. Значение по умолчанию: 5 секунд. 
--   `max_connections` — размер пула соединений S3. Значение по умолчанию: `100`. 
 -   `retry_attempts` — число попыток выполнения запроса в случае возникновения ошибки. Значение по умолчанию: `10`. 
 -   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт. 
 -   `metadata_path` — путь к локальному файловому хранилищу для хранения файлов с метаданными для S3. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/`. 
