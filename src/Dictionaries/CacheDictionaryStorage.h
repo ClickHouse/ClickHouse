@@ -4,14 +4,11 @@
 #include <variant>
 
 #include <pcg_random.hpp>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
 
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/LRUHashMap.h>
-#include <Common/HashTable/FixedDeadlineHashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 #include <Dictionaries/DictionaryHelpers.h>
@@ -38,6 +35,9 @@ struct CacheDictionaryStorageConfiguration
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
 {
+
+    static constexpr size_t max_collision_length = 10;
+
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryStorage");
@@ -47,12 +47,18 @@ public:
         CacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
         , rnd_engine(randomSeed())
-        , cache(configuration.max_size_in_cells, 10, { *this })
     {
+        size_t cells_size = roundUpToPowerOfTwoOrZero(std::max(configuration.max_size_in_cells, max_collision_length));
+
+        cells.resize_fill(cells_size);
+        size_overlap_mask = cells_size - 1;
+
         setup(dictionary_structure);
     }
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
+
+    bool canPerformFetchByMultipleThreadsWithoutLock() const override { return true; }
 
     String getName() const override
     {
@@ -134,9 +140,9 @@ public:
             throw Exception("Method getCachedComplexKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    size_t getSize() const override { return cache.size(); }
+    size_t getSize() const override { return size; }
 
-    size_t getMaxSize() const override { return cache.getMaxSize(); }
+    size_t getMaxSize() const override { return configuration.max_size_in_cells; }
 
     size_t getBytesAllocated() const override
     {
@@ -151,7 +157,7 @@ public:
             });
         }
 
-        return arena.size() + cache.getSizeInBytes() + attributes_size_in_bytes;
+        return arena.size() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
     }
 
 private:
@@ -175,9 +181,9 @@ private:
         KeysStorageFetchResult result;
 
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
-        result.key_index_to_state.resize_fill(keys.size(), {KeyState::not_found});
+        result.key_index_to_state.resize_fill(keys.size());
 
-        const auto now = std::chrono::system_clock::now();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
         size_t keys_size = keys.size();
@@ -190,54 +196,39 @@ private:
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
             auto key = keys[key_index];
-            auto * it = cache.get(key);
+            auto [key_state, cell_index] = getKeyStateAndCellIndex(key, now);
 
-            if (!it)
+            if (unlikely(key_state == KeyState::not_found))
             {
                 result.key_index_to_state[key_index] = {KeyState::not_found};
                 ++result.not_found_keys_size;
                 continue;
             }
 
-            auto deadline = it->getDeadline();
-            const auto & cell = it->getMapped();
+            auto & cell = cells[cell_index];
 
-            if (now > deadline + max_lifetime_seconds)
-            {
-                result.key_index_to_state[key_index] = {KeyState::not_found};
-                ++result.not_found_keys_size;
-                continue;
-            }
-
-            bool cell_is_expired = false;
-            KeyState::State key_state = KeyState::found;
-
-            if (now > deadline)
-            {
-                cell_is_expired = true;
-                key_state = KeyState::expired;
-            }
+            result.expired_keys_size += static_cast<size_t>(key_state == KeyState::expired);
 
             result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
-            ++fetched_columns_index;
+            fetched_keys[fetched_columns_index] = FetchedKey(cell.element_index, cell.is_default);
 
-            result.expired_keys_size += cell_is_expired;
-            result.found_keys_size += !cell_is_expired;
+            ++fetched_columns_index;
 
             result.key_index_to_state[key_index].setDefaultValue(cell.is_default);
             result.default_keys_size += cell.is_default;
-
-            fetched_keys[key_index] = FetchedKey{cell.element_index, cell.is_default};
         }
+
+        result.found_keys_size = keys_size - (result.expired_keys_size + result.not_found_keys_size);
 
         for (size_t attribute_index = 0; attribute_index < fetch_request.attributesSize(); ++attribute_index)
         {
             if (!fetch_request.shouldFillResultColumnWithIndex(attribute_index))
                 continue;
 
-            size_t fetched_keys_size = fetched_keys.size();
             auto & attribute = attributes[attribute_index];
             const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(attribute_index);
+
+            size_t fetched_keys_size = fetched_keys.size();
             auto & fetched_column = *result.fetched_columns[attribute_index];
             fetched_column.reserve(fetched_keys_size);
 
@@ -245,7 +236,7 @@ private:
             {
                 auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
 
-                for (size_t fetched_key_index = 0; fetched_key_index < fetched_keys.size(); ++fetched_key_index)
+                for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
                 {
                     auto fetched_key = fetched_keys[fetched_key_index];
 
@@ -272,7 +263,7 @@ private:
 
                     if constexpr (std::is_same_v<ColumnType, ColumnString>)
                     {
-                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_keys.size(); ++fetched_key_index)
+                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
                         {
                             auto fetched_key = fetched_keys[fetched_key_index];
 
@@ -287,7 +278,7 @@ private:
                     }
                     else
                     {
-                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_keys.size(); ++fetched_key_index)
+                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
                         {
                             auto fetched_key = fetched_keys[fetched_key_index];
                             auto & data = column_typed.getData();
@@ -314,23 +305,27 @@ private:
     {
         const auto now = std::chrono::system_clock::now();
 
-        size_t keys_size = keys.size();
-
-        size_t columns_size = columns.size();
         Field column_value;
 
-        for (size_t key_index = 0; key_index < keys_size; ++key_index)
+        for (size_t key_index = 0; key_index < keys.size(); ++key_index)
         {
             auto key = keys[key_index];
 
-            auto [it, was_inserted] = cache.insert(key, {});
+            size_t cell_index = getCellIndexForInsert(key);
+            auto & cell = cells[cell_index];
+
+            cell.is_default = false;
+
+            bool was_inserted = cell.deadline == 0;
 
             if (was_inserted)
             {
-                auto & cell = it->getMapped();
-                cell.is_default = false;
+                if constexpr (std::is_same_v<KeyType, StringRef>)
+                    cell.key = copyStringInArena(key);
+                else
+                    cell.key = key;
 
-                for (size_t attribute_index = 0; attribute_index < columns_size; ++attribute_index)
+                for (size_t attribute_index = 0; attribute_index < columns.size(); ++attribute_index)
                 {
                     auto & column = columns[attribute_index];
 
@@ -347,38 +342,36 @@ private:
                             container.back() = column_value;
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & value = column_value.get<String>();
-                            StringRef inserted_value = copyStringInArena(StringRef { value.data(), value.size() });
+                            const String & string_value = column_value.get<String>();
+                            StringRef string_value_ref = StringRef {string_value.data(), string_value.size()};
+                            StringRef inserted_value = copyStringInArena(string_value_ref);
                             container.back() = inserted_value;
                         }
                         else
-                            container.back() = column_value.get<ElementType>();
+                            container.back() = column_value.get<NearestFieldType<ElementType>>();
                     });
                 }
+
+                ++size;
             }
             else
             {
-                auto & cell_key = it->getKey();
-
-                Cell cell;
-
-                size_t existing_index = it->getMapped().element_index;
-
-                cell.element_index = existing_index;
-                cell.is_default = false;
-
-                if (cell_key != key)
+                if (cell.key != key)
                 {
-                    /// In case of complex key we keep it in arena
                     if constexpr (std::is_same_v<KeyType, StringRef>)
-                        arena.free(const_cast<char *>(key.data), key.size);
+                    {
+                        char * data = const_cast<char *>(cell.key.data);
+                        arena.free(data, cell.key.size);
+                        cell.key = copyStringInArena(key);
+                    }
+                    else
+                        cell.key = key;
                 }
 
-                cache.reinsert(it, key, cell);
+                /// Put values into existing index
+                size_t index_to_use = cell.element_index;
 
-                /// Put values into index
-
-                for (size_t attribute_index = 0; attribute_index < columns_size; ++attribute_index)
+                for (size_t attribute_index = 0; attribute_index < columns.size(); ++attribute_index)
                 {
                     auto & column = columns[attribute_index];
 
@@ -389,20 +382,26 @@ private:
                         column->get(key_index, column_value);
 
                         if constexpr (std::is_same_v<ElementType, Field>)
-                            container[existing_index] = column_value;
+                            container[index_to_use] = column_value;
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & value = column_value.get<String>();
-                            StringRef inserted_value = copyStringInArena(StringRef { value.data(), value.size() });
-                            container[existing_index] = inserted_value;
+                            const String & string_value = column_value.get<String>();
+                            StringRef string_ref_value = StringRef {string_value.data(), string_value.size()};
+                            StringRef inserted_value = copyStringInArena(string_ref_value);
+
+                            StringRef previous_value = container[index_to_use];
+                            char * data = const_cast<char *>(previous_value.data);
+                            arena.free(data, previous_value.size);
+
+                            container[index_to_use] = inserted_value;
                         }
                         else
-                            container[existing_index] = column_value.get<ElementType>();
+                            container[index_to_use] = column_value.get<NearestFieldType<ElementType>>();
                     });
                 }
             }
 
-            setCellDeadline(*it, now);
+            setCellDeadline(cell, now);
         }
     }
 
@@ -416,55 +415,64 @@ private:
         {
             auto key = keys[key_index];
 
-            Cell value;
-            value.is_default = true;
+            size_t cell_index = getCellIndexForInsert(key);
+            auto & cell = cells[cell_index];
 
-            auto [it, was_inserted] = cache.insert(key, value);
+            bool was_inserted = cell.deadline == 0;
+
+            cell.is_default = true;
 
             if (was_inserted)
             {
-                auto & cell = it->getMapped();
+                if constexpr (std::is_same_v<KeyType, StringRef>)
+                    cell.key = copyStringInArena(key);
+                else
+                    cell.key = key;
 
                 for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
                 {
                     getAttributeContainer(attribute_index, [&](auto & container)
                     {
                         container.emplace_back();
-                        cell.element_index = container.size();
+                        cell.element_index = container.size() - 1;
                     });
                 }
+
+                ++size;
             }
             else
             {
-                value.element_index = it->getMapped().element_index;
-
-                if (it->getKey() != key)
+                if (cell.key != key)
                 {
-                    /// In case of complex key we keep it in arena
                     if constexpr (std::is_same_v<KeyType, StringRef>)
-                        arena.free(const_cast<char *>(key.data), key.size);
+                    {
+                        char * data = const_cast<char *>(cell.key.data);
+                        arena.free(data, cell.key.size);
+                        cell.key = copyStringInArena(key);
+                    }
+                    else
+                        cell.key = key;
                 }
-
-                cache.reinsert(it, key, value);
             }
 
-            setCellDeadline(*it, now);
+            setCellDeadline(cell, now);
         }
     }
 
     PaddedPODArray<KeyType> getCachedKeysImpl() const
     {
         PaddedPODArray<KeyType> result;
-        result.reserve(cache.size());
+        result.reserve(size);
 
-        for (auto & node : cache)
+        for (auto cell : cells)
         {
-            auto & cell = node.getMapped();
+            if (cell.deadline == 0)
+                continue;
 
             if (cell.is_default)
                 continue;
 
-            result.emplace_back(node.getKey());
+            result.emplace_back(cell.key);
         }
 
         return result;
@@ -545,17 +553,15 @@ private:
         }
     }
 
+    using TimePoint = std::chrono::system_clock::time_point;
+
     struct Cell
     {
+        KeyType key;
         size_t element_index;
         bool is_default;
+        time_t deadline;
     };
-
-    CacheDictionaryStorageConfiguration configuration;
-
-    ArenaWithFreeLists arena;
-
-    pcg64 rnd_engine;
 
     struct Attribute
     {
@@ -581,38 +587,28 @@ private:
             std::vector<Field>> attribute_container;
     };
 
-    class CacheStorageCellDisposer
-    {
-    public:
-        CacheDictionaryStorage & storage;
+    CacheDictionaryStorageConfiguration configuration;
 
-        template <typename Key, typename Value>
-        void operator()(const Key & key, const Value &) const
-        {
-            /// In case of complex key we keep it in arena
-            if constexpr (std::is_same_v<Key, StringRef>)
-                storage.arena.free(const_cast<char *>(key.data), key.size);
-        }
-    };
+    pcg64 rnd_engine;
 
-    using SimpleFixedDeadlineHashMap = FixedDeadlineHashMap<UInt64, Cell, CacheStorageCellDisposer>;
-    using ComplexFixedDeadlineHashMap = FixedDeadlineHashMap<StringRef, Cell, CacheStorageCellDisposer>;
+    size_t size_overlap_mask = 0;
 
-    using FixedDeadlineHashMap = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
-        SimpleFixedDeadlineHashMap,
-        ComplexFixedDeadlineHashMap>;
+    size_t size = 0;
 
-    using FixedDeadlineHashMapCell = typename FixedDeadlineHashMap::Cell;
+    PaddedPODArray<Cell> cells;
 
-    inline void setCellDeadline(FixedDeadlineHashMapCell & cell, TimePoint now)
+    ArenaWithFreeLists arena;
+
+    std::vector<Attribute> attributes;
+
+    inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
             /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add strict_max_lifetime_seconds
             /// to the expiration time. And it overflows pretty well.
             auto deadline = std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(configuration.strict_max_lifetime_seconds);
-            cell.setDeadline(deadline);
+            cell.deadline = std::chrono::system_clock::to_time_t(deadline);
             return;
         }
 
@@ -622,12 +618,73 @@ private:
         std::uniform_int_distribution<UInt64> distribution{min_sec_lifetime, max_sec_lifetime};
 
         auto deadline = now + std::chrono::seconds(distribution(rnd_engine));
-        cell.setDeadline(deadline);
+        cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    FixedDeadlineHashMap cache;
+    inline size_t getCellIndex(const KeyType key) const
+    {
+        const size_t hash = DefaultHash<KeyType>()(key);
+        const size_t index = hash & size_overlap_mask;
+        return index;
+    }
 
-    std::vector<Attribute> attributes;
+    using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
+
+    inline KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    {
+        size_t place_value = getCellIndex(key);
+        const size_t place_value_end = place_value + max_collision_length;
+
+        time_t max_lifetime_seconds = static_cast<time_t>(configuration.strict_max_lifetime_seconds);
+
+        for (; place_value < place_value_end; ++place_value)
+        {
+            const auto cell_place_value = place_value & size_overlap_mask;
+            const auto & cell = cells[cell_place_value];
+
+            if (cell.key != key)
+                continue;
+
+            if (unlikely(now > cell.deadline + max_lifetime_seconds))
+                return std::make_pair(KeyState::not_found, cell_place_value);
+
+            if (unlikely(now > cell.deadline))
+                return std::make_pair(KeyState::expired, cell_place_value);
+
+            return std::make_pair(KeyState::found, cell_place_value);
+        }
+
+        return std::make_pair(KeyState::not_found, place_value);
+    }
+
+    inline size_t getCellIndexForInsert(const KeyType & key) const
+    {
+        size_t place_value = getCellIndex(key);
+        const size_t place_value_end = place_value + max_collision_length;
+        size_t oldest_place_value = place_value;
+
+        time_t oldest_time = std::numeric_limits<time_t>::max();
+
+        for (; place_value < place_value_end; ++place_value)
+        {
+            const size_t cell_place_value = place_value & size_overlap_mask;
+            const Cell cell = cells[cell_place_value];
+
+            if (cell.deadline == 0)
+                return cell_place_value;
+
+            if (cell.key == key)
+                return place_value;
+
+            if (cell.deadline < oldest_time)
+            {
+                oldest_time = cell.deadline;
+                oldest_place_value = cell_place_value;
+            }
+        }
+
+        return oldest_place_value;
+    }
 };
 
 }

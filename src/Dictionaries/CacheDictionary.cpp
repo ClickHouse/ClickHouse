@@ -332,10 +332,16 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
 
     FetchResult result_of_fetch_from_storage;
 
-    {
-        /// Write lock on storage
-        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+    bool protect_get_with_write_lock = cache_storage_ptr->canPerformFetchByMultipleThreadsWithoutLock();
 
+    if (protect_get_with_write_lock)
+    {
+        const ProfilingScopedReadRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
+    }
+    else
+    {
+        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
     }
 
