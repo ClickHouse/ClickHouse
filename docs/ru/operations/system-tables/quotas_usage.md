@@ -29,4 +29,3 @@
 
 -   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/quotas_usage) <!--hide-->

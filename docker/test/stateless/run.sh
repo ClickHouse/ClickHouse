@@ -72,5 +72,12 @@ export -f run_tests
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
+./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
+if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
+    tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
+fi
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
