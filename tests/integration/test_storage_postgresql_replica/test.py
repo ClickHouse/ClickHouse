@@ -79,7 +79,7 @@ def test_initial_load_from_snapshot(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -103,7 +103,7 @@ def test_no_connection_at_startup(started_cluster):
     started_cluster.pause_container('postgres1')
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -129,7 +129,7 @@ def test_detach_attach_is_ok(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -164,7 +164,7 @@ def test_replicating_insert_queries(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -205,7 +205,7 @@ def test_replicating_delete_queries(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -243,7 +243,7 @@ def test_replicating_update_queries(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -273,7 +273,7 @@ def test_resume_from_written_version(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
@@ -319,7 +319,7 @@ def test_many_replication_messages(started_cluster):
             _sign Int8 MATERIALIZED 1,
             _version UInt64 MATERIALIZED 1,
             PRIMARY KEY(key))
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             SETTINGS postgresql_replica_max_block_size = 50000;
         ''')
@@ -373,7 +373,7 @@ def test_connection_loss(started_cluster):
 
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
-            ENGINE = PostgreSQLReplica(
+            ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
