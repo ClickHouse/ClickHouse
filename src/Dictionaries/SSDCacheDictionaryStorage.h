@@ -614,10 +614,12 @@ public:
     }
 
     template <typename FetchBlockFunc>
-    ALWAYS_INLINE void fetchBlocks(char * read_buffer, size_t read_from_file_buffer_blocks_size, const PaddedPODArray<size_t> & blocks_to_fetch, FetchBlockFunc && func) const
+    void fetchBlocks(size_t read_from_file_buffer_blocks_size, const PaddedPODArray<size_t> & blocks_to_fetch, FetchBlockFunc && func) const
     {
         if (blocks_to_fetch.empty())
             return;
+
+        Memory<Allocator<true>> read_buffer(read_from_file_buffer_blocks_size * block_size, 4096);
 
         size_t blocks_to_fetch_size = blocks_to_fetch.size();
 
@@ -631,7 +633,7 @@ public:
         {
             iocb request{};
 
-            char * buffer_place = read_buffer + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
+            char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
             #if defined(__FreeBSD__)
             request.aio.aio_lio_opcode = LIO_READ;
@@ -806,7 +808,6 @@ public:
     explicit SSDCacheDictionaryStorage(const SSDCacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
         , file_buffer(configuration_.file_path, configuration.block_size, configuration.file_blocks_size)
-        , read_from_file_buffer(configuration_.block_size * configuration_.read_buffer_blocks_size, 4096)
         , rnd_engine(randomSeed())
         , index(configuration.max_stored_keys, false, { complex_key_arena })
     {
@@ -815,7 +816,7 @@ public:
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
 
-    bool canPerformFetchByMultipleThreadsWithoutLock() const override { return false; }
+    bool canPerformFetchByMultipleThreadsWithoutLock() const override { return true; }
 
     String getName() const override
     {
@@ -922,8 +923,7 @@ private:
             default_value
         };
 
-        TimePoint deadline;
-
+        time_t deadline;
         SSDCacheIndex index;
         size_t in_memory_partition_index;
         CellState state;
@@ -954,23 +954,27 @@ private:
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
         result.key_index_to_state.resize_fill(keys.size(), {KeyState::not_found});
 
-        const auto now = std::chrono::system_clock::now();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
 
-        using BlockIndexToKeysMap = std::unordered_map<size_t, std::vector<KeyToBlockOffset>, DefaultHash<size_t>>;
+        using BlockIndexToKeysMap = absl::flat_hash_map<size_t, PaddedPODArray<KeyToBlockOffset>, DefaultHash<size_t>>;
         BlockIndexToKeysMap block_to_keys_map;
         absl::flat_hash_set<size_t, DefaultHash<size_t>> unique_blocks_to_request;
         PaddedPODArray<size_t> blocks_to_request;
 
-        std::chrono::seconds strict_max_lifetime_seconds(configuration.strict_max_lifetime_seconds);
+        time_t strict_max_lifetime_seconds = static_cast<time_t>(configuration.strict_max_lifetime_seconds);
         size_t keys_size = keys.size();
+
+        for (size_t attribute_size = 0; attribute_size < fetch_request.attributesSize(); ++attribute_size)
+            if (fetch_request.shouldFillResultColumnWithIndex(attribute_size))
+                result.fetched_columns[attribute_size]->reserve(keys_size);
 
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
             auto key = keys[key_index];
 
-            const auto * it = index.find(key);
+            const auto * it = index.findNoLRU(key);
 
             if (!it)
             {
@@ -980,9 +984,7 @@ private:
 
             const auto & cell = it->getMapped();
 
-            bool has_deadline = cellHasDeadline(cell);
-
-            if (has_deadline && now > cell.deadline + strict_max_lifetime_seconds)
+            if (now > cell.deadline + strict_max_lifetime_seconds)
             {
                 ++result.not_found_keys_size;
                 continue;
@@ -991,14 +993,13 @@ private:
             bool cell_is_expired = false;
             KeyState::State key_state = KeyState::found;
 
-            if (has_deadline && now > cell.deadline)
+            if (now > cell.deadline)
             {
                 cell_is_expired = true;
                 key_state = KeyState::expired;
             }
 
             result.expired_keys_size += cell_is_expired;
-            result.found_keys_size += !cell_is_expired;
 
             switch (cell.state)
             {
@@ -1014,7 +1015,8 @@ private:
                 }
                 case Cell::on_disk:
                 {
-                    block_to_keys_map[cell.index.block_index].emplace_back(key_index, cell.index.offset_in_block, cell_is_expired);
+                    PaddedPODArray<KeyToBlockOffset> & keys_block = block_to_keys_map[cell.index.block_index];
+                    keys_block.emplace_back(key_index, cell.index.offset_in_block, cell_is_expired);
 
                     if (!unique_blocks_to_request.contains(cell.index.block_index))
                     {
@@ -1036,10 +1038,12 @@ private:
             }
         }
 
+        result.found_keys_size = keys_size - (result.not_found_keys_size + result.expired_keys_size);
+
         /// Sort blocks by offset before start async io requests
         std::sort(blocks_to_request.begin(), blocks_to_request.end());
 
-        file_buffer.fetchBlocks(read_from_file_buffer.m_data, configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
+        file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
         {
             auto & keys_in_block = block_to_keys_map[block_index];
 
@@ -1048,10 +1052,8 @@ private:
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
-                if (key_in_block.is_expired)
-                    result.key_index_to_state[key_in_block.key_index] = {KeyState::expired, fetched_columns_index};
-                else
-                    result.key_index_to_state[key_in_block.key_index] = {KeyState::found, fetched_columns_index};
+                KeyState::State state = key_in_block.is_expired ? KeyState::expired : KeyState::found;
+                result.key_index_to_state[key_in_block.key_index] = {state, fetched_columns_index};
 
                 ++fetched_columns_index;
             }
@@ -1298,16 +1300,12 @@ private:
         }
     }
 
-    inline static bool cellHasDeadline(const Cell & cell)
-    {
-        return cell.deadline != std::chrono::system_clock::from_time_t(0);
-    }
-
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
-            cell.deadline = std::chrono::system_clock::from_time_t(0);
+            auto deadline = std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(configuration.strict_max_lifetime_seconds);
+            cell.deadline = std::chrono::system_clock::to_time_t(deadline);
             return;
         }
 
@@ -1315,14 +1313,13 @@ private:
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
 
         std::uniform_int_distribution<UInt64> distribution{min_sec_lifetime, max_sec_lifetime};
-        cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
+        auto deadline = now + std::chrono::seconds{distribution(rnd_engine)};
+        cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
     SSDCacheDictionaryStorageConfiguration configuration;
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
-
-    Memory<Allocator<true>> read_from_file_buffer;
 
     std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
