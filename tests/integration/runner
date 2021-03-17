@@ -196,7 +196,7 @@ if __name__ == "__main__":
     if sys.stdout.isatty() and sys.stdin.isatty():
         tty = "-it"
 
-    cmd = "docker run {net} {tty} --rm --name {name} --privileged
+    cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
