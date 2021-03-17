@@ -114,7 +114,7 @@
             :db (db "rbtorrent:a122093aee0bdcb70ca42d5e5fb4ba5544372f5f")
             :pure-generators true
             :client (:client workload)
-            :nemesis (custom-nemesis/hammer-time-nemesis)
+            :nemesis (custom-nemesis/logs-corruption-nemesis)
             :checker (checker/compose
                       {:perf     (checker/perf)
                        :workload (:checker workload)})
@@ -123,9 +123,7 @@
                              (gen/stagger (/ (:rate opts)))
                              (gen/nemesis
                               (cycle [(gen/sleep 5)
-                                      {:type :info, :f :start}
-                                      (gen/sleep 5)
-                                      {:type :info, :f :stop}]))
+                                      {:type :info, :f :corrupt}]))
                              (gen/time-limit (:time-limit opts)))
                         (gen/log "Healing cluster")
                         (gen/nemesis (gen/once {:type :info, :f :stop}))

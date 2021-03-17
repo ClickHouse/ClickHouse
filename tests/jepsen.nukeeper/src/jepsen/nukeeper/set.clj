@@ -24,9 +24,9 @@
     (case (:f op)
       :read
       (do
-          (assoc op
-                 :type :ok
-                 :value (read-string (:data (zk-get-str conn k)))))
+        (assoc op
+               :type :ok
+               :value (read-string (:data (zk-get-str conn k)))))
       :add (try
              (do
                (zk-add-to-set conn k (:value op))
