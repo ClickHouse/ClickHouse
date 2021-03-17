@@ -66,10 +66,11 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
         if (arguments.empty())
             return DateLUT::instance();
 
+        const auto & dt_arg = arguments[datetime_arg_num].type.get();
         /// If time zone is attached to an argument of type DateTime.
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(dt_arg))
             return type->getTimeZone();
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(arguments[datetime_arg_num].type.get()))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
             return type->getTimeZone();
 
         return DateLUT::instance();

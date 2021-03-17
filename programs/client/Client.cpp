@@ -390,7 +390,7 @@ private:
         for (auto d : chineseNewYearIndicators)
         {
             /// Let's celebrate until Lantern Festival
-            if (d <= days && d + 25u >= days)
+            if (d <= days && d + 25 >= days)
                 return true;
             else if (d > days)
                 return false;
