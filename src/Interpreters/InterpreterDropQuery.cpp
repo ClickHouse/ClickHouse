@@ -191,7 +191,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             table->shutdown();
 
 #if USE_LIBPQXX
-            if (table->getName() == "PostgreSQLReplica")
+            if (table->getName() == "MaterializePostgreSQL")
                 table->as<StorageMaterializePostgreSQL>()->shutdownFinal();
 #endif
 

@@ -100,7 +100,7 @@ def test_load_and_sync_all_database_tables(started_cluster):
         create_postgres_table(cursor, table_name);
         instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(50)".format(table_name))
 
-    instance.query("CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
     assert 'test_database' in instance.query('SHOW DATABASES')
 
     for i in range(NUM_TABLES):
@@ -127,7 +127,7 @@ def test_replicating_dml(started_cluster):
         instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {} from numbers(50)".format(i, i))
 
     instance.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+        "CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
 
     for i in range(NUM_TABLES):
         instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 50 + number, {} from numbers(1000)".format(i, i))
@@ -188,7 +188,7 @@ def test_different_data_types(started_cluster):
            )''')
 
     instance.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+        "CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
 
     for i in range(10):
         instance.query('''
@@ -262,7 +262,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
     instance.query('''
             CREATE DATABASE test_database
-            ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
+            ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
             SETTINGS postgresql_replica_tables_list = '{}';
     '''.format(publication_tables))
     assert 'test_database' in instance.query('SHOW DATABASES')
@@ -308,7 +308,7 @@ def test_table_schema_changes(started_cluster):
 
     instance.query(
         """CREATE DATABASE test_database
-           ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
+           ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
            SETTINGS postgresql_replica_allow_minimal_ddl = 1;
     """)
 
@@ -354,7 +354,7 @@ def test_changing_replica_identity_value(started_cluster):
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT 50 + number, number from numbers(50)")
 
     instance.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQLReplica('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+        "CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT 100 + number, number from numbers(50)")
     check_tables_are_synchronized('postgresql_replica');
