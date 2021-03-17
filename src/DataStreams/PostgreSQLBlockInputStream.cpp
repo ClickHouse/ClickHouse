@@ -23,25 +23,9 @@ namespace DB
 {
 
 
-template<>
-PostgreSQLBlockInputStream<pqxx::read_transaction>::PostgreSQLBlockInputStream(
-    std::shared_ptr<pqxx::read_transaction> tx_,
-    const std::string & query_str_,
-    const Block & sample_block,
-    const UInt64 max_block_size_,
-    bool auto_commit_)
-    : query_str(query_str_)
-    , max_block_size(max_block_size_)
-    , auto_commit(auto_commit_)
-    , tx(tx_)
-{
-    description.init(sample_block);
-}
-
-
-template<>
-PostgreSQLBlockInputStream<pqxx::work>::PostgreSQLBlockInputStream(
-    std::shared_ptr<pqxx::work> tx_,
+template<typename T>
+PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
+    std::shared_ptr<T> tx_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_,
@@ -137,6 +121,12 @@ void PostgreSQLBlockInputStream<T>::readSuffix()
             tx->commit();
     }
 }
+
+template
+class PostgreSQLBlockInputStream<pqxx::work>;
+
+template
+class PostgreSQLBlockInputStream<pqxx::read_transaction>;
 
 }
 
