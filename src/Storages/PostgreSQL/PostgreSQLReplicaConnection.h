@@ -19,7 +19,7 @@ public:
         const String & config_prefix,
         const size_t num_retries_ = POSTGRESQL_CONNECTION_DEFAULT_RETRIES_NUM);
 
-    PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other);
+    PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other) = default;
 
     WrappedPostgreSQLConnection get();
 

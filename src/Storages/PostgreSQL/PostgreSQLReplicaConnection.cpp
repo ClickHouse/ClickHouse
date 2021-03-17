@@ -52,13 +52,6 @@ PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(
 }
 
 
-PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other)
-        : replicas(other.replicas)
-        , num_retries(other.num_retries)
-{
-}
-
-
 WrappedPostgreSQLConnection PostgreSQLReplicaConnection::get()
 {
     for (size_t i = 0; i < num_retries; ++i)

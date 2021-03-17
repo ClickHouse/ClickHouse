@@ -50,7 +50,6 @@ void PostgreSQLConnectionPool::initialize()
 }
 
 
-
 WrappedPostgreSQLConnection PostgreSQLConnectionPool::get()
 {
     std::lock_guard lock(mutex);
