@@ -815,6 +815,8 @@ public:
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
 
+    bool canPerformFetchByMultipleThreadsWithoutLock() const override { return false; }
+
     String getName() const override
     {
         if (dictionary_key_type == DictionaryKeyType::simple)

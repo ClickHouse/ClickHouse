@@ -12,9 +12,9 @@ struct KeyState
 {
     enum State: uint8_t
     {
-        not_found = 2,
-        expired = 4,
-        found = 8,
+        not_found = 0,
+        expired = 1,
+        found = 2,
     };
 
     KeyState(State state_, size_t fetched_column_index_)
@@ -71,6 +71,8 @@ public:
 
     /// Necessary if all keys are found we can return result to client without additional aggregation
     virtual bool returnsFetchedColumnsInOrderOfRequestedKeys() const = 0;
+
+    virtual bool canPerformFetchByMultipleThreadsWithoutLock() const = 0;
 
     /// Name of storage
     virtual String getName() const = 0;
