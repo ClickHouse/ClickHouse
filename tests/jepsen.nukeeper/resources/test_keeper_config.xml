@@ -10,6 +10,9 @@
             <startup_timeout>60000</startup_timeout>
             <raft_logs_level>trace</raft_logs_level>
             <quorum_reads>{quorum_reads}</quorum_reads>
+            <snapshot_distance>{snapshot_distance}</snapshot_distance>
+            <stale_log_gap>{stale_log_gap}</stale_log_gap>
+            <reserved_log_items>{reserved_log_items}</reserved_log_items>
         </coordination_settings>
 
         <raft_configuration>

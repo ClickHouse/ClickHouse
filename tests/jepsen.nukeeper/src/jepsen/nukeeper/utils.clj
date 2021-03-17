@@ -81,7 +81,8 @@
   [node test]
   (info "Killing server on node" node)
   (c/su
-   (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)))
+   (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
+   (c/exec :rm :-fr (str dir "/status"))))
 
 (defn start-clickhouse!
   [node test]
