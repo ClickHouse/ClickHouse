@@ -1044,7 +1044,7 @@ private:
     mutable std::mutex query_id_set_mutex;
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
-    MatcherFn getPartitionMatcher(const ASTPtr & partition, const Context & context);
+    MatcherFn getPartitionMatcher(const ASTPtr & partition, const Context & context) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
