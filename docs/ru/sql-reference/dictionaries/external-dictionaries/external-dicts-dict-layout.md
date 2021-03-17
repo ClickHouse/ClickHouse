@@ -443,4 +443,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Данные должны полностью помещаться в оперативной памяти.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

@@ -23,4 +23,3 @@
 -   `is_in_sampling_key` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий включение столбца в ключ выборки.
 -   `compression_codec` ([String](../../sql-reference/data-types/string.md)) — имя кодека сжатия.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/columns) <!--hide-->

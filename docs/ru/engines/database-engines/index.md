@@ -18,4 +18,3 @@ toc_title: "Введение"
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/database_engines/) <!--hide-->
