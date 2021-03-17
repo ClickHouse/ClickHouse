@@ -293,10 +293,10 @@ public:
     /// Returned actions add single column which may be used for filter.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
     ///
-    /// @param all_inputs should containt inputs from previous step, which will be used for result actions.
+    /// @param all_inputs should contain inputs from previous step, which will be used for result actions.
     /// It is expected that all_inputs contain columns from available_inputs.
     /// This parameter is needed to enforce result actions save columns order in block.
-    /// Otherwise for some queries, e.g. with GROUP BY, columns colum be swapped.
+    /// Otherwise for some queries, e.g. with GROUP BY, columns will be mixed.
     /// Example: SELECT sum(x), y, z FROM tab WHERE z > 0 and sum(x) > 0
     /// Pushed condition: z > 0
     /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
