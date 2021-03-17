@@ -67,10 +67,10 @@ private:
 
     using Conditions = std::list<Condition>;
 
-    void analyzeImpl(Conditions & res, const ASTPtr & node, bool final) const;
+    void analyzeImpl(Conditions & res, const ASTPtr & node, bool isFinal) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
-    Conditions analyze(const ASTPtr & expression, bool final) const;
+    Conditions analyze(const ASTPtr & expression, bool isFinal) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
@@ -97,7 +97,7 @@ private:
       *
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
-    bool cannotBeMoved(const ASTPtr & ptr, bool final) const;
+    bool cannotBeMoved(const ASTPtr & ptr, bool isFinal) const;
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
