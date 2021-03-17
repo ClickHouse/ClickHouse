@@ -48,7 +48,7 @@ clickhouse-client --query "
 " --input_format_with_names_use_header 0 --format_csv_allow_single_quote 0 --input_format_allow_errors_num 10 < full_dataset.csv
 ```
 
-Это один из примеров анализа пользовательских CSV-файлов, с применением специальных настроек.
+Это один из примеров анализа пользовательских CSV-файлов с применением специальных настроек.
 
 Пояснение:
 -   набор данных представлен в формате CSV и требует некоторой предварительной обработки при вставке; для предварительной обработки используется табличная функция [input](../../sql-reference/table-functions/input.md);
