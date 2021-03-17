@@ -17,6 +17,7 @@ int main(int argc, char ** argv)
                 "addresses of ZooKeeper instances, comma separated. Example: example01e.yandex.ru:2181")
             ("path,p", boost::program_options::value<std::string>()->default_value("/"),
                 "where to start")
+            ("ctime,c", "print node ctime")
         ;
 
         boost::program_options::variables_map options;
@@ -79,7 +80,11 @@ int main(int argc, char ** argv)
                     throw;
             }
 
-            std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength << '\n';
+            std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength;
+            if (options.count("ctime")) {
+                std::cout << '\t' << response.stat.ctime;
+            }
+            std::cout << '\n';
 
             for (const auto & name : response.names)
             {
