@@ -300,9 +300,12 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
     return false;
 }
 
-bool MergeTreeWhereOptimizer::isPrimaryKey(const String & column_name) const {
+
+bool MergeTreeWhereOptimizer::isPrimaryKey(const String & column_name) const
+{
     return std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
 }
+
 
 bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 {
