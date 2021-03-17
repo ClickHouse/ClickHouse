@@ -125,22 +125,19 @@ static bool queryHasWithClause(const IAST * ast)
         return true;
     }
 
-    // This is a bit too much, because most of the children are not queries,
-    // but on the other hand it will let us to avoid breakage when the AST
-    // structure changes and some new variant of query nesting is added. This
-    // function is used in fuzzer, so it's better to be defensive and avoid
-    // weird unexpected errors.
+    // This full recursive walk is somewhat excessive, because most of the
+    // children are not queries, but on the other hand it will let us to avoid
+    // breakage when the AST structure changes and some new variant of query
+    // nesting is added. This function is used in fuzzer, so it's better to be
+    // defensive and avoid weird unexpected errors.
     // clang-tidy is confused by this function: it thinks that if `select` is
     // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
     // NOLINTNEXTLINE
-    if (ast->children)
+    for (const auto & child : ast->children)
     {
-        for (const auto & child : ast->children) /* NOLINT */
+        if (queryHasWithClause(child.get()))
         {
-            if (queryHasWithClause(child.get()))
-            {
-                return true;
-            }
+            return true;
         }
     }
 
