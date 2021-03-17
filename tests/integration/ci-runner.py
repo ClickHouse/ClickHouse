@@ -154,7 +154,7 @@ def clear_ip_tables_and_restart_daemons():
             # when rules will be empty, it will raise exception
             subprocess.check_output("iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
-        logging.info("All iptables rules cleared, " + iptables_iter + "iterations, last error: " + str(err))
+        logging.info("All iptables rules cleared, " + str(iptables_iter) + "iterations, last error: " + str(err))
 
 
 class ClickhouseIntegrationTestsRunner:
