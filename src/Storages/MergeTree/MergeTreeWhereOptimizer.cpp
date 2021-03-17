@@ -115,7 +115,7 @@ static bool isConditionGood(const ASTPtr & condition)
 }
 
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool final) const
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool isFinal) const
 {
     if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
     {
@@ -134,7 +134,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         cond.viable =
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
-            && !cannotBeMoved(node, final)
+            && !cannotBeMoved(node, isFinal)
             /// Do not take into consideration the conditions consisting only of the first primary key column
             && !hasPrimaryKeyAtoms(node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
@@ -150,10 +150,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
-MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool final) const
+MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool isFinal) const
 {
     Conditions res;
-    analyzeImpl(res, expression, final);
+    analyzeImpl(res, expression, isFinal);
     return res;
 }
 
@@ -323,7 +323,7 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers
 }
 
 
-bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool final) const
+bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool isFinal) const
 {
     if (const auto * function_ptr = ptr->as<ASTFunction>())
     {
@@ -341,12 +341,12 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool final) cons
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (array_joined_names.count(*opt_name) ||
             array_joined_names.count(Nested::extractTableName(*opt_name)) ||
-            (final && !isPrimaryKey(*opt_name)))
+            (isFinal && !isPrimaryKey(*opt_name)))
             return true;
     }
 
     for (const auto & child : ptr->children)
-        if (cannotBeMoved(child, final))
+        if (cannotBeMoved(child, isFinal))
             return true;
 
     return false;
