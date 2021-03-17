@@ -1,4 +1,4 @@
-#include "PostgreSQLReplicaMetadata.h"
+#include "MaterializePostgreSQLMetadata.h"
 
 #if USE_LIBPQXX
 #include <Poco/File.h>
@@ -12,7 +12,7 @@
 namespace DB
 {
 
-PostgreSQLReplicaMetadata::PostgreSQLReplicaMetadata(const std::string & metadata_file_path)
+MaterializePostgreSQLMetadata::MaterializePostgreSQLMetadata(const std::string & metadata_file_path)
     : metadata_file(metadata_file_path)
     , tmp_metadata_file(metadata_file_path + ".tmp")
     , last_version(1)
@@ -20,7 +20,7 @@ PostgreSQLReplicaMetadata::PostgreSQLReplicaMetadata(const std::string & metadat
 }
 
 
-void PostgreSQLReplicaMetadata::readMetadata()
+void MaterializePostgreSQLMetadata::readMetadata()
 {
     if (Poco::File(metadata_file).exists())
     {
@@ -41,13 +41,13 @@ void PostgreSQLReplicaMetadata::readMetadata()
                 last_lsn = actual_lsn;
         }
 
-        LOG_DEBUG(&Poco::Logger::get("PostgreSQLReplicaMetadata"),
+        LOG_DEBUG(&Poco::Logger::get("MaterializePostgreSQLMetadata"),
                 "Last written version is {}. (From metadata file {})", last_version, metadata_file);
     }
 }
 
 
-void PostgreSQLReplicaMetadata::writeMetadata(bool append_metadata)
+void MaterializePostgreSQLMetadata::writeMetadata(bool append_metadata)
 {
     WriteBufferFromFile out(tmp_metadata_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
 
@@ -69,7 +69,7 @@ void PostgreSQLReplicaMetadata::writeMetadata(bool append_metadata)
 
 /// While data is received, version is updated. Before table sync, write last version to tmp file.
 /// Then sync data to table and rename tmp to non-tmp.
-void PostgreSQLReplicaMetadata::commitMetadata(std::string & lsn, const std::function<String()> & finalizeStreamFunc)
+void MaterializePostgreSQLMetadata::commitMetadata(std::string & lsn, const std::function<String()> & finalizeStreamFunc)
 {
     std::string actual_lsn;
     last_lsn = lsn;
@@ -90,7 +90,7 @@ void PostgreSQLReplicaMetadata::commitMetadata(std::string & lsn, const std::fun
     if (actual_lsn != last_lsn)
     {
         writeMetadata(true);
-        LOG_WARNING(&Poco::Logger::get("PostgreSQLReplicaMetadata"),
+        LOG_WARNING(&Poco::Logger::get("MaterializePostgreSQLMetadata"),
                 "Last written LSN {} is not equal to actual LSN {}", last_lsn, actual_lsn);
     }
 }

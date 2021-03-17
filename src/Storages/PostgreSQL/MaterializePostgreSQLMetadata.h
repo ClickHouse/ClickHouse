@@ -5,10 +5,10 @@
 namespace DB
 {
 
-class PostgreSQLReplicaMetadata
+class MaterializePostgreSQLMetadata
 {
 public:
-    PostgreSQLReplicaMetadata(const std::string & metadata_file_path);
+    MaterializePostgreSQLMetadata(const std::string & metadata_file_path);
 
     void commitMetadata(std::string & lsn, const std::function<String()> & finalizeStreamFunc);
 

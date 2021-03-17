@@ -3,7 +3,7 @@
 #if USE_LIBPQXX
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Storages/PostgreSQL/StoragePostgreSQLReplica.h>
+#include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
 
 #include <Common/setThreadName.h>
 #include <DataStreams/copyData.h>
@@ -27,7 +27,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     bool allow_minimal_ddl_,
     bool is_postgresql_replica_database_engine_,
     const String tables_list_)
-    : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
+    : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
     , database_name(database_name_)
     , connection_str(conn_str)
@@ -49,7 +49,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 }
 
 
-void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, StoragePostgreSQLReplica * storage)
+void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage)
 {
     storages[table_name] = storage;
 }
@@ -138,7 +138,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
 
     ntx->commit();
 
-    consumer = std::make_shared<PostgreSQLReplicaConsumer>(
+    consumer = std::make_shared<MaterializePostgreSQLConsumer>(
             context,
             connection,
             replication_slot,

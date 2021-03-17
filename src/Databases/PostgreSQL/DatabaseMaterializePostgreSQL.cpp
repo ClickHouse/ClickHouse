@@ -1,9 +1,9 @@
-#include <Databases/PostgreSQL/DatabasePostgreSQLReplica.h>
+#include <Databases/PostgreSQL/DatabaseMaterializePostgreSQL.h>
 
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLConnection.h>
-#include <Storages/PostgreSQL/StoragePostgreSQLReplica.h>
+#include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -30,7 +30,7 @@ namespace DB
 static const auto METADATA_SUFFIX = ".postgresql_replica_metadata";
 
 template<>
-DatabasePostgreSQLReplica<DatabaseOrdinary>::DatabasePostgreSQLReplica(
+DatabaseMaterializePostgreSQL<DatabaseOrdinary>::DatabaseMaterializePostgreSQL(
         const Context & context,
         const String & metadata_path_,
         UUID /* uuid */,
@@ -38,11 +38,11 @@ DatabasePostgreSQLReplica<DatabaseOrdinary>::DatabasePostgreSQLReplica(
         const String & database_name_,
         const String & postgres_database_name,
         PostgreSQLConnectionPtr connection_,
-        std::unique_ptr<PostgreSQLReplicaSettings> settings_)
+        std::unique_ptr<MaterializePostgreSQLSettings> settings_)
     : DatabaseOrdinary(
             database_name_, metadata_path_, "data/" + escapeForFileName(database_name_) + "/",
-            "DatabasePostgreSQLReplica<Ordinary> (" + database_name_ + ")", context)
-    , log(&Poco::Logger::get("PostgreSQLReplicaDatabaseEngine"))
+            "DatabaseMaterializePostgreSQL<Ordinary> (" + database_name_ + ")", context)
+    , log(&Poco::Logger::get("MaterializePostgreSQLDatabaseEngine"))
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -55,7 +55,7 @@ DatabasePostgreSQLReplica<DatabaseOrdinary>::DatabasePostgreSQLReplica(
 
 
 template<>
-DatabasePostgreSQLReplica<DatabaseAtomic>::DatabasePostgreSQLReplica(
+DatabaseMaterializePostgreSQL<DatabaseAtomic>::DatabaseMaterializePostgreSQL(
         const Context & context,
         const String & metadata_path_,
         UUID uuid,
@@ -63,8 +63,8 @@ DatabasePostgreSQLReplica<DatabaseAtomic>::DatabasePostgreSQLReplica(
         const String & database_name_,
         const String & postgres_database_name,
         PostgreSQLConnectionPtr connection_,
-        std::unique_ptr<PostgreSQLReplicaSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabasePostgreSQLReplica<Atomic> (" + database_name_ + ")", context)
+        std::unique_ptr<MaterializePostgreSQLSettings> settings_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -76,7 +76,7 @@ DatabasePostgreSQLReplica<DatabaseAtomic>::DatabasePostgreSQLReplica(
 
 
 template<typename Base>
-void DatabasePostgreSQLReplica<Base>::startSynchronization()
+void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
 {
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -97,7 +97,7 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
 
         if (storage)
         {
-            replication_handler->addStorage(table_name, storage->template as<StoragePostgreSQLReplica>());
+            replication_handler->addStorage(table_name, storage->template as<StorageMaterializePostgreSQL>());
             tables[table_name] = storage;
         }
     }
@@ -108,19 +108,19 @@ void DatabasePostgreSQLReplica<Base>::startSynchronization()
 
 
 template<typename Base>
-StoragePtr DatabasePostgreSQLReplica<Base>::getStorage(const String & name)
+StoragePtr DatabaseMaterializePostgreSQL<Base>::getStorage(const String & name)
 {
     auto storage = tryGetTable(name, global_context);
 
     if (storage)
         return storage;
 
-    return StoragePostgreSQLReplica::create(StorageID(database_name, name), StoragePtr{}, global_context);
+    return StorageMaterializePostgreSQL::create(StorageID(database_name, name), StoragePtr{}, global_context);
 }
 
 
 template<typename Base>
-void DatabasePostgreSQLReplica<Base>::shutdown()
+void DatabaseMaterializePostgreSQL<Base>::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();
@@ -128,7 +128,7 @@ void DatabasePostgreSQLReplica<Base>::shutdown()
 
 
 template<typename Base>
-void DatabasePostgreSQLReplica<Base>::loadStoredObjects(
+void DatabaseMaterializePostgreSQL<Base>::loadStoredObjects(
         Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
@@ -149,7 +149,7 @@ void DatabasePostgreSQLReplica<Base>::loadStoredObjects(
 
 
 template<typename Base>
-StoragePtr DatabasePostgreSQLReplica<Base>::tryGetTable(const String & name, const Context & context) const
+StoragePtr DatabaseMaterializePostgreSQL<Base>::tryGetTable(const String & name, const Context & context) const
 {
     if (context.hasQueryContext())
     {
@@ -171,7 +171,7 @@ StoragePtr DatabasePostgreSQLReplica<Base>::tryGetTable(const String & name, con
 
 
 template<typename Base>
-void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializePostgreSQL<Base>::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
     if (context.hasQueryContext())
     {
@@ -188,14 +188,14 @@ void DatabasePostgreSQLReplica<Base>::createTable(const Context & context, const
 
 
 template<typename Base>
-void DatabasePostgreSQLReplica<Base>::dropTable(const Context & context, const String & name, bool no_delay)
+void DatabaseMaterializePostgreSQL<Base>::dropTable(const Context & context, const String & name, bool no_delay)
 {
     Base::dropTable(context, name, no_delay);
 }
 
 
 template<typename Base>
-void DatabasePostgreSQLReplica<Base>::drop(const Context & context)
+void DatabaseMaterializePostgreSQL<Base>::drop(const Context & context)
 {
     if (replication_handler)
     {
@@ -214,13 +214,13 @@ void DatabasePostgreSQLReplica<Base>::drop(const Context & context)
 
 
 template<typename Base>
-DatabaseTablesIteratorPtr DatabasePostgreSQLReplica<Base>::getTablesIterator(
+DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL<Base>::getTablesIterator(
         const Context & /* context */, const DatabaseOnDisk::FilterByNameFunction & /* filter_by_table_name */)
 {
     Tables nested_tables;
     for (const auto & [table_name, storage] : tables)
     {
-        auto nested_storage = storage->template as<StoragePostgreSQLReplica>()->tryGetNested();
+        auto nested_storage = storage->template as<StorageMaterializePostgreSQL>()->tryGetNested();
 
         if (nested_storage)
             nested_tables[table_name] = nested_storage;

@@ -23,7 +23,7 @@
 #endif
 
 #if USE_LIBPQXX
-#   include <Storages/PostgreSQL/StoragePostgreSQLReplica.h>
+#   include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
 #endif
 
 namespace DB
@@ -192,7 +192,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
 
 #if USE_LIBPQXX
             if (table->getName() == "PostgreSQLReplica")
-                table->as<StoragePostgreSQLReplica>()->shutdownFinal();
+                table->as<StorageMaterializePostgreSQL>()->shutdownFinal();
 #endif
 
             TableExclusiveLockHolder table_lock;

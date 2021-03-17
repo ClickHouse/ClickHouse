@@ -1,4 +1,4 @@
-#include "StoragePostgreSQLReplica.h"
+#include "StorageMaterializePostgreSQL.h"
 
 #if USE_LIBPQXX
 #include <Common/Macros.h>
@@ -36,20 +36,20 @@ namespace ErrorCodes
 static const auto NESTED_STORAGE_SUFFIX = "_ReplacingMergeTree";
 
 
-StoragePostgreSQLReplica::StoragePostgreSQLReplica(
+StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const StorageID & table_id_,
     const String & remote_database_name,
     const String & remote_table_name_,
     const String & connection_str,
     const StorageInMemoryMetadata & storage_metadata,
     const Context & context_,
-    std::unique_ptr<PostgreSQLReplicaSettings> replication_settings_)
+    std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , global_context(std::make_shared<Context>(context_.getGlobalContext()))
     , replication_settings(std::move(replication_settings_))
     , is_postgresql_replica_database(
-            DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "PostgreSQLReplica")
+            DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
 {
     setInMemoryMetadata(storage_metadata);
 
@@ -68,7 +68,7 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
 }
 
 
-StoragePostgreSQLReplica::StoragePostgreSQLReplica(
+StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const StorageID & table_id_,
     StoragePtr nested_storage_,
     const Context & context_)
@@ -76,13 +76,13 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     , global_context(std::make_shared<Context>(context_))
     , nested_storage(nested_storage_)
     , is_postgresql_replica_database(
-            DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "PostgreSQLReplica")
+            DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
 {
 
 }
 
 
-std::string StoragePostgreSQLReplica::getNestedTableName() const
+std::string StorageMaterializePostgreSQL::getNestedTableName() const
 {
     auto table_name = getStorageID().table_name;
 
@@ -93,7 +93,7 @@ std::string StoragePostgreSQLReplica::getNestedTableName() const
 }
 
 
-std::shared_ptr<ASTColumnDeclaration> StoragePostgreSQLReplica::getMaterializedColumnsDeclaration(
+std::shared_ptr<ASTColumnDeclaration> StorageMaterializePostgreSQL::getMaterializedColumnsDeclaration(
         const String name, const String type, UInt64 default_value)
 {
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
@@ -111,7 +111,7 @@ std::shared_ptr<ASTColumnDeclaration> StoragePostgreSQLReplica::getMaterializedC
 }
 
 
-ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_type) const
+ASTPtr StorageMaterializePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
 {
     WhichDataType which(data_type);
 
@@ -152,10 +152,10 @@ ASTPtr StoragePostgreSQLReplica::getColumnDeclaration(const DataTypePtr & data_t
 }
 
 
-/// For single storage PostgreSQLReplica get columns and primary key columns from storage definition.
-/// For database engine PostgreSQLReplica get columns and primary key columns by fetching from PostgreSQL, also using the same
+/// For single storage MaterializePostgreSQL get columns and primary key columns from storage definition.
+/// For database engine MaterializePostgreSQL get columns and primary key columns by fetching from PostgreSQL, also using the same
 /// transaction with snapshot, which is used for initial tables dump.
-ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
+ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
@@ -240,7 +240,7 @@ ASTPtr StoragePostgreSQLReplica::getCreateNestedTableQuery(const std::function<P
 }
 
 
-void StoragePostgreSQLReplica::createNestedIfNeeded(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
+void StorageMaterializePostgreSQL::createNestedIfNeeded(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
 {
     if (nested_loaded)
     {
@@ -267,7 +267,7 @@ void StoragePostgreSQLReplica::createNestedIfNeeded(const std::function<PostgreS
 }
 
 
-Context StoragePostgreSQLReplica::makeNestedTableContext() const
+Context StorageMaterializePostgreSQL::makeNestedTableContext() const
 {
     auto context(*global_context);
     context.makeQueryContext();
@@ -277,7 +277,7 @@ Context StoragePostgreSQLReplica::makeNestedTableContext() const
 }
 
 
-StoragePtr StoragePostgreSQLReplica::getNested()
+StoragePtr StorageMaterializePostgreSQL::getNested()
 {
     if (nested_storage)
         return nested_storage;
@@ -290,7 +290,7 @@ StoragePtr StoragePostgreSQLReplica::getNested()
 }
 
 
-StoragePtr StoragePostgreSQLReplica::tryGetNested()
+StoragePtr StorageMaterializePostgreSQL::tryGetNested()
 {
     if (nested_storage)
         return nested_storage;
@@ -303,7 +303,7 @@ StoragePtr StoragePostgreSQLReplica::tryGetNested()
 }
 
 
-void StoragePostgreSQLReplica::startup()
+void StorageMaterializePostgreSQL::startup()
 {
     if (!is_postgresql_replica_database)
     {
@@ -313,14 +313,14 @@ void StoragePostgreSQLReplica::startup()
 }
 
 
-void StoragePostgreSQLReplica::shutdown()
+void StorageMaterializePostgreSQL::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();
 }
 
 
-void StoragePostgreSQLReplica::shutdownFinal()
+void StorageMaterializePostgreSQL::shutdownFinal()
 {
     if (is_postgresql_replica_database)
         return;
@@ -333,7 +333,7 @@ void StoragePostgreSQLReplica::shutdownFinal()
 }
 
 
-void StoragePostgreSQLReplica::dropNested()
+void StorageMaterializePostgreSQL::dropNested()
 {
     std::lock_guard lock(nested_mutex);
     nested_loaded = false;
@@ -351,11 +351,11 @@ void StoragePostgreSQLReplica::dropNested()
     interpreter.execute();
 
     nested_storage = nullptr;
-    LOG_WARNING(&Poco::Logger::get("StoragePostgreSQLReplica"), "Dropped (or temporarily) nested table {}", getNestedTableName());
+    LOG_WARNING(&Poco::Logger::get("StorageMaterializePostgreSQL"), "Dropped (or temporarily) nested table {}", getNestedTableName());
 }
 
 
-NamesAndTypesList StoragePostgreSQLReplica::getVirtuals() const
+NamesAndTypesList StorageMaterializePostgreSQL::getVirtuals() const
 {
     if (nested_storage)
         return nested_storage->getVirtuals();
@@ -364,7 +364,7 @@ NamesAndTypesList StoragePostgreSQLReplica::getVirtuals() const
 }
 
 
-Pipe StoragePostgreSQLReplica::read(
+Pipe StorageMaterializePostgreSQL::read(
         const Names & column_names,
         const StorageMetadataPtr & /* metadata_snapshot */,
         SelectQueryInfo & query_info,
@@ -442,24 +442,24 @@ Pipe StoragePostgreSQLReplica::read(
         return pipe;
     }
 
-    LOG_WARNING(&Poco::Logger::get("StoragePostgreSQLReplica"), "Nested table {} is unavailable or is not loaded yet", getNestedTableName());
+    LOG_WARNING(&Poco::Logger::get("StorageMaterializePostgreSQL"), "Nested table {} is unavailable or is not loaded yet", getNestedTableName());
     return Pipe();
 }
 
 
-void registerStoragePostgreSQLReplica(StorageFactory & factory)
+void registerStorageMaterializePostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
         bool has_settings = args.storage_def->settings;
-        auto postgresql_replication_settings = std::make_unique<PostgreSQLReplicaSettings>();
+        auto postgresql_replication_settings = std::make_unique<MaterializePostgreSQLSettings>();
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         if (engine_args.size() != 5)
-            throw Exception("Storage PostgreSQLReplica requires 5 parameters: "
+            throw Exception("Storage MaterializePostgreSQL requires 5 parameters: "
                             "PostgreSQL('host:port', 'database', 'table', 'username', 'password'",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -474,7 +474,7 @@ void registerStoragePostgreSQLReplica(StorageFactory & factory)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception("Storage PostgreSQLReplica needs order by key or primary key", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Storage MaterializePostgreSQL needs order by key or primary key", ErrorCodes::BAD_ARGUMENTS);
 
         if (args.storage_def->primary_key)
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
@@ -493,14 +493,14 @@ void registerStoragePostgreSQLReplica(StorageFactory & factory)
             engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
-        return StoragePostgreSQLReplica::create(
+        return StorageMaterializePostgreSQL::create(
                 args.table_id, remote_database, remote_table, connection.conn_str(),
                 metadata, args.context,
                 std::move(postgresql_replication_settings));
     };
 
     factory.registerStorage(
-            "PostgreSQLReplica",
+            "MaterializePostgreSQL",
             creator_fn,
             StorageFactory::StorageFeatures{
                 .supports_settings = true,
