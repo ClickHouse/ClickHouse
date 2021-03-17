@@ -38,7 +38,6 @@ function download
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
 
-
     # clickhouse-server is in the current dir
     export PATH="$PWD:$PATH"
 }
