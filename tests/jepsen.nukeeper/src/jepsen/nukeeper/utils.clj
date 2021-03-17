@@ -63,6 +63,10 @@
   [conn path data]
   (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
 
+(defn zk-create-sequential
+  [conn path-prefix data]
+  (zk/create conn path-prefix :data (data/to-bytes (str data)) :persistent? true :sequential? true))
+
 (defn clickhouse-alive?
   [node test]
   (info "Checking server alive on" node)

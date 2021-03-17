@@ -4,6 +4,7 @@
             [jepsen.nukeeper.set :as set]
             [jepsen.nukeeper.nemesis :as custom-nemesis]
             [jepsen.nukeeper.register :as register]
+            [jepsen.nukeeper.unique :as unique]
             [jepsen.nukeeper.constants :refer :all]
             [clojure.string :as str]
             [jepsen
@@ -83,7 +84,8 @@
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
   {"set"      set/workload
-   "register" register/workload})
+   "register" register/workload
+   "unique-ids" unique/workload})
 
 (def cli-opts
   "Additional command line options."
