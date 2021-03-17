@@ -200,7 +200,7 @@ public:
     std::string dumpDAG() const;
 
     const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false, bool add_to_index = true);
-    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
+    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false, bool add_to_index = true);
     const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
@@ -301,7 +301,7 @@ public:
     /// Pushed condition: z > 0
     /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
     /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
-    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, z, y`.
+    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
     ActionsDAGPtr cloneActionsForFilterPushDown(
