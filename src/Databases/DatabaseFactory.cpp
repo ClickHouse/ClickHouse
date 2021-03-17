@@ -36,9 +36,9 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
-#include <Databases/PostgreSQL/DatabasePostgreSQLReplica.h>
+#include <Databases/PostgreSQL/DatabaseMaterializePostgreSQL.h>
 #include <Storages/PostgreSQL/PostgreSQLConnection.h>
-#include <Storages/PostgreSQL/PostgreSQLReplicaSettings.h>
+#include <Storages/PostgreSQL/MaterializePostgreSQLSettings.h>
 #endif
 
 namespace DB
@@ -101,14 +101,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const UUID & uuid = create.uuid;
 
     bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "Lazy" ||
-                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "PostgreSQLReplica";
+                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "MaterializePostgreSQL";
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     bool has_unexpected_element = engine_define->engine->parameters || engine_define->partition_by ||
                                   engine_define->primary_key || engine_define->order_by ||
                                   engine_define->sample_by;
-    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "PostgreSQLReplica";
+    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "MaterializePostgreSQL";
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -254,7 +254,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);
     }
-    else if (engine_name == "PostgreSQLReplica")
+    else if (engine_name == "MaterializePostgreSQL")
     {
         const ASTFunction * engine = engine_define->engine;
 
@@ -279,21 +279,21 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         auto connection = std::make_shared<PostgreSQLConnection>(
             postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
 
-        auto postgresql_replica_settings = std::make_unique<PostgreSQLReplicaSettings>();
+        auto postgresql_replica_settings = std::make_unique<MaterializePostgreSQLSettings>();
 
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         if (create.uuid == UUIDHelpers::Nil)
         {
-            return std::make_shared<DatabasePostgreSQLReplica<DatabaseOrdinary>>(
+            return std::make_shared<DatabaseMaterializePostgreSQL<DatabaseOrdinary>>(
                     context, metadata_path, uuid, engine_define,
                     database_name, postgres_database_name, connection,
                     std::move(postgresql_replica_settings));
         }
         else
         {
-            return std::make_shared<DatabasePostgreSQLReplica<DatabaseAtomic>>(
+            return std::make_shared<DatabaseMaterializePostgreSQL<DatabaseAtomic>>(
                     context, metadata_path, uuid, engine_define,
                     database_name, postgres_database_name, connection,
                     std::move(postgresql_replica_settings));

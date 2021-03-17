@@ -7,7 +7,7 @@
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
-#include <Storages/PostgreSQL/PostgreSQLReplicaSettings.h>
+#include <Storages/PostgreSQL/MaterializePostgreSQLSettings.h>
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -25,11 +25,11 @@ using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
 template<typename Base>
-class DatabasePostgreSQLReplica : public Base
+class DatabaseMaterializePostgreSQL : public Base
 {
 
 public:
-    DatabasePostgreSQLReplica(
+    DatabaseMaterializePostgreSQL(
         const Context & context,
         const String & metadata_path_,
         UUID uuid,
@@ -37,9 +37,9 @@ public:
         const String & dbname_,
         const String & postgres_dbname,
         PostgreSQLConnectionPtr connection_,
-        std::unique_ptr<PostgreSQLReplicaSettings> settings_);
+        std::unique_ptr<MaterializePostgreSQLSettings> settings_);
 
-    String getEngineName() const override { return "PostgreSQLReplica"; }
+    String getEngineName() const override { return "MaterializePostgreSQL"; }
 
     String getMetadataPath() const override { return metadata_path; }
 
@@ -69,7 +69,7 @@ private:
     ASTPtr database_engine_define;
     String database_name, remote_database_name;
     PostgreSQLConnectionPtr connection;
-    std::unique_ptr<PostgreSQLReplicaSettings> settings;
+    std::unique_ptr<MaterializePostgreSQLSettings> settings;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
     std::map<std::string, StoragePtr> tables;

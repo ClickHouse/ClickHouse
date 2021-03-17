@@ -6,7 +6,7 @@
 
 #if USE_LIBPQXX
 #include "PostgreSQLConnection.h"
-#include "PostgreSQLReplicaMetadata.h"
+#include "MaterializePostgreSQLMetadata.h"
 #include "insertPostgreSQLValue.h"
 
 #include <Core/BackgroundSchedulePool.h>
@@ -21,12 +21,12 @@
 namespace DB
 {
 
-class PostgreSQLReplicaConsumer
+class MaterializePostgreSQLConsumer
 {
 public:
     using Storages = std::unordered_map<String, StoragePtr>;
 
-    PostgreSQLReplicaConsumer(
+    MaterializePostgreSQLConsumer(
             std::shared_ptr<Context> context_,
             PostgreSQLConnectionPtr connection_,
             const std::string & replication_slot_name_,
@@ -103,7 +103,7 @@ private:
     std::shared_ptr<Context> context;
     const std::string replication_slot_name, publication_name;
 
-    PostgreSQLReplicaMetadata metadata;
+    MaterializePostgreSQLMetadata metadata;
     PostgreSQLConnectionPtr connection;
 
     std::string current_lsn, final_lsn;

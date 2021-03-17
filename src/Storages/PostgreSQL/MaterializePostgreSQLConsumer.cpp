@@ -1,7 +1,7 @@
-#include "PostgreSQLReplicaConsumer.h"
+#include "MaterializePostgreSQLConsumer.h"
 
 #if USE_LIBPQXX
-#include "StoragePostgreSQLReplica.h"
+#include "StorageMaterializePostgreSQL.h"
 
 #include <Columns/ColumnNullable.h>
 #include <Common/hex.h>
@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
+MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     std::shared_ptr<Context> context_,
     PostgreSQLConnectionPtr connection_,
     const std::string & replication_slot_name_,
@@ -52,7 +52,7 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
 }
 
 
-void PostgreSQLReplicaConsumer::Buffer::fillBuffer(StoragePtr storage)
+void MaterializePostgreSQLConsumer::Buffer::fillBuffer(StoragePtr storage)
 {
     const auto storage_metadata = storage->getInMemoryMetadataPtr();
     description.init(storage_metadata->getSampleBlock());
@@ -77,7 +77,7 @@ void PostgreSQLReplicaConsumer::Buffer::fillBuffer(StoragePtr storage)
 }
 
 
-void PostgreSQLReplicaConsumer::readMetadata()
+void MaterializePostgreSQLConsumer::readMetadata()
 {
     try
     {
@@ -98,7 +98,7 @@ void PostgreSQLReplicaConsumer::readMetadata()
 }
 
 
-void PostgreSQLReplicaConsumer::insertValue(Buffer & buffer, const std::string & value, size_t column_idx)
+void MaterializePostgreSQLConsumer::insertValue(Buffer & buffer, const std::string & value, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     bool is_nullable = buffer.description.types[column_idx].second;
@@ -124,14 +124,14 @@ void PostgreSQLReplicaConsumer::insertValue(Buffer & buffer, const std::string &
 }
 
 
-void PostgreSQLReplicaConsumer::insertDefaultValue(Buffer & buffer, size_t column_idx)
+void MaterializePostgreSQLConsumer::insertDefaultValue(Buffer & buffer, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     insertDefaultPostgreSQLValue(*buffer.columns[column_idx], *sample.column);
 }
 
 
-void PostgreSQLReplicaConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
+void MaterializePostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
 {
     assert(size > pos + 2);
     char current = unhex2(message + pos);
@@ -145,7 +145,7 @@ void PostgreSQLReplicaConsumer::readString(const char * message, size_t & pos, s
 }
 
 
-Int32 PostgreSQLReplicaConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 8);
     Int32 result = (UInt32(unhex2(message + pos)) << 24)
@@ -157,7 +157,7 @@ Int32 PostgreSQLReplicaConsumer::readInt32(const char * message, size_t & pos, [
 }
 
 
-Int16 PostgreSQLReplicaConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int16 MaterializePostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 4);
     Int16 result = (UInt32(unhex2(message + pos)) << 8)
@@ -167,7 +167,7 @@ Int16 PostgreSQLReplicaConsumer::readInt16(const char * message, size_t & pos, [
 }
 
 
-Int8 PostgreSQLReplicaConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int8 MaterializePostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 2);
     Int8 result = unhex2(message + pos);
@@ -176,7 +176,7 @@ Int8 PostgreSQLReplicaConsumer::readInt8(const char * message, size_t & pos, [[m
 }
 
 
-Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 16);
     Int64 result = (UInt64(unhex4(message + pos)) << 48)
@@ -188,7 +188,7 @@ Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos, [
 }
 
 
-void PostgreSQLReplicaConsumer::readTupleData(
+void MaterializePostgreSQLConsumer::readTupleData(
         Buffer & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
 {
     Int16 num_columns = readInt16(message, pos, size);
@@ -257,7 +257,7 @@ void PostgreSQLReplicaConsumer::readTupleData(
 
 
 /// https://www.postgresql.org/docs/13/protocol-logicalrep-message-formats.html
-void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replication_message, size_t size)
+void MaterializePostgreSQLConsumer::processReplicationMessage(const char * replication_message, size_t size)
 {
     /// Skip '\x'
     size_t pos = 2;
@@ -468,7 +468,7 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
 }
 
 
-void PostgreSQLReplicaConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
+void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
 {
     for (const auto & table_name : tables_to_sync)
     {
@@ -517,7 +517,7 @@ void PostgreSQLReplicaConsumer::syncTables(std::shared_ptr<pqxx::nontransaction>
 }
 
 
-String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
+String MaterializePostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
 {
     std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
     pqxx::result result{tx->exec(query_str)};
@@ -529,7 +529,7 @@ String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransactio
 }
 
 
-bool PostgreSQLReplicaConsumer::isSyncAllowed(Int32 relation_id)
+bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 {
     auto table_with_lsn = skip_list.find(relation_id);
     if (table_with_lsn == skip_list.end())
@@ -553,7 +553,7 @@ bool PostgreSQLReplicaConsumer::isSyncAllowed(Int32 relation_id)
 }
 
 
-void PostgreSQLReplicaConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
+void MaterializePostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
     skip_list.insert({relation_id, ""});
     schema_data.erase(relation_id);
@@ -567,7 +567,7 @@ void PostgreSQLReplicaConsumer::markTableAsSkipped(Int32 relation_id, const Stri
 
 
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
-bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
+bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 {
     std::shared_ptr<pqxx::nontransaction> tx;
     bool slot_empty = true;
@@ -640,7 +640,7 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 }
 
 
-bool PostgreSQLReplicaConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
+bool MaterializePostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
 {
     if (!readFromReplicationSlot())
     {
@@ -660,7 +660,7 @@ bool PostgreSQLReplicaConsumer::consume(std::vector<std::pair<Int32, String>> & 
 }
 
 
-void PostgreSQLReplicaConsumer::updateNested(const String & table_name, StoragePtr nested_storage)
+void MaterializePostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage)
 {
     storages[table_name] = nested_storage;
     auto & buffer = buffers.find(table_name)->second;
@@ -668,7 +668,7 @@ void PostgreSQLReplicaConsumer::updateNested(const String & table_name, StorageP
 }
 
 
-void PostgreSQLReplicaConsumer::updateSkipList(const std::unordered_map<Int32, String> & tables_with_lsn)
+void MaterializePostgreSQLConsumer::updateSkipList(const std::unordered_map<Int32, String> & tables_with_lsn)
 {
     for (const auto & [relation_id, lsn] : tables_with_lsn)
     {

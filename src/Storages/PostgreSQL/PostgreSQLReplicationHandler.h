@@ -6,8 +6,8 @@
 
 #if USE_LIBPQXX
 #include "PostgreSQLConnection.h"
-#include "PostgreSQLReplicaConsumer.h"
-#include "PostgreSQLReplicaMetadata.h"
+#include "MaterializePostgreSQLConsumer.h"
+#include "MaterializePostgreSQLMetadata.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 
@@ -19,7 +19,7 @@ namespace DB
 ///       exist in CH, it can be loaded via snapshot while stream is stopped and then comparing wal positions with
 ///       current lsn and table start lsn.
 
-class StoragePostgreSQLReplica;
+class StorageMaterializePostgreSQL;
 
 class PostgreSQLReplicationHandler
 {
@@ -41,7 +41,7 @@ public:
 
     void shutdownFinal();
 
-    void addStorage(const std::string & table_name, StoragePostgreSQLReplica * storage);
+    void addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage);
 
     NameSet fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
 
@@ -49,7 +49,7 @@ public:
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
-    using Storages = std::unordered_map<String, StoragePostgreSQLReplica *>;
+    using Storages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
 
     bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
 
@@ -83,7 +83,7 @@ private:
     std::string tables_list, replication_slot, publication_name;
 
     PostgreSQLConnectionPtr connection;
-    std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
+    std::shared_ptr<MaterializePostgreSQLConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
     std::atomic<bool> tables_loaded = false, stop_synchronization = false;
@@ -96,4 +96,3 @@ private:
 }
 
 #endif
-
