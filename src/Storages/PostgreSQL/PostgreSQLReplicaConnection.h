@@ -25,6 +25,7 @@ public:
 
 
 private:
+    /// Highest priority is 0, the bigger the number in map, the less the priority
     using ReplicasByPriority = std::map<size_t, PostgreSQLConnectionPtr>;
 
     Poco::Logger * log;
