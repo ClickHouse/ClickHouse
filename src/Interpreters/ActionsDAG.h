@@ -292,7 +292,23 @@ public:
     /// Otherwise, return actions which inputs are from available_inputs.
     /// Returned actions add single column which may be used for filter.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
-    ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs, const ColumnsWithTypeAndName & all_inputs);
+    ///
+    /// @param all_inputs should containt inputs from previous step, which will be used for result actions.
+    /// It is expected that all_inputs contain columns from available_inputs.
+    /// This parameter is needed to enforce result actions save columns order in block.
+    /// Otherwise for some queries, e.g. with GROUP BY, columns colum be swapped.
+    /// Example: SELECT sum(x), y, z FROM tab WHERE z > 0 and sum(x) > 0
+    /// Pushed condition: z > 0
+    /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
+    /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
+    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, z, y`.
+    /// To avoid it, add inputs from `all_inputs` list,
+    /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
+    ActionsDAGPtr cloneActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool can_remove_filter,
+        const Names & available_inputs,
+        const ColumnsWithTypeAndName & all_inputs);
 
 private:
     Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
