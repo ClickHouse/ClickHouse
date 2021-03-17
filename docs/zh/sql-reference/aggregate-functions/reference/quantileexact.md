@@ -4,44 +4,46 @@ toc_priority: 202
 
 # quantileExact {#quantileexact}
 
-Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
-To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
+准确计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
+为了准确计算，所有输入的数据被合并为一个数组，并且部分的排序。因此该函数需要 `O(n)` 的内存，n为输入数据的个数。但是对于少量数据来说，该函数还是非常有效的。
 
-**Syntax**
+当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
+
+**语法**
 
 ``` sql
 quantileExact(level)(expr)
 ```
 
-Alias: `medianExact`.
+别名: `medianExact`。
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。我们推荐 `level` 值的范围为 `[0.01, 0.99]`。默认值：0.5。当 `level=0.5` 时，该函数计算[中位数](https://en.wikipedia.org/wiki/Median)。
+-   `expr` — 求值表达式，类型为数值类型[data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md)。
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定层次的分位数。
 
-Type:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+类型:
 
-**Example**
+-   [Float64](../../../sql-reference/data-types/float.md) 对于数字数据类型输入。
+-   [日期](../../../sql-reference/data-types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../../sql-reference/data-types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-Query:
+**示例**
+
+查询:
 
 ``` sql
 SELECT quantileExact(number) FROM numbers(10)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileExact(number)─┐
@@ -51,13 +53,15 @@ Result:
 
 # quantileExactLow {#quantileexactlow}
 
-Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+和 `quantileExact` 相似, 准确计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
 
-To get the exact value, all the passed values are combined into an array, which is then fully sorted.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
+为了准确计算，所有输入的数据被合并为一个数组，并且全排序。这排序[算法](https://en.cppreference.com/w/cpp/algorithm/sort)的复杂度是 `O(N·log(N))`, 其中 `N = std::distance(first, last)` 比较。
 
-The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the lower median value for an even number of elements and the middle median value for an odd number of elements. Median is calculated similarly to the [median_low](https://docs.python.org/3/library/statistics.html#statistics.median_low) implementation which is used in python.
+返回值取决于分位数级别和所选取的元素数量，即如果级别是 0.5, 函数返回偶数元素的低位中位数，奇数元素的中位数。中位数计算类似于 python 中使用的[median_low](https://docs.python.org/3/library/statistics.html#statistics.median_low)的实现。
 
-For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. For example:
+对于所有其他级别， 返回 `level * size_of_array` 值所对应的索引的元素值。
+
+例如:
 
 ``` sql
 SELECT quantileExactLow(0.1)(number) FROM numbers(10)
@@ -66,99 +70,101 @@ SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 │                             1 │
 └───────────────────────────────┘
 ```
-                                                                                                                                                                                 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
-**Syntax**
+当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
+
+**语法**
 
 ``` sql
-quantileExact(level)(expr)
+quantileExactLow(level)(expr)
 ```
 
-Alias: `medianExactLow`.
+别名: `medianExactLow`。
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。我们推荐 `level` 值的范围为 `[0.01, 0.99]`。默认值：0.5。当 `level=0.5` 时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `expr` — — 求值表达式，类型为数值类型[data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md)。
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定层次的分位数。
 
-Type:
+类型:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) 用于数字数据类型输入。
+-   [Date](../../../sql-reference/data-types/date.md) 如果输入值是 `Date` 类型。
+-   [DateTime](../../../sql-reference/data-types/datetime.md) 如果输入值是 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileExactLow(number) FROM numbers(10)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileExactLow(number)─┐
 │                        4 │
 └──────────────────────────┘
 ```
+
 # quantileExactHigh {#quantileexacthigh}
 
-Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+和 `quantileExact` 相似, 准确计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
 
-All the passed values are combined into an array, which is then fully sorted, 
-to get the exact value.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
+为了准确计算，所有输入的数据被合并为一个数组，并且全排序。这排序[算法](https://en.cppreference.com/w/cpp/algorithm/sort)的复杂度是 `O(N·log(N))`, 其中 `N = std::distance(first, last)` 比较。
 
-The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the higher median value for an even number of elements and the middle median value for an odd number of elements. Median is calculated similarly to the [median_high](https://docs.python.org/3/library/statistics.html#statistics.median_high) implementation which is used in python. For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. 
+返回值取决于分位数级别和所选取的元素数量，即如果级别是 0.5, 函数返回偶数元素的低位中位数，奇数元素的中位数。中位数计算类似于 python 中使用的[median_high](https://docs.python.org/3/library/statistics.html#statistics.median_high)的实现。
 
-This implementation behaves exactly similar to the current `quantileExact` implementation.
+对于所有其他级别， 返回 `level * size_of_array` 值所对应的索引的元素值。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
+这个实现与当前的 `quantileExact` 实现完全相似。
 
-**Syntax**
+当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
+
+**语法**
 
 ``` sql
 quantileExactHigh(level)(expr)
 ```
 
-Alias: `medianExactHigh`.
+别名: `medianExactHigh`。
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。我们推荐 `level` 值的范围为 `[0.01, 0.99]`。默认值：0.5。当 `level=0.5` 时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `expr` — — 求值表达式，类型为数值类型[data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md)。
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定层次的分位数。
 
-Type:
+类型:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) 用于数字数据类型输入。
+-   [Date](../../../sql-reference/data-types/date.md) 如果输入值是 `Date` 类型。
+-   [DateTime](../../../sql-reference/data-types/datetime.md) 如果输入值是 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileExactHigh(number) FROM numbers(10)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileExactHigh(number)─┐
 │                         5 │
 └───────────────────────────┘
 ```
-**See Also**
+**参见**
 
--   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
--   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-   [中位数](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [分位数](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

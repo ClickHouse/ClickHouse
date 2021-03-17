@@ -8,7 +8,7 @@ toc_priority: 204
 
 结果是确定性的（它不依赖于查询处理顺序）。该函数针对描述加载网页时间或后端响应时间等分布的序列进行了优化。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)功能。
+当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)函数。
 
 **语法**
 
@@ -20,7 +20,7 @@ quantileTiming(level)(expr)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 当 `level=0.5`时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。我们推荐 `level` 值的范围为 `[0.01, 0.99]` 。默认值：0.5。当 `level=0.5` 时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
 -   `expr` — 求值[表达式](../../../sql-reference/syntax.md#syntax-expressions) 返回 [Float\*](../../../sql-reference/data-types/float.md) 类型数值。
 
     - 如果输入负值，那结果是不可预期的。

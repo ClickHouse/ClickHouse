@@ -4,33 +4,33 @@ toc_priority: 150
 
 ## initializeAggregation {#initializeaggregation}
 
-Initializes aggregation for your input rows. It is intended for the functions with the suffix `State`.
-Use it for tests or to process columns of types `AggregateFunction` and `AggregationgMergeTree`.
+初始化你输入行的聚合。用于后缀是 `State` 的函数。
+用它来测试或处理 `AggregateFunction` 和 `AggregationgMergeTree` 类型的列。
 
-**Syntax**
+**语法**
 
 ``` sql
 initializeAggregation (aggregate_function, column_1, column_2);
 ```
 
-**Parameters**
+**参数**
 
--   `aggregate_function` — Name of the aggregation function. The state of this function — the creating one. [String](../../../sql-reference/data-types/string.md#string).
--   `column_n` — The column to translate it into the function as it's argument. [String](../../../sql-reference/data-types/string.md#string).
+-   `aggregate_function` — 聚合函数名。 这个函数的状态 — 正创建的。[String](../../../sql-reference/data-types/string.md#string)。
+-   `column_n` — 将其转换为函数的参数的列。[String](../../../sql-reference/data-types/string.md#string)。
 
-**Returned value(s)**
+**返回值**
 
-Returns the result of the aggregation for your input rows. The return type will be the same as the return type of function, that `initializeAgregation` takes as first argument.
-For example for functions with the suffix `State` the return type will be `AggregateFunction`.
+返回输入行的聚合结果。返回类型将与 `initializeAgregation` 用作第一个参数的函数的返回类型相同。
+例如，对于后缀为 `State` 的函数，返回类型将是 `AggregateFunction`。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ```sql
 SELECT uniqMerge(state) FROM (SELECT initializeAggregation('uniqState', number % 3) AS state FROM system.numbers LIMIT 10000);
 ```
-Result:
+结果:
 
 ┌─uniqMerge(state)─┐
 │                3 │
