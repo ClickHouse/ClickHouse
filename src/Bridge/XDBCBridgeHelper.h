@@ -109,7 +109,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        context.addXDBCBridgeCommand(std::move(cmd));
+        context.addBridgeCommand(std::move(cmd));
     }
 
 
