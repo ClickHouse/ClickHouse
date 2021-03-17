@@ -24,4 +24,3 @@ ClickHouse предоставляет два сетевых интерфейса
 -   [Библиотеки для интеграции](third-party/integrations.md);
 -   [Визуальные интерфейсы](third-party/gui.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/) <!--hide-->

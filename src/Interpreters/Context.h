@@ -181,7 +181,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    boost::container::flat_set<UUID> current_roles;
+    std::vector<UUID> current_roles;
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
@@ -354,7 +354,7 @@ public:
     String getUserName() const;
     std::optional<UUID> getUserID() const;
 
-    void setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_);
+    void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;

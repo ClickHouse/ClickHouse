@@ -17,4 +17,3 @@ toc_title: "Введение"
 -   [Данные о такси в Нью-Йорке](nyc-taxi.md)
 -   [OnTime](ontime.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
