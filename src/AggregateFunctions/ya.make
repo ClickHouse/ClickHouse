@@ -20,6 +20,7 @@ SRCS(
     AggregateFunctionCombinatorFactory.cpp
     AggregateFunctionCount.cpp
     AggregateFunctionDeltaSum.cpp
+    AggregateFunctionDeltaSumTimestamp.cpp
     AggregateFunctionDistinct.cpp
     AggregateFunctionEntropy.cpp
     AggregateFunctionFactory.cpp
