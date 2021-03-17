@@ -115,12 +115,12 @@ static bool isConditionGood(const ASTPtr & condition)
 }
 
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool isFinal) const
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
 {
     if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
     {
         for (const auto & elem : func_and->arguments->children)
-            analyzeImpl(res, elem, isFinal);
+            analyzeImpl(res, elem, is_final);
     }
     else
     {
@@ -134,7 +134,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         cond.viable =
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
-            && !cannotBeMoved(node, isFinal)
+            && !cannotBeMoved(node, is_final)
             /// Do not take into consideration the conditions consisting only of the first primary key column
             && !hasPrimaryKeyAtoms(node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
@@ -150,10 +150,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
-MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool isFinal) const
+MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final) const
 {
     Conditions res;
-    analyzeImpl(res, expression, isFinal);
+    analyzeImpl(res, expression, is_final);
     return res;
 }
 
@@ -300,8 +300,8 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
     return false;
 }
 
-bool MergeTreeWhereOptimizer::isPrimaryKey(const String & columnName) const {
-    return std::find(primary_key_columns.begin(), primary_key_columns.end(), columnName) != primary_key_columns.end();
+bool MergeTreeWhereOptimizer::isPrimaryKey(const String & column_name) const {
+    return std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
 }
 
 bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
@@ -323,7 +323,7 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers
 }
 
 
-bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool isFinal) const
+bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) const
 {
     if (const auto * function_ptr = ptr->as<ASTFunction>())
     {
@@ -341,12 +341,12 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool isFinal) co
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (array_joined_names.count(*opt_name) ||
             array_joined_names.count(Nested::extractTableName(*opt_name)) ||
-            (isFinal && !isPrimaryKey(*opt_name)))
+            (is_final && !isPrimaryKey(*opt_name)))
             return true;
     }
 
     for (const auto & child : ptr->children)
-        if (cannotBeMoved(child, isFinal))
+        if (cannotBeMoved(child, is_final))
             return true;
 
     return false;
