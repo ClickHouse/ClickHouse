@@ -22,30 +22,40 @@
 (defn select-last-file
   [path]
   (info "EXECUTE ON PATH" path)
-  (last (clojure.string/split (c/exec :find path :-type :f :-printf "%T+ $PWD%p\n" :| :sort :| :awk "'{print $2}'")) #"\n"))
+  (last (clojure.string/split
+         (c/exec :find path :-type :f :-printf "%T+ %p\n" :| :sort :| :awk "{print $2}")
+         #"\n")))
+
+(defn random-file-pos
+  [fname]
+  (let [fsize (Integer/parseInt (c/exec :du :-b fname :| :cut :-f1))]
+    (rand-int fsize)))
 
 (defn corrupt-file
   [fname]
-  (c/exec :dd "if=/dev/zero" ("str of=" fname) "bs=1" "count=1" "seek=N" "conv=notrunc"))
+  (info "Corrupting" fname)
+  (c/exec :dd "if=/dev/zero" (str "of=" fname) "bs=1" "count=1" (str "seek=" (random-file-pos fname)) "conv=notrunc"))
 
 (defn corruptor-nemesis
   [path corruption-op]
   (reify nemesis/Nemesis
+
     (setup! [this test] this)
 
     (invoke! [this test op]
-      (let [nodes (list (rand-nth (:nodes test)))]
-        (info "Corruption on node" nodes)
-        (c/on-nodes test nodes
-            (fn [node]
-              (let [file-to-corrupt (select-last-file path)]
-                (info "Corrupting file" file-to-corrupt)
-                 (c/su
-                     (corruption-op (select-last-file path))
-                     (kill-clickhouse! node test)
-                     (start-clickhouse! node test)))))
-        {:f (:f op)
-         :value :corrupted}))
+      (cond (= (:f op) :corrupt)
+        (let [nodes (list (rand-nth (:nodes test)))]
+          (info "Corruption on node" nodes)
+          (c/on-nodes test nodes
+              (fn [test node]
+                (let [file-to-corrupt (select-last-file path)]
+                  (info "Corrupting file" file-to-corrupt)
+                   (c/su
+                       (corruption-op (select-last-file path))
+                       (kill-clickhouse! node test)
+                       (start-clickhouse! node test)))))
+          (assoc op :type :info, :value :corrupted))
+        :else (assoc op :type :info, :value :not-started)))
 
     (teardown! [this test])))
 
