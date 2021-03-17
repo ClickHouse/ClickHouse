@@ -68,8 +68,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 BlockInputStreamPtr PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, load_all_query, sample_block, max_block_size);
+    return loadBase(load_all_query);
 }
 
 
@@ -77,21 +76,25 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, load_update_query, sample_block, max_block_size);
+    return loadBase(load_update_query);
 }
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
-    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size);
+    return loadBase(query);
 }
 
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
+    return loadBase(query);
+}
+
+
+BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
+{
     auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
     return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size);
 }

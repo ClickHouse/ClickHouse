@@ -37,6 +37,7 @@ public:
     BlockInputStreamPtr loadUpdatedAll() override;
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadBase(const String & query);
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
