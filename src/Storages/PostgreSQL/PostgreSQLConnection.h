@@ -45,7 +45,7 @@ private:
 
     ConnectionPtr connection;
     std::string connection_str, address;
-    std::atomic<uint8_t> ref_count;
+    std::atomic<uint8_t> ref_count{0};
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
