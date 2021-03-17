@@ -344,6 +344,17 @@ String DatabaseReplicatedTask::getShardID() const
     return database->shard_name;
 }
 
+void DatabaseReplicatedTask::parseQueryFromEntry(const Context & context)
+{
+    DDLTaskBase::parseQueryFromEntry(context);
+    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
+    {
+        /// Update database name with actual name of local database
+        assert(ddl_query->database.empty());
+        ddl_query->database = database->getDatabaseName();
+    }
+}
+
 std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);

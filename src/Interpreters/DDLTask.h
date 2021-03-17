@@ -93,7 +93,7 @@ struct DDLTaskBase
     DDLTaskBase(const DDLTaskBase &) = delete;
     virtual ~DDLTaskBase() = default;
 
-    void parseQueryFromEntry(const Context & context);
+    virtual void parseQueryFromEntry(const Context & context);
 
     virtual String getShardID() const = 0;
 
@@ -134,6 +134,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
 
     String getShardID() const override;
+    void parseQueryFromEntry(const Context & context) override;
     std::unique_ptr<Context> makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
