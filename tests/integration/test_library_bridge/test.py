@@ -26,8 +26,6 @@ def ch_cluster():
                 '/usr/bin/g++ -shared -o /etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so -fPIC /etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.cpp'],
                 user='root')
 
-        instance.exec_in_container(['bash', '-c', '/usr/bin/clickhouse-library-bridge --http-port 9012 --daemon'], user='root')
-
         yield cluster
 
     finally:
