@@ -197,7 +197,7 @@ LIMIT 10
 ``` sql
 SELECT arrayJoin(directions)
 FROM recipes
-WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
+WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake';
 ```
 
 Результат:
