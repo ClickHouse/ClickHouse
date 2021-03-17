@@ -31,6 +31,8 @@ int main(int argc, char ** argv)
             return 1;
         }
 
+        bool dump_ctime = (options.count("ctime")) ? true : false;
+
         zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(options.at("address").as<std::string>());
 
         std::string initial_path = options.at("path").as<std::string>();
@@ -81,7 +83,7 @@ int main(int argc, char ** argv)
             }
 
             std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength;
-            if (options.count("ctime")) {
+            if (dump_ctime) {
                 std::cout << '\t' << response.stat.ctime;
             }
             std::cout << '\n';
