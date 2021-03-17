@@ -111,6 +111,9 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
+        "01761_alter_decimal_zookeeper",
+        "01560_optimize_on_insert_zookeeper",
+        "01720_type_map_and_casts",
         "01413_alter_update_supertype",
         "01149_zookeeper_mutation_stuck_after_replace_partition",
         "00836_indices_alter_replicated_zookeeper",
@@ -277,6 +280,7 @@
         "00534_functions_bad_arguments4",
         "00534_functions_bad_arguments9",
         "00564_temporary_table_management",
+        "00600_replace_running_query",
         "00626_replace_partition_from_table_zookeeper",
         "00652_replicated_mutations_zookeeper",
         "00687_top_and_offset",
@@ -394,7 +398,7 @@
         "01293_pretty_max_value_width",
         "01293_show_settings",
         "01294_create_settings_profile",
-        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
         "01295_create_row_policy",
         "01296_create_row_policy_in_current_database",
         "01297_create_quota",
@@ -521,6 +525,7 @@
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
         "00604_show_create_database",
+        "00600_replace_running_query",
         "00612_http_max_query_size",
         "00619_union_highlite",
         "00620_optimize_on_nonleader_replica_zookeeper",
@@ -589,7 +594,7 @@
         "01018_ddl_dictionaries_select",
         "01018_ddl_dictionaries_special",
         "01018_dictionaries_from_dictionaries",
-        "01018_ip_dictionary",
+        "01018_ip_dictionary_long",
         "01021_only_tuple_columns",
         "01023_materialized_view_query_context",
         "01031_mutations_interpreter_and_context",
@@ -678,7 +683,7 @@
         "01281_unsucceeded_insert_select_queries_counter",
         "01293_system_distribution_queue",
         "01294_lazy_database_concurrent",
-        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
         "01294_system_distributed_on_cluster",
         "01296_create_row_policy_in_current_database",
         "01297_create_quota",
@@ -733,6 +738,7 @@
         "01530_drop_database_atomic_sync",
         "01541_max_memory_usage_for_user_long",
         "01542_dictionary_load_exception_race",
+        "01560_optimize_on_insert_zookeeper",
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
         "01593_concurrent_alter_mutations_kill_many_replicas",
@@ -750,6 +756,7 @@
         "01700_system_zookeeper_path_in",
         "01715_background_checker_blather_zookeeper",
         "01747_alter_partition_key_enum_zookeeper",
+        "01761_alter_decimal_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -760,6 +767,13 @@
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
-        "01748_dictionary_table_dot" // creates database
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01748_dictionary_table_dot", // creates database
+        "00950_dict_get",
+        "01683_flat_dictionary",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key"
     ]
 }

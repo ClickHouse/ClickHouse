@@ -1760,7 +1760,6 @@ Result:
 
 ```
 
-
 ## randomStringUTF8 {#randomstringutf8}
 
 Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
@@ -1969,4 +1968,3 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
