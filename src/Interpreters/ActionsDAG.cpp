@@ -91,7 +91,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
     return addNode(std::move(node), can_replace, add_to_index);
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace, bool add_to_index)
 {
     Node node;
     node.type = ActionType::INPUT;
@@ -99,7 +99,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace, bool materialize)
@@ -1430,7 +1430,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
         Node * input;
         auto & list = required_inputs[col.name];
         if (list.empty())
-            input = &const_cast<Node &>(actions->addInput(col));
+            input = &const_cast<Node &>(actions->addInput(col, true, false));
         else
         {
             input = list.front();
