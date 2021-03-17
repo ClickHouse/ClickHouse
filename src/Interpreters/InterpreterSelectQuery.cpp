@@ -2038,7 +2038,13 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
     for (size_t i = 0; i < windows_sorted.size(); ++i)
     {
         const auto & w = *windows_sorted[i];
-        if (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1]))
+
+        // We don't need to sort again if the input from previous window already
+        // has suitable sorting. Also don't create sort steps when there are no
+        // columns to sort by, because the sort nodes are confused by this. It
+        // happens in case of `over ()`.
+        if (!w.full_sort_description.empty()
+            && (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1])))
         {
             auto partial_sorting = std::make_unique<PartialSortingStep>(
                 query_plan.getCurrentDataStream(),

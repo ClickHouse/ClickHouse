@@ -10,6 +10,8 @@ PartialSortingTransform::PartialSortingTransform(
     : ISimpleTransform(header_, header_, false)
     , description(description_), limit(limit_)
 {
+    // Sorting by no columns doesn't make sense.
+    assert(!description.empty());
 }
 
 static ColumnRawPtrs extractColumns(const Block & block, const SortDescription & description)
@@ -91,17 +93,14 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
 
 void PartialSortingTransform::transform(Chunk & chunk)
 {
-    if (chunk.getColumns().empty())
+    if (chunk.getNumRows())
     {
-        // Sometimes we can have Chunks w/o columns, e.g. in case of
-        // `select count() over () from numbers(4) where number < 2`.
-        // We don't have to modify this Chunk, but we have to preserve the input
-        // number of rows. The following code uses Block for sorting, and Block
-        // is incapable of recording the number of rows when there is no columns.
-        // The simplest solution is to specifically check for Chunk with no
-        // columns and not modify it, which is what we do here.
-        return;
+        // The following code works with Blocks and will lose the number of
+        // rows when there are no columns. We shouldn't get such block, because
+        // we have to sort by at least one column.
+        assert(chunk.getNumColumns());
     }
+
     if (read_rows)
         read_rows->add(chunk.getNumRows());
 
