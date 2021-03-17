@@ -67,10 +67,10 @@ private:
 
     using Conditions = std::list<Condition>;
 
-    void analyzeImpl(Conditions & res, const ASTPtr & node, bool isFinal) const;
+    void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
-    Conditions analyze(const ASTPtr & expression, bool isFinal) const;
+    Conditions analyze(const ASTPtr & expression, bool is_final) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
@@ -85,7 +85,7 @@ private:
 
     bool isPrimaryKeyAtom(const ASTPtr & ast) const;
 
-    bool isPrimaryKey(const String & columnName) const;
+    bool isPrimaryKey(const String & column_name) const;
 
     bool isConstant(const ASTPtr & expr) const;
 
@@ -97,7 +97,7 @@ private:
       *
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
-    bool cannotBeMoved(const ASTPtr & ptr, bool isFinal) const;
+    bool cannotBeMoved(const ASTPtr & ptr, bool is_final) const;
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
