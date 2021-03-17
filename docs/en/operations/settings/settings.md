@@ -1881,7 +1881,7 @@ If `insert_shard_id` isn't specified or the value is incorrect, the server will 
 You can check server config or use this query to get the number of shard on `requested_cluster`.
 
 ``` sql
-SELECT uniq(shard_num) FROM system.clusters WHERE cluster='requested_cluster';
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 ```
 
 Possible values:
