@@ -36,7 +36,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     Poco::Logger * log_)
     : table_columns{ext::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
-    , queried_columns{queried_columns_},
+    , queried_columns{queried_columns_}
     , primary_key_columns{metadata_snapshot->getPrimaryKey().column_names}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
     , log{log_}
@@ -120,7 +120,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
     if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
     {
         for (const auto & elem : func_and->arguments->children)
-            analyzeImpl(res, elem);
+            analyzeImpl(res, elem, isFinal);
     }
     else
     {
