@@ -1424,7 +1424,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
         }
     }
 
-
+    /// Actions must have the same inputs as in all_inputs list.
+    /// See comment to cloneActionsForFilterPushDown.
     for (const auto & col : all_inputs)
     {
         Node * input;
