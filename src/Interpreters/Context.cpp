@@ -65,6 +65,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <IO/AsynchronousInsertionQueue.h>
 
 
 namespace ProfileEvents
@@ -380,6 +381,8 @@ struct ContextShared
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
 #endif
 
+    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
+
     bool shutdown_called = false;
 
     Stopwatch uptime_watch;
@@ -496,6 +499,7 @@ Context Context::createGlobal(ContextShared * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(*this);
+    shared->async_insert_queue = std::make_shared<AsynchronousInsertQueue>(16, 1024);
 }
 
 SharedContextHolder Context::createShared()
@@ -2587,6 +2591,11 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs()
         ignored_part_uuids = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+AsynchronousInsertQueue & Context::getAsynchronousInsertQueue() const
+{
+    return *shared->async_insert_queue;
 }
 
 }

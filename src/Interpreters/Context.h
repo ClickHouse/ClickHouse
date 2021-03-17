@@ -152,7 +152,7 @@ struct SharedContextHolder
 {
     ~SharedContextHolder();
     SharedContextHolder();
-    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    explicit SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
     SharedContextHolder & operator=(SharedContextHolder &&);
@@ -765,7 +765,8 @@ public:
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
 
-    AsynchronousInsertQueue & getAsynchronousInsertQueue();
+    AsynchronousInsertQueue & getAsynchronousInsertQueue() const;
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

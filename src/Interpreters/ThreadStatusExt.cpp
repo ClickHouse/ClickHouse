@@ -371,6 +371,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_id.clear();
     query_context = nullptr;
+    thread_group->query_context = nullptr;
     thread_trace_context.trace_id = 0;
     thread_trace_context.span_id = 0;
     thread_group.reset();
