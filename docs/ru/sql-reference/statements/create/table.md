@@ -243,5 +243,4 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/table) 
 <!--hide-->
