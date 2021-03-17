@@ -1463,7 +1463,7 @@ private:
             // queries we were able to successfully execute.
             // The final caveat is that sometimes WITH queries are not executed,
             // if they are not referenced by the main SELECT, so they can still
-            // have the abovementioned problems. Disable this check for such
+            // have the aforementioned problems. Disable this check for such
             // queries, for lack of a better solution.
             if (!have_error && queryHasWithClause(parsed_query.get()))
             {
