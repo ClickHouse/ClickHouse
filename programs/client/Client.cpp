@@ -65,6 +65,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
@@ -113,6 +114,31 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+}
+
+
+static bool queryHasWithClause(const IAST * ast)
+{
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast);
+        select && select->with())
+    {
+        return true;
+    }
+
+    // This is a bit too much, because most of the children are not queries,
+    // but on the other hand it will let us to avoid breakage when the AST
+    // structure changes and some new variant of query nesting is added. This
+    // function is used in fuzzer, so it's better to be defensive and avoid
+    // weird unexpected errors.
+    for (const auto & child : ast->children)
+    {
+        if (queryHasWithClause(child.get()))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
@@ -1429,7 +1455,11 @@ private:
             // when `lambda()` function gets substituted into a wrong place.
             // To avoid dealing with these cases, run the check only for the
             // queries we were able to successfully execute.
-            if (!have_error)
+            // The final caveat is that sometimes WITH queries are not executed,
+            // if they are not referenced by the main SELECT, so they can still
+            // have the abovementioned problems. Disable this check for such
+            // queries, for lack of a better solution.
+            if (!have_error && queryHasWithClause(parsed_query.get()))
             {
                 ASTPtr parsed_formatted_query;
                 try
