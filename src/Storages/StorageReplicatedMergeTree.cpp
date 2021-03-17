@@ -1360,7 +1360,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     const String part_new_name = actual_part_info.getPartName();
 
-    LOG_TRACE(log, "Trying to attach part {} from local data", part_new_name);
+    LOG_TRACE(log, "Trying to attach part {}, checksum {}", part_new_name, entry.part_checksum);
 
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
         for (const auto it = disk->iterateDirectory(relative_data_path + "detached/"); it->isValid(); it->next())
@@ -1381,10 +1381,17 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             // The faster way is to load invalid data and just check the checksums -- they won't match.
             part->loadColumnsChecksumsIndexes(true, false);
 
+            for (auto && [name, checksum] : part->checksums.files)
+                LOG_TRACE(log, "> File {}, file size {}, file hash ({}, {})", name, checksum.file_size,
+                    checksum.file_hash.first, checksum.file_hash.second);
+
+            LOG_TRACE(log, "Checksums files: {}, path: {}, part checksum {}",
+                    part->checksums.files.size(), part->getFullPath(), part->checksums.getTotalChecksumHex());
+
             if (entry.part_checksum == part->checksums.getTotalChecksumHex())
             {
-                part->is_temp = true;
-                part->modification_time = disk->getLastModified(part_path).epochTime();
+                //part->loadColumnsChecksumsIndexes(true, true); //not sure if it's needed TODO
+                //part->modification_time = disk->getLastModified(part->getFullRelativePath()).epochTime();
                 return part;
             }
         }
@@ -1433,12 +1440,11 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
         {
-            LOG_TRACE(log, "Found valid part {} to attach from local data, preparing the transaction",
-                part->name);
+            LOG_TRACE(log, "Found valid part to attach from local data, preparing the transaction");
 
             Transaction transaction(*this);
 
-            renameTempPartAndReplace(part, nullptr, &transaction);
+            renameTempPartAndAdd(part, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {},

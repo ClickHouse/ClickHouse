@@ -89,20 +89,34 @@ def test_attach_without_fetching(start_cluster):
     # Replica 3 should download the data from replica 1 as there is no local data.
     # Replica 2 should also download the data from 1 as the checksums won't match.
     print("Checking attach with corrupted checksums")
-    corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
+
+    # corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
+
+    print("Before deleting:", node_2.exec_in_container(['bash', '-c',
+                            'cd {p} && ls *.bin'.format(
+                                p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True))
+
+    node_2.exec_in_container(['bash', '-c',
+                            'cd {p} && rm -fr *.bin'.format(
+                                p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True)
+
+    print("After deleting:", node_2.exec_in_container(['bash', '-c',
+                            'cd {p} && ls'.format(
+                                p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True))
+
     node_1.query("ALTER TABLE test ATTACH PARTITION 1")
     check_data([node_1, node_2, node_3], detached_parts=[0])
 
     # 4. Attach the first part and check if it has been fetched correctly.
-    # Replica 1 should attach the local data from detached/.
-    # Replica 3 should download the data from replica 1 as there is no local data and other connections are broken.
+    # Replica 2 should attach the local data from detached/.
+    # Replica 3 should download the data from replica 2 as there is no local data and other connections are broken.
     print("Checking attach with valid checksums")
 
     with PartitionManager() as pm:
-        # If something goes wrong and replica 1 wants to fetch data, the test will fail.
-        pm.partition_instances(node_1, node_2)
-        pm.partition_instances(node_3, node_2)
+        # If something goes wrong and replica 2 wants to fetch data, the test will fail.
+        pm.partition_instances(node_2, node_1)
+        pm.partition_instances(node_1, node_3)
 
-        node_2.query("ALTER TABLE test ATTACH PART '0_0_0_0'")
+        node_1.query("ALTER TABLE test ATTACH PART '0_0_0_0'")
 
         check_data([node_1, node_2, node_3], detached_parts=[])
