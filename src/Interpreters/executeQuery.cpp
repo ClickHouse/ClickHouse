@@ -498,6 +498,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context.initializeExternalTablesIfSet();
 
         auto * insert_query = ast->as<ASTInsertQuery>();
+
+        if (insert_query)
+            /// Resolve database before trying to use async insert feature - to properly hash the query.
+            insert_query->table_id = context.resolveStorageID(insert_query->table_id);
+
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
@@ -548,7 +553,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        const bool async_insert = insert_query && !insert_query->select && settings.asynchronous_insert_mode;
+        const bool async_insert
+            = insert_query && !insert_query->select && (insert_query->data || insert_query->tail) && settings.asynchronous_insert_mode;
         auto & queue = context.getAsynchronousInsertQueue();
 
         if (async_insert && queue.push(insert_query, settings))

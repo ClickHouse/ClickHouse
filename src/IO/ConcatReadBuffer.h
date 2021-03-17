@@ -14,7 +14,7 @@ class ConcatReadBuffer : public ReadBuffer
 public:
     using Buffers = std::vector<std::unique_ptr<ReadBuffer>>;
 
-    ConcatReadBuffer() : ReadBuffer(nullptr, 0)
+    ConcatReadBuffer() : ReadBuffer(nullptr, 0), current(buffers.end())
     {
     }
 
@@ -31,7 +31,9 @@ public:
 
     void appendBuffer(std::unique_ptr<ReadBuffer> buffer)
     {
+        assert(!count());
         buffers.push_back(std::move(buffer));
+        current = buffers.begin();
     }
 
 protected:
