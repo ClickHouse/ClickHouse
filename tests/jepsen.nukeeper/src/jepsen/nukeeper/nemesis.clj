@@ -101,6 +101,8 @@
                          :generator (start-stop-generator)}
    "simple-partitioner" {:nemesis (nemesis/partition-random-halves)
                          :generator (start-stop-generator)}
+   "hammer-time"    {:nemesis (hammer-time-nemesis)
+                     :generator (start-stop-generator)}
    "logs-corruptor" {:nemesis (logs-corruption-nemesis)
                      :generator (corruption-generator)}
    "snapshots-corruptor" {:nemesis (snapshots-corruption-nemesis)
