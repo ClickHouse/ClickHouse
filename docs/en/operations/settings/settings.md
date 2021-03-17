@@ -1878,7 +1878,7 @@ Enables synchronous insertion of data into specific shards of [Distributed](../.
 
 If `insert_shard_id` isn't specified or the value is incorrect, the server will throw an exception.
 
-You can check server config or use this query to get the number of shard on `requested_cluster`.
+To get the number of shards on `requested_cluster`, you can check server config or use this query:
 
 ``` sql
 SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
