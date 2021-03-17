@@ -1382,7 +1382,11 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             part->loadColumnsChecksumsIndexes(true, false);
 
             if (entry.part_checksum == part->checksums.getTotalChecksumHex())
+            {
+                part->is_temp = true;
+                part->modification_time = disk->getLastModified(part_path).epochTime();
                 return part;
+            }
         }
 
     return {};
@@ -1436,6 +1440,12 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             renameTempPartAndReplace(part, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
+
+            writePartLog(PartLogElement::Type::NEW_PART, {},
+                0, // well, not really, but don't have the idea how to measure the time here TODO
+                part->name, part,
+                {part}, // not sure whether the initial parts vector should be empty or contain the part itself TODO
+                nullptr);
 
             return true;
         }
@@ -3706,6 +3716,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     String interserver_scheme;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
+
     if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
