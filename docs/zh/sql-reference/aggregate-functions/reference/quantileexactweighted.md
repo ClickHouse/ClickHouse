@@ -19,7 +19,7 @@ quantileExactWeighted(level)(expr, weight)
 别名: `medianExactWeighted`。
 
 **参数**
--   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 当 `level=0.5`时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。当 `level=0.5` 时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
 -   `expr`  — 求值表达式，类型为数值类型[data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md)。
 -   `weight` — 权重序列。 权重是一个数据出现的数值。
 

@@ -12,7 +12,7 @@ anyHeavy(column)
 
 **参数**
 
--   `column` – The column name.
+-   `column` – The column name。
 
 **示例**
 

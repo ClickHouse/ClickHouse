@@ -5,7 +5,7 @@ toc_priority: 107
 # avgWeighted {#avgweighted}
 
 
-计算 [加权算术平均值](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+计算 [加权算术平均值](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean)。
 
 **语法**
 

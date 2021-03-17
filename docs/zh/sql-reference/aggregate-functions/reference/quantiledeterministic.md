@@ -20,8 +20,8 @@ quantileDeterministic(level)(expr, determinator)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 当 `level=0.5`时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
--   `expr` — — 求值表达式，类型为数值类型[data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md)。
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`。默认值：0.5。 当 `level=0.5`时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `expr` — 求值表达式，类型为数值类型[data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) 或 [DateTime](../../../sql-reference/data-types/datetime.md)。
 -   `determinator` — 一个数字，其hash被用来代替在水塘抽样中随机生成的数字，这样可以保证取样的确定性。你可以使用用户ID或者事件ID等任何正数，但是如果相同的 `determinator` 出现多次，那结果很可能不正确。
 **返回值**
 

@@ -20,7 +20,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`。默认值：0.5。 当 `level=0.5`时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
+-   `level` — 分位数层次。可选参数。从0到1的一个float类型的常量。我们推荐 `level` 值的范围为 `[0.01, 0.99]` 。默认值：0.5。当 `level=0.5` 时，该函数计算 [中位数](https://en.wikipedia.org/wiki/Median)。
 -   `expr` — 求值[表达式](../../../sql-reference/syntax.md#syntax-expressions) 返回 [Float\*](../../../sql-reference/data-types/float.md) 类型数值。
 
     - 如果输入负值，那结果是不可预期的。
