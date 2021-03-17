@@ -130,11 +130,17 @@ static bool queryHasWithClause(const IAST * ast)
     // structure changes and some new variant of query nesting is added. This
     // function is used in fuzzer, so it's better to be defensive and avoid
     // weird unexpected errors.
-    for (const auto & child : ast->children)
+    // clang-tidy is confused by this function: it thinks that if `select` is
+    // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
+    // NOLINTNEXTLINE
+    if (ast->children)
     {
-        if (queryHasWithClause(child.get()))
+        for (const auto & child : ast->children) /* NOLINT */
         {
-            return true;
+            if (queryHasWithClause(child.get()))
+            {
+                return true;
+            }
         }
     }
 
