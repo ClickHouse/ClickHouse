@@ -166,7 +166,7 @@ SELECT
 FROM recipes
 WHERE has(NER, 'strawberry')
 ORDER BY length(directions) DESC
-LIMIT 10
+LIMIT 10;
 ```
 
 Результат:
