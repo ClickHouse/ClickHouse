@@ -51,7 +51,7 @@ Poco::URI LibraryBridgeHelper::createBaseURI() const
 
 void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
-    cmd->wait();
+    context.addBridgeCommand(std::move(cmd));
 }
 
 
