@@ -25,11 +25,11 @@
 
   (invoke! [this test op]
     (case
-        :generate
-              (try
-                   (let [result-path (zk-create-sequential conn "/seq-" "")]
-                       (assoc op :type :ok :value (parse-and-get-counter result-path)))
-              (catch Exception _ (assoc op :type :info, :error :connect-error)))))
+     :generate
+      (try
+        (let [result-path (zk-create-sequential conn "/seq-" "")]
+          (assoc op :type :ok :value (parse-and-get-counter result-path)))
+        (catch Exception _ (assoc op :type :info, :error :connect-error)))))
 
   (teardown! [_ test])
 
