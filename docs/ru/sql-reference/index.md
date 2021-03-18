@@ -13,4 +13,3 @@ toc_title: hidden
 -   [ALTER](statements/alter/index.md#query_language_queries_alter)
 -   [Прочие виды запросов](statements/misc.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/) <!--hide-->

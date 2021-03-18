@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -154,13 +153,20 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+
+    bool isDeterministic() const override { return false; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments.size() < 2)
+            throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
         if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -172,8 +178,6 @@ private:
 
         return std::make_shared<DataTypeUInt8>();
     }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -193,6 +197,24 @@ private:
         const ColumnWithTypeAndName & key_column_with_type = arguments[1];
         const auto key_column = key_column_with_type.column;
         const auto key_column_type = WhichDataType(key_column_with_type.type);
+
+        ColumnPtr range_col = nullptr;
+        DataTypePtr range_col_type = nullptr;
+
+        if (dictionary_key_type == DictionaryKeyType::range)
+        {
+            if (arguments.size() != 3)
+                throw Exception{"Wrong argument count for function " + getName()
+                    + " when dictionary has key type range", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+            range_col = arguments[2].column;
+            range_col_type = arguments[2].type;
+
+            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+                throw Exception{"Illegal type " + range_col_type->getName() + " of fourth argument of function "
+                        + getName() + " must be convertible to Int64.",
+                    ErrorCodes::ILLEGAL_COLUMN};
+        }
 
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
@@ -217,7 +239,7 @@ private:
             return dictionary->hasKeys(key_columns, key_types);
         }
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Has not supported for range dictionary", dictionary->getDictionaryID().getNameForLogs());
+            return dictionary->hasKeys({key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type});
     }
 
     mutable FunctionDictHelper helper;
