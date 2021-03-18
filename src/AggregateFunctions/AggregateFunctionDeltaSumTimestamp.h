@@ -30,21 +30,21 @@ struct AggregationFunctionDeltaSumTimestampData
 template <typename ValueType, typename TimestampType>
 class AggregationFunctionDeltaSumTimestamp final
     : public IAggregateFunctionDataHelper<
-        AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>, 
+        AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
         AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
       >
 {
 public:
     AggregationFunctionDeltaSumTimestamp(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<
-            AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>, 
+            AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
             AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
         >{arguments, params}
     {}
 
     AggregationFunctionDeltaSumTimestamp()
         : IAggregateFunctionDataHelper<
-            AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>, 
+            AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
             AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
         >{}
     {}
@@ -76,7 +76,7 @@ public:
 
     // before returns true if lhs is before rhs or false if it is not or can't be determined
     bool ALWAYS_INLINE before (
-        const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * lhs, 
+        const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * lhs,
         const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * rhs
     ) const {
         if (lhs->last_ts < rhs->first_ts) {
@@ -101,7 +101,7 @@ public:
             place_data->first_ts = rhs_data->first_ts;
             place_data->last = rhs_data->last;
             place_data->last_ts = rhs_data->last_ts;
-        } 
+        }
         else if (place_data->seen && !rhs_data->seen)
         {
             // Do nothing
