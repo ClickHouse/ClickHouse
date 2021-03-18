@@ -117,6 +117,14 @@
         "01148_zookeeper_path_macros_unfolding",
         "01294_system_distributed_on_cluster",
         "01269_create_with_null",
+        "01451_replicated_detach_drop_and_quorum",
+        "01188_attach_table_from_path",
+        /// user_files
+        "01721_engine_file_truncate_on_insert",
+        /// Fails due to additional replicas or shards
+        "01650_drop_part_and_deduplication_zookeeper",
+        "01532_execute_merges_on_single_replica",
+        "01509_parallel_quorum_insert_no_replicas",
         /// grep -c
         "01018_ddl_dictionaries_bad_queries",
         "00908_bloom_filter_index",

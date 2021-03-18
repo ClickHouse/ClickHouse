@@ -355,19 +355,20 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, const Context & q
             bool maybe_replica_macros = info.expanded_other;
             bool enable_functional_tests_helper = global_context.getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
 
+            if (!enable_functional_tests_helper)
+                LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+
+            if (maybe_shard_macros && maybe_replica_macros)
+                return;
+
             if (enable_functional_tests_helper)
             {
                 if (maybe_path.empty() || maybe_path.back() != '/')
                     maybe_path += '/';
-                arg1->value = maybe_path + "{shard}";
-                arg2->value = maybe_replica + "{replica}";
+                arg1->value = maybe_path + "auto_{shard}";
+                arg2->value = maybe_replica + "auto_{replica}";
                 return;
             }
-
-            LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-
-            if (maybe_shard_macros && maybe_replica_macros)
-                return;
 
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
