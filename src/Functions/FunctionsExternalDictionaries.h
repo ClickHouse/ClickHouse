@@ -81,9 +81,9 @@ public:
     {
         String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
 
-        auto dict = external_loader.tryGetDictionary(resolved_name);
+        bool can_load_dictionary = external_loader.hasDictionary(resolved_name);
 
-        if (!dict)
+        if (!can_load_dictionary)
         {
             /// If dictionary not found. And database was not implicitly specified
             /// we can qualify dictionary name with current database name.
@@ -92,12 +92,10 @@ public:
             {
                 String dictionary_name_with_database = context.getCurrentDatabase() + '.' + dictionary_name;
                 resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name_with_database);
-                dict = external_loader.tryGetDictionary(resolved_name);
             }
         }
 
-        if (!dict)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "External dictionary ({}) not found", dictionary_name);
+        auto dict = external_loader.getDictionary(resolved_name);
 
         if (!access_checked)
         {
@@ -330,7 +328,6 @@ public:
 
         DataTypes types;
 
-        auto current_database_name = helper.context.getCurrentDatabase();
         auto dictionary_structure = helper.getDictionaryStructure(dictionary_name);
 
         for (auto & attribute_name : attribute_names)
