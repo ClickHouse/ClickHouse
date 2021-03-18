@@ -722,7 +722,6 @@ Configuration markup:
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <max_connections>100</max_connections>
             <retry_attempts>10</retry_attempts>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
@@ -745,7 +744,6 @@ Optional parameters:
 -   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL. 
 -   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
 -   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 
--   `max_connections` — S3 connections pool size. Default value is `100`. 
 -   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`. 
 -   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`. 
 -   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
