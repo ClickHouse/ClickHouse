@@ -418,7 +418,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         default:
             /// Check case when we receive Exception before first not empty data packet
             /// or positive progress. It may happen if max_parallel_replicas > 1 and
-            /// there is no way to sample data in this query.            
+            /// there is no way to sample data in this query.
             if (offset_states[replica_location.offset].can_change_replica)
                 disableChangingReplica(replica_location);
             finishProcessReplica(replica, true);
