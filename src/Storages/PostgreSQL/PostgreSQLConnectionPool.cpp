@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 #include "PostgreSQLConnectionPool.h"
 #include "PostgreSQLConnection.h"
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -50,25 +51,25 @@ void PostgreSQLConnectionPool::initialize()
 }
 
 
-WrappedPostgreSQLConnection PostgreSQLConnectionPool::get()
+WrappedPostgreSQLConnectionPtr PostgreSQLConnectionPool::get()
 {
     std::lock_guard lock(mutex);
 
     for (const auto & connection : pool)
     {
-        if (connection->available())
-            return WrappedPostgreSQLConnection(connection);
+        if (connection->isAvailable())
+            return std::make_shared<WrappedPostgreSQLConnection>(connection);
     }
 
     auto connection = std::make_shared<PostgreSQLConnection>(connection_str, address);
-    return WrappedPostgreSQLConnection(connection);
+    return std::make_shared<WrappedPostgreSQLConnection>(connection);
 }
 
 
 bool PostgreSQLConnectionPool::isConnected()
 {
     auto connection = get();
-    return connection.isConnected();
+    return connection->isConnected();
 }
 
 }

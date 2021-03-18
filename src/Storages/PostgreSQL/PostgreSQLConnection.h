@@ -7,13 +7,18 @@
 #if USE_LIBPQXX
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
 {
 
+class WrappedPostgreSQLConnection;
+
 class PostgreSQLConnection
 {
+
+friend class WrappedPostgreSQLConnection;
 
 using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
@@ -22,7 +27,7 @@ public:
         const String & connection_str_,
         const String & address_);
 
-    PostgreSQLConnection(const PostgreSQLConnection & other);
+    PostgreSQLConnection(const PostgreSQLConnection & other) = delete;
 
     ConnectionPtr get();
 
@@ -30,11 +35,12 @@ public:
 
     bool isConnected() { return tryConnectIfNeeded(); }
 
-    bool available() { return ref_count.load() == 0; }
+    int32_t isAvailable() { return !locked.load(); }
 
-    void incrementRef() { ref_count++; }
+protected:
+    void lock() { locked.store(true); }
 
-    void decrementRef() { ref_count--; }
+    void unlock() { locked.store(false); }
 
 private:
     void connectIfNeeded();
@@ -45,7 +51,7 @@ private:
 
     ConnectionPtr connection;
     std::string connection_str, address;
-    std::atomic<uint8_t> ref_count{0};
+    std::atomic<bool> locked{false};
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
@@ -55,21 +61,21 @@ class WrappedPostgreSQLConnection
 {
 
 public:
-    WrappedPostgreSQLConnection(PostgreSQLConnectionPtr connection_) : connection(connection_) { connection->incrementRef(); }
+    WrappedPostgreSQLConnection(PostgreSQLConnectionPtr connection_) : connection(connection_) { connection->lock(); }
 
-    WrappedPostgreSQLConnection(const WrappedPostgreSQLConnection & other) : connection(other.connection) {}
+    WrappedPostgreSQLConnection(const WrappedPostgreSQLConnection & other) = delete;
 
-    ~WrappedPostgreSQLConnection() { connection->decrementRef(); }
+    ~WrappedPostgreSQLConnection() { connection->unlock(); }
 
-    pqxx::connection & operator*() const { return *connection->get(); }
-
-    pqxx::connection * operator->() const { return connection->get().get(); }
+    pqxx::connection & conn() const { return *connection->get(); }
 
     bool isConnected() { return connection->isConnected(); }
 
 private:
     PostgreSQLConnectionPtr connection;
 };
+
+using WrappedPostgreSQLConnectionPtr = std::shared_ptr<WrappedPostgreSQLConnection>;
 
 }
 

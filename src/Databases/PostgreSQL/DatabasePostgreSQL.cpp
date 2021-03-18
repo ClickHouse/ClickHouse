@@ -91,7 +91,7 @@ std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
     auto connection = connection_pool->get();
-    pqxx::read_transaction tx(*connection);
+    pqxx::read_transaction tx(connection->conn());
 
     for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
@@ -110,7 +110,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
     }
 
     auto connection = connection_pool->get();
-    pqxx::nontransaction tx(*connection);
+    pqxx::nontransaction tx(connection->conn());
 
     try
     {

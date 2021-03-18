@@ -52,7 +52,7 @@ PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(
 }
 
 
-WrappedPostgreSQLConnection PostgreSQLReplicaConnection::get()
+WrappedPostgreSQLConnectionPtr PostgreSQLReplicaConnection::get()
 {
     for (size_t i = 0; i < num_retries; ++i)
     {
