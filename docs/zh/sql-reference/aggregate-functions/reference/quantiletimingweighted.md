@@ -79,6 +79,39 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 └───────────────────────────────────────────────┘
 ```
 
+# quantilesTimingWeighted {#quantilestimingweighted}
+
+类似于 `quantileTimingWeighted` , 但接受多个分位数层次参数，并返回一个由这些分位数值组成的数组。
+
+**示例**
+
+输入表:
+
+``` text
+┌─response_time─┬─weight─┐
+│            68 │      1 │
+│           104 │      2 │
+│           112 │      3 │
+│           126 │      2 │
+│           138 │      1 │
+│           162 │      1 │
+└───────────────┴────────┘
+```
+
+查询:
+
+``` sql
+SELECT quantilesTimingWeighted(0,5, 0.99)(response_time, weight) FROM t
+```
+
+结果:
+
+``` text
+┌─quantilesTimingWeighted(0.5, 0.99)(response_time, weight)─┐
+│ [112,162]                                                 │
+└───────────────────────────────────────────────────────────┘
+```
+
 **参见**
 
 -   [中位数](../../../sql-reference/aggregate-functions/reference/median.md#median)
