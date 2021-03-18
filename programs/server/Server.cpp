@@ -70,6 +70,8 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Functions/FrequencyHolder.h>
+#include <Functions/FunctionsTextClassification.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -629,6 +631,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
         TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
+    }
+
+    /// my test
+    {
+        const std::string & encode_frequency_path = config().getString("encodings_frequency_path", path + "textclassification_frequency/");
+        FrequencyHolder::getInstance().parseDictionaries(encode_frequency_path);
     }
 
     {

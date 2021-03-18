@@ -130,7 +130,7 @@
         <password></password>
     </interserver_http_credentials>-->
 
-    <!-- Listen specified address.
+/home/sergey/datadump/test.txt    <!-- Listen specified address.
          Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
          Notes:
          If you open connections from wildcard address, make sure that at least one of the following measures applied:
@@ -842,6 +842,11 @@
          Changes will not be applied w/o server restart.
          Path to the list is under top_level_domains_path (see above).
     -->
+
+    <!-- MY CHANGES -->
+
+    <encodings_frequency_path>/var/lib/clickhouse/encodings_frequency/</encodings_frequency_path>
+
     <top_level_domains_lists>
         <!--
         <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
