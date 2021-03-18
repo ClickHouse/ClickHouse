@@ -712,4 +712,98 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
+
+## Использование сервиса S3 для хранения данных {#table_engine-mergetree-s3}
+
+Таблицы семейства `MergeTree` могут хранить данные в сервисе [S3](https://aws.amazon.com/s3/) при использовании диска типа `s3`.
+
+Конфигурация:
+
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <s3>
+            <type>s3</type>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <access_key_id>your_access_key_id</access_key_id>
+            <secret_access_key>your_secret_access_key</secret_access_key>
+            <proxy>
+                <uri>http://proxy1</uri>
+                <uri>http://proxy2</uri>
+            </proxy>
+            <connect_timeout_ms>10000</connect_timeout_ms>
+            <request_timeout_ms>5000</request_timeout_ms>
+            <retry_attempts>10</retry_attempts>
+            <min_bytes_for_seek>1000</min_bytes_for_seek>
+            <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            <cache_enabled>true</cache_enabled>
+            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </s3>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+Обязательные параметры:
+
+-   `endpoint` — URL точки приема запроса на стороне S3 в [форматах](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) `path` или `virtual hosted`. URL точки должен содержать бакет и путь к корневой директории на сервере, где хранятся данные.
+-   `access_key_id` — id ключа доступа к S3. 
+-   `secret_access_key` — секретный ключ доступа к S3.
+
+Необязательные параметры:   
+
+-   `use_environment_credentials` — признак, нужно ли считывать учетные данные AWS из переменных окружения `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` и `AWS_SESSION_TOKEN`, если они есть. Значение по умолчанию: `false`.
+-   `proxy` — конфигурация прокси-сервера для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси-сервера. 
+-   `connect_timeout_ms` — таймаут подключения к сокету в миллисекундах. Значение по умолчанию: 10 секунд. 
+-   `request_timeout_ms` — таймаут выполнения запроса в миллисекундах. Значение по умолчанию: 5 секунд. 
+-   `retry_attempts` — число попыток выполнения запроса в случае возникновения ошибки. Значение по умолчанию: `10`. 
+-   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт. 
+-   `metadata_path` — путь к локальному файловому хранилищу для хранения файлов с метаданными для S3. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/`. 
+-   `cache_enabled` — признак, разрешено ли хранение кэша засечек и файлов индекса в локальной файловой системе. Значение по умолчанию: `true`. 
+-   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
+-   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
+
+
+Диск S3 может быть сконфигурирован как `main` или `cold`:
+
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <s3>
+            <type>s3</type>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <access_key_id>your_access_key_id</access_key_id>
+            <secret_access_key>your_secret_access_key</secret_access_key>
+        </s3>
+    </disks>
+    <policies>
+        <s3_main>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        </s3_main>
+        <s3_cold>
+            <volumes>
+                <main>
+                    <disk>default</disk>
+                </main>
+                <external>
+                    <disk>s3</disk>
+                </external>
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </s3_cold>
+    </policies>
+    ...
+</storage_configuration>
+```
+
+Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`. 
+
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
