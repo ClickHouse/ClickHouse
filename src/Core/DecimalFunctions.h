@@ -24,13 +24,13 @@ namespace ErrorCodes
 namespace DecimalUtils
 {
 
-inline constexpr size_t min_precision = 1;
-template <typename T> inline constexpr size_t max_precision = 0;
-template <> inline constexpr size_t max_precision<Decimal32> = 9;
-template <> inline constexpr size_t max_precision<Decimal64> = 18;
-template <> inline constexpr size_t max_precision<DateTime64> = 18;
-template <> inline constexpr size_t max_precision<Decimal128> = 38;
-template <> inline constexpr size_t max_precision<Decimal256> = 76;
+static constexpr size_t minPrecision() { return 1; }
+template <typename T> static constexpr size_t maxPrecision() { return 0; }
+template <> constexpr size_t maxPrecision<Decimal32>() { return 9; }
+template <> constexpr size_t maxPrecision<Decimal64>() { return 18; }
+template <> constexpr size_t maxPrecision<DateTime64>() { return 18; }
+template <> constexpr size_t maxPrecision<Decimal128>() { return 38; }
+template <> constexpr size_t maxPrecision<Decimal256>() { return 76; }
 
 template <typename T>
 inline auto scaleMultiplier(UInt32 scale)
@@ -50,10 +50,9 @@ inline auto scaleMultiplier(UInt32 scale)
  * whole - represents whole part of decimal, can be negative or positive.
  * fractional - for fractional part of decimal, always positive.
  */
-template <typename DecimalType>
+template <typename T>
 struct DecimalComponents
 {
-    using T = typename DecimalType::NativeType;
     T whole;
     T fractional;
 };
@@ -88,7 +87,7 @@ struct DataTypeDecimalTrait
   *
   * Sign of `whole` controls sign of result: negative whole => negative result, positive whole => positive result.
   * Sign of `fractional` is expected to be positive, otherwise result is undefined.
-  * If `scale` is to big (scale > max_precision<DecimalType::NativeType>), result is undefined.
+  * If `scale` is to big (scale > maxPrecision<DecimalType::NativeType>), result is undefined.
   */
 template <typename DecimalType>
 inline DecimalType decimalFromComponentsWithMultiplier(
@@ -106,15 +105,6 @@ inline DecimalType decimalFromComponentsWithMultiplier(
     const T value = whole_scaled + fractional_sign * (fractional % scale_multiplier);
     return DecimalType(value);
 }
-
-template <typename DecimalType>
-inline DecimalType decimalFromComponentsWithMultiplier(
-        const DecimalComponents<DecimalType> & components,
-        typename DecimalType::NativeType scale_multiplier)
-{
-    return decimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier);
-}
-
 
 /** Make a decimal value from whole and fractional components with given scale.
  *
@@ -136,7 +126,7 @@ inline DecimalType decimalFromComponents(
  */
 template <typename DecimalType>
 inline DecimalType decimalFromComponents(
-        const DecimalComponents<DecimalType> & components,
+        const DecimalComponents<typename DecimalType::NativeType> & components,
         UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
@@ -146,7 +136,7 @@ inline DecimalType decimalFromComponents(
  * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
  */
 template <typename DecimalType>
-inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
+inline DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(
         const DecimalType & decimal,
         typename DecimalType::NativeType scale_multiplier)
 {
@@ -161,7 +151,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
 
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
-inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 scale)
+inline DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {
@@ -297,21 +287,21 @@ inline auto binaryOpResult(const DecimalType<T> & tx, const DecimalType<U> & ty)
         scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
 
     if constexpr (sizeof(T) < sizeof(U))
-        return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, scale);
+        return DataTypeDecimalTrait<U>(DecimalUtils::maxPrecision<U>(), scale);
     else
-        return DataTypeDecimalTrait<T>(DecimalUtils::max_precision<T>, scale);
+        return DataTypeDecimalTrait<T>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
 inline const DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
-    return DataTypeDecimalTrait<T>(DecimalUtils::max_precision<T>, tx.getScale());
+    return DataTypeDecimalTrait<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
 inline const DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
-    return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
+    return DataTypeDecimalTrait<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 }

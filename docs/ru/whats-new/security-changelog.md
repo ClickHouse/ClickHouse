@@ -73,3 +73,4 @@ unixODBC позволял указать путь для подключения 
 
 Обнаружено благодаря: the UK’s National Cyber Security Centre (NCSC)
 
+{## [Оригинальная статья](https://clickhouse.tech/docs/ru/security_changelog/) ##}

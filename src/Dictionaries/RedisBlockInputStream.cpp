@@ -99,15 +99,8 @@ namespace DB
                     assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(string_value).getDayNum());
                     break;
                 case ValueType::vtDateTime:
-                {
-                    ReadBufferFromString in(string_value);
-                    time_t time = 0;
-                    readDateTimeText(time, in);
-                    if (time < 0)
-                        time = 0;
-                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(string_value)));
                     break;
-                }
                 case ValueType::vtUUID:
                     assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
                     break;

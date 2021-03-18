@@ -39,7 +39,7 @@ function github_download()
     local file=${2}
     if ! [ -f "$file" ]
     then
-        if ! curl -u "$GITHUB_USER:$GITHUB_TOKEN" \
+        if ! curl -H "Authorization: token $GITHUB_TOKEN" \
                 -sSf "$url" \
                 > "$file"
         then

@@ -45,11 +45,9 @@ StoragePostgreSQL::StoragePostgreSQL(
     PostgreSQLConnectionPtr connection_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
-    const String & remote_table_schema_)
+    const Context & context_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
-    , remote_table_schema(remote_table_schema_)
     , global_context(context_)
     , connection(std::move(connection_))
 {
@@ -71,11 +69,9 @@ Pipe StoragePostgreSQL::read(
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
 
-    /// Connection is already made to the needed database, so it should not be present in the query;
-    /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
         query_info_, metadata_snapshot->getColumns().getOrdinary(),
-        IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
+        IdentifierQuotingStyle::DoubleQuotes, "", remote_table_name, context_);
 
     Block sample_block;
     for (const String & column_name : column_names_)
@@ -297,9 +293,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() < 5 || engine_args.size() > 6)
-            throw Exception("Storage PostgreSQL requires from 5 to 6 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema']",
+        if (engine_args.size() != 5)
+            throw Exception("Storage PostgreSQL requires 5 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
@@ -307,10 +303,6 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 
         auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-
-        String remote_table_schema;
-        if (engine_args.size() == 6)
-            remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
         auto connection = std::make_shared<PostgreSQLConnection>(
             engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
@@ -320,7 +312,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StoragePostgreSQL::create(
-            args.table_id, remote_table, connection, args.columns, args.constraints, args.context, remote_table_schema);
+            args.table_id, remote_table, connection, args.columns, args.constraints, args.context);
     },
     {
         .source_access_type = AccessType::POSTGRES,

@@ -390,7 +390,7 @@ private:
         for (auto d : chineseNewYearIndicators)
         {
             /// Let's celebrate until Lantern Festival
-            if (d <= days && d + 25 >= days)
+            if (d <= days && d + 25u >= days)
                 return true;
             else if (d > days)
                 return false;
@@ -1374,30 +1374,7 @@ private:
             {
                 // Probably the server is dead because we found an assertion
                 // failure. Fail fast.
-                fmt::print(stderr, "Lost connection to the server.\n");
-
-                // Print the changed settings because they might be needed to
-                // reproduce the error.
-                const auto & changes = context.getSettingsRef().changes();
-                if (!changes.empty())
-                {
-                    fmt::print(stderr, "Changed settings: ");
-                    for (size_t i = 0; i < changes.size(); ++i)
-                    {
-                        if (i)
-                        {
-                            fmt::print(stderr, ", ");
-                        }
-                        fmt::print(stderr, "{} = '{}'", changes[i].name,
-                            toString(changes[i].value));
-                    }
-                    fmt::print(stderr, "\n");
-                }
-                else
-                {
-                    fmt::print(stderr, "No changed settings.\n");
-                }
-
+                fmt::print(stderr, "Lost connection to the server\n");
                 return false;
             }
 
@@ -1742,7 +1719,7 @@ private:
             }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
-            parsed_insert_query->end = parsed_insert_query->data + data_in.count();
+            parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
         }
         else if (!is_interactive)
         {
@@ -1923,9 +1900,6 @@ private:
 
         switch (packet.type)
         {
-            case Protocol::Server::PartUUIDs:
-                return true;
-
             case Protocol::Server::Data:
                 if (!cancelled)
                     onData(packet.block);
@@ -2472,7 +2446,7 @@ public:
             /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
               * implicit_value is used to avoid this exception (to allow user to type just "--password")
               * Since currently boost provides no way to check if a value has been set implicitly for an option,
-              * the "\n" is used to distinguish this case because there is hardly a chance a user would use "\n"
+              * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
               * as the password.
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")

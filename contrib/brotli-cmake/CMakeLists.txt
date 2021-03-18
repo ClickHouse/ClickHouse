@@ -2,8 +2,6 @@ set(BROTLI_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/brotli/c)
 set(BROTLI_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/brotli/c)
 
 set(SRCS
-    ${BROTLI_SOURCE_DIR}/enc/command.c
-    ${BROTLI_SOURCE_DIR}/enc/fast_log.c
     ${BROTLI_SOURCE_DIR}/dec/bit_reader.c
     ${BROTLI_SOURCE_DIR}/dec/state.c
     ${BROTLI_SOURCE_DIR}/dec/huffman.c
@@ -28,9 +26,6 @@ set(SRCS
     ${BROTLI_SOURCE_DIR}/enc/memory.c
     ${BROTLI_SOURCE_DIR}/common/dictionary.c
     ${BROTLI_SOURCE_DIR}/common/transform.c
-    ${BROTLI_SOURCE_DIR}/common/platform.c
-    ${BROTLI_SOURCE_DIR}/common/context.c
-    ${BROTLI_SOURCE_DIR}/common/constants.c
 )
 
 add_library(brotli ${SRCS})

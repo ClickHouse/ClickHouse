@@ -30,7 +30,7 @@ try
             DB::writeIntText(i, zstd_buf);
             DB::writeChar('\t', zstd_buf);
         }
-        zstd_buf.finalize();
+        zstd_buf.finish();
 
         stopwatch.stop();
 
