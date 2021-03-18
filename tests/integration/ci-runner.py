@@ -436,7 +436,7 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Compression finished")
 
         test_result = []
-        for state in ("ERROR", "FAILED", "PASSED"):
+        for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY"):
             if state == "PASSED":
                 text_state = "OK"
             elif state == "FAILED":
@@ -507,7 +507,7 @@ class ClickhouseIntegrationTestsRunner:
             result_state = "success"
 
         test_result = []
-        for state in ("ERROR", "FAILED", "PASSED"):
+        for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY"):
             if state == "PASSED":
                 text_state = "OK"
             elif state == "FAILED":

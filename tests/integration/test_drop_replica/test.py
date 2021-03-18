@@ -71,12 +71,11 @@ def start_cluster():
 
 
 def test_drop_replica(start_cluster):
-    for i in range(100):
-        node_1_1.query("INSERT INTO test.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test1.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test2.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test3.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test4.test_table VALUES (1, {})".format(i))
+    node_1_1.query("INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test1.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test2.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test3.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test4.test_table SELECT number, toString(number) FROM numbers(100)")
 
     zk = cluster.get_kazoo_client('zoo1')
     assert "can't drop local replica" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1'")
