@@ -1,4 +1,4 @@
-## ClickHouse release 21.3
+## ClickHouse release 21.3 (LTS)
 
 ### ClickHouse release v21.3, 2021-03-12
 

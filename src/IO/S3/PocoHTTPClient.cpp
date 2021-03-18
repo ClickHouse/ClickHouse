@@ -86,7 +86,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
     , s3_max_redirects(clientConfiguration.s3_max_redirects)
-    , max_connections(clientConfiguration.maxConnections)
 {
 }
 
@@ -156,19 +155,24 @@ void PocoHTTPClient::makeRequestInternal(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            Poco::URI proxy_uri;
-
-            auto request_configuration = per_request_configuration(request);
-            if (!request_configuration.proxyHost.empty())
-            {
-                proxy_uri.setScheme(Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme));
-                proxy_uri.setHost(request_configuration.proxyHost);
-                proxy_uri.setPort(request_configuration.proxyPort);
-            }
 
             /// Reverse proxy can replace host header with resolved ip address instead of host name.
             /// This can lead to request signature difference on S3 side.
-            auto session = makePooledHTTPSession(target_uri, proxy_uri, timeouts, max_connections, false);
+            auto session = makeHTTPSession(target_uri, timeouts, false);
+
+            auto request_configuration = per_request_configuration(request);
+
+            if (!request_configuration.proxyHost.empty())
+            {
+                bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
+
+                session->setProxy(
+                    request_configuration.proxyHost,
+                    request_configuration.proxyPort,
+                    Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
+                    use_tunnel
+                );
+            }
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
