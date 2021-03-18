@@ -18,13 +18,13 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 **Arguments**
 
--   ‘N’ is the number of elements to return.
+-   `N` – The number of elements to return.
 
 If the parameter is omitted, default value 10 is used.
 
 **Arguments**
 
--   ’ x ’ – The value to calculate frequency.
+-   `x` – The value to calculate frequency.
 
 **Example**
 

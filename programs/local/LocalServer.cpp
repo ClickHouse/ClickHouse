@@ -240,7 +240,7 @@ try
 
     /// Skip networking
 
-    /// Sets external authenticators config (LDAP).
+    /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();

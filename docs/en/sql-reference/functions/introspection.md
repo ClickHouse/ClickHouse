@@ -53,13 +53,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Enabling introspection functions:
 
 ``` sql
-SET allow_introspection_functions=1
+SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ``` text
@@ -79,7 +79,7 @@ The `trace` field contains the stack trace at the moment of sampling.
 Getting the source code filename and the line number for a single address:
 
 ``` sql
-SELECT addressToLine(94784076370703) \G
+SELECT addressToLine(94784076370703) \G;
 ```
 
 ``` text
@@ -139,13 +139,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Enabling introspection functions:
 
 ``` sql
-SET allow_introspection_functions=1
+SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ``` text
@@ -165,7 +165,7 @@ The `trace` field contains the stack trace at the moment of sampling.
 Getting a symbol for a single address:
 
 ``` sql
-SELECT addressToSymbol(94138803686098) \G
+SELECT addressToSymbol(94138803686098) \G;
 ```
 
 ``` text
@@ -236,13 +236,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Enabling introspection functions:
 
 ``` sql
-SET allow_introspection_functions=1
+SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ``` text
@@ -262,7 +262,7 @@ The `trace` field contains the stack trace at the moment of sampling.
 Getting a function name for a single address:
 
 ``` sql
-SELECT demangle(addressToSymbol(94138803686098)) \G
+SELECT demangle(addressToSymbol(94138803686098)) \G;
 ```
 
 ``` text
@@ -335,6 +335,7 @@ Result:
 │  3878 │
 └───────┘
 ```
+
 ## logTrace {#logtrace}
 
 Emits trace log message to server log for each [Block](https://clickhouse.tech/docs/en/development/architecture/#block).
@@ -369,4 +370,3 @@ Result:
 └──────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/introspection/) <!--hide-->
