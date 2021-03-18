@@ -13,7 +13,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
-    extern const int UNKNOWN_HANDLE_KAFKA_ERROR_MODE;
 }
 
 
@@ -110,6 +109,8 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
 IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::UNKNOWN_HANDLE_KAFKA_ERROR_MODE,
+
+IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      HandleKafkaErrorMode::DEFAULT},
      {"stream",       HandleKafkaErrorMode::STREAM}})
 }
