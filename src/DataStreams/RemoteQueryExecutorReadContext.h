@@ -49,8 +49,8 @@ public:
     explicit RemoteQueryExecutorReadContext(MultiplexedConnections & connections_);
     ~RemoteQueryExecutorReadContext();
 
-    bool checkTimeout() const;
-    bool checkTimeoutImpl() const;
+    bool checkTimeout(bool blocking = false) const;
+    bool checkTimeoutImpl(bool blocking) const;
 
     void setSocket(Poco::Net::Socket & socket);
     void setTimer() const;
