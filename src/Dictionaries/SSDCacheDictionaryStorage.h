@@ -1339,10 +1339,13 @@ private:
         if (it == nullptr)
             return;
 
+        /// In case of complex key in arena key is serialized from hash table
+        KeyType key_copy = it->getKey();
+
         index.erase(key);
 
-        if constexpr(std::is_same_v<KeyType, StringRef>)
-            complex_key_arena.free(const_cast<char *>(key.data), key.size);
+        if constexpr (std::is_same_v<KeyType, StringRef>)
+            complex_key_arena.free(const_cast<char *>(key_copy.data), key_copy.size);
     }
 
     SSDCacheDictionaryStorageConfiguration configuration;
