@@ -70,7 +70,7 @@ static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & p
 NuKeeperStorage::NuKeeperStorage(int64_t tick_time_ms)
     : session_expiry_queue(tick_time_ms)
 {
-    container.insert("/", Node());
+    container.emplace("/", Node());
 }
 
 using Undo = std::function<void()>;
@@ -124,20 +124,19 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
         Coordination::ZooKeeperCreateRequest & request = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*zk_request);
 
-        if (container.contains(request.path))
+        if (container.count(request.path))
         {
             response.error = Coordination::Error::ZNODEEXISTS;
         }
         else
         {
-            auto parent_path = parentPath(request.path);
-            auto it = container.find(parent_path);
+            auto it = container.find(parentPath(request.path));
 
             if (it == container.end())
             {
                 response.error = Coordination::Error::ZNONODE;
             }
-            else if (it->value.stat.ephemeralOwner != 0)
+            else if (it->second.is_ephemeral)
             {
                 response.error = Coordination::Error::ZNOCHILDRENFOREPHEMERALS;
             }
@@ -150,14 +149,14 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
                 created_node.stat.mtime = created_node.stat.ctime;
                 created_node.stat.numChildren = 0;
                 created_node.stat.dataLength = request.data.length();
-                created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
                 created_node.data = request.data;
+                created_node.is_ephemeral = request.is_ephemeral;
                 created_node.is_sequental = request.is_sequential;
                 std::string path_created = request.path;
 
                 if (request.is_sequential)
                 {
-                    auto seq_num = it->value.seq_num;
+                    auto seq_num = it->second.seq_num;
 
                     std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                     seq_num_str.exceptions(std::ios::failbit);
@@ -166,36 +165,32 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
                     path_created += seq_num_str.str();
                 }
 
-                auto child_path = getBaseName(path_created);
-                container.updateValue(parent_path, [child_path] (NuKeeperStorage::Node & parent)
-                {
-                    /// Increment sequential number even if node is not sequential
-                    ++parent.seq_num;
-                    parent.children.insert(child_path);
-                    ++parent.stat.cversion;
-                    ++parent.stat.numChildren;
-                });
-
+                /// Increment sequential number even if node is not sequential
+                ++it->second.seq_num;
                 response.path_created = path_created;
-                container.insert(path_created, std::move(created_node));
+
+                container.emplace(path_created, std::move(created_node));
+
+                auto child_path = getBaseName(path_created);
+                it->second.children.insert(child_path);
 
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&container, &ephemerals, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path]
+                undo = [&container, &ephemerals, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path = it->first, child_path]
                 {
                     container.erase(path_created);
                     if (is_ephemeral)
                         ephemerals[session_id].erase(path_created);
-
-                    container.updateValue(parent_path, [child_path] (NuKeeperStorage::Node & undo_parent)
-                    {
-                        --undo_parent.stat.cversion;
-                        --undo_parent.stat.numChildren;
-                        --undo_parent.seq_num;
-                        undo_parent.children.erase(child_path);
-                    });
+                    auto & undo_parent = container.at(parent_path);
+                    --undo_parent.stat.cversion;
+                    --undo_parent.stat.numChildren;
+                    --undo_parent.seq_num;
+                    undo_parent.children.erase(child_path);
                 };
+
+                ++it->second.stat.cversion;
+                ++it->second.stat.numChildren;
 
                 response.error = Coordination::Error::ZOK;
             }
@@ -221,8 +216,8 @@ struct NuKeeperStorageGetRequest final : public NuKeeperStorageRequest
         }
         else
         {
-            response.stat = it->value.stat;
-            response.data = it->value.data;
+            response.stat = it->second.stat;
+            response.data = it->second.data;
             response.error = Coordination::Error::ZOK;
         }
 
@@ -245,44 +240,39 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
         {
             response.error = Coordination::Error::ZNONODE;
         }
-        else if (request.version != -1 && request.version != it->value.stat.version)
+        else if (request.version != -1 && request.version != it->second.stat.version)
         {
             response.error = Coordination::Error::ZBADVERSION;
         }
-        else if (it->value.stat.numChildren)
+        else if (it->second.stat.numChildren)
         {
             response.error = Coordination::Error::ZNOTEMPTY;
         }
         else
         {
-            auto prev_node = it->value;
-            if (prev_node.stat.ephemeralOwner != 0)
+            auto prev_node = it->second;
+            if (prev_node.is_ephemeral)
                 ephemerals[session_id].erase(request.path);
 
-            auto child_basename = getBaseName(it->key);
-            container.updateValue(parentPath(request.path), [&child_basename] (NuKeeperStorage::Node & parent)
-            {
-                --parent.stat.numChildren;
-                ++parent.stat.cversion;
-                parent.children.erase(child_basename);
-            });
-
+            auto child_basename = getBaseName(it->first);
+            auto & parent = container.at(parentPath(request.path));
+            --parent.stat.numChildren;
+            ++parent.stat.cversion;
+            parent.children.erase(child_basename);
             response.error = Coordination::Error::ZOK;
 
-            container.erase(request.path);
+            container.erase(it);
 
             undo = [prev_node, &container, &ephemerals, session_id, path = request.path, child_basename]
             {
-                if (prev_node.stat.ephemeralOwner != 0)
+                if (prev_node.is_ephemeral)
                     ephemerals[session_id].emplace(path);
 
-                container.insert(path, prev_node);
-                container.updateValue(parentPath(path), [&child_basename] (NuKeeperStorage::Node & parent)
-                {
-                    ++parent.stat.numChildren;
-                    --parent.stat.cversion;
-                    parent.children.insert(child_basename);
-                });
+                container.emplace(path, prev_node);
+                auto & undo_parent = container.at(parentPath(path));
+                ++undo_parent.stat.numChildren;
+                --undo_parent.stat.cversion;
+                undo_parent.children.insert(child_basename);
             };
         }
 
@@ -307,7 +297,7 @@ struct NuKeeperStorageExistsRequest final : public NuKeeperStorageRequest
         auto it = container.find(request.path);
         if (it != container.end())
         {
-            response.stat = it->value.stat;
+            response.stat = it->second.stat;
             response.error = Coordination::Error::ZOK;
         }
         else
@@ -334,35 +324,24 @@ struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
         {
             response.error = Coordination::Error::ZNONODE;
         }
-        else if (request.version == -1 || request.version == it->value.stat.version)
+        else if (request.version == -1 || request.version == it->second.stat.version)
         {
-            auto prev_node = it->value;
+            auto prev_node = it->second;
 
-            auto itr = container.updateValue(request.path, [zxid, request] (NuKeeperStorage::Node & value)
-            {
-                value.data = request.data;
-                value.stat.version++;
-                value.stat.mzxid = zxid;
-                value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
-                value.stat.dataLength = request.data.length();
-                value.data = request.data;
-            });
-
-            container.updateValue(parentPath(request.path), [] (NuKeeperStorage::Node & parent)
-            {
-                parent.stat.cversion++;
-            });
-
-            response.stat = itr->value.stat;
+            it->second.data = request.data;
+            ++it->second.stat.version;
+            it->second.stat.mzxid = zxid;
+            it->second.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+            it->second.stat.dataLength = request.data.length();
+            it->second.data = request.data;
+            ++container.at(parentPath(request.path)).stat.cversion;
+            response.stat = it->second.stat;
             response.error = Coordination::Error::ZOK;
 
             undo = [prev_node, &container, path = request.path]
             {
-                container.updateValue(path, [&prev_node] (NuKeeperStorage::Node & value) { value = prev_node; });
-                container.updateValue(parentPath(path), [] (NuKeeperStorage::Node & parent)
-                {
-                    parent.stat.cversion--;
-                });
+                container.at(path) = prev_node;
+                --container.at(parentPath(path)).stat.cversion;
             };
         }
         else
@@ -399,11 +378,11 @@ struct NuKeeperStorageListRequest final : public NuKeeperStorageRequest
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
+            response.names.insert(response.names.end(), it->second.children.begin(), it->second.children.end());
 
             std::sort(response.names.begin(), response.names.end());
 
-            response.stat = it->value.stat;
+            response.stat = it->second.stat;
             response.error = Coordination::Error::ZOK;
         }
 
@@ -424,7 +403,7 @@ struct NuKeeperStorageCheckRequest final : public NuKeeperStorageRequest
         {
             response.error = Coordination::Error::ZNONODE;
         }
-        else if (request.version != -1 && request.version != it->value.stat.version)
+        else if (request.version != -1 && request.version != it->second.stat.version)
         {
             response.error = Coordination::Error::ZBADVERSION;
         }
@@ -622,17 +601,9 @@ NuKeeperWrapperFactory::NuKeeperWrapperFactory()
 }
 
 
-NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid)
+NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id)
 {
     NuKeeperStorage::ResponsesForSessions results;
-    if (new_last_zxid)
-    {
-        if (zxid >= *new_last_zxid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal than current {}. It's a bug", *new_last_zxid, zxid);
-        zxid = *new_last_zxid;
-    }
-
-    session_expiry_queue.update(session_id, session_and_timeout[session_id]);
     if (zk_request->getOpNum() == Coordination::OpNum::Close)
     {
         auto it = ephemerals.find(session_id);
@@ -658,6 +629,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat)
     {
+        session_expiry_queue.update(session_id, session_and_timeout[session_id]);
         NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
         response->xid = zk_request->xid;
@@ -667,6 +639,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     }
     else
     {
+
         NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
 

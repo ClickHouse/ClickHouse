@@ -163,11 +163,6 @@ public:
         return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
-    {
-        return data->skipSerializedInArena(pos);
-    }
-
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
