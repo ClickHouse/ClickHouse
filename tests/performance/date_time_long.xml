@@ -1,5 +1,4 @@
 <test>
-    <tags><tag>long</tag></tags>
     <substitutions>
        <substitution>
            <name>datetime_transform</name>
@@ -78,7 +77,6 @@
                <value>toYYYYMMDDhhmmss</value>
 
                <value>toRelativeQuarterNum</value>
-               <value>toUnixTimestamp</value>
            </values>
         </substitution>
         <substitution>

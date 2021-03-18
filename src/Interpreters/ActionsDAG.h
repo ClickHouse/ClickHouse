@@ -120,7 +120,6 @@ public:
     const Node & addColumn(ColumnWithTypeAndName column /*, bool materialize = false*/);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
-
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
@@ -133,7 +132,7 @@ public:
     const Node & findInIndex(const std::string & name) const;
     /// Same, but return nullptr if node not found.
     const Node * tryFindInIndex(const std::string & name) const;
-    /// Find node with the same name in index and replace it.
+    /// Find first node with the same name in index and replace it.
     /// If was not found, add node to index end.
     void addOrReplaceInIndex(const Node & node);
 
@@ -150,8 +149,8 @@ public:
     bool removeUnusedResult(const std::string & column_name);
 
     void projectInput(bool project = true) { project_input = project; }
-    bool projectedInput() const { return project_input; }
-    bool projectedOutput() const { return projected_output; }
+    bool isInputProjected() const { return project_input; }
+    bool isOutputProjected() const { return projected_output; }
 
     void removeUnusedActions(const Names & required_names);
     void removeUnusedActions(const NameSet & required_names);
@@ -170,6 +169,7 @@ public:
     /// Also add aliases so the result names remain unchanged.
     void addMaterializingOutputActions();
 
+    /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
     enum class MatchColumnsMode
@@ -222,7 +222,23 @@ public:
     /// Otherwise, return actions which inputs are from available_inputs.
     /// Returned actions add single column which may be used for filter.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
-    ActionsDAGPtr splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs, const ColumnsWithTypeAndName & all_inputs);
+    ///
+    /// @param all_inputs should contain inputs from previous step, which will be used for result actions.
+    /// It is expected that all_inputs contain columns from available_inputs.
+    /// This parameter is needed to enforce result actions save columns order in block.
+    /// Otherwise for some queries, e.g. with GROUP BY, columns will be mixed.
+    /// Example: SELECT sum(x), y, z FROM tab WHERE z > 0 and sum(x) > 0
+    /// Pushed condition: z > 0
+    /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
+    /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
+    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, x, y`.
+    /// To avoid it, add inputs from `all_inputs` list,
+    /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
+    ActionsDAGPtr cloneActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool can_remove_filter,
+        const Names & available_inputs,
+        const ColumnsWithTypeAndName & all_inputs);
 
 private:
     Node & addNode(Node node);
@@ -235,6 +251,5 @@ private:
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 };
-
 
 }

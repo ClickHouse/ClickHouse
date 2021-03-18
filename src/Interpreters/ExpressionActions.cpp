@@ -461,7 +461,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    if (actions_dag->projectedInput())
+    if (actions_dag->isInputProjected())
     {
         block.clear();
     }
@@ -555,7 +555,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << actions_dag->projectedInput() << "\noutput positions:";
+    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";

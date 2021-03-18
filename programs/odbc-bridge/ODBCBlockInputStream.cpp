@@ -87,8 +87,8 @@ namespace
             case ValueType::vtDateTime:
             {
                 Poco::DateTime datetime = value.convert<Poco::DateTime>();
-                assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime(
-                    datetime.year(), datetime.month(), datetime.day(), datetime.hour(), datetime.minute(), datetime.second())});
+                assert_cast<ColumnUInt32 &>(column).insertValue(DateLUT::instance().makeDateTime(
+                    datetime.year(), datetime.month(), datetime.day(), datetime.hour(), datetime.minute(), datetime.second()));
                 break;
             }
             case ValueType::vtUUID:

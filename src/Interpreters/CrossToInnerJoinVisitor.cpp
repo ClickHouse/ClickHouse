@@ -136,7 +136,7 @@ std::optional<size_t> getIdentMembership(const ASTIdentifier & ident, const std:
     std::optional<size_t> table_pos = IdentifierSemantic::getMembership(ident);
     if (table_pos)
         return table_pos;
-    return IdentifierSemantic::chooseTableColumnMatch(ident, tables);
+    return IdentifierSemantic::chooseTableColumnMatch(ident, tables, true);
 }
 
 std::optional<size_t> getIdentsMembership(const ASTPtr ast,
