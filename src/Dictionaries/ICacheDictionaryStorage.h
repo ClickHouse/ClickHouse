@@ -34,7 +34,7 @@ struct KeyState
     inline void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
     /// Valid only if keyState is found or expired
     inline size_t getFetchedColumnIndex() const { return fetched_column_index; }
-
+    inline void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
 private:
     State state = not_found;
     size_t fetched_column_index = 0;
@@ -71,8 +71,6 @@ public:
 
     /// Necessary if all keys are found we can return result to client without additional aggregation
     virtual bool returnsFetchedColumnsInOrderOfRequestedKeys() const = 0;
-
-    virtual bool canPerformFetchByMultipleThreadsWithoutLock() const = 0;
 
     /// Name of storage
     virtual String getName() const = 0;
@@ -114,8 +112,8 @@ public:
     /// Return size of keys in storage
     virtual size_t getSize() const = 0;
 
-    /// Return maximum size of keys in storage
-    virtual size_t getMaxSize() const = 0;
+    /// Returns storage load factor
+    virtual double getLoadFactor() const = 0;
 
     /// Return bytes allocated in storage
     virtual size_t getBytesAllocated() const = 0;

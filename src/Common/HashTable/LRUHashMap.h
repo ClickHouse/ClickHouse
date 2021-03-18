@@ -202,16 +202,6 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key);
     }
 
-    LookupResult ALWAYS_INLINE findNoLRU(const Key & key)
-    {
-        return Base::find(key);
-    }
-
-    ConstLookupResult ALWAYS_INLINE findNoLRU(const Key & key) const
-    {
-        return const_cast<std::decay_t<decltype(*this)> *>(this)->findNoLRU(key);
-    }
-
     Value & ALWAYS_INLINE get(const Key & key)
     {
         auto it = find(key);
