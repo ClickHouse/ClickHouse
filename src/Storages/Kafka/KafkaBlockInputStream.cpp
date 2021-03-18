@@ -36,7 +36,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
-    , handle_error_mode(context_->getSettings().handle_kafka_error_mode)
+    , handle_error_mode(storage.getHandleKafkaErrorMode())
 {
 }
 

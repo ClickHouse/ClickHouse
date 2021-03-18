@@ -770,7 +770,7 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     };
-    if (handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
         result.push_back({"_error", std::make_shared<DataTypeString>()});
@@ -790,7 +790,7 @@ Names StorageKafka::getVirtualColumnNames() const
         "_headers.name",
         "_headers.value",
     };
-    if (handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
         result.push_back({"_raw_message"});
         result.push_back({"_error"});
