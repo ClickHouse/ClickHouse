@@ -24,7 +24,7 @@ def started_cluster():
 
 def test_mutations_in_partition_background(started_cluster):
     try:
-        numbers = 10 # FIXME too many mutations (66) simultaneously will stuck ClickHouse
+        numbers = 100 # FIXME too many mutations (66) simultaneously will stuck ClickHouse
 
         name = "test_mutations_in_partition"
         instance_test_mutations.query(
@@ -45,15 +45,15 @@ def test_mutations_in_partition_background(started_cluster):
         for wait_times_for_mutation in range(100):  # wait for replication 80 seconds max
             time.sleep(0.8)
 
-            if count_and_changed() == ["6,3"]:
+            if count_and_changed() == ["66,33"]:
                 all_done = True
                 break
 
         print(instance_test_mutations.query(
-            f"SELECT mutation_id, command, parts_to_do, is_done, latest_failed_part, latest_fail_reason FROM system.mutations WHERE table = '{name}' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVWithNames"))
+            f"SELECT mutation_id, command, parts_to_do, is_done, latest_failed_part, latest_fail_reason, parts_to_do_names FROM system.mutations WHERE table = '{name}' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVWithNames"))
 
-        assert (count_and_changed(), all_done) == (["6,3"], True)
-        assert instance_test_mutations.query(f"SELECT count(), sum(is_done) FROM system.mutations WHERE table = '{name}' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT CSV").splitlines() == ["7,7"]
+        assert (count_and_changed(), all_done) == (["66,33"], True)
+        assert instance_test_mutations.query(f"SELECT count(), sum(is_done) FROM system.mutations WHERE table = '{name}' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT CSV").splitlines() == ["67,67"]
 
     finally:
         instance_test_mutations.query(f'''DROP TABLE {name}''')
