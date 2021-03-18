@@ -38,5 +38,3 @@ ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER
 ``` sql
 ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/alter/quota/) <!--hide-->
