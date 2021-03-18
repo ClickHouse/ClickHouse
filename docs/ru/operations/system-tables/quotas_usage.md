@@ -4,14 +4,14 @@
 
 Столбцы:
 
--   `quota_name` ([String](../../sql-reference/data-types/string.md)) — Имя квоты.
--   `quota_key` ([String](../../sql-reference/data-types/string.md)) — Ключ квоты.
--   `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Квота используется для текущего пользователя.
+-   `quota_name` ([String](../../sql-reference/data-types/string.md)) — имя квоты.
+-   `quota_key` ([String](../../sql-reference/data-types/string.md)) — ключ квоты.
+-   `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — квота используется для текущего пользователя.
 -   `start_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — время начала расчета потребления ресурсов.
 -   `end_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — время окончания расчета потребления ресурсов.
 -   `duration` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — длина временного интервала для расчета потребления ресурсов, в секундах.
 -   `queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — общее количество запросов на этом интервале.
--   `max_queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Максимальное число запросов.
+-   `max_queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — максимальное число запросов.
 -   `query_selects` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — общее количество запросов `SELECT` на этом интервале.
 -   `max_query_selects` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — максимальное количество запросов `SELECT` на этом интервале.
 -   `query_inserts` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — общее количество запросов `INSERT` на этом интервале.
@@ -32,5 +32,3 @@
 ## Смотрите также {#see-also}
 
 -   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/quotas_usage) <!--hide-->

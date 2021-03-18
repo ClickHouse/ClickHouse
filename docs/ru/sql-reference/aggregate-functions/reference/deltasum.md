@@ -4,10 +4,7 @@ toc_priority: 141
 
 # deltaSum {#agg_functions-deltasum}
 
-Суммирует арифметическую разницу между последовательными строками. Функция работает аналогично функции [runningDifference](../../functions/other-functions.md#runningdifferencex), но реализована как агрегатная функция.
-
-!!! note "Note"
-    Если разница отрицательна — она будет проигнорирована.
+Агрегатная функция, суммирует арифметическую разницу между последовательными строками. Если разница отрицательна — она будет проигнорирована.
 
 **Синтаксис**
 
@@ -42,7 +39,7 @@ SELECT deltaSum(arrayJoin([1, 2, 3]));
 Запрос:
 
 ``` sql
-select deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));
+SELECT deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));
 ```
 
 Результат:
@@ -56,7 +53,7 @@ select deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));
 Запрос:
 
 ``` sql
-select deltaSum(arrayJoin([2.25, 3, 4.5]));
+SELECT deltaSum(arrayJoin([2.25, 3, 4.5]));
 ```
 
 Результат:
@@ -67,4 +64,6 @@ select deltaSum(arrayJoin([2.25, 3, 4.5]));
 └─────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/deltasum)<!--hide-->
+## Смотрите также {#see-also}
+
+-   [runningDifference](../../functions/other-functions.md#runningdifferencex)

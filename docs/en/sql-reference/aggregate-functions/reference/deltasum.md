@@ -4,10 +4,7 @@ toc_priority: 141
 
 # deltaSum {#agg_functions-deltasum}
 
-Sums the arithmetic difference between consecutive rows. It is similar to [runningDifference](../../functions/other-functions.md#other_functions-runningdifference) function, but is implemented as an aggregate function.
-
-!!! note "Note"
-    If the difference is negative, it is ignored.
+Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored. Function is implemented as an aggregate function.
 
 **Syntax**
 
@@ -28,7 +25,7 @@ deltaSum(value)
 Query:
 
 ``` sql
-select deltaSum(arrayJoin([1, 2, 3]));
+SELECT deltaSum(arrayJoin([1, 2, 3]));
 ```
 
 Result:
@@ -42,7 +39,7 @@ Result:
 Query:
 
 ``` sql
-select deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));
+SELECT deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));
 ```
 
 Result:
@@ -56,7 +53,7 @@ Result:
 Query:
 
 ``` sql
-select deltaSum(arrayJoin([2.25, 3, 4.5]));
+SELECT deltaSum(arrayJoin([2.25, 3, 4.5]));
 ```
 
 Result:
@@ -67,4 +64,6 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/deltasum)<!--hide-->
+## See Also {#see-also}
+
+-   [runningDifference](../../functions/other-functions.md#other_functions-runningdifference)
