@@ -15,7 +15,7 @@ Sums the arithmetic difference between consecutive rows. It is similar to [runni
 deltaSum(value)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `value` — Input values, must be [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) type.
 
