@@ -5,46 +5,27 @@ shopt -s nullglob
 
 # check to see if this file is being run or sourced from another script
 _is_sourced() {
-	# https://unix.stackexchange.com/a/215279
+    # https://unix.stackexchange.com/a/215279
     [ "${#FUNCNAME[@]}" -ge 2 ] \
         && [ "${FUNCNAME[0]}" = '_is_sourced' ] \
         && [ "${FUNCNAME[1]}" = 'source' ]
 }
 
 get_variables() {
+    # Backwards compatibility
+    # Use logical/consistent name variable DO_NOT/DO
     CLICKHOUSE_DO_NOT_CHOWN="${CLICKHOUSE_DO_NOT_CHOWN:-0}"
+    DO_CHOWN=1
+    if [ "$CLICKHOUSE_DO_NOT_CHOWN" = "1" ]; then
+        DO_CHOWN=0
+    fi
     # Backwards compatibility
     INIT_ON_EVERY_START="${INIT_ON_EVERY_START:-1}"
 
     CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
     CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
 
-    # support --user
-    if [ "$(id -u)" = "0" ]; then
-        USER=$CLICKHOUSE_UID
-        GROUP=$CLICKHOUSE_GID
-        if command -v gosu &> /dev/null; then
-            gosu="gosu $USER:$GROUP"
-        elif command -v su-exec &> /dev/null; then
-            gosu="su-exec $USER:$GROUP"
-        else
-            echo "No gosu/su-exec detected!"
-            exit 1
-        fi
-    else
-        USER="$(id -u)"
-        GROUP="$(id -g)"
-        gosu=""
-        CLICKHOUSE_DO_NOT_CHOWN=1
-    fi
-
     CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
-    SERVER_ARGS="$SERVER_ARGS --config-file=$CLICKHOUSE_CONFIG"
-
-    if ! $gosu test -f "$CLICKHOUSE_CONFIG" -a -r "$CLICKHOUSE_CONFIG"; then
-        echo "Configuration file '$dir' isn't readable by user with id '$USER'"
-        exit 1
-    fi
     
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
@@ -65,13 +46,14 @@ get_variables() {
     CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
     
     declare -g DATABASE_ALREADY_EXISTS
-	if [ -d "$DATA_DIR/data" ]; then
-		DATABASE_ALREADY_EXISTS='true'
-	fi
+    if [ -d "$DATA_DIR/data" ]; then
+        DATABASE_ALREADY_EXISTS='true'
+    fi
 }
 
 setup_dirs() {
     echo "Setup directory permission:"
+    local USER; USER="$(id -u)"
     for dir in "$DATA_DIR" \
     "$ERROR_LOG_DIR" \
     "$LOG_DIR" \
@@ -86,13 +68,9 @@ setup_dirs() {
             echo "Couldn't create necessary directory: $dir"
             exit 1
         fi
-        if [ "$CLICKHOUSE_DO_NOT_CHOWN" = "0" ]; then
-            # ensure proper directories permissions
-            echo "Grant access to $USER $GROUP for directory $dir:"
-            chown -R "$USER:$GROUP" "$dir"
-        elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
-            echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
-            exit 1
+        if [ "$USER" = "0" ]; then
+            # this will cause less disk access than `chown -R`
+            find "$dir" \! -user clickhouse -exec chown clickhouse '{}' +
         fi
     done
 }
@@ -131,7 +109,7 @@ EOT
 docker_process_init_files() {
     if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         # Listen only on localhost until the initialization is done
-        $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+        "$@" --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
         pid="$!"
 
         # check if clickhouse is ready to accept connections
@@ -184,26 +162,41 @@ docker_process_init_files() {
 
 _main() {
     if [ "${1:0:1}" = '-' ]; then
-		set -- clickhouse-server "$@"
-	fi
+        set -- clickhouse-server "$@"
+    fi
     if [ "$1" = 'clickhouse-server' ]; then
         get_variables
         create_clickhouse_user
+
+        # By default always chown clickhouse directories
+        # Use env. variable CLICKHOUSE_DO_NOT_CHOWN set to 1 to override
+        if [ "$DO_CHOWN" = "1" ]; then
+            setup_dirs
+        else
+            echo "Skipping directory setup"
+        fi
+
+        # If container is started as root user, restart as dedicated clickhouse user
+        if [ "$(id -u)" = "0" ]; then
+            echo "Switching to dedicated user 'clickhouse'"
+            exec gosu clickhouse "$BASH_SOURCE" "$@"
+        fi
+
         # Backwards compatibility:
         # Modify dir permission, create users and parse init_files
         # only INIT_ON_EVERY_START is equal to 1 (default)
         # 
         # To skip this step set INIT_ON_EVERY_START env. variable to 0
         if [ "$INIT_ON_EVERY_START" = "1" ]; then
-            setup_dirs
-            docker_process_init_files
+            docker_process_init_files "$@"
+        else
+            echo "Skipping process init files"
         fi
-        
+        exec "$@" --config-file="$CLICKHOUSE_CONFIG"
     fi
 
-    # SERVER_ARGS and gosu variables are defined in get_variables.
-    # These variables are defined only if the first argument is clickhouse-server
-    exec $gosu "$@" $SERVER_ARGS
+    # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image
+    exec "$@"
 }
 
 # If we are sourced from elsewhere, don't perform any further actions
