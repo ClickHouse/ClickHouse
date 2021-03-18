@@ -7,14 +7,19 @@
             [jepsen.nukeeper.constants :refer :all]
             [jepsen.control :as c]
             [clojure.tools.logging :refer :all])
-  (:import  (org.apache.zookeeper CreateMode
-                                  ZooKeeper)))
+  (:import (org.apache.zookeeper.data Stat)
+           (org.apache.zookeeper CreateMode
+                                 ZooKeeper)))
 
 (defn parse-long
   "Parses a string to a Long. Passes through `nil` and empty strings."
   [s]
   (if (and s (> (count s) 0))
     (Long/parseLong s)))
+
+(defn parse-and-get-counter
+  [path]
+  (Integer/parseInt (apply str (take-last 10 (seq (str path))))))
 
 (defn zk-range
   []
@@ -48,6 +53,13 @@
   [conn path]
   (zk/children conn path))
 
+(defn zk-list-with-stat
+  [conn path]
+  (let [stat (new Stat)
+        children (seq (.getChildren conn path false stat))]
+    {:children children
+     :stat (zi/stat-to-map stat)}))
+
 (defn zk-cas
   [conn path old-value new-value]
   (let [current-value (zk-get-str conn path)]
@@ -80,6 +92,26 @@
                                (zi/acls :open-acl-unsafe)
                                CreateMode/PERSISTENT_SEQUENTIAL)
                       (recur (inc i)))))))
+
+(defn zk-parent-path
+  [path]
+  (let [rslash_pos (str/last-index-of path "/")]
+    (if (> rslash_pos 0)
+      (subs path 0 rslash_pos)
+      "/")))
+
+(defn zk-multi-delete-first-child
+  [conn path]
+  (let [{children :children stat :stat} (zk-list-with-stat conn path)
+        txn (.transaction conn)
+        first-child (first (sort children))]
+    (if (not (nil? first-child))
+      (do (.check txn path (:version stat))
+          (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
+          (.delete txn (str path first-child) -1)
+          (.commit txn)
+          first-child)
+      nil)))
 
 (defn clickhouse-alive?
   [node test]

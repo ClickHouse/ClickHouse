@@ -161,6 +161,7 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
 
 SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & storage, ReadBuffer & in)
 {
+    storage.clearData();
     uint8_t version;
     readBinary(version, in);
     if (static_cast<SnapshotVersion>(version) > SnapshotVersion::V0)

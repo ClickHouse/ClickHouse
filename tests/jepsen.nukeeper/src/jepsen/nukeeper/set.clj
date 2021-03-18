@@ -23,8 +23,8 @@
   (invoke! [this test op]
     (case (:f op)
       :read (assoc op
-               :type :ok
-               :value (read-string (:data (zk-get-str conn k))))
+                   :type :ok
+                   :value (read-string (:data (zk-get-str conn k))))
       :add (try
              (do
                (zk-add-to-set conn k (:value op))
@@ -34,7 +34,8 @@
 
   (teardown! [_ test])
 
-  (close! [_ test]))
+  (close! [_ test]
+    (zk/close conn)))
 
 (defn workload
   "A generator, client, and checker for a set test."
