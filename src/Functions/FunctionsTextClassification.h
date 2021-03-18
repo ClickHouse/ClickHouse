@@ -34,7 +34,7 @@ public:
         if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+        return arguments[0];
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
@@ -47,21 +47,19 @@ public:
 
         if (col_const)
         {
-            ResultType res{};
+            ResultType res;
             Impl::constant(col_const->getValue<String>(), res);
             return result_type->createColumnConst(col_const->size(), toField(res));
         }
 
-        auto col_res = ColumnVector<ResultType>::create();
 
-        typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-        vec_res.resize(column->size());
-
-        const ColumnString * col_vector = checkAndGetColumn<ColumnString>(&*column);
-
-        if (col_vector)
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            Impl::vector(col_vector->getChars(), col_vector->getOffsets(), vec_res);
+            auto col_res = ColumnString::create();
+            ColumnString::Chars & vec_res = col_res->getChars();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
+            Impl::vector(col->getChars(), col->getOffsets(), vec_res, offsets_res);
+            return col_res;
         }
         else
         {
@@ -69,8 +67,6 @@ public:
                 "Illegal columns " + arguments[0].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
-
-        return col_res;
     }
 };
 
