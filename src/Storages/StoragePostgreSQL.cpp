@@ -97,10 +97,10 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        WrappedPostgreSQLConnection connection_,
+        WrappedPostgreSQLConnectionPtr connection_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
-        , connection(connection_)
+        , connection(std::move(connection_))
         , remote_table_name(remote_table_name_)
     {
     }
@@ -110,7 +110,7 @@ public:
 
     void writePrefix() override
     {
-        work = std::make_unique<pqxx::work>(*connection);
+        work = std::make_unique<pqxx::work>(connection->conn());
     }
 
 
@@ -276,7 +276,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    WrappedPostgreSQLConnection connection;
+    WrappedPostgreSQLConnectionPtr connection;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;

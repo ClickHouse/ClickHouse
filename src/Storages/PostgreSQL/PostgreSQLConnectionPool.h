@@ -25,7 +25,7 @@ public:
 
     PostgreSQLConnectionPool operator =(const PostgreSQLConnectionPool &) = delete;
 
-    WrappedPostgreSQLConnection get();
+    WrappedPostgreSQLConnectionPtr get();
 
 protected:
     bool isConnected();

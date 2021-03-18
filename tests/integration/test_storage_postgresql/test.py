@@ -9,7 +9,7 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=[], with_postgres=True)
+node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], with_postgres=True)
 
 def get_postgres_conn(database=False):
     if database == True:
@@ -176,15 +176,15 @@ def test_concurrent_queries(started_cluster):
     cursor.execute('CREATE TABLE test_table (key integer, value integer)')
 
     def node_insert(_):
-        for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(100)", user='default')
+        for i in range(20):
+            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
 
     busy_pool = Pool(10)
     p = busy_pool.map_async(node_insert, range(10))
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
-    assert(int(result) == 10 * 5 * 100)
+    assert(int(result) == 20 * 10 * 1000)
 
     def node_select(_):
         for i in range(5):
@@ -195,8 +195,8 @@ def test_concurrent_queries(started_cluster):
     p.wait()
 
     def node_insert_select(_):
-        for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(100)", user='default')
+        for i in range(20):
+            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
             result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
 
     busy_pool = Pool(10)
@@ -204,7 +204,7 @@ def test_concurrent_queries(started_cluster):
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
-    assert(int(result) == 10 * 5 * 100  * 2)
+    assert(int(result) == 20 * 10 * 1000  * 2)
 
 
 if __name__ == '__main__':

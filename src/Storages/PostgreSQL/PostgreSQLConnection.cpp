@@ -20,13 +20,6 @@ PostgreSQLConnection::PostgreSQLConnection(
 }
 
 
-PostgreSQLConnection::PostgreSQLConnection(const PostgreSQLConnection & other)
-        : connection_str(other.connection_str)
-        , address(other.address)
-{
-}
-
-
 PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::get()
 {
     connectIfNeeded();
