@@ -70,7 +70,8 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << abs(frame.begin_offset);
+            settings.ostr << applyVisitor(FieldVisitorToString(),
+                frame.begin_offset);
             settings.ostr << " "
                 << (!frame.begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -85,7 +86,8 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << abs(frame.end_offset);
+            settings.ostr << applyVisitor(FieldVisitorToString(),
+                frame.end_offset);
             settings.ostr << " "
                 << (!frame.end_preceding ? "FOLLOWING" : "PRECEDING");
         }
