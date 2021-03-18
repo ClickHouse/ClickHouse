@@ -20,6 +20,7 @@ function clone
     # the repo from the CI as well. For local runs, start directly from the "fuzz"
     # stage.
     rm -rf ch ||:
+    mkdir ch ||:
     wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
     tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
     ls -lath ||:
