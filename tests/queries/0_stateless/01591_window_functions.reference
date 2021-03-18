@@ -993,3 +993,8 @@ order by number
 7	6	8
 8	7	9
 9	8	9
+-- In this case, we had a problem with PartialSortingTransform returning zero-row
+-- chunks for input chunks w/o columns.
+select count() over () from numbers(4) where number < 2;
+2
+2
