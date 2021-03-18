@@ -15,7 +15,7 @@ toc_priority: 141
 deltaSum(value)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `value` — входные значения, должны быть типа [Integer](../../data-types/int-uint.md) или [Float](../../data-types/float.md).
 
