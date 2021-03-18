@@ -93,11 +93,11 @@ def test_load_dictionaries(started_cluster):
 def test_invalidate_query(started_cluster):
     conn = get_postgres_conn(database=True)
     cursor = conn.cursor()
-    table_name = 'test1'
+    table_name = 'test0'
     create_and_fill_postgres_table(cursor, table_name)
 
     # invalidate query: SELECT value FROM test0 WHERE id = 0
-    dict_name = 'dict1'
+    dict_name = 'dict0'
     create_dict(table_name)
     node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)) ==  "0\n"
@@ -122,10 +122,10 @@ def test_invalidate_query(started_cluster):
     time.sleep(5)
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)) == '2\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)) == '2\n'
-    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
     node1.query("DROP TABLE IF EXISTS {}".format(table_name))
     node1.query("DROP DICTIONARY IF EXISTS {}".format(dict_name))
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
 
 def test_dictionary_with_replicas(started_cluster):
