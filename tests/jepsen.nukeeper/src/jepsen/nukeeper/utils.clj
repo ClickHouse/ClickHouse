@@ -2,10 +2,13 @@
   (:require [clojure.string :as str]
             [zookeeper.data :as data]
             [zookeeper :as zk]
+            [zookeeper.internal :as zi]
             [jepsen.control.util :as cu]
             [jepsen.nukeeper.constants :refer :all]
             [jepsen.control :as c]
-            [clojure.tools.logging :refer :all]))
+            [clojure.tools.logging :refer :all])
+  (:import  (org.apache.zookeeper CreateMode
+                                  ZooKeeper)))
 
 (defn parse-long
   "Parses a string to a Long. Passes through `nil` and empty strings."
@@ -66,6 +69,17 @@
 (defn zk-create-sequential
   [conn path-prefix data]
   (zk/create conn path-prefix :data (data/to-bytes (str data)) :persistent? true :sequential? true))
+
+(defn zk-multi-create-many-seq-nodes
+  [conn path-prefix num]
+  (let [txn (.transaction conn)]
+    (loop [i 0]
+      (cond (>= i num) (.commit txn)
+            :else (do (.create txn path-prefix
+                               (data/to-bytes "")
+                               (zi/acls :open-acl-unsafe)
+                               CreateMode/PERSISTENT_SEQUENTIAL)
+                      (recur (inc i)))))))
 
 (defn clickhouse-alive?
   [node test]

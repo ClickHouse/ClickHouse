@@ -8,16 +8,27 @@
    [jepsen.nukeeper.constants :refer :all]
    [jepsen.nukeeper.utils :refer :all]))
 
-(defn random-single-node-killer-nemesis
+(defn random-node-killer-nemesis
   []
   (nemesis/node-start-stopper
    rand-nth
    (fn start [test node] (kill-clickhouse! node test))
    (fn stop [test node] (start-clickhouse! node test))))
 
-(defn hammer-time-nemesis
+(defn all-nodes-killer-nemesis
+  []
+  (nemesis/node-start-stopper
+   identity
+   (fn start [test node] (kill-clickhouse! node test))
+   (fn stop [test node] (start-clickhouse! node test))))
+
+(defn random-node-hammer-time-nemesis
   []
   (nemesis/hammer-time "clickhouse"))
+
+(defn all-nodes-hammer-time-nemesis
+  []
+  (nemesis/hammer-time identity "clickhouse"))
 
 (defn select-last-file
   [path]
@@ -83,11 +94,11 @@
                                        (c/exec :rm :-fr path))))
 
 (defn start-stop-generator
-  []
+  [time-corrupt time-ok]
   (->>
-   (cycle [(gen/sleep 5)
+   (cycle [(gen/sleep time-ok)
            {:type :info, :f :start}
-           (gen/sleep 5)
+           (gen/sleep time-corrupt)
            {:type :info, :f :stop}])))
 
 (defn corruption-generator
@@ -97,12 +108,16 @@
            {:type :info, :f :corrupt}])))
 
 (def custom-nemesises
-  {"single-node-killer" {:nemesis (random-single-node-killer-nemesis)
-                         :generator (start-stop-generator)}
+  {"random-node-killer" {:nemesis (random-node-killer-nemesis)
+                         :generator (start-stop-generator 5 5)}
+   "all-nodes-killer" {:nemesis (all-nodes-killer-nemesis)
+                         :generator (start-stop-generator 1 10)}
    "simple-partitioner" {:nemesis (nemesis/partition-random-halves)
-                         :generator (start-stop-generator)}
-   "hammer-time"    {:nemesis (hammer-time-nemesis)
-                     :generator (start-stop-generator)}
+                         :generator (start-stop-generator 5 5)}
+   "random-node-hammer-time"    {:nemesis (random-node-hammer-time-nemesis)
+                     :generator (start-stop-generator 5 5)}
+   "all-nodes-hammer-time"    {:nemesis (all-nodes-hammer-time-nemesis)
+                     :generator (start-stop-generator 1 10)}
    "logs-corruptor" {:nemesis (logs-corruption-nemesis)
                      :generator (corruption-generator)}
    "snapshots-corruptor" {:nemesis (snapshots-corruption-nemesis)
