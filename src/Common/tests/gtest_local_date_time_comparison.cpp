@@ -1,5 +1,6 @@
 #include <iostream>
 #include <stdexcept>
+#include <gtest/gtest.h>
 
 #include <common/LocalDateTime.h>
 
@@ -16,14 +17,13 @@ void checkComparison()
     LocalDateTime a("2018-07-18 01:02:03");
     LocalDateTime b("2018-07-18 01:02:03");
 
-    if (a != b)
-        throw std::runtime_error("Test failed");
+    EXPECT_EQ(a, b);
+    EXPECT_FALSE(a != b);
 }
 
 
-int main(int, char **)
+TEST(LocalDateTime, Comparison)
 {
     fillStackWithGarbage();
     checkComparison();
-    return 0;
 }
