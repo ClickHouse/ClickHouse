@@ -12,6 +12,8 @@ toc_priority: 222
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
 欲了解更多信息，参见 [参数] (#agg_functions-stochasticlinearregression-parameters).
 
+**语法**
+
 ``` sql
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```

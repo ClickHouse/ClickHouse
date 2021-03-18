@@ -7,9 +7,9 @@ toc_priority: 111
 **语法**
 
 ``` sql
-`groupUniqArray(x)`
+groupUniqArray(x)
 或
-`groupUniqArray(max_size)(x)`
+groupUniqArray(max_size)(x)
 ```
 
 从不同的参数值创建一个数组。 内存消耗和 [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md) 函数是一样的。

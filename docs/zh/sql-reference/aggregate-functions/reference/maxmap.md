@@ -7,9 +7,9 @@ toc_priority: 143
 **语法**
 
 ```sql
-`maxMap(key, value)`
+maxMap(key, value)
  或
-`maxMap(Tuple(key, value))`
+maxMap(Tuple(key, value))
 ```
 
 
