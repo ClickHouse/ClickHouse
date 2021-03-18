@@ -176,7 +176,7 @@ def test_concurrent_queries(started_cluster):
     cursor.execute('CREATE TABLE test_table (key integer, value integer)')
 
     def node_insert(_):
-        for i in range(100):
+        for i in range(5):
             result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(100)", user='default')
 
     busy_pool = Pool(10)
@@ -184,7 +184,7 @@ def test_concurrent_queries(started_cluster):
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
-    assert(int(result) == 10 * 100 * 100)
+    assert(int(result) == 10 * 5 * 100)
 
     def node_select(_):
         for i in range(5):
@@ -195,7 +195,7 @@ def test_concurrent_queries(started_cluster):
     p.wait()
 
     def node_insert_select(_):
-        for i in range(25):
+        for i in range(5):
             result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(100)", user='default')
             result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
 
@@ -204,7 +204,7 @@ def test_concurrent_queries(started_cluster):
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
-    assert(int(result) == 10 * 100 * 100  + 10 * 25 * 100)
+    assert(int(result) == 10 * 5 * 100  * 2)
 
 
 if __name__ == '__main__':
