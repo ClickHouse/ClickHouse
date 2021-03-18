@@ -120,8 +120,31 @@ public:
         /// Insert method doesn't check if map already have node with the same name.
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
-        void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
-        void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
+        void insert(Node * node)
+        {
+            auto it = list.emplace(list.end(), node);
+            if (auto handle = map.extract(node->result_name))
+            {
+                handle.key() = node->result_name; /// Change string_view
+                handle.mapped() = it;
+                map.insert(std::move(handle));
+            }
+            else
+                map[node->result_name] = it;
+        }
+
+        void prepend(Node * node)
+        {
+            auto it = list.emplace(list.begin(), node);
+            if (auto handle = map.extract(node->result_name))
+            {
+                handle.key() = node->result_name; /// Change string_view
+                handle.mapped() = it;
+                map.insert(std::move(handle));
+            }
+            else
+                map[node->result_name] = it;
+        }
 
         /// If node with same name exists in index, replace it. Otherwise insert new node to index.
         void replace(Node * node)
