@@ -71,11 +71,22 @@ struct TextClassificationImpl
 
     static double Naive_bayes(std::unordered_map<UInt16, double> standart, std::unordered_map<UInt16, double> model)
     {
-        double res = 1;
+        double res = 0;
         for (auto & el : model) {
             if (standart[el.first] != 0) {
                 res += el.second * log(standart[el.first]);
+            } else {
+                res += el.second * log(0.00001);
             }
+        }
+        return res;
+    }
+
+    static double Simple(std::unordered_map<UInt16, double> standart, std::unordered_map<UInt16, double> model)
+    {
+        double res = 0;
+        for (auto & el : model) {
+            res += el.second * standart[el.first];
         }
         return res;
     }
@@ -151,11 +162,6 @@ struct TextClassificationImpl
         static std::unordered_map<std::string, std::vector<double>> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
         static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
-        /*
-        static TextClassificationDictionaries classification_dictionaries;
-        static std::unordered_map<std::string, std::vector<double>> emotional_dict = classification_dictionaries.emotional_dict;
-        static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = classification_dictionaries.encodings_frequency;
-        */
         if (!Emo)
         {
             
@@ -163,23 +169,20 @@ struct TextClassificationImpl
             std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
             size_t len = calculateStats(data.data(), data.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
             std::string ans;
-            double count_bigram = data.size() - 1;
+            // double count_bigram = data.size() - 1;
             std::unordered_map<UInt16, double> model;
             for (size_t i = 0; i < len; ++i) {
-                ans += std::to_string(ngram_storage.get()[i]) + " " + std::to_string(static_cast<double>(common_stats.get()[ngram_storage.get()[i]]) / count_bigram) + "\n";
-                model[ngram_storage.get()[i]] = static_cast<double>(common_stats.get()[ngram_storage.get()[i]]) / count_bigram;
+                ans += std::to_string(ngram_storage.get()[i]) + " " + std::to_string(static_cast<double>(common_stats.get()[ngram_storage.get()[i]])) + "\n";
+                model[ngram_storage.get()[i]] = static_cast<double>(common_stats.get()[ngram_storage.get()[i]]);
             }
 
-            double res1 = L2_distance(encodings_freq["freq_CP866"], model);
-            double res2 =  L2_distance(encodings_freq["freq_ISO"], model);
-            double res3 =  L2_distance(encodings_freq["freq_WINDOWS-1251"], model);
-            double res4 =  L2_distance(encodings_freq["freq_UTF-8"], model);
-            ans += std::to_string(res1) + " " + std::to_string(res2) + " " + std::to_string(res3) + " " + std::to_string(res4) + "\n";
+            for (const auto& item : encodings_freq) {
+                ans += item.first + " " + std::to_string(Simple(item.second, model)) + "\n";
+            }
             res = ans;
         }
         else 
         {
-
             double freq = 0;
             double count_words = 0;
 
@@ -245,33 +248,17 @@ struct TextClassificationImpl
 
             size_t len = calculateStats(str.data(), str.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
             std::string prom;
-            double count_bigram = data.size() - 1;
-            std::unordered_map<UInt16, double> model1;
-
-            std::unordered_map<UInt16, double> model2;
+            // double count_bigram = data.size() - 1;
+            std::unordered_map<UInt16, double> model;
 
             for (size_t j = 0; j < len; ++j)
             {
-                model2[ngram_storage.get()[j]] = static_cast<double>(common_stats.get()[ngram_storage.get()[j]]);
+                model[ngram_storage.get()[j]] = static_cast<double>(common_stats.get()[ngram_storage.get()[j]]);
             }
 
-            for (size_t j = 0; j < len; ++j)
-            {
-                model1[ngram_storage.get()[j]] = static_cast<double>(common_stats.get()[ngram_storage.get()[j]]) / count_bigram;
+            for (const auto& item : encodings_freq) {
+                prom += item.first + " " + std::to_string(Simple(item.second, model)) + "\n";
             }
-
-            double res1 = L2_distance(encodings_freq["freq_CP866"], model1);
-            double res2 =  L2_distance(encodings_freq["freq_ISO"], model1);
-            double res3 =  L2_distance(encodings_freq["freq_WINDOWS-1251"], model1);
-            double res4 =  L2_distance(encodings_freq["freq_UTF-8"], model1);
-            prom += std::to_string(res1) + " " + std::to_string(res2) + " " + std::to_string(res3) + " " + std::to_string(res4) + "\n";
-
-
-            double res12 = Naive_bayes(encodings_freq["freq_CP866"], model2);
-            double res22 =  Naive_bayes(encodings_freq["freq_ISO"], model2);
-            double res32 =  Naive_bayes(encodings_freq["freq_WINDOWS-1251"], model2);
-            double res42 =  Naive_bayes(encodings_freq["freq_UTF-8"], model2);
-            prom += std::to_string(res12) + " " + std::to_string(res22) + " " + std::to_string(res32) + " " + std::to_string(res42) + "\n";
             
             const auto ans = prom.c_str();
 
