@@ -5,6 +5,7 @@
             [jepsen.nukeeper.nemesis :as custom-nemesis]
             [jepsen.nukeeper.register :as register]
             [jepsen.nukeeper.unique :as unique]
+            [jepsen.nukeeper.counter :as counter]
             [jepsen.nukeeper.constants :refer :all]
             [clojure.string :as str]
             [jepsen
@@ -85,7 +86,8 @@
   "A map of workload names to functions that construct workloads, given opts."
   {"set"      set/workload
    "register" register/workload
-   "unique-ids" unique/workload})
+   "unique-ids" unique/workload
+   "counter" counter/workload})
 
 (def cli-opts
   "Additional command line options."
@@ -126,7 +128,7 @@
         current-nemesis (get custom-nemesis/custom-nemesises (:nemesis opts))]
     (merge tests/noop-test
            opts
-           {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) (name (:nemesis opts)))
+           {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
             :os ubuntu/os
             :db (db "rbtorrent:a122093aee0bdcb70ca42d5e5fb4ba5544372f5f")
             :pure-generators true

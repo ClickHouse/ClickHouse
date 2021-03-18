@@ -22,6 +22,8 @@
       (zk/create conn "/0")
       (println (zk/children conn "/"))
       (zk/set-data conn "/0" (data/to-bytes "777") -1)
+      (zk-multi-create-many-seq-nodes conn "/seq-" 5)
+      (println (zk/children conn "/"))
       (Thread/sleep 5000)
       (println "VALUE" (data/to-string (:data (zk/data conn "/0"))))
       (is (= (data/to-string (:data (zk/data conn "/0"))) "777"))
