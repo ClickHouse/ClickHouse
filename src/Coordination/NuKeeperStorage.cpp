@@ -761,6 +761,8 @@ void NuKeeperStorage::clearData()
     session_and_timeout.clear();
     session_id_counter = 1;
     zxid = 0;
+
+    container.insert("/", Node());
 }
 
 }
