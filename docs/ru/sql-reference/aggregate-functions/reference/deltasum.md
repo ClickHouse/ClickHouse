@@ -28,7 +28,7 @@ deltaSum(value)
 Запрос:
 
 ``` sql
-select deltaSum(arrayJoin([1, 2, 3]));
+SELECT deltaSum(arrayJoin([1, 2, 3]));
 ```
 
 Результат:
