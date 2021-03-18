@@ -269,7 +269,8 @@ InputFormatPtr FormatFactory::getInputFormat(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    const bool sync_after_error) const
 {
     const auto & input_getter = getCreators(name).input_processor_creator;
     if (!input_getter)
@@ -289,7 +290,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
-
+    params.sync_after_error = sync_after_error;
     auto format = input_getter(buf, sample, params, format_settings);
 
     /// It's a kludge. Because I cannot remove context from values format.
