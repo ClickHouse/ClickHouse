@@ -223,9 +223,9 @@ static IAggregateFunction * createWithTwoNumericOrDateTypes(const IDataType & fi
         return createWithTwoNumericOrDateTypesSecond<Int16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
 
     /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
-    if (which.idx == TypeIndex::Date) 
+    if (which.idx == TypeIndex::Date)
         return createWithTwoNumericOrDateTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::DateTime) 
+    if (which.idx == TypeIndex::DateTime)
         return createWithTwoNumericOrDateTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     return nullptr;
 }
