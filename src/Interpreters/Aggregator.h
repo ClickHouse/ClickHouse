@@ -1303,7 +1303,11 @@ protected:
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder);
 
-    void fillAggregateColumnsWithSingleKey(
+    void addToAggregateColumnsWithSingleKey(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & final_aggregate_columns);
+
+    void finalizeAggregateColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
         MutableColumns & final_aggregate_columns);
 

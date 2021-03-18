@@ -58,6 +58,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Aggregating in order");
         is_consume_started = true;
     }
+
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -82,23 +83,24 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         res_aggregate_columns.resize(params->params.aggregates_size);
 
         for (size_t i = 0; i < params->params.keys_size; ++i)
-        {
             res_key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
-        }
+
         for (size_t i = 0; i < params->params.aggregates_size; ++i)
-        {
             res_aggregate_columns[i] = res_header.safeGetByPosition(i + params->params.keys_size).type->createColumn();
-        }
+
         params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
         ++cur_block_size;
     }
+
     ssize_t mid = 0;
     ssize_t high = 0;
     ssize_t low = -1;
+
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
         high = rows;
+
         /// Find the first position of new (not current) key in current chunk
         while (high - low > 1)
         {
@@ -108,31 +110,33 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             else
                 high = mid;
         }
+
         key_end = high;
+
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
-        {
             params->aggregator.executeOnIntervalWithoutKeyImpl(variants.without_key, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
-        }
 
-        low = key_begin = key_end;
         /// We finalize last key aggregation state if a new key found.
-        if (key_begin != rows)
+        if (key_end != rows)
         {
-            params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+            params->aggregator.addToAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+
             /// If res_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
             if (cur_block_size == res_block_size)
             {
                 Columns source_columns = chunk.detachColumns();
 
                 for (auto & source_column : source_columns)
-                    source_column = source_column->cut(key_begin, rows - key_begin);
+                    source_column = source_column->cut(key_end, rows - key_end);
 
-                current_chunk = Chunk(source_columns, rows - key_begin);
+                current_chunk = Chunk(source_columns, rows - key_end);
                 src_rows -= current_chunk.getNumRows();
                 block_end_reached = true;
                 need_generate = true;
                 cur_block_size = 0;
+
+                params->aggregator.finalizeAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
 
                 /// Arenas cannot be destroyed here, since later, in FinalizingSimpleTransform
                 /// there will be finalizeChunk(), but even after
@@ -155,10 +159,14 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             }
 
             /// We create a new state for the new key and update res_key_columns
-            params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
+            params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns);
             ++cur_block_size;
         }
+
+        key_begin = key_end;
+        low = key_end;
     }
+
     block_end_reached = false;
 }
 
@@ -234,7 +242,10 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 void AggregatingInOrderTransform::generate()
 {
     if (cur_block_size && is_consume_finished)
-        params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+    {
+        params->aggregator.addToAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+        params->aggregator.finalizeAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+    }
 
     Block res = res_header.cloneEmpty();
 
