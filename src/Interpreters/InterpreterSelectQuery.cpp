@@ -204,7 +204,7 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
-static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database)
+static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -214,6 +214,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
     CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
+    cross_to_inner.cross_to_inner_join_rewrite = settings.cross_to_inner_join_rewrite;
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
     JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
@@ -331,7 +332,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase());
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
@@ -502,7 +503,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
-        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
+        LOG_TRACE(log, "Running 'analyze' second time");
+        query_analyzer->getSubqueriesForSets().clear();
+        subquery_for_sets = SubqueriesForSets();
+
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
         analyze(/* try_move_to_prewhere = */ false);
@@ -1059,13 +1063,21 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query_plan.addStep(std::move(before_join_step));
             }
 
+            /// Optional step to convert key columns to common supertype.
+            /// Columns with changed types will be returned to user,
+            ///  so its only suitable for `USING` join.
+            if (expressions.converting_join_columns)
+            {
+                QueryPlanStepPtr convert_join_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.converting_join_columns);
+                convert_join_step->setStepDescription("Convert JOIN columns");
+                query_plan.addStep(std::move(convert_join_step));
+            }
+
             if (expressions.hasJoin())
             {
-                Block join_result_sample;
                 JoinPtr join = expressions.join;
-
-                join_result_sample = JoiningTransform::transformHeader(
-                    query_plan.getCurrentDataStream().header, expressions.join);
 
                 QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
@@ -1076,6 +1088,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 if (expressions.join_has_delayed_stream)
                 {
+                    const Block & join_result_sample = query_plan.getCurrentDataStream().header;
                     auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
