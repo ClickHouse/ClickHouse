@@ -27,5 +27,4 @@ LIFETIME({MIN min_val MAX max_val | max_val})
 
 Смотрите [Внешние словари](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/dictionary)
 <!--hide-->
