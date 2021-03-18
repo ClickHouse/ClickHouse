@@ -6,7 +6,7 @@ toc_priority: 37
 
 **语法**
 ``` sql
-`covarSamp(x, y)`
+covarSamp(x, y)
 ```
 
 计算 `Σ((x - x̅)(y - y̅)) / (n - 1)` 的值。

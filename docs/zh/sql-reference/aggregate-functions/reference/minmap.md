@@ -7,9 +7,9 @@ toc_priority: 142
 **语法**
 
 ```sql
-`minMap(key, value)`
+minMap(key, value)
 或
-`minMap(Tuple(key, value))`
+minMap(Tuple(key, value))
 ```
 
 根据 `key` 数组中指定的键对 `value` 数组计算最小值。

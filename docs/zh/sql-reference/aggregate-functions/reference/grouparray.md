@@ -6,11 +6,9 @@ toc_priority: 110
 
 **语法**
 ``` sql
-`groupArray(x)`
-
-or
-
-`groupArray(max_size)(x)`
+groupArray(x)
+或
+groupArray(max_size)(x)
 ```
 
 创建参数值的数组。

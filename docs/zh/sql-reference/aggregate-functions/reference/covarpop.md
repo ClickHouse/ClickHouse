@@ -6,7 +6,7 @@ toc_priority: 36
 
 **语法**
 ``` sql
-`covarPop(x, y)`
+covarPop(x, y)
 ```
 
 计算 `Σ((x - x̅)(y - y̅)) / n` 的值。
