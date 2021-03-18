@@ -101,7 +101,7 @@ template <DictionaryKeyType dictionary_key_type>
 double CacheDictionary<dictionary_key_type>::getLoadFactor() const
 {
     const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
-    return static_cast<double>(cache_storage_ptr->getSize()) / cache_storage_ptr->getMaxSize();
+    return cache_storage_ptr->getLoadFactor();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -332,16 +332,8 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
 
     FetchResult result_of_fetch_from_storage;
 
-    bool can_perform_fetch_without_write_lock = cache_storage_ptr->canPerformFetchByMultipleThreadsWithoutLock();
-
-    if (can_perform_fetch_without_write_lock)
     {
-        const ProfilingScopedReadRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
-    }
-    else
-    {
-        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
     }
 

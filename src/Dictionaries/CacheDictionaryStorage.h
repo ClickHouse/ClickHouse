@@ -58,8 +58,6 @@ public:
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
 
-    bool canPerformFetchByMultipleThreadsWithoutLock() const override { return true; }
-
     String getName() const override
     {
         if (dictionary_key_type == DictionaryKeyType::simple)
@@ -142,7 +140,7 @@ public:
 
     size_t getSize() const override { return size; }
 
-    size_t getMaxSize() const override { return configuration.max_size_in_cells; }
+    double getLoadFactor() const override { return static_cast<double>(size) / configuration.max_size_in_cells; }
 
     size_t getBytesAllocated() const override
     {
@@ -654,7 +652,7 @@ private:
             return std::make_pair(KeyState::found, cell_place_value);
         }
 
-        return std::make_pair(KeyState::not_found, place_value);
+        return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
     }
 
     inline size_t getCellIndexForInsert(const KeyType & key) const
@@ -674,7 +672,7 @@ private:
                 return cell_place_value;
 
             if (cell.key == key)
-                return place_value;
+                return cell_place_value;
 
             if (cell.deadline < oldest_time)
             {
