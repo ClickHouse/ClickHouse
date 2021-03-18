@@ -18,7 +18,7 @@ topKWeighted(N)(x, weight)
 
 **Arguments**
 
--   `x` – The value.
+-   `x` — The value.
 -   `weight` — The weight. [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**

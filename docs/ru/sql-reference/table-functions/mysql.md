@@ -10,10 +10,10 @@ toc_title: mysql
 **Синтаксис**
 
 ``` sql
-mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `host:port` — адрес сервера MySQL.
 
@@ -96,4 +96,3 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 -   [Движок таблиц ‘MySQL’](../../sql-reference/table-functions/mysql.md)
 -   [Использование MySQL как источника данных для внешнего словаря](../../sql-reference/table-functions/mysql.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table_functions/mysql/) <!--hide-->

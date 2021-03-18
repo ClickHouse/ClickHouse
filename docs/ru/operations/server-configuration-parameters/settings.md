@@ -1160,4 +1160,3 @@ ClickHouse использует ZooKeeper для хранения метадан
 </ldap>
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->

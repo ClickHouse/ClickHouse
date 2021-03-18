@@ -107,7 +107,14 @@ void WriteBufferFromS3::finalizeImpl()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    finalizeImpl();
+    try
+    {
+        finalizeImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()

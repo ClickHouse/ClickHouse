@@ -345,3 +345,7 @@ from numbers(10)
 window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
+
+-- In this case, we had a problem with PartialSortingTransform returning zero-row
+-- chunks for input chunks w/o columns.
+select count() over () from numbers(4) where number < 2;
