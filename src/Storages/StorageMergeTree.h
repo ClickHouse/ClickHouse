@@ -132,6 +132,7 @@ private:
     DataParts currently_merging_mutating_parts;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
+    std::map<std::pair<Int64, Int64>, Int64> updated_version_by_block_range;
 
     std::atomic<bool> shutdown_called {false};
 
@@ -178,6 +179,10 @@ private:
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
 
     Int64 getCurrentMutationVersion(
+        const DataPartPtr & part,
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+
+    Int64 getUpdatedDataVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
