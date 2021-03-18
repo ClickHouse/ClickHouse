@@ -1280,9 +1280,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         async_metrics.start();
         global_context->enableNamedSessions();
 
-        for (auto & server : *servers)
-            server.start();
-
         {
             String level_str = config().getString("text_log.level", "");
             int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
@@ -1334,6 +1331,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                                                                      "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
         }
 
+        for (auto & server : *servers)
+            server.start();
         LOG_INFO(log, "Ready for connections.");
 
         SCOPE_EXIT({

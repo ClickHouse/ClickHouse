@@ -105,7 +105,7 @@ struct DivideIntegralImpl
             auto res = checkedDivision(CastA(a), CastB(b));
 
             if constexpr (std::is_floating_point_v<decltype(res)>)
-                if (isNaN(res) || res >= std::numeric_limits<Result>::max() || res <= std::numeric_limits<Result>::lowest())
+                if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
                     throw Exception("Cannot perform integer division, because it will produce infinite or too large number",
                         ErrorCodes::ILLEGAL_DIVISION);
 

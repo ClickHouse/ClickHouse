@@ -192,7 +192,7 @@ struct ExpressionActionsChain
 
         void finalize(const NameSet & required_output_) override
         {
-            if (!actions_dag->projectedOutput())
+            if (!actions_dag->isOutputProjected())
                 actions_dag->removeUnusedActions(required_output_);
         }
 
