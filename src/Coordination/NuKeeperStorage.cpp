@@ -752,4 +752,15 @@ void NuKeeperStorage::clearDeadWatches(int64_t session_id)
     }
 }
 
+void NuKeeperStorage::clearData()
+{
+    container.clear();
+    ephemerals.clear();
+    sessions_and_watchers.clear();
+    session_expiry_queue.clear();
+    session_and_timeout.clear();
+    session_id_counter = 1;
+    zxid = 0;
+}
+
 }

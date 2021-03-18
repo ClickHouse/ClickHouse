@@ -5,6 +5,7 @@
             [jepsen.nukeeper.nemesis :as custom-nemesis]
             [jepsen.nukeeper.register :as register]
             [jepsen.nukeeper.unique :as unique]
+            [jepsen.nukeeper.queue :as queue]
             [jepsen.nukeeper.counter :as counter]
             [jepsen.nukeeper.constants :refer :all]
             [clojure.string :as str]
@@ -23,7 +24,6 @@
             [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
             [clojure.java.io :as io]
-            [knossos.model :as model]
             [zookeeper.data :as data]
             [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
@@ -69,7 +69,7 @@
       (info node "tearing down clickhouse")
       (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
       (c/su
-       ;(c/exec :rm :-f (str binary-path "/clickhouse"))
+       (c/exec :rm :-f (str binary-path "/clickhouse"))
        (c/exec :rm :-rf dir)
        (c/exec :rm :-rf logdir)
        (c/exec :rm :-rf "/etc/clickhouse-server")))
@@ -87,7 +87,8 @@
   {"set"      set/workload
    "register" register/workload
    "unique-ids" unique/workload
-   "counter" counter/workload})
+   "counter" counter/workload
+   "queue" queue/workload})
 
 (def cli-opts
   "Additional command line options."
@@ -130,7 +131,7 @@
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:a122093aee0bdcb70ca42d5e5fb4ba5544372f5f")
+            :db (db "rbtorrent:711cf0ff9281804eb53875d0c12499df1c2a0adc")
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)

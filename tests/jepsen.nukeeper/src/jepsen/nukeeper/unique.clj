@@ -9,10 +9,6 @@
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
-(defn parse-and-get-counter
-  [path]
-  (Integer/parseInt (apply str (take-last 10 (seq (str path))))))
-
 (defrecord UniqueClient [conn nodename]
   client/Client
   (open! [this test node]
@@ -33,7 +29,8 @@
 
   (teardown! [_ test])
 
-  (close! [_ test]))
+  (close! [_ test]
+    (zk/close conn)))
 
 (defn workload
   "A generator, client, and checker for a set test."

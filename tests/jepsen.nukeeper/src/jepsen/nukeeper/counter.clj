@@ -1,5 +1,5 @@
 (ns jepsen.nukeeper.counter
- (:require
+  (:require
    [clojure.tools.logging :refer :all]
    [jepsen
     [checker :as checker]
@@ -9,10 +9,8 @@
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
-
 (defn r   [_ _] {:type :invoke, :f :read})
 (defn add [_ _] {:type :invoke, :f :add, :value (rand-int 5)})
-
 
 (defrecord CounterClient [conn nodename]
   client/Client
@@ -39,7 +37,8 @@
 
   (teardown! [_ test])
 
-  (close! [_ test]))
+  (close! [_ test]
+    (zk/close conn)))
 
 (defn workload
   "A generator, client, and checker for a set test."
