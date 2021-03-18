@@ -97,6 +97,36 @@ for test_case in "${tests_with_query_log[@]}"; do
     grep -qE current_database.*currentDatabase "$test_case" || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
+# Queries with ReplicatedMergeTree
+# NOTE: it is not that accuate, but at least something.
+tests_with_replicated_merge_tree=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+        grep -vP $EXCLUDE_DIRS |
+        xargs grep --with-filename -e ReplicatedMergeTree | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_replicated_merge_tree[@]}"; do
+    case "$test_case" in
+        *.sh)
+            test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
+            grep -q -e "ReplicatedMergeTree.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+            ;;
+        *.sql)
+            # NOTE: *.sql is not supported because it is not possible right now, because:
+            # - ReplicatedMergeTree supports only ASTLiteral for zookeeper path
+            #   (and adding support of other nodes, with evaluating them are not that easy, due to zk_prefix is "optional")
+            # - Hence concat(currentDatabase(), 'foo')
+            # - Also params cannot be used, because the are wrapped with CAST()
+            #
+            # But hopefully they will not be a problem
+            # (since they do not do any "stressing" and overlap probability should be lower).
+            ;;
+        *.py)
+            # Right now there is not such tests anyway
+            echo "No ReplicatedMergeTree style check for *.py ($test_case)"
+            ;;
+    esac
+done
+
 # All the submodules should be from https://github.com/
 find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
 

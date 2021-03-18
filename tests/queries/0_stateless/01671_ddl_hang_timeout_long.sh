@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function thread_create_drop_table {
     while true; do
         REPLICA=$(($RANDOM % 10))
-        $CLICKHOUSE_CLIENT --query "CREATE TABLE IF NOT EXISTS t1 (x UInt64, s Array(Nullable(String))) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01671/test_01671', 'r_$REPLICA') order by x" 2>/dev/null
+        $CLICKHOUSE_CLIENT --query "CREATE TABLE IF NOT EXISTS t1 (x UInt64, s Array(Nullable(String))) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_01671', 'r_$REPLICA') order by x" 2>/dev/null
         sleep 0.0$RANDOM
         $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t1"
     done
