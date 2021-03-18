@@ -15,11 +15,7 @@ CREATE TABLE elog (
     engine_id UInt32,
     referrer String
 )
-<<<<<<< HEAD
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00953/elog/{shard}', '{replica}')
-=======
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog', 'test')
->>>>>>> master
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/{shard}', '{replica}')
 PARTITION BY date
 ORDER BY (engine_id)
 SETTINGS replicated_deduplication_window = 2, cleanup_delay_period=4, cleanup_delay_period_random_add=0;"
