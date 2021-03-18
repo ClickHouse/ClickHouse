@@ -21,7 +21,7 @@ deltaSum(value)
 
 **Returned value**
 
--   Gained arithmetic difference in `Integer` or `Float` type.
+- A gained arithmetic difference of the `Integer` or `Float` type.
 
 **Examples**
 
