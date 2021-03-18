@@ -67,11 +67,6 @@ public:
         return pos;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
-    {
-        return pos;
-    }
-
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
     }

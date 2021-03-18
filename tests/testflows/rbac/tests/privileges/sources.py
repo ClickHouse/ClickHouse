@@ -17,7 +17,7 @@ def file_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=file,
+        Suite(run=file, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in file.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -38,14 +38,13 @@ def file_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=file,
+        Suite(run=file, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in file.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("FILE",),
 ])
@@ -66,13 +65,7 @@ def file(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the File source"):
+        with When("I check the user can't use the File source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -109,7 +102,7 @@ def url_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=url,
+        Suite(run=url, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in url.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -130,14 +123,13 @@ def url_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=url,
+        Suite(run=url, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in url.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("URL",),
 ])
@@ -158,13 +150,7 @@ def url(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the URL source"):
+        with When("I check the user can't use the URL source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -201,7 +187,7 @@ def remote_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=remote,
+        Suite(run=remote, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in remote.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -222,14 +208,13 @@ def remote_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=remote,
+        Suite(run=remote, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in remote.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("REMOTE",),
 ])
@@ -250,13 +235,7 @@ def remote(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the Remote source"):
+        with When("I check the user can't use the Remote source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -293,7 +272,7 @@ def MySQL_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=MySQL,
+        Suite(run=MySQL, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in MySQL.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -314,14 +293,13 @@ def MySQL_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=MySQL,
+        Suite(run=MySQL, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in MySQL.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("MYSQL",),
 ])
@@ -342,13 +320,7 @@ def MySQL(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the MySQL source"):
+        with When("I check the user can't use the MySQL source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -385,7 +357,7 @@ def ODBC_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=ODBC,
+        Suite(run=ODBC, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in ODBC.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -406,14 +378,13 @@ def ODBC_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=ODBC,
+        Suite(run=ODBC, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in ODBC.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("ODBC",),
 ])
@@ -434,13 +405,7 @@ def ODBC(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the ODBC source"):
+        with When("I check the user can't use the ODBC source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -477,7 +442,7 @@ def JDBC_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=JDBC,
+        Suite(run=JDBC, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in JDBC.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -498,14 +463,13 @@ def JDBC_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=JDBC,
+        Suite(run=JDBC, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in JDBC.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("JDBC",),
 ])
@@ -526,13 +490,7 @@ def JDBC(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the JDBC source"):
+        with When("I check the user can't use the JDBC source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -569,7 +527,7 @@ def HDFS_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=HDFS,
+        Suite(run=HDFS, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in HDFS.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -590,14 +548,13 @@ def HDFS_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=HDFS,
+        Suite(run=HDFS, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in HDFS.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("HDFS",),
 ])
@@ -618,13 +575,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the HDFS source"):
+        with When("I check the user can't use the HDFS source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -661,7 +612,7 @@ def S3_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=S3,
+        Suite(run=S3, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in S3.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -682,14 +633,13 @@ def S3_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=S3,
+        Suite(run=S3, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in S3.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("SOURCES",),
     ("S3",),
 ])
@@ -710,13 +660,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use the S3 source"):
+        with When("I check the user can't use the S3 source"):
             node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -745,8 +689,6 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
 @Name("sources")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_Sources("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SOURCES.

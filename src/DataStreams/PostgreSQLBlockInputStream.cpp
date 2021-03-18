@@ -160,15 +160,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
             break;
         case ValueType::vtDateTime:
-        {
-            ReadBufferFromString in(value);
-            time_t time = 0;
-            readDateTimeText(time, in);
-            if (time < 0)
-                time = 0;
-            assert_cast<ColumnUInt32 &>(column).insertValue(time);
+            assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{std::string(value)}});
             break;
-        }
         case ValueType::vtDateTime64:[[fallthrough]];
         case ValueType::vtDecimal32: [[fallthrough]];
         case ValueType::vtDecimal64: [[fallthrough]];
@@ -264,13 +257,7 @@ void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataT
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
     else if (which.isDateTime())
-        parser = [](std::string & field) -> Field
-        {
-            ReadBufferFromString in(field);
-            time_t time = 0;
-            readDateTimeText(time, in);
-            return time;
-        };
+        parser = [](std::string & field) -> Field { return time_t{LocalDateTime{field}}; };
     else if (which.isDecimal32())
         parser = [nested](std::string & field) -> Field
         {

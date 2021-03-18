@@ -176,7 +176,7 @@
 01560_timeseriesgroupsum_segfault
 00976_ttl_with_old_parts
 01584_distributed_buffer_cannot_find_column
-01018_ip_dictionary_long
+01018_ip_dictionary
 01582_distinct_subquery_groupby
 01558_ttest
 01558_ttest_scipy

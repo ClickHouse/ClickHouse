@@ -21,3 +21,4 @@
 
 -    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Разрешение предоставлено с опцией `WITH GRANT OPTION`, подробнее см. [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/grants) <!--hide-->
