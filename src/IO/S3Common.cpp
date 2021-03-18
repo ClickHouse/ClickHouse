@@ -14,8 +14,23 @@
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/core/utils/HashingUtils.h>
-#    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
+#    include <aws/s3/S3Client.h>
+
+#    if __clang__
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wdocumentation"
+#    pragma clang diagnostic ignored "-Wsuggest-destructor-override"
+#    pragma clang diagnostic ignored "-Winconsistent-missing-destructor-override"
+#    pragma clang diagnostic ignored "-Wnewline-eof"
+#    endif
+#    include <aws/identity-management/auth/STSAssumeRoleCredentialsProvider.h>
+#    include <aws/sts/STSClient.h>
+#    include <aws/sts/model/GetCallerIdentityRequest.h>
+#    if __clang__
+#    pragma clang diagnostic pop
+#    endif
+
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <Poco/URI.h>
@@ -94,25 +109,23 @@ private:
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials)
+    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_sts_get_caller_identity_credentials)
     {
+        auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
+
         if (use_environment_credentials)
         {
-            const DB::RemoteHostFilter & remote_host_filter = configuration.remote_host_filter;
-            const unsigned int s3_max_redirects = configuration.s3_max_redirects;
-
             static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
             static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
             static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
             static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
-
-            auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
             /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
             /// is that this chain uses custom ClientConfiguration.
 
             AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
             AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+            AddProvider(std::make_shared<Aws::Auth::ProcessCredentialsProvider>());
             AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleWebIdentityCredentialsProvider>());
 
             /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
@@ -145,7 +158,7 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(remote_host_filter, s3_max_redirects);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.remote_host_filter, configuration.s3_max_redirects);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -174,6 +187,29 @@ public:
             }
         }
 
+        if (use_sts_get_caller_identity_credentials)
+        {
+            DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.remote_host_filter, configuration.s3_max_redirects);
+
+            aws_client_configuration.connectTimeoutMs = 1000;
+            aws_client_configuration.requestTimeoutMs = 1000;
+            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+
+            auto sts_client = std::make_shared<Aws::STS::STSClient>(aws_client_configuration);
+            auto caller_identity_outcome = sts_client->GetCallerIdentity({});
+
+            if (caller_identity_outcome.IsSuccess())
+            {
+                String role_arn = caller_identity_outcome.GetResult().GetArn();
+                AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(role_arn, String(), String(), Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS, sts_client));
+                LOG_INFO(logger, "Added STS AssumeRole credentials provider to the provider chain.");
+            }
+            else
+            {
+                LOG_INFO(logger, "Failed to retrieve STS GetCallerIdentityRequest.");
+            }
+        }
+
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
     }
 };
@@ -185,12 +221,14 @@ public:
         const Aws::Client::ClientConfiguration & client_configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const DB::HeaderCollection & headers_,
-        bool use_environment_credentials)
+        bool use_environment_credentials,
+        bool use_sts_get_caller_identity_credentials)
         : Aws::Client::AWSAuthV4Signer(
             std::make_shared<S3CredentialsProviderChain>(
                 static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
                 credentials,
-                use_environment_credentials),
+                use_environment_credentials,
+                use_sts_get_caller_identity_credentials),
             "s3",
             client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -281,7 +319,8 @@ namespace S3
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
-        bool use_environment_credentials)
+        bool use_environment_credentials,
+        bool use_sts_get_caller_identity_credentials)
     {
         PocoHTTPClientConfiguration client_configuration = cfg_;
         client_configuration.updateSchemeAndRegion();
@@ -308,7 +347,8 @@ namespace S3
             client_configuration,
             std::move(credentials),
             std::move(headers),
-            use_environment_credentials);
+            use_environment_credentials,
+            use_sts_get_caller_identity_credentials);
 
         return std::make_shared<Aws::S3::S3Client>(
             std::move(auth_signer),
