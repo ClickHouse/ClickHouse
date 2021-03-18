@@ -78,11 +78,14 @@ public:
     bool ALWAYS_INLINE before (
         const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * lhs,
         const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * rhs
-    ) const {
-        if (lhs->last_ts < rhs->first_ts) {
+    ) const
+    {
+        if (lhs->last_ts < rhs->first_ts)
+        {
             return true;
         }
-        if (lhs->last_ts == rhs->first_ts && lhs->last_ts < rhs->last_ts) {
+        if (lhs->last_ts == rhs->first_ts && lhs->last_ts < rhs->last_ts)
+        {
             return true;
         }
         return false;
