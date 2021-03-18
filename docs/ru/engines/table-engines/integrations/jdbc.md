@@ -89,4 +89,3 @@ FROM jdbc_table
 
 -   [Табличная функция JDBC](../../../engines/table-engines/integrations/jdbc.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

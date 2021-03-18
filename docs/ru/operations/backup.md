@@ -1,6 +1,6 @@
 ---
 toc_priority: 49
-toc_title: "\u0420\u0435\u0437\u0435\u0440\u0432\u043d\u043e\u0435\u0020\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_title: "Резервное копирование данных"
 ---
 
 # Резервное копирование данных {#rezervnoe-kopirovanie-dannykh}
@@ -36,4 +36,3 @@ ClickHouse позволяет использовать запрос `ALTER TABLE
 
 Для автоматизации этого подхода доступен инструмент от сторонних разработчиков: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/backup/) <!--hide-->

@@ -1031,10 +1031,15 @@ void Aggregator::convertToBlockImpl(
     if (key_columns.size() != params.keys_size)
         throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
 
+    std::vector<IColumn *> raw_key_columns;
+    raw_key_columns.reserve(key_columns.size());
+    for (auto & column : key_columns)
+        raw_key_columns.push_back(column.get());
+
     if (final)
-        convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, arena);
+        convertToBlockImplFinal(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
     else
-        convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns);
+        convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     /// In order to release memory early.
     data.clearAndShrink();
 }
@@ -1112,7 +1117,7 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::convertToBlockImplFinal(
     Method & method,
     Table & data,
-    MutableColumns & key_columns,
+    std::vector<IColumn *>  key_columns,
     MutableColumns & final_aggregate_columns,
     Arena * arena) const
 {
@@ -1125,9 +1130,12 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
     }
 
+    auto shuffled_key_sizes = method.shuffleKeyColumns(key_columns, key_sizes);
+    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
+
     data.forEachValue([&](const auto & key, auto & mapped)
     {
-        method.insertKeyIntoColumns(key, key_columns, key_sizes);
+        method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
         insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
     });
 }
@@ -1136,7 +1144,7 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::convertToBlockImplNotFinal(
     Method & method,
     Table & data,
-    MutableColumns & key_columns,
+    std::vector<IColumn *>  key_columns,
     AggregateColumnsData & aggregate_columns) const
 {
     if constexpr (Method::low_cardinality_optimization)
@@ -1152,9 +1160,12 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         }
     }
 
+    auto shuffled_key_sizes = method.shuffleKeyColumns(key_columns, key_sizes);
+    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
+
     data.forEachValue([&](const auto & key, auto & mapped)
     {
-        method.insertKeyIntoColumns(key, key_columns, key_sizes);
+        method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
 
         /// reserved, so push_back does not throw exceptions
         for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1378,35 +1389,46 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         for (size_t i = data_variants.aggregates_pools.size(); i < max_threads; ++i)
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
-    auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
+    std::atomic<UInt32> next_bucket_to_merge = 0;
+
+    auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
 
-        /// Select Arena to avoid race conditions
-        size_t thread_number = static_cast<size_t>(bucket) % max_threads;
-        Arena * arena = data_variants.aggregates_pools.at(thread_number).get();
+        BlocksList blocks;
+        while (true)
+        {
+            UInt32 bucket = next_bucket_to_merge.fetch_add(1);
 
-        return convertOneBucketToBlock(data_variants, method, arena, final, bucket);
+            if (bucket >= Method::Data::NUM_BUCKETS)
+                break;
+
+            if (method.data.impls[bucket].empty())
+                continue;
+
+            /// Select Arena to avoid race conditions
+            Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
+            blocks.emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
+        }
+        return blocks;
     };
 
     /// packaged_task is used to ensure that exceptions are automatically thrown into the main stream.
 
-    std::vector<std::packaged_task<Block()>> tasks(Method::Data::NUM_BUCKETS);
+    std::vector<std::packaged_task<BlocksList()>> tasks(max_threads);
 
     try
     {
-        for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+        for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
-            if (method.data.impls[bucket].empty())
-                continue;
-
-            tasks[bucket] = std::packaged_task<Block()>([group = CurrentThread::getGroup(), bucket, &converter]{ return converter(bucket, group); });
+            tasks[thread_id] = std::packaged_task<BlocksList()>(
+                [group = CurrentThread::getGroup(), thread_id, &converter] { return converter(thread_id, group); });
 
             if (thread_pool)
-                thread_pool->scheduleOrThrowOnError([bucket, &tasks] { tasks[bucket](); });
+                thread_pool->scheduleOrThrowOnError([thread_id, &tasks] { tasks[thread_id](); });
             else
-                tasks[bucket]();
+                tasks[thread_id]();
         }
     }
     catch (...)
@@ -1428,7 +1450,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         if (!task.valid())
             continue;
 
-        blocks.emplace_back(task.get_future().get());
+        blocks.splice(blocks.end(), task.get_future().get());
     }
 
     return blocks;
