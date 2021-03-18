@@ -44,9 +44,15 @@ ClickHouse не удаляет данные из таблица автомати
 -   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество строк в результате запроса `SELECT` или количество строк в запросе `INSERT`.
 -   `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — объём RAM в байтах, использованный для хранения результата запроса.
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — потребление RAM запросом.
+-   `current_database` ([String](../../sql-reference/data-types/string.md)) — имя текущей базы данных.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — текст запроса.
+-   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — идентичная хэш-сумма без значений литералов для аналогичных запросов.
+-   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — тип запроса.
+-   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена баз данных, присутствующих в запросе.
+-   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена таблиц, присутствующих в запросе.
+-   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена столбцов, присутствующих в запросе.
+-   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — код исключения.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — сообщение исключения, если запрос завершился по исключению.
--   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — код исключения. 
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [stack trace](https://en.wikipedia.org/wiki/Stack_trace). Пустая строка, если запрос успешно завершен.
 -   `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — вид запроса. Возможные значения:
     -   1 — запрос был инициирован клиентом.
@@ -74,13 +80,25 @@ ClickHouse не удаляет данные из таблица автомати
     -   1 — `GET`.
     -   2 — `POST`.
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `UserAgent`.
--   `quota_key` ([String](../../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
+-   `http_referer` ([String](../../sql-reference/data-types/string.md)) — URL источника запроса.
+-   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — заголовки, передаваемые в HTTP запросе.
+-   `quota_key` ([String](../../sql-reference/data-types/string.md)) — `ключ квоты` из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `thread_numbers` ([Array(UInt32)](../../sql-reference/data-types/array.md)) — количество потоков, участвующих в обработке запросов.
+-   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к столбцу или пустая строка.
+-   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — идентификаторы потоков, участвующих в обработке запросов.
 -   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 -   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 -   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — значения настроек, которые перечислены в столбце `Settings.Names`.
+-   `used_aggregate_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — агрегатные функции, созданные в результате запроса.
+-   `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — комбинаторы агрегатных функций, созданные в результате запроса.
+-   `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — движки баз данных, созданные в результате запроса.
+-   `used_data_type_families` ([Array(String)](../../sql-reference/data-types/array.md)) — семейства типов данных, созданные в результате запроса.
+-   `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — словари, созданные в результате запроса.
+-   `used_formats` ([Array(String)](../../sql-reference/data-types/array.md)) — форматы, созданные в результате запроса.
+-   `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — функции, созданные в результате запроса.
+-   `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — хранилища, созданные в результате запроса.
+-   `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — табличные функции, созданные в результате запроса.
 
 **Пример**
 
@@ -91,51 +109,68 @@ SELECT * FROM system.query_log LIMIT 1 \G
 ``` text
 Row 1:
 ──────
-type:                          QueryStart
-event_date:                    2020-09-11
-event_time:                    2020-09-11 10:08:17
-event_time_microseconds:       2020-09-11 10:08:17.063321
-query_start_time:              2020-09-11 10:08:17
-query_start_time_microseconds: 2020-09-11 10:08:17.063321
-query_duration_ms:             0
-read_rows:                     0
-read_bytes:                    0
-written_rows:                  0
-written_bytes:                 0
-result_rows:                   0
-result_bytes:                  0
-memory_usage:                  0
-current_database:              default
-query:                         INSERT INTO test1 VALUES
-exception_code:                0
-exception:                     
-stack_trace:                   
-is_initial_query:              1
-user:                          default
-query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
-address:                       ::ffff:127.0.0.1
-port:                          33452
-initial_user:                  default
-initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
-initial_address:               ::ffff:127.0.0.1
-initial_port:                  33452
-interface:                     1
-os_user:                       bharatnc
-client_hostname:               tower
-client_name:                   ClickHouse 
-client_revision:               54437
-client_version_major:          20
-client_version_minor:          7
-client_version_patch:          2
-http_method:                   0
-http_user_agent:               
-quota_key:                     
-revision:                      54440
-thread_ids:                    []
-ProfileEvents.Names:           []
-ProfileEvents.Values:          []
-Settings.Names:                ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage','allow_introspection_functions']
-Settings.Values:               ['0','random','1','10000000000','1']
+type:                                QueryStart
+event_date:                          2021-02-10
+event_time:                          2021-02-10 11:07:22
+event_time_microseconds:             2021-02-10 11:07:22.055065
+query_start_time:                    2021-02-10 11:07:22
+query_start_time_microseconds:       2021-02-10 11:07:22.055065
+query_duration_ms:                   0
+read_rows:                           0
+read_bytes:                          0
+written_rows:                        0
+written_bytes:                       0
+result_rows:                         0
+result_bytes:                        0
+memory_usage:                        0
+current_database:                    default
+query:                               SELECT DISTINCT arrayJoin(extractAll(name, '[\\w_]{2,}')) AS res FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.table_engines UNION ALL SELECT name FROM system.formats UNION ALL SELECT name FROM system.table_functions UNION ALL SELECT name FROM system.data_type_families UNION ALL SELECT name FROM system.merge_tree_settings UNION ALL SELECT name FROM system.settings UNION ALL SELECT cluster FROM system.clusters UNION ALL SELECT name FROM system.errors UNION ALL SELECT event FROM system.events UNION ALL SELECT metric FROM system.asynchronous_metrics UNION ALL SELECT metric FROM system.metrics UNION ALL SELECT macro FROM system.macros UNION ALL SELECT policy_name FROM system.storage_policies UNION ALL SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate UNION ALL SELECT name FROM system.databases LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.tables LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.dictionaries LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.columns LIMIT 10000) WHERE notEmpty(res)
+normalized_query_hash:               2489104604811541527
+query_kind:                          Select
+databases:                           ['system']
+tables:                              ['system.aggregate_function_combinators','system.asynchronous_metrics','system.clusters','system.columns','system.data_type_families','system.databases','system.dictionaries','system.errors','system.events','system.formats','system.functions','system.macros','system.merge_tree_settings','system.metrics','system.settings','system.storage_policies','system.table_engines','system.table_functions','system.tables']
+columns:                             ['system.aggregate_function_combinators.name','system.asynchronous_metrics.metric','system.clusters.cluster','system.columns.name','system.data_type_families.name','system.databases.name','system.dictionaries.name','system.errors.name','system.events.event','system.formats.name','system.functions.is_aggregate','system.functions.name','system.macros.macro','system.merge_tree_settings.name','system.metrics.metric','system.settings.name','system.storage_policies.policy_name','system.table_engines.name','system.table_functions.name','system.tables.name']
+exception_code:                      0
+exception:
+stack_trace:
+is_initial_query:                    1
+user:                                default
+query_id:                            8018757d-fb65-4c64-98c9-b5faea2dbbe7
+address:                             ::ffff:127.0.0.1
+port:                                39704
+initial_user:                        default
+initial_query_id:                    8018757d-fb65-4c64-98c9-b5faea2dbbe7
+initial_address:                     ::ffff:127.0.0.1
+initial_port:                        39704
+interface:                           1
+os_user:
+client_hostname:
+client_name:                         ClickHouse client
+client_revision:                     54447
+client_version_major:                21
+client_version_minor:                3
+client_version_patch:                0
+http_method:                         0
+http_user_agent:
+http_referer:
+forwarded_for:
+quota_key:
+revision:                            54448
+log_comment:
+thread_ids:                          []
+ProfileEvents.Names:                 []
+ProfileEvents.Values:                []
+Settings.Names:                      ['use_uncompressed_cache','load_balancing','max_memory_usage','system_events_show_zero_values']
+Settings.Values:                     ['0','random','10000000000','1']
+used_aggregate_functions:            []
+used_aggregate_function_combinators: []
+used_database_engines:               []
+used_data_type_families:             []
+used_dictionaries:                   []
+used_formats:                        []
+used_functions:                      []
+used_storages:                       []
+used_table_functions:                []
 ```
 
 **Смотрите также**
@@ -143,4 +178,3 @@ Settings.Values:               ['0','random','1','10000000000','1']
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_log) <!--hide-->
-
