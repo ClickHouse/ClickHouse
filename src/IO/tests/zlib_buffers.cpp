@@ -30,7 +30,7 @@ try
             DB::writeIntText(i, deflating_buf);
             DB::writeChar('\t', deflating_buf);
         }
-        deflating_buf.finalize();
+        deflating_buf.finish();
 
         stopwatch.stop();
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."

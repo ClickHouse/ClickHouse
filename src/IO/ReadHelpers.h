@@ -536,7 +536,7 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
 
 template <typename ReturnType>
@@ -703,6 +703,12 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 template <typename ReturnType = void>
 inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
+    /** Read 10 characters, that could represent unix timestamp.
+      * Only unix timestamp of 5-10 characters is supported.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
+      */
+
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
 
@@ -747,7 +753,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         return ReturnType(false);
     }
 
-    DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{static_cast<DateTime64::NativeType>(whole), 0};
 
     if (!buf.eof() && *buf.position() == '.')
     {
@@ -773,27 +779,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
     }
-    else if (scale && (whole >= 1000000000LL * scale))
-    {
-        /// Unix timestamp with subsecond precision, already scaled to integer.
-        /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
-
-        for (size_t i = 0; i < scale; ++i)
-        {
-            components.fractional *= 10;
-            components.fractional += components.whole % 10;
-            components.whole /= 10;
-        }
-    }
 
     datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
 
     return ReturnType(true);
 }
 
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    readDateTimeTextImpl<void>(datetime, buf, time_zone);
+    readDateTimeTextImpl<void>(datetime, buf, date_lut);
 }
 
 inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
@@ -801,9 +795,9 @@ inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer
     readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
 }
 
-inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    return readDateTimeTextImpl<bool>(datetime, buf, time_zone);
+    return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
 }
 
 inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
@@ -1052,14 +1046,10 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 
 
 /// Skip whitespace characters.
-inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
+inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {
-    if (!one_line)
-        while (!buf.eof() && isWhitespaceASCII(*buf.position()))
-            ++buf.position();
-    else
-        while (!buf.eof() && isWhitespaceASCIIOneLine(*buf.position()))
-            ++buf.position();
+    while (!buf.eof() && isWhitespaceASCII(*buf.position()))
+        ++buf.position();
 }
 
 /// Skips json value.
@@ -1071,7 +1061,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-Exception readException(ReadBuffer & buf, const String & additional_message = "", bool remote_exception = false);
+Exception readException(ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
@@ -1221,9 +1211,6 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
-
-/// Skip to next character after next \r. If no \r in stream, skip to end.
-void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);

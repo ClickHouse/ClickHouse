@@ -4,5 +4,5 @@ alpine-root/install/*
 # docs (looks useless)
 alpine-root/usr/share/doc/*
 
-# packages, etc. (used by alpine-build.sh)
-tgz-packages/*
+# packages, etc. (used by prepare.sh)
+alpine-root/tgz-packages/*

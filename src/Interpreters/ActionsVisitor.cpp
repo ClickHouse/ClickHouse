@@ -674,7 +674,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
             if (column_name_type.name == column_name)
             {
                 throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
-                                ErrorCodes::NOT_AN_AGGREGATE);
+                ErrorCodes::NOT_AN_AGGREGATE);
             }
         }
 
@@ -738,9 +738,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
-        if (node.window_definition)
+        if (node.window_partition_by)
         {
-            visit(node.window_definition, data);
+            visit(node.window_partition_by, data);
+        }
+        if (node.window_order_by)
+        {
+            visit(node.window_order_by, data);
         }
 
         // Also manually add columns for arguments of the window function itself.

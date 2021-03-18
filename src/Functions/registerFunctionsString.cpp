@@ -33,10 +33,7 @@ void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 void registerFunctionNormalizeQuery(FunctionFactory &);
 void registerFunctionNormalizedQueryHash(FunctionFactory &);
 void registerFunctionCountMatches(FunctionFactory &);
-void registerFunctionEncodeXMLComponent(FunctionFactory &);
-void registerFunctionDecodeXMLComponent(FunctionFactory &);
-void registerFunctionExtractTextFromHTML(FunctionFactory &);
-
+void registerFunctionEncodeXMLComponent(FunctionFactory & factory);
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
@@ -73,8 +70,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionNormalizedQueryHash(factory);
     registerFunctionCountMatches(factory);
     registerFunctionEncodeXMLComponent(factory);
-    registerFunctionDecodeXMLComponent(factory);
-    registerFunctionExtractTextFromHTML(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

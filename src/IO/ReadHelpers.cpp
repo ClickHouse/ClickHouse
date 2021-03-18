@@ -253,6 +253,9 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
+
+        if (buf.hasPendingData())
+            return;
     }
 }
 
@@ -683,7 +686,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /** CSV format can contain insignificant spaces and tabs.
               * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+              * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
               */
             size_t size = s.size();
             while (size > 0
@@ -831,18 +834,14 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
+    /// unix timestamp max length
+    static constexpr auto unix_timestamp_max_length = 10;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
 
-    /** Read characters, that could represent unix timestamp.
-      * Only unix timestamp of at least 5 characters is supported.
-      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
-      */
-
-    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
-    while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
+    /// A piece similar to unix timestamp.
+    while (s_pos < s + unix_timestamp_max_length && !buf.eof() && isNumericASCII(*buf.position()))
     {
         *s_pos = *buf.position();
         ++s_pos;
@@ -850,7 +849,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
 
     /// 2015-01-01 01:02:03 or 2015-01-01
-    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
@@ -889,7 +888,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
     else
     {
-        if (s_pos - s >= 5)
+        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
+        if (s_pos - s >= 5 && s_pos - s <= 10)
         {
             /// Not very efficient.
             datetime = 0;
@@ -1017,7 +1017,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
+Exception readException(ReadBuffer & buf, const String & additional_message)
 {
     int code = 0;
     String name;
@@ -1044,31 +1044,12 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 {
     readException(buf, additional_message).rethrow();
-}
-
-
-void skipToCarriageReturnOrEOF(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == '\r')
-        {
-            ++buf.position();
-            return;
-        }
-    }
 }
 
 

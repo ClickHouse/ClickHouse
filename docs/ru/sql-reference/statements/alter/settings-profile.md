@@ -7,11 +7,12 @@ toc_title: SETTINGS PROFILE
 
 Изменяет профили настроек.
 
-Синтаксис:
+## Синтаксис {#alter-settings-profile-syntax}
 
 ``` sql
-ALTER SETTINGS PROFILE [IF EXISTS] TO name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
-        [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/settings-profile) <!--hide-->

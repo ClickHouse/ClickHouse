@@ -11,7 +11,6 @@
 #    include <Columns/ColumnFixedString.h>
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
-#    include <IO/ReadBufferFromString.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/Operators.h>
@@ -24,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int NOT_IMPLEMENTED;
 }
 
 MySQLBlockInputStream::Connection::Connection(
@@ -98,15 +96,8 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 break;
             case ValueType::vtDateTime:
-            {
-                ReadBufferFromString in(value);
-                time_t time = 0;
-                readDateTimeText(time, in);
-                if (time < 0)
-                    time = 0;
-                assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                assert_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
                 break;
-            }
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
@@ -123,8 +114,6 @@ namespace
             case ValueType::vtFixedString:
                 assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
                 break;
-            default:
-                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -154,32 +143,20 @@ Block MySQLBlockInputStream::readImpl()
             const auto value = row[position_mapping[index]];
             const auto & sample = description.sample_block.getByPosition(index);
 
-            bool is_type_nullable = description.types[index].second;
-
             if (!value.isNull())
             {
-                if (is_type_nullable)
+                if (description.types[index].second)
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
                     insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value);
-                    column_nullable.getNullMapData().emplace_back(false);
+                    column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
-                {
                     insertValue(*sample.type, *columns[index], description.types[index].first, value);
-                }
             }
             else
-            {
                 insertDefaultValue(*columns[index], *sample.column);
-
-                if (is_type_nullable)
-                {
-                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
-                    column_nullable.getNullMapData().back() = true;
-                }
-            }
         }
 
         ++num_rows;

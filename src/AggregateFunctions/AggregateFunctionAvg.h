@@ -12,10 +12,10 @@
 
 namespace DB
 {
-template <typename T>
+template <class T>
 using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
-template <typename T> constexpr bool DecimalOrExtendedInt =
+template <class T> constexpr bool DecimalOrExtendedInt =
     IsDecimalNumber<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, Int256>
@@ -25,7 +25,7 @@ template <typename T> constexpr bool DecimalOrExtendedInt =
 /**
  * Helper class to encapsulate values conversion for avg and avgWeighted.
  */
-template <typename Numerator, typename Denominator>
+template <class Numerator, class Denominator>
 struct AvgFraction
 {
     Numerator numerator{0};
@@ -84,7 +84,7 @@ struct AvgFraction
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <typename Numerator, typename Denominator, typename Derived>
+template <class Numerator, class Denominator, class Derived>
 class AggregateFunctionAvgBase : public
         IAggregateFunctionDataHelper<AvgFraction<Numerator, Denominator>, Derived>
 {
@@ -98,13 +98,13 @@ public:
 
     DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).numerator += this->data(rhs).numerator;
         this->data(place).denominator += this->data(rhs).denominator;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         writeBinary(this->data(place).numerator, buf);
 
@@ -114,7 +114,7 @@ public:
             writeBinary(this->data(place).denominator, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         readBinary(this->data(place).numerator, buf);
 
@@ -124,7 +124,7 @@ public:
             readBinary(this->data(place).denominator, buf);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         if constexpr (IsDecimalNumber<Numerator> || IsDecimalNumber<Denominator>)
             assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
@@ -137,18 +137,18 @@ private:
     UInt32 denom_scale;
 };
 
-template <typename T>
+template <class T>
 using AvgFieldType = std::conditional_t<IsDecimalNumber<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     NearestFieldType<T>>;
 
-template <typename T>
+template <class T>
 class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
 {
 public:
     using AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>::AggregateFunctionAvgBase;
 
-    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
         this->data(place).numerator += static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;

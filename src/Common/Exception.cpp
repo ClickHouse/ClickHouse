@@ -34,9 +34,9 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-/// - Aborts the process if error code is LOGICAL_ERROR.
-/// - Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, const std::string & stacktrace, int code, bool remote)
+/// Aborts the process if error code is LOGICAL_ERROR.
+/// Increments error codes statistics.
+void handle_error_code([[maybe_unused]] const std::string & msg, int code)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -47,20 +47,19 @@ void handle_error_code([[maybe_unused]] const std::string & msg, const std::stri
         abort();
     }
 #endif
-    ErrorCodes::increment(code, remote, msg, stacktrace);
+    ErrorCodes::increment(code);
 }
 
-Exception::Exception(const std::string & msg, int code, bool remote_)
+Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
-    , remote(remote_)
 {
-    handle_error_code(msg, getStackTraceString(), code, remote);
+    handle_error_code(msg, code);
 }
 
 Exception::Exception(const std::string & msg, const Exception & nested, int code)
     : Poco::Exception(msg, nested, code)
 {
-    handle_error_code(msg, getStackTraceString(), code, remote);
+    handle_error_code(msg, code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -119,13 +118,6 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// And in this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker;
-
     try
     {
         if (start_of_message.empty())
@@ -458,15 +450,23 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
-ParsingException::ParsingException() = default;
+ParsingException::ParsingException()
+{
+    Exception::message(Exception::message() + "{}");
+}
+
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
 {
+    Exception::message(Exception::message() + "{}");
 }
+
 ParsingException::ParsingException(int code, const std::string & message)
     : Exception(message, code)
 {
+    Exception::message(Exception::message() + "{}");
 }
+
 
 /// We use additional field formatted_message_ to make this method const.
 std::string ParsingException::displayText() const
@@ -474,9 +474,9 @@ std::string ParsingException::displayText() const
     try
     {
         if (line_number_ == -1)
-            formatted_message_ = message();
+            formatted_message_ = fmt::format(message(), "");
         else
-            formatted_message_ = message() + fmt::format(": (at row {})\n", line_number_);
+            formatted_message_ = fmt::format(message(), fmt::format(": (at row {})\n", line_number_));
     }
     catch (...)
     {}
