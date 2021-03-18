@@ -217,7 +217,7 @@ void DiskCacheWrapper::moveFile(const String & from_path, const String & to_path
 {
     if (cache_disk->exists(from_path))
     {
-        if (cache_disk->isDirectory(to_path) && !cache_disk->isDirectoryEmpty(to_path))
+        if (cache_disk->exists(to_path) && cache_disk->isDirectory(to_path))
             cache_disk->clearDirectory(to_path);
 
         auto dir_path = directoryPath(to_path);
