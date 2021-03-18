@@ -82,18 +82,11 @@ template<typename Base>
 void DatabaseMaterializeMySQL<Base>::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
-    try
-    {
-        materialize_thread.startSynchronization();
-        started_up = true;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(Base::log, "Cannot load MySQL nested database stored objects.");
+    if (!force_attach)
+        materialize_thread.assertMySQLAvailable();
 
-        if (!force_attach)
-            throw;
-    }
+    materialize_thread.startSynchronization();
+    started_up = true;
 }
 
 template<typename Base>
