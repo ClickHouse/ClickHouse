@@ -35,8 +35,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-            {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}, storage.getVirtuals(), storage.getStorageID()))
+    , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
+    , handle_error_mode(context_->getSettings().handle_kafka_error_mode)
 {
 }
 
@@ -78,20 +78,23 @@ Block KafkaBlockInputStream::readImpl()
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy
-
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
+    auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
+
     auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
+        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size, {}, put_error_to_stream);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
     port.setNeeded();
 
+    std::string exception_message;
     auto read_kafka_message = [&]
     {
         size_t new_rows = 0;
+        exception_message.clear();
 
         while (true)
         {
@@ -100,7 +103,22 @@ Block KafkaBlockInputStream::readImpl()
             switch (status)
             {
                 case IProcessor::Status::Ready:
-                    input_format->work();
+                    try
+                    {
+                        input_format->work();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (put_error_to_stream)
+                        {
+                            exception_message = e.message();
+                            new_rows++;
+                        }
+                        else
+                        {
+                            throw e;
+                        }
+                    }
                     break;
 
                 case IProcessor::Status::Finished:
@@ -138,6 +156,11 @@ Block KafkaBlockInputStream::readImpl()
     {
         auto new_rows = buffer->poll() ? read_kafka_message() : 0;
 
+        if (!exception_message.empty())
+        {
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i]->insertDefault();
+        }
         if (new_rows)
         {
             // In read_kafka_message(), ReadBufferFromKafkaConsumer::nextImpl()
@@ -189,6 +212,15 @@ Block KafkaBlockInputStream::readImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                if (put_error_to_stream)
+                {
+                    auto payload = buffer->currentPayload();
+                    virtual_columns[8]->insert(payload);
+                    if (exception_message.empty())
+                        virtual_columns[9]->insertDefault();
+                    else
+                        virtual_columns[9]->insert(exception_message);
+                }
             }
 
             total_rows = total_rows + new_rows;

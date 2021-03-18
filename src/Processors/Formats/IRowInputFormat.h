@@ -29,6 +29,7 @@ struct RowInputFormatParams
 
     Poco::Timespan max_execution_time = 0;
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
+    bool sync_after_error = false;
 };
 
 bool isParseError(int code);

@@ -133,7 +133,8 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const bool sync_after_error = false) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
