@@ -198,8 +198,8 @@ struct TextClassificationImpl
                 if (emotional_dict.find(to_check) != emotional_dict.cend())
                 {
                     count_words += 1;
-                    ans += to_check + " " + std::to_string(emotional_dict[to_check][0]) + "\n";
-                    freq += emotional_dict[to_check][0];
+                    ans += to_check + " " + std::to_string(emotional_dict[to_check]) + "\n";
+                    freq += emotional_dict[to_check];
                 }                
             }
             double total_tonality = freq / count_words;
