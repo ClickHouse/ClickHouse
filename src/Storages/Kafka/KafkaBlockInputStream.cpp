@@ -160,7 +160,7 @@ Block KafkaBlockInputStream::readImpl()
                         {
                             result_columns[i]->popBack(cur_rows - total_rows);
                         }
-                        // all data columns will get defaul value in case of error
+                        // all data columns will get default value in case of error
                         result_columns[i]->insertDefault();
                     }
                     new_rows = 1;
