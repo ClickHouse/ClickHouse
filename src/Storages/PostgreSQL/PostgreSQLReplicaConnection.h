@@ -21,7 +21,7 @@ public:
 
     PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other) = default;
 
-    WrappedPostgreSQLConnectionPtr get();
+    PostgreSQLConnectionHolderPtr get();
 
 
 private:

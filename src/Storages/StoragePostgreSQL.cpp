@@ -97,7 +97,7 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        WrappedPostgreSQLConnectionPtr connection_,
+        PostgreSQLConnectionHolderPtr connection_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
         , connection(std::move(connection_))
@@ -276,7 +276,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    WrappedPostgreSQLConnectionPtr connection;
+    PostgreSQLConnectionHolderPtr connection;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
