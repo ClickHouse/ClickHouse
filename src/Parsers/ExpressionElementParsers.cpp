@@ -588,7 +588,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                             && value.get<Int64>() >= 0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame offset for '{}' frame must be a nonnegative integer,  '{}' of type '{}' given.",
+                    "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
                     WindowFrame::toString(node->frame.type),
                     applyVisitor(FieldVisitorToString(), value),
                     Field::Types::toString(value.getType()));
@@ -649,7 +649,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                                 && value.get<Int64>() >= 0)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame offset for '{}' frame must be a nonnegative integer,  '{}' of type '{}' given.",
+                        "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
                         WindowFrame::toString(node->frame.type),
                         applyVisitor(FieldVisitorToString(), value),
                         Field::Types::toString(value.getType()));

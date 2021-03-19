@@ -1463,9 +1463,9 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        auto & current_block = transform->blockAt(transform->current_row);
+        const auto & current_block = transform->blockAt(transform->current_row);
         IColumn & to = *current_block.output_columns[function_index];
-        auto & workspace = transform->workspaces[function_index];
+        const auto & workspace = transform->workspaces[function_index];
 
         int offset = 1;
         if (argument_types.size() > 1)
