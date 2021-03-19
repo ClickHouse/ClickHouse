@@ -52,14 +52,24 @@ PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(
 }
 
 
+PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other)
+        : replicas(other.replicas)
+        , num_retries(other.num_retries)
+{
+}
+
+
 PostgreSQLConnectionHolderPtr PostgreSQLReplicaConnection::get()
 {
+    std::lock_guard lock(mutex);
+
     for (size_t i = 0; i < num_retries; ++i)
     {
         for (auto & replica : replicas)
         {
-            if (replica.second->isConnected())
-                return replica.second->get();
+            auto connection = replica.second->get();
+            if (connection->isConnected())
+                return connection;
         }
     }
 
