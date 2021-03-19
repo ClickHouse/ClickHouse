@@ -13,7 +13,7 @@ toc_title: "\u5BFC\u8A00"
 
         创建临时表的方法，该临时表仅在当前查询中可用。当查询完成后，该临时表将被删除。
 
--   [CREATE TABLE AS \<table_function()\>](../../sql-reference/statements/create/table.md) 查询。
+-   [CREATE TABLE AS \<table_function()\>](../statements/create.md#create-table-query) 查询。
 
         这是创建表的方法之一。
 
@@ -28,10 +28,8 @@ toc_title: "\u5BFC\u8A00"
 | [remote](../../sql-reference/table-functions/remote.md)         | 允许您访问远程服务器，而无需创建分布式表。  |
 | [url](../../sql-reference/table-functions/url.md)               | 创建一个URL引擎表。 |
 | [mysql](../../sql-reference/table-functions/mysql.md)           | 创建一个MySQL引擎表。 |
-| [postgresql](../../sql-reference/table-functions/postgresql.md) | 创建一个PostgreSQL引擎表。 |
 | [jdbc](../../sql-reference/table-functions/jdbc.md)             | 创建一个JDBC引擎表。 |
 | [odbc](../../sql-reference/table-functions/odbc.md)             | 创建一个ODBC引擎表。 |
 | [hdfs](../../sql-reference/table-functions/hdfs.md)             | 创建一个HDFS引擎表。 |
-| [s3](../../sql-reference/table-functions/s3.md)                 | 创建一个S3引擎表。 |
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/) <!--hide-->
