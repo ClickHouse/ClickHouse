@@ -260,7 +260,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             renamed = true;
         }
 
-        database->loadStoredObjects(context, has_force_restore_data_flag, create.attach && force_attach);
+        /// We use global context here, because storages lifetime is bigger than query context lifetime
+        database->loadStoredObjects(context.getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach);
     }
     catch (...)
     {
@@ -970,7 +971,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (create.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(create.as_table_function, context)->execute(create.as_table_function, context, create.table, properties.columns);
+        /// We should use global context here because there will be no query context on server startup
+        /// and because storage lifetime is bigger than query context lifetime.
+        auto table_func = factory.get(create.as_table_function, context.getGlobalContext());
+        res = table_func->execute(create.as_table_function, context.getGlobalContext(), create.table, properties.columns);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
