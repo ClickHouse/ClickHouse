@@ -88,7 +88,8 @@
    "register" register/workload
    "unique-ids" unique/workload
    "counter" counter/workload
-   "queue" queue/workload})
+   "total-queue" queue/total-workload
+   "linear-queue" queue/linear-workload})
 
 (def cli-opts
   "Additional command line options."
