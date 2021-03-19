@@ -1,4 +1,8 @@
 #include "PolygonDictionary.h"
+
+#include <numeric>
+#include <cmath>
+
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 
@@ -7,8 +11,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesDecimal.h>
-
-#include <numeric>
 
 namespace DB
 {
@@ -261,7 +263,20 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     result.reserve(rows);
 
     for (const auto row : ext::range(0, rows))
-        result.emplace_back(column_x->getElement(row), column_y->getElement(row));
+    {
+        auto x = column_x->getElement(row);
+        auto y = column_y->getElement(row);
+
+        if (isNaN(x) || isNaN(y))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "PolygonDictionary input point component must not be NaN");
+
+        if (isinf(x) || isinf(y))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "PolygonDictionary input point component must not be infinite");
+
+        result.emplace_back(x, y);
+    }
 
     return result;
 }
