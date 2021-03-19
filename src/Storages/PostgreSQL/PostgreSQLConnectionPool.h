@@ -41,8 +41,6 @@ private:
     static std::string formatConnectionString(
         std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
 
-    void initialize();
-
     PoolPtr pool;
     std::string connection_str, address;
 };
