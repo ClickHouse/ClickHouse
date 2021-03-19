@@ -3,7 +3,7 @@ import time
 import pymysql.cursors
 import pytest
 from helpers.network import PartitionManager
-import pytest
+import logging
 from helpers.client import QueryRuntimeException
 from helpers.cluster import get_docker_compose_path, run_and_check
 import random
@@ -12,7 +12,7 @@ import threading
 from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
 
-def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
+def check_query(clickhouse_node, query, result_set, retry_count=1, interval_seconds=3):
     lastest_result = ''
 
     for i in range(retry_count):
@@ -21,10 +21,10 @@ def check_query(clickhouse_node, query, result_set, retry_count=60, interval_sec
             if result_set == lastest_result:
                 return
 
-            print(lastest_result)
+            logging.debug(f"latest_result{lastest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
-            print(("check_query retry {} exception {}".format(i + 1, e)))
+            logging.debug(f"check_query retry {i+1} exception {e}")
             time.sleep(interval_seconds)
     else:
         assert clickhouse_node.query(query) == result_set
@@ -118,275 +118,275 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
 
 
 def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (`key` INT NOT NULL PRIMARY KEY, _datetime DateTime(6), _timestamp TIMESTAMP(3), _decimal DECIMAL(65, 30)) ENGINE = InnoDB;")
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(1, '2020-01-01 01:02:03.999999', '2020-01-01 01:02:03.999', " + ('9' * 35) + "." + ('9' * 30) + ")")
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(2, '2020-01-01 01:02:03.000000', '2020-01-01 01:02:03.000', ." + ('0' * 29) + "1)")
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(3, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.99', -" + ('9' * 35) + "." + ('9' * 30) + ")")
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(4, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.9999', -." + ('0' * 29) + "1)")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_dt")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_dt")
+    mysql_node.query("CREATE DATABASE test_database_dt DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database_dt.test_table_1 (`key` INT NOT NULL PRIMARY KEY, _datetime DateTime(6), _timestamp TIMESTAMP(3), _decimal DECIMAL(65, 30)) ENGINE = InnoDB;")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_1 VALUES(1, '2020-01-01 01:02:03.999999', '2020-01-01 01:02:03.999', " + ('9' * 35) + "." + ('9' * 30) + ")")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_1 VALUES(2, '2020-01-01 01:02:03.000000', '2020-01-01 01:02:03.000', ." + ('0' * 29) + "1)")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_1 VALUES(3, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.99', -" + ('9' * 35) + "." + ('9' * 30) + ")")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_1 VALUES(4, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.9999', -." + ('0' * 29) + "1)")
 
-    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    clickhouse_node.query("CREATE DATABASE test_database_dt ENGINE = MaterializeMySQL('{}:3306', 'test_database_dt', 'root', 'clickhouse')".format(service_name))
+    assert "test_database_dt" in clickhouse_node.query("SHOW DATABASES")
 
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+    check_query(clickhouse_node, "SELECT * FROM test_database_dt.test_table_1 ORDER BY key FORMAT TSV",
                 "1\t2020-01-01 01:02:03.999999\t2020-01-01 01:02:03.999\t" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "2\t2020-01-01 01:02:03.000000\t2020-01-01 01:02:03.000\t0." + ('0' * 29) + "1\n"
                 "3\t2020-01-01 01:02:03.999900\t2020-01-01 01:02:03.990\t-" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "4\t2020-01-01 01:02:03.999900\t2020-01-01 01:02:04.000\t-0." + ('0' * 29) + "1\n")
 
-    mysql_node.query("CREATE TABLE test_database.test_table_2 (`key` INT NOT NULL PRIMARY KEY, _datetime DateTime(6), _timestamp TIMESTAMP(3), _decimal DECIMAL(65, 30)) ENGINE = InnoDB;")
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, '2020-01-01 01:02:03.999999', '2020-01-01 01:02:03.999', " + ('9' * 35) + "." + ('9' * 30) + ")")
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(2, '2020-01-01 01:02:03.000000', '2020-01-01 01:02:03.000', ." + ('0' * 29) + "1)")
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(3, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.99', -" + ('9' * 35) + "." + ('9' * 30) + ")")
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(4, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.9999', -." + ('0' * 29) + "1)")
+    mysql_node.query("CREATE TABLE test_database_dt.test_table_2 (`key` INT NOT NULL PRIMARY KEY, _datetime DateTime(6), _timestamp TIMESTAMP(3), _decimal DECIMAL(65, 30)) ENGINE = InnoDB;")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_2 VALUES(1, '2020-01-01 01:02:03.999999', '2020-01-01 01:02:03.999', " + ('9' * 35) + "." + ('9' * 30) + ")")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_2 VALUES(2, '2020-01-01 01:02:03.000000', '2020-01-01 01:02:03.000', ." + ('0' * 29) + "1)")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_2 VALUES(3, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.99', -" + ('9' * 35) + "." + ('9' * 30) + ")")
+    mysql_node.query("INSERT INTO test_database_dt.test_table_2 VALUES(4, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.9999', -." + ('0' * 29) + "1)")
 
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY key FORMAT TSV",
+    check_query(clickhouse_node, "SELECT * FROM test_database_dt.test_table_2 ORDER BY key FORMAT TSV",
                 "1\t2020-01-01 01:02:03.999999\t2020-01-01 01:02:03.999\t" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "2\t2020-01-01 01:02:03.000000\t2020-01-01 01:02:03.000\t0." + ('0' * 29) + "1\n"
                 "3\t2020-01-01 01:02:03.999900\t2020-01-01 01:02:03.990\t-" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "4\t2020-01-01 01:02:03.999900\t2020-01-01 01:02:04.000\t-0." + ('0' * 29) + "1\n")
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
-
+    clickhouse_node.query("DROP DATABASE test_database_dt")
+    mysql_node.query("DROP DATABASE test_database_dt")
 
 
 def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_drop")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_drop")
+    mysql_node.query("CREATE DATABASE test_database_drop DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database_drop.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
-    mysql_node.query("DROP TABLE test_database.test_table_1;")
+    mysql_node.query("DROP TABLE test_database_drop.test_table_1;")
 
-    mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("CREATE TABLE test_database_drop.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
-    mysql_node.query("TRUNCATE TABLE test_database.test_table_2;")
+    mysql_node.query("TRUNCATE TABLE test_database_drop.test_table_2;")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_drop ENGINE = MaterializeMySQL('{}:3306', 'test_database_drop', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "")
+    assert "test_database_drop" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SELECT * FROM test_database_drop.test_table_2 ORDER BY id FORMAT TSV", "")
 
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5), (6)")
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV",
+    mysql_node.query("INSERT INTO test_database_drop.test_table_2 VALUES(1), (2), (3), (4), (5), (6)")
+    mysql_node.query("CREATE TABLE test_database_drop.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_drop FORMAT TSV", "test_table_1\ntest_table_2\n")
+    check_query(clickhouse_node, "SELECT * FROM test_database_drop.test_table_2 ORDER BY id FORMAT TSV",
                 "1\n2\n3\n4\n5\n6\n")
 
-    mysql_node.query("DROP TABLE test_database.test_table_1;")
-    mysql_node.query("TRUNCATE TABLE test_database.test_table_2;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_2\n")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "")
+    mysql_node.query("DROP TABLE test_database_drop.test_table_1;")
+    mysql_node.query("TRUNCATE TABLE test_database_drop.test_table_2;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_drop FORMAT TSV", "test_table_2\n")
+    check_query(clickhouse_node, "SELECT * FROM test_database_drop.test_table_2 ORDER BY id FORMAT TSV", "")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_drop")
+    mysql_node.query("DROP DATABASE test_database_drop")
+
 
 def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_create")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_create")
+    mysql_node.query("CREATE DATABASE test_database_create DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("CREATE TABLE test_database_create.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
     # it already has some data
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(1), (2), (3), (5), (6), (7);")
+    mysql_node.query("INSERT INTO test_database_create.test_table_1 VALUES(1), (2), (3), (5), (6), (7);")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_create ENGINE = MaterializeMySQL('{}:3306', 'test_database_create', 'root', 'clickhouse')".format(
             service_name))
 
     # Check for pre-existing status
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY id FORMAT TSV",
+    assert "test_database_create" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SELECT * FROM test_database_create.test_table_1 ORDER BY id FORMAT TSV",
                 "1\n2\n3\n5\n6\n7\n")
 
-    mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5), (6);")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV",
+    mysql_node.query("CREATE TABLE test_database_create.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("INSERT INTO test_database_create.test_table_2 VALUES(1), (2), (3), (4), (5), (6);")
+    check_query(clickhouse_node, "SELECT * FROM test_database_create.test_table_2 ORDER BY id FORMAT TSV",
                 "1\n2\n3\n4\n5\n6\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_create")
+    mysql_node.query("DROP DATABASE test_database_create")
 
 
 def rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_rename")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_rename")
+    mysql_node.query("CREATE DATABASE test_database_rename DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database_rename.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
-    mysql_node.query("RENAME TABLE test_database.test_table_1 TO test_database.test_table_2")
+    mysql_node.query("RENAME TABLE test_database_rename.test_table_1 TO test_database_rename.test_table_2")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_rename ENGINE = MaterializeMySQL('{}:3306', 'test_database_rename', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_2\n")
-    mysql_node.query("RENAME TABLE test_database.test_table_2 TO test_database.test_table_1")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
+    assert "test_database_rename" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_rename FORMAT TSV", "test_table_2\n")
+    mysql_node.query("RENAME TABLE test_database_rename.test_table_2 TO test_database_rename.test_table_1")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_rename FORMAT TSV", "test_table_1\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_rename")
+    mysql_node.query("DROP DATABASE test_database_rename")
 
 
 def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_add")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_add")
+    mysql_node.query("CREATE DATABASE test_database_add DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database_add.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
-    mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_1 INT NOT NULL")
-    mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_2 INT NOT NULL FIRST")
-    mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1")
-    mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
+    mysql_node.query("ALTER TABLE test_database_add.test_table_1 ADD COLUMN add_column_1 INT NOT NULL")
+    mysql_node.query("ALTER TABLE test_database_add.test_table_1 ADD COLUMN add_column_2 INT NOT NULL FIRST")
+    mysql_node.query("ALTER TABLE test_database_add.test_table_1 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1")
+    mysql_node.query("ALTER TABLE test_database_add.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
         "0" if service_name == "mysql57" else "(id)"))
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_add ENGINE = MaterializeMySQL('{}:3306', 'test_database_add', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
+    assert "test_database_add" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "DESC test_database_add.test_table_1 FORMAT TSV",
                 "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    mysql_node.query("CREATE TABLE test_database_add.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_add FORMAT TSV", "test_table_1\ntest_table_2\n")
+    check_query(clickhouse_node, "DESC test_database_add.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
-        "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_1 INT NOT NULL, ADD COLUMN add_column_2 INT NOT NULL FIRST")
+        "ALTER TABLE test_database_add.test_table_2 ADD COLUMN add_column_1 INT NOT NULL, ADD COLUMN add_column_2 INT NOT NULL FIRST")
     mysql_node.query(
-        "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
+        "ALTER TABLE test_database_add.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
             "0" if service_name == "mysql57" else "(id)"))
 
     default_expression = "DEFAULT\t0" if service_name == "mysql57" else "DEFAULT\tid"
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    check_query(clickhouse_node, "DESC test_database_add.test_table_2 FORMAT TSV",
                 "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t" + default_expression + "\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2, 3, 4, 5), (6, 7, 8, 9, 10)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV",
+    mysql_node.query("INSERT INTO test_database_add.test_table_2 VALUES(1, 2, 3, 4, 5), (6, 7, 8, 9, 10)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_add.test_table_2 ORDER BY id FORMAT TSV",
                 "1\t2\t3\t4\t5\n6\t7\t8\t9\t10\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_add")
+    mysql_node.query("DROP DATABASE test_database_add")
 
 
 def alter_drop_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_alter_drop")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_alter_drop")
+    mysql_node.query("CREATE DATABASE test_database_alter_drop DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
+        "CREATE TABLE test_database_alter_drop.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
 
-    mysql_node.query("ALTER TABLE test_database.test_table_1 DROP COLUMN drop_column")
+    mysql_node.query("ALTER TABLE test_database_alter_drop.test_table_1 DROP COLUMN drop_column")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_alter_drop ENGINE = MaterializeMySQL('{}:3306', 'test_database_alter_drop', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
+    assert "test_database_alter_drop" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_alter_drop FORMAT TSV", "test_table_1\n")
+    check_query(clickhouse_node, "DESC test_database_alter_drop.test_table_1 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY, drop_column INT NOT NULL) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+        "CREATE TABLE test_database_alter_drop.test_table_2 (id INT NOT NULL PRIMARY KEY, drop_column INT NOT NULL) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_alter_drop FORMAT TSV", "test_table_1\ntest_table_2\n")
+    check_query(clickhouse_node, "DESC test_database_alter_drop.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\ndrop_column\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    mysql_node.query("ALTER TABLE test_database.test_table_2 DROP COLUMN drop_column")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    mysql_node.query("ALTER TABLE test_database_alter_drop.test_table_2 DROP COLUMN drop_column")
+    check_query(clickhouse_node, "DESC test_database_alter_drop.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
+    mysql_node.query("INSERT INTO test_database_alter_drop.test_table_2 VALUES(1), (2), (3), (4), (5)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_alter_drop.test_table_2 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_alter_drop")
+    mysql_node.query("DROP DATABASE test_database_alter_drop")
 
 
 def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_alter_rename")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_alter_rename")
+    mysql_node.query("CREATE DATABASE test_database_alter_rename DEFAULT CHARACTER SET 'utf8'")
 
     # maybe should test rename primary key?
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, rename_column INT NOT NULL) ENGINE = InnoDB;")
+        "CREATE TABLE test_database_alter_rename.test_table_1 (id INT NOT NULL PRIMARY KEY, rename_column INT NOT NULL) ENGINE = InnoDB;")
 
-    mysql_node.query("ALTER TABLE test_database.test_table_1 RENAME COLUMN rename_column TO new_column_name")
+    mysql_node.query("ALTER TABLE test_database_alter_rename.test_table_1 RENAME COLUMN rename_column TO new_column_name")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_alter_rename ENGINE = MaterializeMySQL('{}:3306', 'test_database_alter_rename', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
+    assert "test_database_alter_rename" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "DESC test_database_alter_rename.test_table_1 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nnew_column_name\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY, rename_column INT NOT NULL) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+        "CREATE TABLE test_database_alter_rename.test_table_2 (id INT NOT NULL PRIMARY KEY, rename_column INT NOT NULL) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "DESC test_database_alter_rename.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nrename_column\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    mysql_node.query("ALTER TABLE test_database.test_table_2 RENAME COLUMN rename_column TO new_column_name")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    mysql_node.query("ALTER TABLE test_database_alter_rename.test_table_2 RENAME COLUMN rename_column TO new_column_name")
+    check_query(clickhouse_node, "DESC test_database_alter_rename.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nnew_column_name\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV",
+    mysql_node.query("INSERT INTO test_database_alter_rename.test_table_2 VALUES(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_alter_rename.test_table_2 ORDER BY id FORMAT TSV",
                 "1\t2\n3\t4\n5\t6\n7\t8\n9\t10\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_alter_rename")
+    mysql_node.query("DROP DATABASE test_database_alter_rename")
 
 
 def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_alter_modify")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_alter_modify")
+    mysql_node.query("CREATE DATABASE test_database_alter_modify DEFAULT CHARACTER SET 'utf8'")
 
     # maybe should test rename primary key?
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, modify_column INT NOT NULL) ENGINE = InnoDB;")
+        "CREATE TABLE test_database_alter_modify.test_table_1 (id INT NOT NULL PRIMARY KEY, modify_column INT NOT NULL) ENGINE = InnoDB;")
 
-    mysql_node.query("ALTER TABLE test_database.test_table_1 MODIFY COLUMN modify_column INT")
+    mysql_node.query("ALTER TABLE test_database_alter_modify.test_table_1 MODIFY COLUMN modify_column INT")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_alter_modify ENGINE = MaterializeMySQL('{}:3306', 'test_database_alter_modify', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
+    assert "test_database_alter_modify" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_alter_modify FORMAT TSV", "test_table_1\n")
+    check_query(clickhouse_node, "DESC test_database_alter_modify.test_table_1 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY, modify_column INT NOT NULL) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+        "CREATE TABLE test_database_alter_modify.test_table_2 (id INT NOT NULL PRIMARY KEY, modify_column INT NOT NULL) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_alter_modify FORMAT TSV", "test_table_1\ntest_table_2\n")
+    check_query(clickhouse_node, "DESC test_database_alter_modify.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nmodify_column\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    mysql_node.query("ALTER TABLE test_database_alter_modify.test_table_2 MODIFY COLUMN modify_column INT")
+    check_query(clickhouse_node, "DESC test_database_alter_modify.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT FIRST")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    mysql_node.query("ALTER TABLE test_database_alter_modify.test_table_2 MODIFY COLUMN modify_column INT FIRST")
+    check_query(clickhouse_node, "DESC test_database_alter_modify.test_table_2 FORMAT TSV",
                 "modify_column\tNullable(Int32)\t\t\t\t\t\nid\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT AFTER id")
-    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
+    mysql_node.query("ALTER TABLE test_database_alter_modify.test_table_2 MODIFY COLUMN modify_column INT AFTER id")
+    check_query(clickhouse_node, "DESC test_database_alter_modify.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, NULL)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\t\\N\n")
+    mysql_node.query("INSERT INTO test_database_alter_modify.test_table_2 VALUES(1, 2), (3, NULL)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_alter_modify.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\t\\N\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_alter_modify")
+    mysql_node.query("DROP DATABASE test_database_alter_modify")
 
 
 # TODO: need ClickHouse support ALTER TABLE table_name ADD COLUMN column_name, RENAME COLUMN column_name TO new_column_name;
@@ -394,53 +394,53 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
 #     pass
 
 def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_rename_table")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_rename_table")
+    mysql_node.query("CREATE DATABASE test_database_rename_table DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
+        "CREATE TABLE test_database_rename_table.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
 
     mysql_node.query(
-        "ALTER TABLE test_database.test_table_1 DROP COLUMN drop_column, RENAME TO test_database.test_table_2, RENAME TO test_database.test_table_3")
+        "ALTER TABLE test_database_rename_table.test_table_1 DROP COLUMN drop_column, RENAME TO test_database_rename_table.test_table_2, RENAME TO test_database_rename_table.test_table_3")
 
     # create mapping
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_rename_table ENGINE = MaterializeMySQL('{}:3306', 'test_database_rename_table', 'root', 'clickhouse')".format(
             service_name))
 
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_3\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_3 FORMAT TSV",
+    assert "test_database_rename_table" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_rename_table FORMAT TSV", "test_table_3\n")
+    check_query(clickhouse_node, "DESC test_database_rename_table.test_table_3 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
-        "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT NOT NULL) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_3\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
+        "CREATE TABLE test_database_rename_table.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT NOT NULL) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_rename_table FORMAT TSV", "test_table_1\ntest_table_3\n")
+    check_query(clickhouse_node, "DESC test_database_rename_table.test_table_1 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\ndrop_column\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
-        "ALTER TABLE test_database.test_table_1 DROP COLUMN drop_column, RENAME TO test_database.test_table_2, RENAME TO test_database.test_table_4")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_3\ntest_table_4\n")
-    check_query(clickhouse_node, "DESC test_database.test_table_4 FORMAT TSV",
+        "ALTER TABLE test_database_rename_table.test_table_1 DROP COLUMN drop_column, RENAME TO test_database_rename_table.test_table_2, RENAME TO test_database_rename_table.test_table_4")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_rename_table FORMAT TSV", "test_table_3\ntest_table_4\n")
+    check_query(clickhouse_node, "DESC test_database_rename_table.test_table_4 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
-    mysql_node.query("INSERT INTO test_database.test_table_4 VALUES(1), (2), (3), (4), (5)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_4 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
+    mysql_node.query("INSERT INTO test_database_rename_table.test_table_4 VALUES(1), (2), (3), (4), (5)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_rename_table.test_table_4 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
 
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database_rename_table")
+    mysql_node.query("DROP DATABASE test_database_rename_table")
 
 
 def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_event")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_event")
+    mysql_node.query("CREATE DATABASE test_database_event")
 
     mysql_node.query("RESET MASTER")
-    mysql_node.query("CREATE TABLE test_database.t1(a INT NOT NULL PRIMARY KEY, b VARCHAR(255) DEFAULT 'BEGIN')")
-    mysql_node.query("INSERT INTO test_database.t1(a) VALUES(1)")
+    mysql_node.query("CREATE TABLE test_database_event.t1(a INT NOT NULL PRIMARY KEY, b VARCHAR(255) DEFAULT 'BEGIN')")
+    mysql_node.query("INSERT INTO test_database_event.t1(a) VALUES(1)")
 
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_event ENGINE = MaterializeMySQL('{}:3306', 'test_database_event', 'root', 'clickhouse')".format(
             service_name))
 
     # Reject one empty GTID QUERY event with 'BEGIN' and 'COMMIT'
@@ -456,13 +456,13 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
 
     # Reject one 'BEGIN' QUERY event and 'COMMIT' XID event.
     mysql_node.query("/* start */ begin /* end */")
-    mysql_node.query("INSERT INTO test_database.t1(a) VALUES(2)")
+    mysql_node.query("INSERT INTO test_database_event.t1(a) VALUES(2)")
     mysql_node.query("/* start */ commit /* end */")
 
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "t1\n")
-    check_query(clickhouse_node, "SELECT * FROM test_database.t1 ORDER BY a FORMAT TSV", "1\tBEGIN\n2\tBEGIN\n")
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database_event FORMAT TSV", "t1\n")
+    check_query(clickhouse_node, "SELECT * FROM test_database_event.t1 ORDER BY a FORMAT TSV", "1\tBEGIN\n2\tBEGIN\n")
+    clickhouse_node.query("DROP DATABASE test_database_event")
+    mysql_node.query("DROP DATABASE test_database_event")
 
 
 def select_without_columns(clickhouse_node, mysql_node, service_name):
@@ -592,23 +592,23 @@ def drop_instance_mysql_connections(clickhouse_node, pm, action='REJECT'):
     time.sleep(5)
 
 def network_partition_test(clickhouse_node, mysql_node, service_name):
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_network")
     clickhouse_node.query("DROP DATABASE  IF EXISTS test")
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_network")
     mysql_node.query("DROP DATABASE IF EXISTS test")
-    mysql_node.query("CREATE DATABASE test_database;")
-    mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    mysql_node.query("CREATE DATABASE test_database_network;")
+    mysql_node.query("CREATE TABLE test_database_network.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
 
     mysql_node.query("CREATE DATABASE test;")
 
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
+        "CREATE DATABASE test_database_network ENGINE = MaterializeMySQL('{}:3306', 'test_database_network', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT * FROM test_database_network.test_table", '')
 
     with PartitionManager() as pm:
         drop_instance_mysql_connections(clickhouse_node, pm)
-        mysql_node.query('INSERT INTO test_database.test_table VALUES(1)')
-        check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
+        mysql_node.query('INSERT INTO test_database_network.test_table VALUES(1)')
+        check_query(clickhouse_node, "SELECT * FROM test_database_network.test_table", '')
 
         with pytest.raises(QueryRuntimeException) as exception:
             clickhouse_node.query(
@@ -618,18 +618,18 @@ def network_partition_test(clickhouse_node, mysql_node, service_name):
 
         restore_instance_mysql_connections(clickhouse_node, pm)
 
-        check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+        check_query(clickhouse_node, "SELECT * FROM test_database_network.test_table FORMAT TSV", '1\n')
 
         clickhouse_node.query(
             "CREATE DATABASE test ENGINE = MaterializeMySQL('{}:3306', 'test', 'root', 'clickhouse')".format(service_name))
-        check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
+        check_query(clickhouse_node, "SHOW TABLES FROM test_database_network FORMAT TSV", "test_table\n")
 
         mysql_node.query("CREATE TABLE test.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
         check_query(clickhouse_node, "SHOW TABLES FROM test FORMAT TSV", "test\n")
 
-        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.query("DROP DATABASE test_database_network")
         clickhouse_node.query("DROP DATABASE test")
-        mysql_node.query("DROP DATABASE test_database")
+        mysql_node.query("DROP DATABASE test_database_network")
         mysql_node.query("DROP DATABASE test")
 
 

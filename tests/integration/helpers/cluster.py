@@ -656,10 +656,11 @@ class ClickHouseCluster:
         raise Exception("Cannot wait MySQL container")
 
     def wait_mysql8_to_start(self, timeout=60):
+        self.mysql8_ip = self.get_instance_ip('mysql80')
         start = time.time()
         while time.time() - start < timeout:
             try:
-                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=self.mysql8_port)
+                conn = pymysql.connect(user='root', password='clickhouse', host=self.mysql8_ip, port=self.mysql8_port)
                 conn.close()
                 logging.debug("Mysql 8 Started")
                 return
