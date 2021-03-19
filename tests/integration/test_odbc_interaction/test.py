@@ -40,10 +40,10 @@ def get_mysql_conn():
     for _ in range(15):
         try:
             if conn is None:
-                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=cluster.mysql_port)
+                conn = pymysql.connect(user='root', password='clickhouse', host=cluster.mysql_ip, port=cluster.mysql_port)
             else:
                 conn.ping(reconnect=True)
-            logging.debug("MySQL Connection establised: 127.0.0.1:{}".format(cluster.mysql_port))
+            logging.debug(f"MySQL Connection establised: {cluster.mysql_ip}:{cluster.mysql_port}")
             return conn
         except Exception as e:
             errors += [str(e)]
