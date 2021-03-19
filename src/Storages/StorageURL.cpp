@@ -42,12 +42,11 @@ IStorageURLBase::IStorageURLBase(
     const String & compression_method_)
     : IStorage(table_id_)
     , uri(uri_)
-    , context_global(context_)
     , compression_method(compression_method_)
     , format_name(format_name_)
     , format_settings(format_settings_)
 {
-    context_global.getRemoteHostFilter().checkURL(uri);
+    context_.getRemoteHostFilter().checkURL(uri);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -237,11 +236,11 @@ Pipe IStorageURLBase::read(
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
 }
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     return std::make_shared<StorageURLBlockOutputStream>(uri, format_name,
-        format_settings, metadata_snapshot->getSampleBlock(), context_global,
-        ConnectionTimeouts::getHTTPTimeouts(context_global),
+        format_settings, metadata_snapshot->getSampleBlock(), context,
+        ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(uri.toString(), compression_method));
 }
 

@@ -45,7 +45,6 @@ protected:
         const String & compression_method_);
 
     Poco::URI uri;
-    const Context & context_global;
     String compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
