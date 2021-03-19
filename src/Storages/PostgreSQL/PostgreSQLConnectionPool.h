@@ -15,9 +15,9 @@ class PostgreSQLReplicaConnection;
 
 
 /// Connection pool size is defined by user with setting `postgresql_connection_pool_size` (default 16).
-/// If pool is empty, it will block untill there are available connections.
+/// If pool is empty, it will block until there are available connections.
 /// If setting `connection_pool_wait_timeout` is defined, it will not block on empty pool and will
-/// wait untill the timeout and then create a new connection. (only for storage/db engine)
+/// wait until the timeout and then create a new connection. (only for storage/db engine)
 class PostgreSQLConnectionPool
 {
 
