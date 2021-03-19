@@ -1,21 +1,21 @@
 ---
 toc_priority: 16
-toc_title: Recipes Dataset
+toc_title: Набор данных кулинарных рецептов
 ---
 
-# Recipes Dataset
+# Набор данных кулинарных рецептов
 
-RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
+Набор данных кулинарных рецептов от RecipeNLG доступен для загрузки [здесь](https://recipenlg.cs.put.poznan.pl/dataset). Он содержит 2.2 миллиона рецептов, а его размер чуть меньше 1 ГБ.
 
-## Download and Unpack the Dataset
+## Загрузите и распакуйте набор данных
 
-1. Go to the download page [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
-1. Accept Terms and Conditions and download zip file.
-1. Unpack the zip file with `unzip`. You will get the `full_dataset.csv` file.
+1. Перейдите на страницу загрузки [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
+1. Примите Правила и условия и скачайте zip-архив с набором данных.
+1. Распакуйте zip-архив и вы получите файл `full_dataset.csv`.
 
-## Create a Table
+## Создайте таблицу
 
-Run clickhouse-client and execute the following CREATE query:
+Запустите клиент ClickHouse и выполните следующий запрос для создания таблицы `recipes`:
 
 ``` sql
 CREATE TABLE recipes
@@ -29,9 +29,9 @@ CREATE TABLE recipes
 ) ENGINE = MergeTree ORDER BY title;
 ```
 
-## Insert the Data
+## Добавьте данные в таблицу
 
-Run the following command:
+Чтобы добавить данные из файла `full_dataset.csv` в таблицу `recipes`, выполните команду:
 
 ``` bash
 clickhouse-client --query "
@@ -48,28 +48,28 @@ clickhouse-client --query "
 " --input_format_with_names_use_header 0 --format_csv_allow_single_quote 0 --input_format_allow_errors_num 10 < full_dataset.csv
 ```
 
-This is a showcase how to parse custom CSV, as it requires multiple tunes.
+Это один из примеров анализа пользовательских CSV-файлов с применением специальных настроек.
 
-Explanation:
--   The dataset is in CSV format, but it requires some preprocessing on insertion; we use table function [input](../../sql-reference/table-functions/input.md) to perform preprocessing;
--   The structure of CSV file is specified in the argument of the table function `input`;
--   The field `num` (row number) is unneeded - we parse it from file and ignore;
--   We use `FORMAT CSVWithNames` but the header in CSV will be ignored (by command line parameter `--input_format_with_names_use_header 0`), because the header does not contain the name for the first field;
--   File is using only double quotes to enclose CSV strings; some strings are not enclosed in double quotes, and single quote must not be parsed as the string enclosing - that's why we also add the `--format_csv_allow_single_quote 0` parameter;
--   Some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
--   There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions/) function to transform it to Array.
+Пояснение:
+-   набор данных представлен в формате CSV и требует некоторой предварительной обработки при вставке. Для предварительной обработки используется табличная функция [input](../../sql-reference/table-functions/input.md);
+-   структура CSV-файла задается в аргументе табличной функции `input`;
+-   поле `num` (номер строки) не нужно — оно считывается из файла, но игнорируется;
+-   при загрузке используется `FORMAT CSVWithNames`, но заголовок в CSV будет проигнорирован (параметром командной строки `--input_format_with_names_use_header 0`), поскольку заголовок не содержит имени первого поля;
+-   в файле CSV для разделения строк используются только двойные кавычки. Но некоторые строки не заключены в двойные кавычки, и чтобы одинарная кавычка не рассматривалась как заключающая, используется параметр `--format_csv_allow_single_quote 0`;
+-   некоторые строки из CSV не могут быть считаны корректно, поскольку они начинаются с символов`\M/`, тогда как в CSV начинаться с обратной косой черты могут только символы `\N`, которые распознаются как `NULL` в SQL. Поэтому используется параметр `--input_format_allow_errors_num 10`, разрешающий пропустить до десяти некорректных записей;
+-   массивы `ingredients`, `directions` и `NER` представлены в необычном виде: они сериализуются в строку формата JSON, а затем помещаются в CSV — тогда они могут считываться и обрабатываться как обычные строки (`String`). Чтобы преобразовать строку в массив, используется функция [JSONExtract](../../sql-reference/functions/json-functions.md).
 
-## Validate the Inserted Data
+## Проверьте добавленные данные
 
-By checking the row count:
+Чтобы проверить добавленные данные, подсчитайте количество строк в таблице:
 
-Query:
+Запрос:
 
-``` sq;
+``` sql
 SELECT count() FROM recipes;
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─count()─┐
@@ -77,13 +77,13 @@ Result:
 └─────────┘
 ```
 
-## Example Queries
+## Примеры запросов
 
-### Top Components by the Number of Recipes:
+### Самые упоминаемые ингридиенты в рецептах:
 
-In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to expand an array into a set of rows.
+В этом примере вы узнаете, как развернуть массив в набор строк с помощью функции  [arrayJoin](../../sql-reference/functions/array-join.md).
 
-Query:
+Запрос:
 
 ``` sql
 SELECT
@@ -95,7 +95,7 @@ ORDER BY c DESC
 LIMIT 50
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─k────────────────────┬──────c─┐
@@ -154,7 +154,9 @@ Result:
 50 rows in set. Elapsed: 0.112 sec. Processed 2.23 million rows, 361.57 MB (19.99 million rows/s., 3.24 GB/s.)
 ```
 
-### The Most Complex Recipes with Strawberry
+### Самые сложные рецепты с клубникой
+
+Запрос:
 
 ``` sql
 SELECT
@@ -164,10 +166,10 @@ SELECT
 FROM recipes
 WHERE has(NER, 'strawberry')
 ORDER BY length(directions) DESC
-LIMIT 10
+LIMIT 10;
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─title────────────────────────────────────────────────────────────┬─length(NER)─┬─length(directions)─┐
@@ -186,19 +188,19 @@ Result:
 10 rows in set. Elapsed: 0.215 sec. Processed 2.23 million rows, 1.48 GB (10.35 million rows/s., 6.86 GB/s.)
 ```
 
-In this example, we involve [has](../../sql-reference/functions/array-functions/#hasarr-elem) function to filter by array elements and sort by the number of directions.
+В этом примере используется функция [has](../../sql-reference/functions/array-functions.md#hasarr-elem) для проверки вхождения элемента в массив, а также сортировка по количеству шагов (`length(directions)`).
 
-There is a wedding cake that requires the whole 126 steps to produce! Show that directions:
+Существует свадебный торт, который требует целых 126 шагов для производства! Рассмотрим эти шаги:
 
-Query:
+Запрос:
 
 ``` sql
 SELECT arrayJoin(directions)
 FROM recipes
-WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
+WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake';
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─arrayJoin(directions)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -335,6 +337,6 @@ Result:
 
 ### Online Playground
 
-The dataset is also available in the [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+Этот набор данных доступен в [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
 
-[Original article](https://clickhouse.tech/docs/en/getting-started/example-datasets/recipes/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting-started/example-datasets/recipes/) <!--hide-->
