@@ -818,194 +818,152 @@ struct VariantWithStatistics
     std::atomic<memcpy_type> func{nullptr};
     std::atomic<size_t> time = 0;
     std::atomic<size_t> bytes = 0;
+    std::atomic<size_t> count = 0;
     std::atomic<size_t> kind = 0;
 
-    constexpr VariantWithStatistics() = default;
+    /// Less is better.
+    double score() const
+    {
+        double loaded_time = time.load(std::memory_order_relaxed);
+        double loaded_bytes = bytes.load(std::memory_order_relaxed);
+        double loaded_count = count.load(std::memory_order_relaxed);
+
+        double mean = loaded_time / loaded_bytes;
+        double sigma = mean / sqrt(loaded_count);
+
+        return mean + sigma;
+    }
+
+    bool operator< (const VariantWithStatistics & rhs) const
+    {
+        return score() < rhs.score();
+    }
+
+    void smooth()
+    {
+        time.store(1 + time.load(std::memory_order_relaxed) / 2, std::memory_order_relaxed);
+        bytes.store(1 + bytes.load(std::memory_order_relaxed) / 2, std::memory_order_relaxed);
+        count.store(1 + count.load(std::memory_order_relaxed) / 2, std::memory_order_relaxed);
+    }
+
     constexpr explicit VariantWithStatistics(size_t kind_, memcpy_type func_) : func(func_), kind(kind_) {}
-
-    VariantWithStatistics(const VariantWithStatistics & rhs)
-    {
-        *this = rhs;
-    }
-
-    VariantWithStatistics & operator=(const VariantWithStatistics & rhs)
-    {
-        func.store(rhs.func.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        time.store(rhs.time.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        bytes.store(rhs.bytes.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        kind.store(rhs.kind.load(std::memory_order_relaxed), std::memory_order_relaxed);
-
-        return *this;
-    }
 };
 
 /// NOTE: I would like to use Thompson Sampling, but it's too heavy.
 
 struct MultipleVariantsWithStatistics
 {
-    static constexpr size_t num_cells = 16;
-    static constexpr size_t num_iterations_before_optimize = 10;
-    static constexpr size_t num_iterations_to_skip = 3;
-    static constexpr size_t num_optimize_iterations_to_skip = 0;
-    std::atomic<size_t> num_iterations_before_randomize = 20;
+    std::atomic<memcpy_type> selected_variant{memcpy};
 
-    static constexpr VariantWithStatistics all_variants[num_cells]
+    static constexpr size_t num_cells = 16;
+
+    VariantWithStatistics variants[num_cells]
     {
         VariantWithStatistics(1, memcpy),
-        VariantWithStatistics(2, memcpy_erms),
-        VariantWithStatistics(3, memcpy_fast_sse),
-        VariantWithStatistics(4, memcpy_fast_avx),
-        VariantWithStatistics(5, __memcpy_avx_unaligned),
-        VariantWithStatistics(6, __memcpy_avx_unaligned_erms),
-        VariantWithStatistics(7, __memcpy_ssse3),
-        VariantWithStatistics(8, __memcpy_ssse3_back),
-        VariantWithStatistics(9, memcpy_trivial),
-        VariantWithStatistics(10, __memcpy_erms),
-        VariantWithStatistics(11, memcpySSE2),
-        VariantWithStatistics(12, memcpySSE2Unrolled2),
-        VariantWithStatistics(13, memcpySSE2Unrolled4),
-        VariantWithStatistics(14, memcpySSE2Unrolled8),
-        VariantWithStatistics(15, MemCpy),
-        VariantWithStatistics(16, memcpy_jart)
+        VariantWithStatistics(4, memcpy_erms),
+        VariantWithStatistics(10, memcpy_fast_sse),
+        VariantWithStatistics(11, memcpy_fast_avx),
+        VariantWithStatistics(25, __memcpy_avx_unaligned),
+        VariantWithStatistics(26, __memcpy_avx_unaligned_erms),
+        VariantWithStatistics(23, __memcpy_ssse3),
+        VariantWithStatistics(24, __memcpy_ssse3_back),
+        VariantWithStatistics(2, memcpy_trivial),
+        VariantWithStatistics(21, __memcpy_erms),
+        VariantWithStatistics(6, memcpySSE2),
+        VariantWithStatistics(7, memcpySSE2Unrolled2),
+        VariantWithStatistics(8, memcpySSE2Unrolled4),
+        VariantWithStatistics(9, memcpySSE2Unrolled8),
+        VariantWithStatistics(5, MemCpy),
+        VariantWithStatistics(22, memcpy_jart)
     };
 
-    VariantWithStatistics variants[num_cells];
     std::atomic<size_t> count = 0;
-    std::atomic<size_t> optimize_iterations = 0;
+    std::atomic<size_t> exploration_count = 0;
 
-    std::mutex mutex;
+    static constexpr size_t probability_distribution_buckets = 256;
+    std::atomic<size_t> exploration_probability_threshold = 0;
 
-    MultipleVariantsWithStatistics()
-    {
-        for (size_t i = 0; i < num_cells; ++i)
-            variants[i] = all_variants[i];
-    }
+    static constexpr size_t num_explorations_before_optimize = 256;
+
 
     ALWAYS_INLINE void * call(void * __restrict dst, const void * __restrict src, size_t size)
     {
-        //std::cerr << size << "\n";
+        size_t current_count = count++;
 
-        VariantWithStatistics & variant = variants[count % num_cells];
+        if (likely(current_count % probability_distribution_buckets < exploration_probability_threshold))
+        {
+            /// Exploitation mode.
+            return selected_variant.load(std::memory_order_relaxed)(dst, src, size);
+        }
+        else
+        {
+            /// Exploration mode.
+            return explore(dst, src, size);
+        }
+    }
+
+    void * explore(void * __restrict dst, const void * __restrict src, size_t size)
+    {
+        size_t current_exploration_count = exploration_count++;
+
+        size_t hash = current_exploration_count;
+        hash *= 0xff51afd7ed558ccdULL;
+        hash ^= hash >> 33;
+
+        VariantWithStatistics & variant = variants[hash % num_cells];
 
         UInt32 time1 = rdtsc();
         void * ret = variant.func.load(std::memory_order_relaxed)(dst, src, size);
         UInt32 time2 = rdtsc();
         UInt32 time = time2 - time1;
 
-        size_t current_count = ++count;
-
-        if (current_count <= num_cells * num_iterations_before_optimize)
+        if (time < size)
         {
-            if (time < size && current_count > num_cells * num_iterations_to_skip)
-            {
-                variant.bytes += size;
-                variant.time += time;
-            }
-
-            if (current_count == num_cells * num_iterations_before_optimize)
-                optimize();
+            ++variant.count;
+            variant.bytes += size;
+            variant.time += time;
         }
-        else if (current_count == num_cells * num_iterations_before_randomize.load(std::memory_order_relaxed))
-            randomize();
+
+        if (current_exploration_count == num_explorations_before_optimize)
+        {
+            double exploration_probability = 1.0 - double(exploration_probability_threshold.load(std::memory_order_relaxed))
+                / probability_distribution_buckets;
+
+            exploration_probability /= 1.5;
+
+            exploration_probability_threshold.store(
+                std::min<size_t>(probability_distribution_buckets - 1,
+                    probability_distribution_buckets * (1.0 - exploration_probability)),
+                std::memory_order_relaxed);
+
+            exploration_count.store(0, std::memory_order_relaxed);
+
+            size_t best_variant = 0;
+            double best_score = 1e9;
+
+            for (size_t i = 0; i < num_cells; ++i)
+            {
+                double score = variants[i].score();
+                variants[i].smooth();
+
+                if (score < best_score)
+                {
+                    best_score = score;
+                    best_variant = i;
+                }
+            }
+            selected_variant.store(variants[best_variant].func.load(std::memory_order_relaxed));
+
+            std::cerr << variants[best_variant].kind << " ";
+        }
 
         return ret;
-    }
-
-    void optimize()
-    {
-        ++optimize_iterations;
-        if (optimize_iterations <= num_optimize_iterations_to_skip)
-        {
-            count = 0;
-            return;
-        }
-
-        std::lock_guard lock(mutex);
-
-        /// Take the fastest variant and replace slowest with it.
-
-        size_t min_idx = 0;
-        size_t max_idx = 0;
-
-        double min_time = 1e9;
-        double max_time = 0;
-
-        bool has_different_variants = false;
-        for (size_t idx = 0; idx < num_cells; ++idx)
-        {
-            VariantWithStatistics & variant = variants[idx];
-
-            double variant_time = variant.time.load(std::memory_order_relaxed);
-            double variant_bytes = variant.bytes.load(std::memory_order_relaxed);
-
-            double time = variant_time / variant_bytes;
-
-            // time += time / sqrt(sqrt(variant_bytes));
-
-            if (time < min_time)
-            {
-                min_time = time;
-                min_idx = idx;
-            }
-            if (time > max_time)
-            {
-                max_time = time;
-                max_idx = idx;
-            }
-
-            if (variant.kind != variants[0].kind)
-            {
-                has_different_variants = true;
-                count = 0;
-            }
-        }
-
-        if (!has_different_variants)
-        {
-            //std::cerr << "Replaced all variants to " << variants[0].kind << "\n";
-
-            std::cerr << variants[0].kind << " ";
-        }
-        else if (min_idx != max_idx)
-            // (variants[max_idx].kind != variants[min_idx].kind)
-            // (min_idx != max_idx)
-            // (max_time / min_time > 1.1)
-        {
-            /*std::cerr << fmt::format("Replacing {} (kind: {}, bytes: {}, time: {}) to {} (kind: {}, bytes: {}, time: {})\n",
-                max_idx, variants[max_idx].kind, variants[max_idx].bytes, variants[max_idx].time,
-                min_idx, variants[min_idx].kind, variants[min_idx].bytes, variants[min_idx].time);*/
-
-            //variants[min_idx].bytes /= 2;
-            //variants[min_idx].time /= 2;
-
-            variants[max_idx] = variants[min_idx];
-
-/*            if (variants[min_idx].kind == 6)
-            {
-                for (size_t idx = 0; idx < num_cells; ++idx)
-                    std::cerr << idx << ", " << variants[idx].kind << ": "
-                        << (static_cast<double>(variants[idx].time) / variants[idx].bytes)
-                        << ", " << variants[idx].bytes
-                        << "\n";
-            }*/
-        }
-    }
-
-    void randomize()
-    {
-        size_t random_cell = thread_local_rng() % num_cells;
-
-        std::lock_guard lock(mutex);
-
-        num_iterations_before_randomize += num_iterations_before_randomize / 4;
-        variants[0] = all_variants[random_cell];
-        count = 0;
     }
 };
 
 
 
-/*__thread*/ MultipleVariantsWithStatistics variants;
+MultipleVariantsWithStatistics variants;
 
 static uint8_t * memcpy_selftuned(uint8_t * __restrict dst, const uint8_t * __restrict src, size_t size)
 {
