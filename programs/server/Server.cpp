@@ -70,8 +70,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
-#include <Functions/FrequencyHolder.h>
-#include <Functions/FunctionsTextClassification.h>
+#include <Common/FrequencyHolder.h>
 
 
 #if !defined(ARCADIA_BUILD)

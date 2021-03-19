@@ -1,5 +1,5 @@
 #include <Functions/FunctionsTextClassification.h>
-#include "FrequencyHolder.h"
+#include <Common/FrequencyHolder.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/UTF8Helpers.h>
 
@@ -159,7 +159,7 @@ struct TextClassificationImpl
     
     static void constant(std::string data, std::string & res)
     {
-        static std::unordered_map<std::string, std::vector<double>> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
+        static std::unordered_map<std::string, double> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
         static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         if (!Emo)
