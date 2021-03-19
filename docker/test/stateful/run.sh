@@ -65,3 +65,11 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 fi
 
 clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+
+./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
+if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
+    tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
+fi
