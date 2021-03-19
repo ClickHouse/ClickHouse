@@ -7,18 +7,14 @@
 #if USE_LIBPQXX
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
-#include <common/logger_useful.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 
 namespace DB
 {
 
-class WrappedPostgreSQLConnection;
-
 class PostgreSQLConnection
 {
-
-friend class WrappedPostgreSQLConnection;
 
 using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
@@ -35,13 +31,6 @@ public:
 
     bool isConnected() { return tryConnectIfNeeded(); }
 
-    int32_t isAvailable() { return !locked.load(); }
-
-protected:
-    void lock() { locked.store(true); }
-
-    void unlock() { locked.store(false); }
-
 private:
     void connectIfNeeded();
 
@@ -51,21 +40,27 @@ private:
 
     ConnectionPtr connection;
     std::string connection_str, address;
-    std::atomic<bool> locked{false};
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
-class WrappedPostgreSQLConnection
+class PostgreSQLConnectionHolder
 {
 
+using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
+using PoolPtr = std::shared_ptr<Pool>;
+
 public:
-    WrappedPostgreSQLConnection(PostgreSQLConnectionPtr connection_) : connection(connection_) { connection->lock(); }
+    PostgreSQLConnectionHolder(PostgreSQLConnectionPtr connection_, PoolPtr pool_)
+        : connection(std::move(connection_))
+        , pool(std::move(pool_))
+    {
+    }
 
-    WrappedPostgreSQLConnection(const WrappedPostgreSQLConnection & other) = delete;
+    PostgreSQLConnectionHolder(const PostgreSQLConnectionHolder & other) = delete;
 
-    ~WrappedPostgreSQLConnection() { connection->unlock(); }
+    ~PostgreSQLConnectionHolder() { pool->tryPush(connection); }
 
     pqxx::connection & conn() const { return *connection->get(); }
 
@@ -73,9 +68,10 @@ public:
 
 private:
     PostgreSQLConnectionPtr connection;
+    PoolPtr pool;
 };
 
-using WrappedPostgreSQLConnectionPtr = std::shared_ptr<WrappedPostgreSQLConnection>;
+using PostgreSQLConnectionHolderPtr = std::shared_ptr<PostgreSQLConnectionHolder>;
 
 }
 

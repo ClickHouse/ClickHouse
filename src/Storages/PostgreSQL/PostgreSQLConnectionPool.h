@@ -5,16 +5,17 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Common/ConcurrentBoundedQueue.h>
 #include "PostgreSQLConnection.h"
 
 
 namespace DB
 {
+
 class PostgreSQLReplicaConnection;
 
 class PostgreSQLConnectionPool
 {
+
 friend class PostgreSQLReplicaConnection;
 
 public:
@@ -25,25 +26,25 @@ public:
 
     PostgreSQLConnectionPool operator =(const PostgreSQLConnectionPool &) = delete;
 
-    WrappedPostgreSQLConnectionPtr get();
+    PostgreSQLConnectionHolderPtr get();
 
 protected:
     bool isConnected();
 
 private:
     static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
-    static constexpr inline auto POSTGRESQL_POOL_WAIT_POP_PUSH_MS = 100;
+    static constexpr inline auto POSTGRESQL_POOL_WAIT_MS = 10;
 
-    using Pool = std::vector<PostgreSQLConnectionPtr>;
+    using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
+    using PoolPtr = std::shared_ptr<Pool>;
 
     static std::string formatConnectionString(
         std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
 
     void initialize();
 
+    PoolPtr pool;
     std::string connection_str, address;
-    Pool pool;
-    std::mutex mutex;
 };
 
 using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;

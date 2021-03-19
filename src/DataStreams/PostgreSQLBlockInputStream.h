@@ -19,7 +19,7 @@ class PostgreSQLBlockInputStream : public IBlockInputStream
 {
 public:
     PostgreSQLBlockInputStream(
-        WrappedPostgreSQLConnectionPtr connection_,
+        PostgreSQLConnectionHolderPtr connection_,
         const std::string & query_str,
         const Block & sample_block,
         const UInt64 max_block_size_);
@@ -46,7 +46,7 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
 
-    WrappedPostgreSQLConnectionPtr connection;
+    PostgreSQLConnectionHolderPtr connection;
     std::unique_ptr<pqxx::read_transaction> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 

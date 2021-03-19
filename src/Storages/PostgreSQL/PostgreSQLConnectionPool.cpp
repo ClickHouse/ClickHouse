@@ -15,6 +15,7 @@ namespace DB
 
 PostgreSQLConnectionPool::PostgreSQLConnectionPool(
     std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
+    : pool(std::make_shared<Pool>(POSTGRESQL_POOL_DEFAULT_SIZE))
 {
     address = host + ':' + std::to_string(port);
     connection_str = formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password));
@@ -23,7 +24,8 @@ PostgreSQLConnectionPool::PostgreSQLConnectionPool(
 
 
 PostgreSQLConnectionPool::PostgreSQLConnectionPool(const PostgreSQLConnectionPool & other)
-        : connection_str(other.connection_str)
+        : pool(std::make_shared<Pool>(POSTGRESQL_POOL_DEFAULT_SIZE))
+        , connection_str(other.connection_str)
         , address(other.address)
 {
     initialize();
@@ -47,22 +49,20 @@ void PostgreSQLConnectionPool::initialize()
 {
     /// No connection is made, just fill pool with non-connected connection objects.
     for (size_t i = 0; i < POSTGRESQL_POOL_DEFAULT_SIZE; ++i)
-        pool.emplace_back(std::make_shared<PostgreSQLConnection>(connection_str, address));
+        pool->push(std::make_shared<PostgreSQLConnection>(connection_str, address));
 }
 
 
-WrappedPostgreSQLConnectionPtr PostgreSQLConnectionPool::get()
+PostgreSQLConnectionHolderPtr PostgreSQLConnectionPool::get()
 {
-    std::lock_guard lock(mutex);
-
-    for (const auto & connection : pool)
+    PostgreSQLConnectionPtr connection;
+    if (pool->tryPop(connection, POSTGRESQL_POOL_WAIT_MS))
     {
-        if (connection->isAvailable())
-            return std::make_shared<WrappedPostgreSQLConnection>(connection);
+        return std::make_shared<PostgreSQLConnectionHolder>(connection, pool);
     }
 
-    auto connection = std::make_shared<PostgreSQLConnection>(connection_str, address);
-    return std::make_shared<WrappedPostgreSQLConnection>(connection);
+    connection = std::make_shared<PostgreSQLConnection>(connection_str, address);
+    return std::make_shared<PostgreSQLConnectionHolder>(connection, pool);
 }
 
 
