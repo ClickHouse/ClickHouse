@@ -93,6 +93,11 @@
                                CreateMode/PERSISTENT_SEQUENTIAL)
                       (recur (inc i)))))))
 
+; sync call not implemented in zookeeper-clj and don't have sync version in java API
+(defn zk-sync
+  [conn]
+  (zk-set conn "/" "" -1))
+
 (defn zk-parent-path
   [path]
   (let [rslash_pos (str/last-index-of path "/")]

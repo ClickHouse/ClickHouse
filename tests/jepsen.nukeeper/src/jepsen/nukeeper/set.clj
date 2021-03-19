@@ -22,9 +22,11 @@
 
   (invoke! [this test op]
     (case (:f op)
-      :read (assoc op
-                   :type :ok
-                   :value (read-string (:data (zk-get-str conn k))))
+      :read (do
+              (zk-sync conn)
+              (assoc op
+                     :type :ok
+                     :value (read-string (:data (zk-get-str conn k)))))
       :add (try
              (do
                (zk-add-to-set conn k (:value op))

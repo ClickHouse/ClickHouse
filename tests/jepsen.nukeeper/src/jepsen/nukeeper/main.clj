@@ -161,10 +161,10 @@
   and constructs a sequence of test options."
   [cli nemeses workloads]
   (take (:test-count cli) (shuffle (for [n nemeses, w workloads]
-    (assoc cli
-           :nemesis   n
-           :workload  w
-           :test-count 1)))))
+                                     (assoc cli
+                                            :nemesis   n
+                                            :workload  w
+                                            :test-count 1)))))
 
 (defn all-tests
   "Turns CLI options into a sequence of tests."
