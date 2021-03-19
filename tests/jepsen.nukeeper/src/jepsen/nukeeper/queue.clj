@@ -5,6 +5,8 @@
     [checker :as checker]
     [client :as client]
     [generator :as gen]]
+   [knossos.model :as model]
+   [jepsen.checker.timeline :as timeline]
    [jepsen.nukeeper.utils :refer :all]
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
@@ -55,13 +57,27 @@
   [n]
   (sort (map (fn [v] (str v)) (take n (range)))))
 
-(defn workload
+(defn total-workload
   "A generator, client, and checker for a set test."
   [opts]
   {:client    (QueueClient. nil nil)
-   :checker   (checker/total-queue)
+   :checker   (checker/compose
+               {:total-queue (checker/total-queue)
+                :timeline (timeline/html)})
    :generator (->> (sorted-str-range 10000)
                    (map (fn [x]
                           (rand-nth [{:type :invoke, :f :enqueue :value x}
                                      {:type :invoke, :f :dequeue}]))))
    :final-generator (gen/once {:type :invoke, :f :drain, :value nil})})
+
+(defn linear-workload
+  [opts]
+  {:client    (QueueClient. nil nil)
+   :checker   (checker/compose
+               {:linear   (checker/linearizable {:model     (model/unordered-queue)
+                                                 :algorithm :linear})
+                :timeline (timeline/html)})
+   :generator (->> (sorted-str-range 10000)
+                   (map (fn [x]
+                          (rand-nth [{:type :invoke, :f :enqueue :value x}
+                                     {:type :invoke, :f :dequeue}]))))})
