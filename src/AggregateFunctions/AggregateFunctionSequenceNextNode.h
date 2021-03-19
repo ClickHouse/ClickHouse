@@ -281,8 +281,8 @@ public:
 
             case TAIL:
                 writeVarUInt(size, buf);
-                for (size_t i = value.size() - 1; i >= size; --i)
-                    value[i]->write(buf);
+                for (size_t i = 0; i < size; ++i)
+                    value[value.size() - size + i]->write(buf);
                 break;
 
             case FIRST_MATCH:
