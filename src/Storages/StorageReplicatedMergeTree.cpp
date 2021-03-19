@@ -962,7 +962,7 @@ void StorageReplicatedMergeTree::setTableStructure(
         }
     }
 
-    /// Changes in columns may affect following metadata fields
+    /// Changes in columns may affect following metadata fields.
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
