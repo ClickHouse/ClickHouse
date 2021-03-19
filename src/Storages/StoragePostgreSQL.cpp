@@ -317,7 +317,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             parsed_host_port.first,
             parsed_host_port.second,
             engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
+            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>(),
+            args.context.getSettingsRef().postgresql_connection_pool_size,
+            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
             args.table_id, remote_table, connection_pool, args.columns, args.constraints, args.context, remote_table_schema);

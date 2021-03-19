@@ -166,78 +166,57 @@ def test_non_default_scema(started_cluster):
     assert(result == expected)
 
 
-def test_connection_pool(started_cluster):
-    conn = get_postgres_conn(True)
-    cursor = conn.cursor()
-    node1.query('''
-        CREATE TABLE test_table (key UInt32, value UInt32)
-        ENGINE = PostgreSQL('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword')''')
-
-    cursor.execute('CREATE TABLE test_table (key integer, value integer)')
-
-    # Make sure connection pool is filled
-    def node_pool(_):
-        result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
-    busy_pool = Pool(16)
-    p = busy_pool.map_async(node_pool, range(16))
-
-    p.wait()
-    prev_count =  node1.count_in_log('New connection to postgres*')
-
-    # Check connections do not open anymore
-    busy_pool = Pool(10)
-    p = busy_pool.map_async(node_pool, range(10))
-
-    p.wait()
-    count =  node1.count_in_log('New connection to postgres*')
-
-    node1.query('DROP TABLE test_table;')
-    cursor.execute('DROP TABLE test_table;')
-    assert(count == prev_count)
-
-
 def test_concurrent_queries(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
+
     node1.query('''
         CREATE TABLE test_table (key UInt32, value UInt32)
         ENGINE = PostgreSQL('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword')''')
 
     cursor.execute('CREATE TABLE test_table (key integer, value integer)')
 
-    def node_insert(_):
+    prev_count =  node1.count_in_log('New connection to postgres1:5432')
+    def node_select(_):
         for i in range(20):
+            result = node1.query("SELECT * FROM test_table", user='default')
+    busy_pool = Pool(20)
+    p = busy_pool.map_async(node_select, range(20))
+    p.wait()
+    count =  node1.count_in_log('New connection to postgres1:5432')
+    print(count, prev_count)
+    # 16 is default size for connection pool
+    assert(int(count) == int(prev_count) + 16)
+
+    def node_insert(_):
+        for i in range(5):
             result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
 
-    busy_pool = Pool(10)
-    p = busy_pool.map_async(node_insert, range(10))
+    busy_pool = Pool(5)
+    p = busy_pool.map_async(node_insert, range(5))
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
-    assert(int(result) == 20 * 10 * 1000)
-
-    def node_select(_):
-        for i in range(5):
-            result = node1.query("SELECT * FROM test_table", user='default')
-
-    busy_pool = Pool(10)
-    p = busy_pool.map_async(node_select, range(10))
-    p.wait()
+    assert(int(result) == 5 * 5 * 1000)
 
     def node_insert_select(_):
-        for i in range(20):
+        for i in range(5):
             result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
             result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
 
-    busy_pool = Pool(10)
-    p = busy_pool.map_async(node_insert_select, range(10))
+    busy_pool = Pool(5)
+    p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
-    assert(int(result) == 20 * 10 * 1000  * 2)
+    assert(int(result) == 5 * 5 * 1000  * 2)
 
     node1.query('DROP TABLE test_table;')
     cursor.execute('DROP TABLE test_table;')
+
+    count =  node1.count_in_log('New connection to postgres1:5432')
+    print(count, prev_count)
+    assert(int(count) == int(prev_count) + 16)
 
 
 if __name__ == '__main__':
