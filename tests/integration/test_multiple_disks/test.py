@@ -290,8 +290,8 @@ def test_query_parser(start_cluster):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("test_alter_policy", "MergeTree()"),
-    ("replicated_test_alter_policy", "ReplicatedMergeTree('/clickhouse/test_alter_policy', '1')",),
+    pytest.param("test_alter_policy", "MergeTree()", id="mt"),
+    pytest.param("replicated_test_alter_policy", "ReplicatedMergeTree('/clickhouse/test_alter_policy', '1')", id="replicated"),
 ])
 def test_alter_policy(start_cluster, name, engine):
     try:
@@ -364,8 +364,8 @@ def test_no_warning_about_zero_max_data_part_size(start_cluster):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mt_on_jbod", "MergeTree()"),
-    ("replicated_mt_on_jbod", "ReplicatedMergeTree('/clickhouse/replicated_mt_on_jbod', '1')",),
+    pytest.param("mt_on_jbod", "MergeTree()", id="mt"),
+    pytest.param("replicated_mt_on_jbod", "ReplicatedMergeTree('/clickhouse/replicated_mt_on_jbod', '1')", id="replicated"),
 ])
 def test_round_robin(start_cluster, name, engine):
     try:
@@ -400,8 +400,8 @@ def test_round_robin(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mt_with_huge_part", "MergeTree()"),
-    ("replicated_mt_with_huge_part", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_huge_part', '1')",),
+    pytest.param("mt_with_huge_part", "MergeTree()", id="mt"),
+    pytest.param("replicated_mt_with_huge_part", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_huge_part', '1')", id="replicated"),
 ])
 def test_max_data_part_size(start_cluster, name, engine):
     try:
@@ -427,8 +427,8 @@ def test_max_data_part_size(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mt_with_overflow", "MergeTree()"),
-    ("replicated_mt_with_overflow", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')",),
+    pytest.param("mt_with_overflow", "MergeTree()", id="mt"),
+    pytest.param("replicated_mt_with_overflow", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')", id="replicated"),
 ])
 def test_jbod_overflow(start_cluster, name, engine):
     try:
@@ -480,8 +480,8 @@ def test_jbod_overflow(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("moving_mt", "MergeTree()"),
-    ("moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/moving_replicated_mt', '1')",),
+    pytest.param("moving_mt", "MergeTree()", id="mt"),
+    pytest.param("moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/moving_replicated_mt', '1')", id="replicated"),
 ])
 def test_background_move(start_cluster, name, engine):
     try:
@@ -530,8 +530,8 @@ def test_background_move(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("stopped_moving_mt", "MergeTree()"),
-    ("stopped_moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')",),
+    pytest.param("stopped_moving_mt", "MergeTree()", id="mt"),
+    pytest.param("stopped_moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')", id="replicated"),
 ])
 def test_start_stop_moves(start_cluster, name, engine):
     try:
@@ -633,7 +633,7 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("altering_mt", "MergeTree()"),
+    pytest.param("altering_mt", "MergeTree()", id="mt"),
     # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
     # SYSTEM STOP MERGES doesn't disable merges assignments
 ])
@@ -827,9 +827,9 @@ def produce_alter_move(node, name):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("concurrently_altering_mt", "MergeTree()"),
-    ("concurrently_altering_replicated_mt",
-     "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",),
+    pytest.param("concurrently_altering_mt", "MergeTree()", id="mt"),
+    pytest.param("concurrently_altering_replicated_mt",
+     "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')", id="replicated"),
 ])
 def test_concurrent_alter_move(start_cluster, name, engine):
     try:
@@ -882,9 +882,9 @@ def test_concurrent_alter_move(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("concurrently_dropping_mt", "MergeTree()"),
-    ("concurrently_dropping_replicated_mt",
-     "ReplicatedMergeTree('/clickhouse/concurrently_dropping_replicated_mt', '1')",),
+    pytest.param("concurrently_dropping_mt", "MergeTree()", id="mt"),
+    pytest.param("concurrently_dropping_replicated_mt",
+     "ReplicatedMergeTree('/clickhouse/concurrently_dropping_replicated_mt', '1')", id="replicated"),
 ])
 def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
     try:
@@ -935,8 +935,8 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("detach_attach_mt", "MergeTree()"),
-    ("replicated_detach_attach_mt", "ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')",),
+    pytest.param("detach_attach_mt", "MergeTree()", id="mt"),
+    pytest.param("replicated_detach_attach_mt", "ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')", id="replicated"),
 ])
 def test_detach_attach(start_cluster, name, engine):
     try:
@@ -966,8 +966,8 @@ def test_detach_attach(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mutating_mt", "MergeTree()"),
-    ("replicated_mutating_mt", "ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')",),
+    pytest.param("mutating_mt", "MergeTree()", id="mt"),
+    pytest.param("replicated_mutating_mt", "ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')", id="replicated"),
 ])
 def test_mutate_to_another_disk(start_cluster, name, engine):
     try:
@@ -1012,8 +1012,8 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("alter_modifying_mt", "MergeTree()"),
-    ("replicated_alter_modifying_mt", "ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')",),
+    pytest.param("alter_modifying_mt", "MergeTree()", id="mt"),
+    pytest.param("replicated_alter_modifying_mt", "ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')", id="replicated"),
 ])
 def test_concurrent_alter_modify(start_cluster, name, engine):
     try:
