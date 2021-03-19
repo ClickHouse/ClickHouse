@@ -31,7 +31,7 @@ CREATE TABLE recipes
 
 ## Добавьте данные в таблицу
 
-Чтобы добавить данные из файла `full_dataset.csv` в таблицу `recipes` выполните команду:
+Чтобы добавить данные из файла `full_dataset.csv` в таблицу `recipes`, выполните команду:
 
 ``` bash
 clickhouse-client --query "
