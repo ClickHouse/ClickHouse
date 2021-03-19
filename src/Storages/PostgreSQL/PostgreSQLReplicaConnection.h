@@ -19,7 +19,7 @@ public:
         const String & config_prefix,
         const size_t num_retries_ = POSTGRESQL_CONNECTION_DEFAULT_RETRIES_NUM);
 
-    PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other) = default;
+    PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other);
 
     PostgreSQLConnectionHolderPtr get();
 
@@ -30,6 +30,7 @@ private:
 
     ReplicasByPriority replicas;
     size_t num_retries;
+    std::mutex mutex;
 };
 
 using PostgreSQLReplicaConnectionPtr = std::shared_ptr<PostgreSQLReplicaConnection>;

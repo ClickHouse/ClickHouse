@@ -49,6 +49,7 @@ class PostgreSQLConnectionHolder
 {
 
 using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
+static constexpr inline auto POSTGRESQL_POOL_WAIT_MS = 50;
 
 public:
     PostgreSQLConnectionHolder(PostgreSQLConnectionPtr connection_, Pool & pool_)
@@ -59,7 +60,7 @@ public:
 
     PostgreSQLConnectionHolder(const PostgreSQLConnectionHolder & other) = delete;
 
-    ~PostgreSQLConnectionHolder() { pool.tryPush(connection); }
+    ~PostgreSQLConnectionHolder() { pool.tryPush(connection, POSTGRESQL_POOL_WAIT_MS); }
 
     pqxx::connection & conn() const { return *connection->get(); }
 
