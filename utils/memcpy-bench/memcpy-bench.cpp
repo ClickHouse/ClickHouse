@@ -997,7 +997,7 @@ struct MultipleVariantsWithStatistics
 
         std::lock_guard lock(mutex);
 
-        num_iterations_before_randomize += num_iterations_before_randomize / 2;
+        num_iterations_before_randomize += num_iterations_before_randomize / 4;
         variants[0] = all_variants[random_cell];
         count = 0;
     }
