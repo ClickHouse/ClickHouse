@@ -21,11 +21,11 @@ click_dict_table_template = """
     ) ENGINE = Dictionary({})
     """
 
-def get_postgres_conn(port, database=False):
+def get_postgres_conn(ip, port, database=False):
     if database == True:
-        conn_string = "host='localhost' port={} dbname='clickhouse' user='postgres' password='mysecretpassword'".format(port)
+        conn_string = "host={} port={} dbname='clickhouse' user='postgres' password='mysecretpassword'".format(ip, port)
     else:
-        conn_string = "host='localhost' port={} user='postgres' password='mysecretpassword'".format(port)
+        conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(ip, port)
 
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
@@ -73,10 +73,10 @@ def started_cluster():
 
 
 def test_load_dictionaries(started_cluster):
-    conn = get_postgres_conn(database=True, port=started_cluster.postgres_port)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, database=True, port=started_cluster.postgres_port)
     cursor = conn.cursor()
     table_name = 'test0'
-    create_and_fill_postgres_table(cursor, table_name)
+    create_and_fill_postgres_table(cursor, table_name, port=started_cluster.postgres_port, host=started_cluster.postgres_ip)
     create_dict(table_name)
     dict_name = 'dict0'
 
@@ -91,10 +91,10 @@ def test_load_dictionaries(started_cluster):
 
 
 def test_invalidate_query(started_cluster):
-    conn = get_postgres_conn(database=True, port=started_cluster.postgres_port)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, database=True, port=started_cluster.postgres_port)
     cursor = conn.cursor()
     table_name = 'test0'
-    create_and_fill_postgres_table(cursor, table_name)
+    create_and_fill_postgres_table(cursor, table_name, port=started_cluster.postgres_port, host=started_cluster.postgres_ip)
 
     # invalidate query: SELECT value FROM test0 WHERE id = 0
     dict_name = 'dict0'
@@ -128,9 +128,9 @@ def test_invalidate_query(started_cluster):
 
 
 def test_dictionary_with_replicas(started_cluster):
-    conn1 = get_postgres_conn(port=5432, database=True)
+    conn1 = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor1 = conn1.cursor()
-    conn2 = get_postgres_conn(port=5441, database=True)
+    conn2 = get_postgres_conn(ip=started_cluster.postgres2_ip, port=started_cluster.postgres_port, database=True)
     cursor2 = conn2.cursor()
 
     create_postgres_table(cursor1, 'test1')

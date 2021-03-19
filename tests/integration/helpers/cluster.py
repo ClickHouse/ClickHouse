@@ -302,8 +302,8 @@ class ClickHouseCluster:
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
         env_variables['POSTGRES_HOST'] = self.postgres_host
         env_variables['POSTGRES_PORT'] = str(self.postgres_port)
-        env_variables['POSTGRES_LOGS'] = self.postgres_logs_dir
-        env_variables['POSTGRES2_LOGS'] = self.postgres2_logs_dir
+        env_variables['POSTGRES_DIR'] = self.postgres_logs_dir
+        env_variables['POSTGRES2_DIR'] = self.postgres2_logs_dir
         env_variables['POSTGRES_LOGS_FS'] = "bind"
 
         self.with_postgres = True
@@ -684,7 +684,7 @@ class ClickHouseCluster:
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
         self.postgres2_ip = self.get_instance_ip(self.postgres2_host)
         start = time.time()
-        for up in [self.postgres_ip, self.postgres2_ip]:
+        for ip in [self.postgres_ip, self.postgres2_ip]:
             while time.time() - start < timeout:
                 try:
                     conn = psycopg2.connect(host=ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
@@ -908,6 +908,13 @@ class ClickHouseCluster:
 
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug('Setup Postgres')
+                if os.path.exists(self.postgres_dir):
+                    shutil.rmtree(self.postgres_dir)
+                os.makedirs(self.postgres_logs_dir)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
+                os.makedirs(self.postgres2_logs_dir)
+                os.chmod(self.postgres2_logs_dir, stat.S_IRWXO)
+
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.wait_postgres_to_start(30)
                 self.wait_postgres_to_start(30)
