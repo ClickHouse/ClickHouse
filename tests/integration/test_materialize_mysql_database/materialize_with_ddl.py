@@ -12,7 +12,7 @@ import threading
 from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
 
-def check_query(clickhouse_node, query, result_set, retry_count=1, interval_seconds=3):
+def check_query(clickhouse_node, query, result_set, retry_count=10, interval_seconds=3):
     lastest_result = ''
 
     for i in range(retry_count):
@@ -694,9 +694,10 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
 
 def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS kill_mysql_while_insert")
+    clickhouse_node.query("DROP DATABASE IF EXISTS kill_mysql_while_insert")
     mysql_node.query("CREATE DATABASE kill_mysql_while_insert")
     mysql_node.query("CREATE TABLE kill_mysql_while_insert.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
-    clickhouse_node.query("CREATE DATABASE kill_mysql_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_mysql_while_insert', 'root', 'clickhouse')".format(service_name))
+    clickhouse_node.query("CREATE DATABASE kill_mysql_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_mysql_while_insert', 'root', 'clickhouse') SETTINGS max_wait_time_when_mysql_unavailable=-1".format(service_name))
     check_query(clickhouse_node, "SHOW TABLES FROM kill_mysql_while_insert FORMAT TSV", 'test\n')
 
     try:
@@ -711,7 +712,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
         clickhouse_node.cluster.restart_service(service_name)
     finally:
         with pytest.raises(QueryRuntimeException) as exception:
-            time.sleep(5)
+            time.sleep(2)
             clickhouse_node.query("SELECT count() FROM kill_mysql_while_insert.test")
 
         mysql_node.alloc_connection()
