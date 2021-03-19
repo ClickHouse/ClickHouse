@@ -440,14 +440,14 @@ void NO_INLINE Aggregator::executeImpl(
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        executeImplBatch(method, state, aggregates_pool, rows, aggregate_instructions);
+        executeImplBatch<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
     else
-        executeImplCase<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        executeImplBatch<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
 }
 
 
 template <bool no_more_keys, typename Method>
-void NO_INLINE Aggregator::executeImplCase(
+void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
     Arena * aggregates_pool,
@@ -455,65 +455,12 @@ void NO_INLINE Aggregator::executeImplCase(
     AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr overflow_row) const
 {
-    /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
-
-    /// For all rows.
-    for (size_t i = 0; i < rows; ++i)
-    {
-        AggregateDataPtr aggregate_data = nullptr;
-
-        if constexpr (!no_more_keys)  /// Insert.
-        {
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-
-            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result.isInserted())
-            {
-                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result.setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                createAggregateStates(aggregate_data);
-
-                emplace_result.setMapped(aggregate_data);
-            }
-            else
-                aggregate_data = emplace_result.getMapped();
-        }
-        else
-        {
-            /// Add only if the key already exists.
-            auto find_result = state.findKey(method.data, i, *aggregates_pool);
-            if (find_result.isFound())
-                aggregate_data = find_result.getMapped();
-        }
-
-        /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
-
-        /// If the key does not fit, and the data does not need to be aggregated in a separate row, then there's nothing to do.
-        if (!aggregate_data && !overflow_row)
-            continue;
-
-        AggregateDataPtr value = aggregate_data ? aggregate_data : overflow_row;
-
-        /// Add values to the aggregate functions.
-        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-            (*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
-    }
-}
-
-
-template <typename Method>
-void NO_INLINE Aggregator::executeImplBatch(
-    Method & method,
-    typename Method::State & state,
-    Arena * aggregates_pool,
-    size_t rows,
-    AggregateFunctionInstruction * aggregate_instructions) const
-{
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
+        if constexpr (no_more_keys)
+            return;
+
         /// For all rows.
         AggregateDataPtr place = aggregates_pool->alloc(0);
         for (size_t i = 0; i < rows; ++i)
@@ -522,7 +469,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     /// Optimization for special case when aggregating by 8bit key.
-    if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    if constexpr (!no_more_keys && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
     {
         /// We use another method if there are aggregate functions with -Array combinator.
         bool has_arrays = false;
@@ -565,24 +512,37 @@ void NO_INLINE Aggregator::executeImplBatch(
     {
         AggregateDataPtr aggregate_data = nullptr;
 
-        auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-
-        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-        if (emplace_result.isInserted())
+        if constexpr (!no_more_keys)
         {
-            /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-            emplace_result.setMapped(nullptr);
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
 
-            aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-            createAggregateStates(aggregate_data);
+            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+            if (emplace_result.isInserted())
+            {
+                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                emplace_result.setMapped(nullptr);
 
-            emplace_result.setMapped(aggregate_data);
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(aggregate_data);
+
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+
+            assert(aggregate_data != nullptr);
         }
         else
-            aggregate_data = emplace_result.getMapped();
+        {
+            /// Add only if the key already exists.
+            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            if (find_result.isFound())
+                aggregate_data = find_result.getMapped();
+            else
+                aggregate_data = overflow_row;
+        }
 
         places[i] = aggregate_data;
-        assert(places[i] != nullptr);
     }
 
     /// Add values to the aggregate functions.
