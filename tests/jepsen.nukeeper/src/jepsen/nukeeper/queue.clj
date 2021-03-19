@@ -41,11 +41,13 @@
         (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :drain
       (try
-        (loop [result '()]
-          (let [deleted-child (zk-multi-delete-first-child conn "/")]
-            (if (not (nil? deleted-child))
-              (recur (concat result [deleted-child]))
-              (assoc op :type :ok :value result))))
+        (do
+          (zk-sync conn)
+          (loop [result '()]
+            (let [deleted-child (zk-multi-delete-first-child conn "/")]
+              (if (not (nil? deleted-child))
+                (recur (concat result [deleted-child]))
+                (assoc op :type :ok :value result)))))
         (catch Exception _ (assoc op :type :info, :error :connect-error)))))
 
   (teardown! [_ test])

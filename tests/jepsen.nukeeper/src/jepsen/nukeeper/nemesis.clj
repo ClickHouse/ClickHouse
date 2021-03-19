@@ -102,7 +102,6 @@
   (let [[[victim] others] (nemesis/split-one nodes)]
     {victim (into #{} others)}))
 
-
 (defn blind-node-partition-nemesis
   []
   (nemesis/partitioner blind-node))
@@ -156,6 +155,6 @@
    "bridge-partitioner" {:nemesis (partition-bridge-nemesis)
                          :generator (start-stop-generator 5 5)}
    "blind-node-partitioner" {:nemesis (blind-node-partition-nemesis)
-                         :generator (start-stop-generator 5 5)}
+                             :generator (start-stop-generator 5 5)}
    "blind-others-partitioner" {:nemesis (blind-others-partition-nemesis)
-                         :generator (start-stop-generator 5 5)}})
+                               :generator (start-stop-generator 5 5)}})
