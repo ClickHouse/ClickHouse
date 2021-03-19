@@ -30,6 +30,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test(started_cluster):
     node.query("select modelEvaluate('titanic', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);")
     
