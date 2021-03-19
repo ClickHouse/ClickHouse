@@ -25,11 +25,9 @@
   (invoke! [this test op]
     (case (:f op)
       :read (try
-              (do
-                (zk-sync conn)
-                (assoc op
-                       :type :ok
-                       :value (count (zk-list conn "/"))))
+              (assoc op
+                     :type :ok
+                     :value (count (zk-list conn "/")))
               (catch Exception _ (assoc op :type :fail, :error :connect-error)))
       :add (try
              (do
