@@ -533,6 +533,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_groups("GROUPS");
     ParserKeyword keyword_range("RANGE");
 
+    node->frame.is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
         node->frame.type = WindowFrame::FrameType::Rows;
@@ -548,6 +549,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     else
     {
         /* No frame clause. */
+        node->frame.is_default = true;
         return true;
     }
 
@@ -697,11 +699,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 return false;
             }
         }
-    }
-
-    if (!(node->frame == WindowFrame{}))
-    {
-        node->frame.is_default = false;
     }
 
     return true;
@@ -1998,7 +1995,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     return ParserSubquery().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
-        || ParserMapOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)

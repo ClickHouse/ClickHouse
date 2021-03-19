@@ -715,7 +715,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config)
+        [&](ConfigurationPtr config, bool initial_loading)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
@@ -765,14 +765,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("zookeeper"))
-                global_context->reloadZooKeeperIfChanged(config);
+            if (!initial_loading)
+            {
+                /// We do not load ZooKeeper configuration on the first config loading
+                /// because TestKeeper server is not started yet.
+                if (config->has("zookeeper"))
+                    global_context->reloadZooKeeperIfChanged(config);
 
-            global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+            }
 
             global_context->updateStorageConfiguration(*config);
         },
-        /* already_loaded = */ true);
+        /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     auto & access_control = global_context->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
@@ -1275,9 +1280,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         async_metrics.start();
         global_context->enableNamedSessions();
 
-        for (auto & server : *servers)
-            server.start();
-
         {
             String level_str = config().getString("text_log.level", "");
             int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
@@ -1329,6 +1331,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                                                                      "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
         }
 
+        for (auto & server : *servers)
+            server.start();
         LOG_INFO(log, "Ready for connections.");
 
         SCOPE_EXIT({

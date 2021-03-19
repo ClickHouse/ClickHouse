@@ -5,6 +5,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -265,20 +266,45 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
 }
 
 
-void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
+void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_prefix, config_keys);
+    Poco::Util::AbstractConfiguration::Keys new_config_keys;
+    new_config.keys(config_prefix, new_config_keys);
+
+    /// If old config is set, we will update only clusters with updated config.
+    /// In this case, we first need to find clusters that were deleted from config.
+    Poco::Util::AbstractConfiguration::Keys deleted_keys;
+    if (old_config)
+    {
+        std::sort(new_config_keys.begin(), new_config_keys.end());
+
+        Poco::Util::AbstractConfiguration::Keys old_config_keys;
+        old_config->keys(config_prefix, old_config_keys);
+        std::sort(old_config_keys.begin(), old_config_keys.end());
+
+        std::set_difference(
+            old_config_keys.begin(), old_config_keys.end(), new_config_keys.begin(), new_config_keys.end(), std::back_inserter(deleted_keys));
+    }
 
     std::lock_guard lock(mutex);
 
-    impl.clear();
-    for (const auto & key : config_keys)
+    /// If old congig is set, remove deleted clusters from impl, otherwise just clear it.
+    if (old_config)
+    {
+        for (const auto & key : deleted_keys)
+            impl.erase(key);
+    }
+    else
+        impl.clear();
+
+    for (const auto & key : new_config_keys)
     {
         if (key.find('.') != String::npos)
             throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
-        impl.emplace(key, std::make_shared<Cluster>(config, settings, config_prefix, key));
+        /// If old config is set and cluster config wasn't changed, don't update this cluster.
+        if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
+            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
     }
 }
 

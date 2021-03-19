@@ -191,7 +191,7 @@ Renames an existing column.
 Syntax:
 
 ```sql
-ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name;
+ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
 ```
 
 **Example**

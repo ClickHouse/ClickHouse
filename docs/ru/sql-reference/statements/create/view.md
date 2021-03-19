@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "\u041f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435"
+toc_title: "Представление"
 ---
 
 # CREATE VIEW {#create-view}
@@ -62,4 +62,3 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/view) <!--hide-->
