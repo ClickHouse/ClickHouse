@@ -872,7 +872,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         else /// If we exceeded amount of tries
         {
             LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
-            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retires exceeded");
+            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
         return false;
     }
