@@ -77,7 +77,7 @@ PostgreSQLConnectionHolderPtr PostgreSQLConnectionPool::get()
     /// Always blocks by default.
     if (block_on_empty_pool)
     {
-        /// pop to ConcurrentBoundedQueue will block untill it is non-empty.
+        /// pop to ConcurrentBoundedQueue will block until it is non-empty.
         pool->pop(connection);
         return std::make_shared<PostgreSQLConnectionHolder>(connection, *pool);
     }
