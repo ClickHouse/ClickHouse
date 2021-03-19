@@ -369,6 +369,11 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     else
         boundary_hit = startsWith(line, boundary);
 
+    if (!line.empty())
+        /// If we don't make sure that memory is contiguous then situation may happen, when part of the line is inside internal memory
+        /// and other part is inside sub-buffer, thus we'll be unable to setup our working buffer properly.
+        in.makeContinuousMemoryFromCheckpointToPos();
+
     in.rollbackToCheckpoint(true);
 
     /// Rolling back to checkpoint may change underlying buffers.
