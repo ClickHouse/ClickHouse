@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Interpreters/ExternalLoader.h>
 #include <memory>
+
+#include <Common/quoteString.h>
+#include <Interpreters/ExternalLoader.h>
+#include <Dictionaries/IDictionary.h>
 
 namespace DB
 {
@@ -18,20 +20,13 @@ public:
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     explicit ExternalDictionariesLoader(Context & context_);
 
-    DictPtr getDictionary(const std::string & name) const
-    {
-        return std::static_pointer_cast<const IDictionaryBase>(load(name));
-    }
+    DictPtr getDictionary(const std::string & dictionary_name) const;
 
-    DictPtr tryGetDictionary(const std::string & name) const
-    {
-        return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
-    }
+    DictPtr tryGetDictionary(const std::string & dictionary_name) const;
 
-    bool hasDictionary(const std::string & name) const
-    {
-        return has(name);
-    }
+    void reloadDictionary(const std::string & dictionary_name) const;
+
+    DictionaryStructure getDictionaryStructure(const std::string & dictionary_name) const;
 
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
@@ -41,6 +36,11 @@ public:
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
             const std::string & key_in_config, const std::string & repository_name) const override;
+
+    std::string resolveDictionaryName(const std::string & dictionary_name) const;
+
+    /// Try convert qualified dictionary name to persistent UUID
+    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
