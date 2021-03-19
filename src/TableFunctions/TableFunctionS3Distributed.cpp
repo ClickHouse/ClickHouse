@@ -1,5 +1,8 @@
 #include <thread>
 #include <Common/config.h>
+#include "DataStreams/RemoteBlockInputStream.h"
+#include "Processors/Sources/SourceFromInputStream.h"
+#include "Storages/StorageS3Distributed.h"
 #include "Storages/System/StorageSystemOne.h"
 
 #if USE_AWS_S3
@@ -35,29 +38,31 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, con
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() < 3 || args.size() > 6)
-        throw Exception("Table function '" + getName() + "' requires 3 to 6 arguments: url, [access_key_id, secret_access_key,] format, structure and [compression_method].",
+    if (args.size() < 4 || args.size() > 7)
+        throw Exception("Table function '" + getName() + "' requires 4 to 7 arguments: cluster, url," + 
+            "[access_key_id, secret_access_key,] format, structure and [compression_method].",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    filename = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() < 5)
     {
-        format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     }
     else
     {
-        access_key_id = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        secret_access_key = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        format = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        access_key_id = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        secret_access_key = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        format = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        structure = args[5]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
-    if (args.size() == 4 || args.size() == 6)
+    if (args.size() == 5 || args.size() == 7)
         compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
 }
 
@@ -67,7 +72,9 @@ ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(const Con
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionS3Distributed::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionS3Distributed::executeImpl(
+    const ASTPtr & /*ast_function*/, const Context & context,
+    const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
@@ -92,11 +99,11 @@ StoragePtr TableFunctionS3Distributed::executeImpl(const ASTPtr & /*ast_function
     TaskSupervisor::instance().registerNextTaskResolver(
         std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
 
-    StoragePtr storage = StorageSystemOne::create(StorageID(getDatabaseName(), table_name));
+    StoragePtr storage = StorageS3Distributed::create(StorageID(getDatabaseName(), table_name), cluster_name, context);
 
     storage->startup();
 
-    std::this_thread::sleep_for(std::chrono::seconds(60));
+    // std::this_thread::sleep_for(std::chrono::seconds(60));
 
     return storage;
 }
