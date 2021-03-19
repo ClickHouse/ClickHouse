@@ -136,13 +136,9 @@ void WindowFrame::checkValid() const
         {
             begin_less_equal_end = false;
         }
-        else if (!begin_preceding && !end_preceding)
+        else /* if (!begin_preceding && !end_preceding) */
         {
             begin_less_equal_end = begin_offset <= end_offset;
-        }
-        else
-        {
-            assert(false);
         }
 
         if (!begin_less_equal_end)
