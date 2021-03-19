@@ -1,6 +1,7 @@
 (ns jepsen.nukeeper.main
   (:require [clojure.tools.logging :refer :all]
             [jepsen.nukeeper.utils :refer :all]
+            [clojure.pprint :refer [pprint]]
             [jepsen.nukeeper.set :as set]
             [jepsen.nukeeper.nemesis :as custom-nemesis]
             [jepsen.nukeeper.register :as register]
@@ -94,10 +95,10 @@
 (def cli-opts
   "Additional command line options."
   [["-w" "--workload NAME" "What workload should we run?"
-    :missing  (str "--workload " (cli/one-of workloads))
+    :default "set"
     :validate [workloads (cli/one-of workloads)]]
    [nil "--nemesis NAME" "Which nemesis will poison our lives?"
-    :missing  (str "--nemesis " (cli/one-of custom-nemesis/custom-nemesises))
+    :default "random-node-killer"
     :validate [custom-nemesis/custom-nemesises (cli/one-of custom-nemesis/custom-nemesises)]]
    ["-q" "--quorum" "Use quorum reads, instead of reading from any primary."]
    ["-r" "--rate HZ" "Approximate number of requests per second, per thread."
@@ -125,6 +126,7 @@
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
   :concurrency, ...), constructs a test map."
   [opts]
+  (info "Test opts\n" (with-out-str (pprint opts)))
   (let [quorum (boolean (:quorum opts))
         workload  ((get workloads (:workload opts)) opts)
         current-nemesis (get custom-nemesis/custom-nemesises (:nemesis opts))]
@@ -150,11 +152,32 @@
                         (gen/sleep 10)
                         (gen/clients (:final-generator workload)))})))
 
+(def all-nemesises (keys custom-nemesis/custom-nemesises))
+
+(def all-workloads (keys workloads))
+
+(defn all-test-options
+  "Takes base cli options, a collection of nemeses, workloads, and a test count,
+  and constructs a sequence of test options."
+  [cli nemeses workloads]
+  (take (:test-count cli) (shuffle (for [n nemeses, w workloads]
+    (assoc cli
+           :nemesis   n
+           :workload  w
+           :test-count 1)))))
+
+(defn all-tests
+  "Turns CLI options into a sequence of tests."
+  [test-fn cli]
+  (map test-fn (all-test-options cli all-nemesises all-workloads)))
+
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
   browsing results."
   [& args]
   (cli/run! (merge (cli/single-test-cmd {:test-fn nukeeper-test
                                          :opt-spec cli-opts})
+                   (cli/test-all-cmd {:tests-fn (partial all-tests nukeeper-test)
+                                      :opt-spec cli-opts})
                    (cli/serve-cmd))
             args))
