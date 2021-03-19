@@ -148,6 +148,14 @@ if __name__ == "__main__":
         dest="parallel",
         help="Parallelism")
 
+    parser.add_argument(
+        "-t", "--tests_list",
+        action="store",
+        nargs='+',
+        default=[],
+        dest="tests_list",
+        help="List of tests to run")
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
@@ -200,7 +208,7 @@ if __name__ == "__main__":
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         --volume={name}_volume:/var/lib/docker -e DOCKER_CLIENT_TIMEOUT=120 -e COMPOSE_HTTP_TIMEOUT=300 \
-        {env_tags} -e PYTEST_OPTS='{parallel} {opts}' {img} {command}".format(
+        {env_tags} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -211,6 +219,7 @@ if __name__ == "__main__":
         env_tags=env_tags,
         parallel=parallel_args,
         opts=' '.join(args.pytest_args),
+        tests_list=' '.join(args.tests_list),
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
         command=args.command
