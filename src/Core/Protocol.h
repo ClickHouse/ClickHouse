@@ -76,7 +76,7 @@ namespace Protocol
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
             PartUUIDs = 12,           /// List of unique parts ids.
-            NextTaskReply = 13,    /// String that describes the next task (a file to read from S3)
+            NextTaskReply = 13,       /// String that describes the next task (a file to read from S3)
 
             MAX = NextTaskReply,
         };

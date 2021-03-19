@@ -965,6 +965,9 @@ bool TCPHandler::receivePacket()
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
+
+    std::cout << "TCPHander receivePacket" << packet_type << ' ' << Protocol::Client::NextTaskRequest << std::endl;
+
     switch (packet_type)
     {
         case Protocol::Client::NextTaskRequest:

@@ -65,6 +65,7 @@ struct Packet
     Progress progress;
     BlockStreamProfileInfo profile_info;
     std::vector<UUID> part_uuids;
+    std::string next_task;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -271,7 +272,7 @@ private:
     class LoggerWrapper
     {
     public:
-        LoggerWrapper(Connection & parent_)
+        explicit LoggerWrapper(Connection & parent_)
             : log(nullptr), parent(parent_)
         {
         }
@@ -302,6 +303,7 @@ private:
 #endif
     bool ping();
 
+    std::string receiveNextTask();
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);

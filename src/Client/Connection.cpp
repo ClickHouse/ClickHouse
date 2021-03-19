@@ -1,3 +1,4 @@
+#include <string>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -553,13 +554,13 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendNextTaskRequest(const std::string & id)
+void Connection::sendNextTaskRequest(const std::string &)
 {
-    std::cout << "Connection::sendNextTaskRequest" << std::endl;
-    std::cout << StackTrace().toString() << std::endl;
-    writeVarUInt(Protocol::Client::NextTaskRequest, *out);
-    writeStringBinary(id, *out);
-    out->next();
+    // std::cout << "Connection::sendNextTaskRequest" << std::endl;
+    // std::cout << StackTrace().toString() << std::endl;
+    // writeVarUInt(Protocol::Client::NextTaskRequest, *out);
+    // writeStringBinary(id, *out);
+    // out->next();
 }
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
@@ -783,10 +784,15 @@ Packet Connection::receivePacket()
             readVarUInt(res.type, *in);
         }
 
+        std::cerr << "res.type " << res.type << ' ' <<  Protocol::Server::NextTaskReply << std::endl;
+
         switch (res.type)
         {
             case Protocol::Server::Data: [[fallthrough]];
             case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::NextTaskReply:
+                res.next_task = receiveNextTask();
+                return res;
             case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;
@@ -837,6 +843,14 @@ Packet Connection::receivePacket()
 
         throw;
     }
+}
+
+
+std::string Connection::receiveNextTask()
+{
+    String next_task;
+    readStringBinary(next_task, *in);
+    return next_task;
 }
 
 

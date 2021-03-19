@@ -561,6 +561,16 @@ private:
 
         connect();
 
+
+        if (config().has("next_task"))
+        {
+            std::cout << "has next task" << std::endl;
+            auto next_task = config().getString("next_task", "12345");
+            std::cout << "got next task " << next_task << std::endl;
+            sendNextTaskRequest(next_task);
+            std::cout << "sended " << std::endl;
+        }
+
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
         const auto local_tz = DateLUT::instance().getTimeZone();
         if (!context->getSettingsRef().use_client_time_zone)
@@ -1620,8 +1630,7 @@ private:
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
                 apply_query_settings(*insert->settings_ast);
-            /// FIXME: try to prettify this cast using `as<>()`
-            const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+            const auto * with_output = parsed_query->as<const ASTQueryWithOutput>();
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
@@ -1696,6 +1705,13 @@ private:
             data.emplace_back(table.getData(context));
 
         connection->sendExternalTablesData(data);
+    }
+
+
+
+    void sendNextTaskRequest(std::string id)
+    {
+        connection->sendNextTaskRequest(id);
     }
 
 
@@ -2629,6 +2645,7 @@ public:
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
+            ("next_task", po::value<std::string>(), "request new task from server")
         ;
 
         Settings cmd_settings;
@@ -2792,6 +2809,8 @@ public:
             config().setBool("highlight", options["highlight"].as<bool>());
         if (options.count("history_file"))
             config().setString("history_file", options["history_file"].as<std::string>());
+        if (options.count("next_task"))
+            config().setString("next_task", options["next_task"].as<std::string>());
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {

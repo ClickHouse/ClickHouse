@@ -36,6 +36,7 @@ protected:
     ColumnsDescription getActualTableStructure(const Context & context) const override;
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
+    String cluster_name;
     String filename;
     String format;
     String structure;
