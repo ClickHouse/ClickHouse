@@ -166,6 +166,36 @@ def test_non_default_scema(started_cluster):
     assert(result == expected)
 
 
+def test_connection_pool(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    node1.query('''
+        CREATE TABLE test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword')''')
+
+    cursor.execute('CREATE TABLE test_table (key integer, value integer)')
+
+    # Make sure connection pool is filled
+    def node_pool(_):
+        result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
+    busy_pool = Pool(16)
+    p = busy_pool.map_async(node_pool, range(16))
+
+    p.wait()
+    prev_count =  node1.count_in_log('New connection to postgres*')
+
+    # Check connections do not open anymore
+    busy_pool = Pool(10)
+    p = busy_pool.map_async(node_pool, range(10))
+
+    p.wait()
+    count =  node1.count_in_log('New connection to postgres*')
+
+    node1.query('DROP TABLE test_table;')
+    cursor.execute('DROP TABLE test_table;')
+    assert(count == prev_count)
+
+
 def test_concurrent_queries(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -205,6 +235,9 @@ def test_concurrent_queries(started_cluster):
     result = node1.query("SELECT count() FROM test_table", user='default')
     print(result)
     assert(int(result) == 20 * 10 * 1000  * 2)
+
+    node1.query('DROP TABLE test_table;')
+    cursor.execute('DROP TABLE test_table;')
 
 
 if __name__ == '__main__':

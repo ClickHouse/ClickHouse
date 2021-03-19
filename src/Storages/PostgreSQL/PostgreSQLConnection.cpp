@@ -38,7 +38,10 @@ PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::tryGet()
 void PostgreSQLConnection::connectIfNeeded()
 {
     if (!connection || !connection->is_open())
+    {
+        LOG_DEBUG(&Poco::Logger::get("PostgreSQLConnection"), "New connection to {}", getAddress());
         connection = std::make_shared<pqxx::connection>(connection_str);
+    }
 }
 
 
