@@ -49,18 +49,17 @@ class PostgreSQLConnectionHolder
 {
 
 using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
-using PoolPtr = std::shared_ptr<Pool>;
 
 public:
-    PostgreSQLConnectionHolder(PostgreSQLConnectionPtr connection_, PoolPtr pool_)
+    PostgreSQLConnectionHolder(PostgreSQLConnectionPtr connection_, Pool & pool_)
         : connection(std::move(connection_))
-        , pool(std::move(pool_))
+        , pool(pool_)
     {
     }
 
     PostgreSQLConnectionHolder(const PostgreSQLConnectionHolder & other) = delete;
 
-    ~PostgreSQLConnectionHolder() { pool->tryPush(connection); }
+    ~PostgreSQLConnectionHolder() { pool.tryPush(connection); }
 
     pqxx::connection & conn() const { return *connection->get(); }
 
@@ -68,7 +67,7 @@ public:
 
 private:
     PostgreSQLConnectionPtr connection;
-    PoolPtr pool;
+    Pool & pool;
 };
 
 using PostgreSQLConnectionHolderPtr = std::shared_ptr<PostgreSQLConnectionHolder>;

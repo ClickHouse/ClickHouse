@@ -48,11 +48,11 @@ PostgreSQLConnectionHolderPtr PostgreSQLConnectionPool::get()
     PostgreSQLConnectionPtr connection;
     if (pool->tryPop(connection, POSTGRESQL_POOL_WAIT_MS))
     {
-        return std::make_shared<PostgreSQLConnectionHolder>(connection, pool);
+        return std::make_shared<PostgreSQLConnectionHolder>(connection, *pool);
     }
 
     connection = std::make_shared<PostgreSQLConnection>(connection_str, address);
-    return std::make_shared<PostgreSQLConnectionHolder>(connection, pool);
+    return std::make_shared<PostgreSQLConnectionHolder>(connection, *pool);
 }
 
 
