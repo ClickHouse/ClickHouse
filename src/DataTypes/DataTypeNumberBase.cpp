@@ -212,13 +212,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return std::is_integral_v<T>;
+    return is_integer_v<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return std::is_integral_v<T> && is_unsigned_v<T>;
+    return is_integer_v<T> && is_unsigned_v<T>;
 }
 
 
