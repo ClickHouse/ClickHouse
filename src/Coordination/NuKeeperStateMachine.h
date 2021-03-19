@@ -52,7 +52,7 @@ public:
 
     NuKeeperStorage & getStorage()
     {
-        return storage;
+        return *storage;
     }
 
     void processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session);
@@ -68,7 +68,7 @@ private:
 
     CoordinationSettingsPtr coordination_settings;
 
-    NuKeeperStorage storage;
+    NuKeeperStoragePtr storage;
 
     NuKeeperSnapshotManager snapshot_manager;
 

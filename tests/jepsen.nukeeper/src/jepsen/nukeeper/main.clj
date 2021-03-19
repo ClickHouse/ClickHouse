@@ -69,7 +69,7 @@
       (info node "tearing down clickhouse")
       (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
       (c/su
-       (c/exec :rm :-f (str binary-path "/clickhouse"))
+       ;(c/exec :rm :-f (str binary-path "/clickhouse"))
        (c/exec :rm :-rf dir)
        (c/exec :rm :-rf logdir)
        (c/exec :rm :-rf "/etc/clickhouse-server")))
@@ -131,7 +131,7 @@
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:af3f7a797953f7f359bd3550fe3fd4a68fd27345")
+            :db (db "rbtorrent:71c60699aa56568ded73c4a48cecd2fd5e0956cb")
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)

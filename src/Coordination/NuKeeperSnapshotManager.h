@@ -40,17 +40,20 @@ public:
 using NuKeeperStorageSnapshotPtr = std::shared_ptr<NuKeeperStorageSnapshot>;
 using CreateSnapshotCallback = std::function<void(NuKeeperStorageSnapshotPtr &&)>;
 
+
+using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, NuKeeperStoragePtr>;
+
 class NuKeeperSnapshotManager
 {
 public:
-    NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_);
+    NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_ = 500);
 
-    SnapshotMetadataPtr restoreFromLatestSnapshot(NuKeeperStorage * storage);
+    SnapshotMetaAndStorage restoreFromLatestSnapshot();
 
     static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const NuKeeperStorageSnapshot & snapshot);
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx);
 
-    static SnapshotMetadataPtr deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer);
+    SnapshotMetaAndStorage deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const;
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
@@ -74,6 +77,7 @@ private:
     const std::string snapshots_path;
     const size_t snapshots_to_keep;
     std::map<size_t, std::string> existing_snapshots;
+    size_t storage_tick_time;
 };
 
 struct CreateSnapshotTask
