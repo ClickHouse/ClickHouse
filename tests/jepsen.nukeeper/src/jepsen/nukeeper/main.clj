@@ -27,7 +27,9 @@
             [clojure.java.io :as io]
             [zookeeper.data :as data]
             [zookeeper :as zk])
-  (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
+  (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)
+           (ch.qos.logback.classic Level)
+           (org.slf4j Logger LoggerFactory)))
 
 (defn cluster-config
   [test node config-template]
@@ -175,6 +177,8 @@
   "Handles command line arguments. Can either run a test, or a web server for
   browsing results."
   [& args]
+  (.setLevel
+   (LoggerFactory/getLogger "org.apache.zookeeper") Level/OFF)
   (cli/run! (merge (cli/single-test-cmd {:test-fn nukeeper-test
                                          :opt-spec cli-opts})
                    (cli/test-all-cmd {:tests-fn (partial all-tests nukeeper-test)

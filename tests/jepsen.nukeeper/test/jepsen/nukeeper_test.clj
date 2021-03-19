@@ -2,7 +2,9 @@
   (:require [clojure.test :refer :all]
             [jepsen.nukeeper.utils :refer :all]
             [zookeeper :as zk]
-            [zookeeper.data :as data]))
+            [zookeeper.data :as data])
+  (:import (ch.qos.logback.classic Level)
+           (org.slf4j Logger LoggerFactory)))
 
 (defn multicreate
   [conn]
@@ -14,6 +16,8 @@
 
 (deftest a-test
   (testing "nukeeper connection"
+    (.setLevel
+     (LoggerFactory/getLogger "org.apache.zookeeper") Level/OFF)
     (let [conn (zk/connect "localhost:9181" :timeout-msec 5000)]
       ;(println (take 10 (zk-range)))
       ;(multidelete conn)
