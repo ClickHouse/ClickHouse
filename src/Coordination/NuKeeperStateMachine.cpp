@@ -37,8 +37,7 @@ NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 
 NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_)
     : coordination_settings(coordination_settings_)
-    , storage(coordination_settings->dead_session_check_period_ms.totalMilliseconds())
-    , snapshot_manager(snapshots_path_, coordination_settings->snapshots_to_keep)
+    , snapshot_manager(snapshots_path_, coordination_settings->snapshots_to_keep, coordination_settings->dead_session_check_period_ms.totalMicroseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
@@ -60,7 +59,7 @@ void NuKeeperStateMachine::init()
         try
         {
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            latest_snapshot_meta = snapshot_manager.deserializeSnapshotFromBuffer(&storage, latest_snapshot_buf);
+            std::tie(latest_snapshot_meta, storage) = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             last_committed_idx = latest_snapshot_meta->get_last_log_idx();
             loaded = true;
             break;
@@ -83,6 +82,9 @@ void NuKeeperStateMachine::init()
     {
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
     }
+
+    if (!storage)
+        storage = std::make_unique<NuKeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
 }
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
@@ -96,7 +98,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
         nuraft::buffer_serializer bs(response);
         {
             std::lock_guard lock(storage_lock);
-            session_id = storage.getSessionID(session_timeout_ms);
+            session_id = storage->getSessionID(session_timeout_ms);
             bs.put_i64(session_id);
         }
         LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_timeout_ms);
@@ -109,7 +111,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
         NuKeeperStorage::ResponsesForSessions responses_for_sessions;
         {
             std::lock_guard lock(storage_lock);
-            responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id, log_idx);
+            responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
             for (auto & response_for_session : responses_for_sessions)
                 responses_queue.push(response_for_session);
         }
@@ -133,7 +135,7 @@ bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     {
         std::lock_guard lock(storage_lock);
-        snapshot_manager.deserializeSnapshotFromBuffer(&storage, latest_snapshot_ptr);
+        std::tie(latest_snapshot_meta, storage) = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
     }
     last_committed_idx = s.get_last_log_idx();
     return true;
@@ -157,7 +159,7 @@ void NuKeeperStateMachine::create_snapshot(
     CreateSnapshotTask snapshot_task;
     {
         std::lock_guard lock(storage_lock);
-        snapshot_task.snapshot = std::make_shared<NuKeeperStorageSnapshot>(&storage, snapshot_meta_copy);
+        snapshot_task.snapshot = std::make_shared<NuKeeperStorageSnapshot>(storage.get(), snapshot_meta_copy);
     }
 
     snapshot_task.create_snapshot = [this, when_done] (NuKeeperStorageSnapshotPtr && snapshot)
@@ -179,7 +181,7 @@ void NuKeeperStateMachine::create_snapshot(
             {
                 /// Must do it with lock (clearing elements from list)
                 std::lock_guard lock(storage_lock);
-                storage.clearGarbageAfterSnapshot();
+                storage->clearGarbageAfterSnapshot();
                 /// Destroy snapshot with lock
                 snapshot.reset();
                 LOG_TRACE(log, "Cleared garbage after snapshot");
@@ -214,7 +216,7 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     if (obj_id == 0)
     {
         std::lock_guard lock(storage_lock);
-        NuKeeperStorageSnapshot snapshot(&storage, s.get_last_log_idx());
+        NuKeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx());
         cloned_buffer = snapshot_manager.serializeSnapshotToBuffer(snapshot);
     }
     else
@@ -271,7 +273,7 @@ void NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForS
     NuKeeperStorage::ResponsesForSessions responses;
     {
         std::lock_guard lock(storage_lock);
-        responses = storage.processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
+        responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
     }
     for (const auto & response : responses)
         responses_queue.push(response);
@@ -280,13 +282,13 @@ void NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForS
 std::unordered_set<int64_t> NuKeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_lock);
-    return storage.getDeadSessions();
+    return storage->getDeadSessions();
 }
 
 void NuKeeperStateMachine::shutdownStorage()
 {
     std::lock_guard lock(storage_lock);
-    storage.finalize();
+    storage->finalize();
 }
 
 }

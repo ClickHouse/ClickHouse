@@ -82,8 +82,6 @@ public:
 public:
     NuKeeperStorage(int64_t tick_time_ms);
 
-    void clearData();
-
     int64_t getSessionID(int64_t session_timeout_ms)
     {
         auto result = session_id_counter++;
