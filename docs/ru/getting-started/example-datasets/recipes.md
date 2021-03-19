@@ -188,7 +188,7 @@ LIMIT 10;
 10 rows in set. Elapsed: 0.215 sec. Processed 2.23 million rows, 1.48 GB (10.35 million rows/s., 6.86 GB/s.)
 ```
 
-В этом примере используется функция [has](../../sql-reference/functions/array-functions.md#hasarr-elem) для фильтрации по элементам массива и сортировки по количеству шагов (`directions`).
+В этом примере используется функция [has](../../sql-reference/functions/array-functions.md#hasarr-elem) для проверки вхождения элемента в массив, а также сортировка по количеству шагов (`length(directions)`).
 
 Существует свадебный торт, который требует целых 126 шагов для производства! Рассмотрим эти шаги:
 
