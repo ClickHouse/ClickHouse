@@ -1762,7 +1762,7 @@ SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 -   0 — выключено.
 -   Любое число от `1` до `shards_num` соответствующей [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы.
 
-Значение по-умолчанию: `0`.
+Значение по умолчанию: `0`.
 
 **Пример**
 
