@@ -240,11 +240,8 @@ void IPolygonDictionary::calculateBytesAllocated()
     for (const auto & column : attributes)
         bytes_allocated += column->allocatedBytes();
 
-    for (size_t i = 0; i < polygons.size(); ++i)
-    {
-        auto & polygon = polygons[i];
+    for (auto & polygon : polygons)
         bytes_allocated += bg::num_points(polygon) * sizeof(Point);
-    }
 }
 
 std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
