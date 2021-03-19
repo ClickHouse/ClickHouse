@@ -151,17 +151,17 @@ Block KafkaBlockInputStream::readImpl()
                 {
                     input_format->resetParser();
                     exception_message = e.message();
-                    for (size_t i = 0, s = result_columns.size(); i < s; ++i)
+                    for (auto & column : result_columns)
                     {
                         // read_kafka_message could already push some rows to result_columns
                         // before exception, we need to fix it.
-                        auto cur_rows = result_columns[i]->size();
+                        auto cur_rows = column->size();
                         if (cur_rows > total_rows)
                         {
-                            result_columns[i]->popBack(cur_rows - total_rows);
+                            column->popBack(cur_rows - total_rows);
                         }
                         // all data columns will get default value in case of error
-                        result_columns[i]->insertDefault();
+                        column->insertDefault();
                     }
                     new_rows = 1;
                 }
