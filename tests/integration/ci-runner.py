@@ -257,6 +257,17 @@ class ClickhouseIntegrationTestsRunner:
                 all_tests.append(line.strip())
         return list(sorted(all_tests))
 
+    def _get_parallel_tests(self, repo_path):
+        parallel_tests_file_path = "{}/tests/integration/all_tests.txt".format(repo_path)
+        if not os.path.isfile(parallel_tests_file_path) or os.path.getsize(parallel_tests_file_path) == 0:
+            raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(parallel_tests_file_path))
+
+        parallel_tests = []
+        with open(parallel_tests_file_path, "r") as parallel_tests_file:
+            for line in parallel_tests_file:
+                all_tests.append(line.strip())
+        return list(sorted(parallel_tests))
+
     def group_test_by_file(self, tests):
         result = {}
         for test in tests:
@@ -326,7 +337,7 @@ class ClickhouseIntegrationTestsRunner:
                         test_names.add(test_name)
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
-            cmd = "cd {}/tests/integration && ./runner {} '-ss {} -rfEp --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && ./runner {} -t {} --parallel 10 '-ss -rfEp --color=no --durations=0 {}' | tee {}".format(
                 repo_path, image_cmd, test_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
 
             with open(log_path, 'w') as log:
@@ -425,7 +436,13 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
-        grouped_tests = self.group_test_by_file(all_tests)
+        filtered_parallel_tests = filter(lambda test: test in all_tests, parallel_tests)
+        filtered_unparallel_tests = filter(lambda test: test not in parallel_tests, all_tests)
+        not_found_tests =  filter(lambda test: test not in all_tests, parallel_tests)
+        logging.info("Found %s tests first 3 %s, parallel %s, other %s", len(all_tests), ' '.join(all_tests[:3]), len(filtered_parallel_tests), len(filtered_unparallel_tests))
+        logging.info("Not found %s tests first 3 %s", len(not_found_tests), ' '.join(not_found_tests[:3]))
+
+        grouped_tests = self.group_test_by_file(filtered_unparallel_tests)
         logging.info("Found %s tests groups", len(grouped_tests))
 
         counters = {
@@ -436,7 +453,9 @@ class ClickhouseIntegrationTestsRunner:
         tests_times = defaultdict(float)
 
         logs = []
-        items_to_run = list(grouped_tests.items())
+        items_to_run = list()
+        items_to_run += list(("parallel", filtered_parallel_tests))
+        items_to_run += list(grouped_tests.items())
 
         logging.info("Total test groups %s", len(items_to_run))
         if self.shuffle_test_groups():
@@ -444,7 +463,7 @@ class ClickhouseIntegrationTestsRunner:
             random.shuffle(items_to_run)
 
         for group, tests in items_to_run:
-            logging.info("Running test group %s countaining %s tests", group, len(tests))
+            logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_name, log_path = self.run_test_group(repo_path, group, tests, MAX_RETRY)
             total_tests = 0
             for counter, value in group_counters.items():
