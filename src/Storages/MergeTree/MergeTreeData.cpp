@@ -3651,6 +3651,9 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         ASTs expr_names;
         Strings maybe_dimension_column_exprs;
         Block key_block = projection.metadata->primary_key.sample_block;
+
+        /// First check if all columns in current query are provided by current projection.
+        /// Collect missing columns and remove matching columns in key blocks so they aren't used twice.
         for (const auto & column_with_type_name : query_block)
         {
             if (!projection.sample_block.has(column_with_type_name.name))
@@ -3663,17 +3666,20 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
 
         ProjectionKeyActions key_actions;
+        /// Check if the missing columns can be produced by key columns in projection.
         for (const auto & expr_name : maybe_dimension_column_exprs)
         {
             Tokens tokens_number(expr_name.data(), expr_name.data() + expr_name.size());
             IParser::Pos pos(tokens_number, settings.max_parser_depth);
             Expected expected;
             ASTPtr ast;
+            // It should be a function call.
             if (!parse_function.parse(pos, ast, expected))
             {
                 covered = false;
                 break;
             }
+            // It should be a function call that only requires unused key columns.
             if (!key_actions.add(ast, expr_name, key_block))
             {
                 covered = false;

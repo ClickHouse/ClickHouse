@@ -1987,7 +1987,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
         if (minmax_idx)
-            minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+            minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
         out.write(block);
 
