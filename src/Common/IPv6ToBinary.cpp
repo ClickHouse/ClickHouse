@@ -13,8 +13,11 @@ namespace DB
 /// Result array could be indexed with all possible uint8 values without extra check.
 /// For values greater than 128 we will store same value as for 128 (all bits set).
 constexpr size_t IPV6_MASKS_COUNT = 256;
+using RawMaskArrayV6 = std::array<uint8_t, IPV6_BINARY_LENGTH>;
 
-using RawMaskArray = std::array<uint8_t, IPV6_BINARY_LENGTH>;
+/// Same for IPv4
+constexpr size_t IPV4_MASKS_COUNT = 256;
+using RawMaskArrayV4 = std::array<uint8_t, IPV4_BINARY_LENGTH>;
 
 void IPv6ToRawBinary(const Poco::Net::IPAddress & address, char * res)
 {
@@ -41,33 +44,41 @@ std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
     return res;
 }
 
-static constexpr RawMaskArray generateBitMask(size_t prefix)
+template <typename RawMaskArrayT>
+static constexpr RawMaskArrayT generateBitMask(size_t prefix)
 {
-    if (prefix >= 128)
-        prefix = 128;
-    RawMaskArray arr{0};
+    RawMaskArrayT arr{0};
+    if (prefix >= arr.size() * 8)
+        prefix = arr.size() * 8;
     size_t i = 0;
     for (; prefix >= 8; ++i, prefix -= 8)
         arr[i] = 0xff;
     if (prefix > 0)
         arr[i++] = ~(0xff >> prefix);
-    while (i < 16)
+    while (i < arr.size())
         arr[i++] = 0x00;
     return arr;
 }
 
-static constexpr std::array<RawMaskArray, IPV6_MASKS_COUNT> generateBitMasks()
+template <typename RawMaskArrayT, size_t masksCount>
+static constexpr std::array<RawMaskArrayT, masksCount> generateBitMasks()
 {
-    std::array<RawMaskArray, IPV6_MASKS_COUNT> arr{};
-    for (size_t i = 0; i < IPV6_MASKS_COUNT; ++i)
-        arr[i] = generateBitMask(i);
+    std::array<RawMaskArrayT, masksCount> arr{};
+    for (size_t i = 0; i < masksCount; ++i)
+        arr[i] = generateBitMask<RawMaskArrayT>(i);
     return arr;
 }
 
-const uint8_t * getCIDRMaskIPv6(UInt8 prefix_len)
+const std::array<uint8_t, 16> & getCIDRMaskIPv6(UInt8 prefix_len)
 {
-    static constexpr std::array<RawMaskArray, IPV6_MASKS_COUNT> IPV6_RAW_MASK_ARRAY = generateBitMasks();
-    return IPV6_RAW_MASK_ARRAY[prefix_len].data();
+    static constexpr auto IPV6_RAW_MASK_ARRAY = generateBitMasks<RawMaskArrayV6, IPV6_MASKS_COUNT>();
+    return IPV6_RAW_MASK_ARRAY[prefix_len];
+}
+
+const std::array<uint8_t, 4> & getCIDRMaskIPv4(UInt8 prefix_len)
+{
+    static constexpr auto IPV4_RAW_MASK_ARRAY = generateBitMasks<RawMaskArrayV4, IPV4_MASKS_COUNT>();
+    return IPV4_RAW_MASK_ARRAY[prefix_len];
 }
 
 }
