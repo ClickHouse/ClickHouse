@@ -81,7 +81,7 @@ Result:
 
 ### Top Components by the Number of Recipes:
 
-In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to multiply data by array elements.
+In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to expand an array into a set of rows.
 
 Query:
 
