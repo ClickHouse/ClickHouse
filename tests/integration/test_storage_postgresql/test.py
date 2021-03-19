@@ -9,11 +9,11 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=[], with_postgres=True)
 
-def get_postgres_conn(database=False):
+def get_postgres_conn(cluster, database=False):
     if database == True:
-        conn_string = "host='localhost' port='{}' dbname='clickhouse' user='postgres' password='mysecretpassword'".format(cluster.postgres_port)
+        conn_string = f"host={cluster.postgres_ip} port='{cluster.postgres_port}' dbname='clickhouse' user='postgres' password='mysecretpassword'"
     else:
-        conn_string = "host='localhost' port='{}' user='postgres' password='mysecretpassword'".format(cluster.postgres_port)
+        conn_string = f"host={cluster.postgres_ip} port='{cluster.postgres_port}' user='postgres' password='mysecretpassword'"
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     conn.autocommit = True
@@ -29,7 +29,7 @@ def create_postgres_db(conn, name):
 def started_cluster():
     try:
         cluster.start()
-        postgres_conn = get_postgres_conn()
+        postgres_conn = get_postgres_conn(cluster)
         print("postgres connected")
         create_postgres_db(postgres_conn, 'clickhouse')
         yield cluster
@@ -39,10 +39,10 @@ def started_cluster():
 
 
 def test_postgres_select_insert(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
     table_name = 'test_many'
-    table = '''postgresql('postgres1:5432', 'clickhouse', '{}', 'postgres', 'mysecretpassword')'''.format(table_name)
+    table = f'''postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'clickhouse', '{table_name}', 'postgres', 'mysecretpassword')'''
     cursor.execute('CREATE TABLE IF NOT EXISTS {} (a integer, b text, c integer)'.format(table_name))
 
     result = node1.query('''
@@ -59,7 +59,7 @@ def test_postgres_select_insert(started_cluster):
 
 
 def test_postgres_conversions(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
     cursor.execute(
         '''CREATE TABLE IF NOT EXISTS test_types (
@@ -134,7 +134,7 @@ def test_postgres_conversions(started_cluster):
 
 
 def test_non_default_scema(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
     cursor.execute('CREATE SCHEMA test_schema')
     cursor.execute('CREATE TABLE test_schema.test_table (a integer)')

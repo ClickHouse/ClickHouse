@@ -64,8 +64,8 @@ def create_mysql_table(conn, table_name):
         cursor.execute(create_table_sql_template.format(table_name))
 
 
-def get_postgres_conn():
-    conn_string = "host='localhost' port={} user='postgres' password='mysecretpassword'".format(cluster.postgres_port)
+def get_postgres_conn(started_cluster):
+    conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(started_cluster.postgres_ip, started_cluster.postgres_port)
     errors = []
     for _ in range(15):
         try:
@@ -112,7 +112,7 @@ def started_cluster():
         create_mysql_db(mysql_conn, 'clickhouse')
         print("mysql database created")
 
-        postgres_conn = get_postgres_conn()
+        postgres_conn = get_postgres_conn(cluster)
         print("postgres connection received")
 
         create_postgres_db(postgres_conn, 'clickhouse')
@@ -294,7 +294,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 
 
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
@@ -304,7 +304,7 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
 
 
 def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
@@ -318,7 +318,7 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
 
 
 def test_postgres_insert(started_cluster):
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     conn.cursor().execute("truncate table clickhouse.test_table")
 
     # Also test with Servername containing '.' and '-' symbols (defined in
@@ -377,7 +377,7 @@ def test_bridge_dies_with_parent(started_cluster):
 
 
 def test_odbc_postgres_date_data_type(started_cluster):
-    conn = get_postgres_conn();
+    conn = get_postgres_conn(started_cluster);
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS clickhouse.test_date (column1 integer, column2 date)")
 
