@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Common/TLDListsHolder.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
@@ -43,7 +42,7 @@ public:
         UInt16 bigram;
         double frequency;
         std::string charset_name;
-        
+
         ReadBufferFromFile in(path_to_charset_freq);
         while (!in.eof())
         {
@@ -108,10 +107,12 @@ public:
         return is_true;
     }
 
-    const std::unordered_map<std::string, std::vector<double>> getEmotionalDict()
+
+    const std::unordered_map<std::string, double> getEmotionalDict()
     {
         return emotional_dict;
     }
+
 
     const Container getEncodingsFrequency()
     {
