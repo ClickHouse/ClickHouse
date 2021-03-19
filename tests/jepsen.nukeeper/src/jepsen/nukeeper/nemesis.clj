@@ -93,6 +93,33 @@
   (corruptor-nemesis coordinationdir (fn [path]
                                        (c/exec :rm :-fr path))))
 
+(defn partition-bridge-nemesis
+  []
+  (nemesis/partitioner nemesis/bridge))
+
+(defn blind-node
+  [nodes]
+  (let [[[victim] others] (nemesis/split-one nodes)]
+    {victim (into #{} others)}))
+
+
+(defn blind-node-partition-nemesis
+  []
+  (nemesis/partitioner blind-node))
+
+(defn blind-others
+  [nodes]
+  (let [[[victim] others] (nemesis/split-one nodes)]
+    (into {} (map (fn [node] [node #{victim}])) others)))
+
+(defn blind-others-partition-nemesis
+  []
+  (nemesis/partitioner blind-others))
+
+(defn network-non-symmetric-nemesis
+  []
+  (nemesis/partitioner nemesis/bridge))
+
 (defn start-stop-generator
   [time-corrupt time-ok]
   (->>
@@ -125,4 +152,10 @@
    "logs-and-snapshots-corruptor" {:nemesis (logs-and-snapshots-corruption-nemesis)
                                    :generator (corruption-generator)}
    "drop-data-corruptor" {:nemesis (drop-all-corruption-nemesis)
-                          :generator (corruption-generator)}})
+                          :generator (corruption-generator)}
+   "bridge-partitioner" {:nemesis (partition-bridge-nemesis)
+                         :generator (start-stop-generator 5 5)}
+   "blind-node-partitioner" {:nemesis (blind-node-partition-nemesis)
+                         :generator (start-stop-generator 5 5)}
+   "blind-others-partitioner" {:nemesis (blind-others-partition-nemesis)
+                         :generator (start-stop-generator 5 5)}})
