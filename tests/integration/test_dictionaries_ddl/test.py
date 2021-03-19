@@ -60,10 +60,10 @@ def started_cluster():
 
 
 @pytest.mark.parametrize("clickhouse,name,layout", [
-    (node1, 'complex_node1_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())'),
-    (node1, 'complex_node1_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))'),
-    (node2, 'complex_node2_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())'),
-    (node2, 'complex_node2_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))'),
+    pytest.param(node1, 'complex_node1_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())', id="complex_node1_hashed"),
+    pytest.param(node1, 'complex_node1_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))', id="complex_node1_cache"),
+    pytest.param(node2, 'complex_node2_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())', id="complex_node2_hashed"),
+    pytest.param(node2, 'complex_node2_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))', id="complex_node2_cache"),
 ])
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn("root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port)
