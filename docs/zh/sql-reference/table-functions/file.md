@@ -81,7 +81,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 -   `{some_string,another_string,yet_another_one}` — 替换任何字符串 `'some_string', 'another_string', 'yet_another_one'`。
 -   `{N..M}` — 替换范围从N到M的任何数字（包括两个边界）。
 
-使用 `{}` 的构造类类似于 [remote](../../sql-reference/table-functions/remote.md))表函数。
+使用 `{}` 的构造类似于 [remote](../../sql-reference/table-functions/remote.md))表函数。
 
 **示例**
 
@@ -109,7 +109,7 @@ FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
 !!! warning "警告"
-    如果您的文件列表包含带前导零的数字范围，请对每个数字分别使用带有大括号的结构或使用 `?`.
+    如果您的文件列表包含带前导零的数字范围，请对每个数字分别使用带有大括号的结构或使用 `?`。
 
 **示例**
 
