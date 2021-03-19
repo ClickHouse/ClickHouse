@@ -570,6 +570,15 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
     }
 
     const auto name = ast->formatForErrorMessage();
+    if (name == "Null")
+    {
+        // The `Null` identifier from FORMAT Null clause. We don't quote it
+        // properly when formatting the AST, and while the resulting query
+        // technically works, it has non-standard case for Null (the standard
+        // is NULL), so it breaks the query formatting idempotence check.
+        // Just plug this particular case for now.
+        return;
+    }
     if (name.size() < 200)
     {
         column_like_map.insert({name, ast});

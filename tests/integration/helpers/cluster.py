@@ -238,7 +238,13 @@ class ClickHouseCluster:
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
-        self.postgres_port = get_open_port()
+        self.postgres_ip = None
+        self.postgres2_host = "postgres2"
+        self.postgres2_ip = None
+        self.postgres_port = 5432
+        self.postgres_dir = p.abspath(p.join(self.instances_dir, "postgres"))
+        self.postgres_logs_dir = os.path.join(self.postgres_dir, "postgres1")
+        self.postgres2_logs_dir = os.path.join(self.postgres_dir, "postgres2")
 
         # available when with_mysql == True
         self.mysql_host = "mysql57"
@@ -291,6 +297,19 @@ class ClickHouseCluster:
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_8_0.yml')]
 
         return self.base_mysql8_cmd
+
+    def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
+        env_variables['POSTGRES_HOST'] = self.postgres_host
+        env_variables['POSTGRES_PORT'] = str(self.postgres_port)
+        env_variables['POSTGRES_LOGS'] = self.postgres_logs_dir
+        env_variables['POSTGRES2_LOGS'] = self.postgres2_logs_dir
+        env_variables['POSTGRES_LOGS_FS'] = "bind"
+
+        self.with_postgres = True
+        self.base_postgres_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+        return self.base_postgres_cmd
 
     def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hdfs = True
@@ -366,16 +385,6 @@ class ClickHouseCluster:
         self.base_rabbitmq_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
         return self.base_rabbitmq_cmd
-
-    def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-        env_variables['POSTGRES_HOST'] = self.postgres_host
-        env_variables['POSTGRES_EXTERNAL_PORT'] = str(self.postgres_port)
-        env_variables['POSTGRES_INTERNAL_PORT'] = "5432"
-        self.with_postgres = True
-        self.base_postgres_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
-        return self.base_postgres_cmd
 
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
@@ -672,16 +681,19 @@ class ClickHouseCluster:
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_postgres_to_start(self, timeout=60):
+        self.postgres_ip = self.get_instance_ip(self.postgres_host)
+        self.postgres2_ip = self.get_instance_ip(self.postgres2_host)
         start = time.time()
-        while time.time() - start < timeout:
-            try:
-                conn = psycopg2.connect(host='127.0.0.1', port=self.postgres_port, user='postgres', password='mysecretpassword')
-                conn.close()
-                logging.debug("Postgres Started")
-                return
-            except Exception as ex:
-                logging.debug("Can't connect to Postgres " + str(ex))
-                time.sleep(0.5)
+        for up in [self.postgres_ip, self.postgres2_ip]:
+            while time.time() - start < timeout:
+                try:
+                    conn = psycopg2.connect(host=ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
+                    conn.close()
+                    logging.debug("Postgres Started")
+                    return
+                except Exception as ex:
+                    logging.debug("Can't connect to Postgres " + str(ex))
+                    time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
 
@@ -897,6 +909,7 @@ class ClickHouseCluster:
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug('Setup Postgres')
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.wait_postgres_to_start(30)
                 self.wait_postgres_to_start(30)
 
             if self.with_kafka and self.base_kafka_cmd:
