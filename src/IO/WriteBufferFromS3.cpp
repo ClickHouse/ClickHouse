@@ -142,7 +142,6 @@ void WriteBufferFromS3::createMultipartUpload()
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
-
 void WriteBufferFromS3::writePart()
 {
     auto size = temporary_buffer->tellp();
