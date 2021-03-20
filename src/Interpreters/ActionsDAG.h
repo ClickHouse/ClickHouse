@@ -120,8 +120,31 @@ public:
         /// Insert method doesn't check if map already have node with the same name.
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
-        void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
-        void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
+        void insert(Node * node)
+        {
+            auto it = list.emplace(list.end(), node);
+            if (auto handle = map.extract(node->result_name))
+            {
+                handle.key() = node->result_name; /// Change string_view
+                handle.mapped() = it;
+                map.insert(std::move(handle));
+            }
+            else
+                map[node->result_name] = it;
+        }
+
+        void prepend(Node * node)
+        {
+            auto it = list.emplace(list.begin(), node);
+            if (auto handle = map.extract(node->result_name))
+            {
+                handle.key() = node->result_name; /// Change string_view
+                handle.mapped() = it;
+                map.insert(std::move(handle));
+            }
+            else
+                map[node->result_name] = it;
+        }
 
         /// If node with same name exists in index, replace it. Otherwise insert new node to index.
         void replace(Node * node)
@@ -152,6 +175,9 @@ public:
         }
     };
 
+    /// NOTE: std::list is an implementation detail.
+    /// It allows to add and remove new nodes inplace without reallocation.
+    /// Raw pointers to nodes remain valid.
     using Nodes = std::list<Node>;
     using Inputs = std::vector<Node *>;
 
@@ -196,8 +222,8 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
-    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
+    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false, bool add_to_index = true);
+    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false, bool add_to_index = true);
     const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false, bool materialize = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
@@ -207,6 +233,8 @@ public:
             std::string result_name,
             const Context & context,
             bool can_replace = false);
+
+    void addNodeToIndex(const Node * node) { index.insert(const_cast<Node *>(node)); }
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
@@ -220,7 +248,7 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
-    void projectInput() { settings.project_input = true; }
+    void projectInput(bool project = true) { settings.project_input = project; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;
@@ -248,11 +276,15 @@ public:
     /// Create ActionsDAG which converts block structure from source to result.
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
+    /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
+    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
-        bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
+        bool ignore_constant_values = false,
+        bool add_casted_columns = false,
+        NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
     static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);
@@ -278,6 +310,29 @@ public:
     /// Index of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
 
+    /// Create actions which may calculate part of filter using only available_inputs.
+    /// If nothing may be calculated, returns nullptr.
+    /// Otherwise, return actions which inputs are from available_inputs.
+    /// Returned actions add single column which may be used for filter.
+    /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
+    ///
+    /// @param all_inputs should contain inputs from previous step, which will be used for result actions.
+    /// It is expected that all_inputs contain columns from available_inputs.
+    /// This parameter is needed to enforce result actions save columns order in block.
+    /// Otherwise for some queries, e.g. with GROUP BY, columns will be mixed.
+    /// Example: SELECT sum(x), y, z FROM tab WHERE z > 0 and sum(x) > 0
+    /// Pushed condition: z > 0
+    /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
+    /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
+    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, x, y`.
+    /// To avoid it, add inputs from `all_inputs` list,
+    /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
+    ActionsDAGPtr cloneActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool can_remove_filter,
+        const Names & available_inputs,
+        const ColumnsWithTypeAndName & all_inputs);
+
 private:
     Node & addNode(Node node, bool can_replace = false, bool add_to_index = true);
     Node & getNode(const std::string & name);
@@ -302,10 +357,12 @@ private:
     }
 
     void removeUnusedActions(const std::vector<Node *> & required_nodes);
-    void removeUnusedActions();
+    void removeUnusedActions(bool allow_remove_inputs = true);
     void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
 
     void compileFunctions();
+
+    ActionsDAGPtr cloneActionsForConjunction(std::vector<Node *> conjunction, const ColumnsWithTypeAndName & all_inputs);
 };
 
 

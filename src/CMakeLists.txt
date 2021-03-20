@@ -101,8 +101,8 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp)
-list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h)
+list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
+list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
@@ -316,6 +316,7 @@ if (USE_CYRUS_SASL)
 endif()
 
 if (USE_KRB5)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
@@ -462,6 +463,8 @@ endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
+include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -482,6 +485,15 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_aggregate_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE
+        ${GTEST_BOTH_LIBRARIES}
+        clickhouse_functions
+        clickhouse_aggregate_functions
+        clickhouse_parsers
+        clickhouse_storages_system
+        dbms
+        clickhouse_common_zookeeper
+        string_utils)
+
     add_check(unit_tests_dbms)
 endif ()
