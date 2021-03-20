@@ -125,6 +125,7 @@ def test_invalidate_query(started_cluster):
 
     node1.query("DROP TABLE IF EXISTS {}".format(table_name))
     node1.query("DROP DICTIONARY IF EXISTS {}".format(dict_name))
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
 
 def test_dictionary_with_replicas(started_cluster):
