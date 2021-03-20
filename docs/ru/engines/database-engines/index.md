@@ -20,4 +20,3 @@ toc_title: "Введение"
 
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/database_engines/) <!--hide-->

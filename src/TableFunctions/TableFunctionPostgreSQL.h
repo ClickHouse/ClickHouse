@@ -30,7 +30,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
     String connection_str;
-    String remote_table_name;
+    String remote_table_name, remote_table_schema;
     PostgreSQLConnectionPtr connection;
 };
 
