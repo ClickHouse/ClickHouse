@@ -217,26 +217,19 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
 
 void PostgreSQLReplicationHandler::consumerFunc()
 {
-    auto start_time = std::chrono::steady_clock::now();
     std::vector<std::pair<Int32, String>> skipped_tables;
 
-    while (!stop_synchronization)
-    {
-        bool reschedule = !consumer->consume(skipped_tables);
+    bool schedule_now = consumer->consume(skipped_tables);
 
-        if (!skipped_tables.empty())
-            consumer->updateSkipList(reloadFromSnapshot(skipped_tables));
+    if (!skipped_tables.empty())
+        consumer->updateSkipList(reloadFromSnapshot(skipped_tables));
 
-        if (reschedule)
-            break;
+    if (stop_synchronization)
+        return;
 
-        auto end_time = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (duration.count() > max_thread_work_duration_ms)
-            break;
-    }
-
-    if (!stop_synchronization)
+    if (schedule_now)
+        consumer_task->schedule();
+    else
         consumer_task->scheduleAfter(reschedule_ms);
 }
 
