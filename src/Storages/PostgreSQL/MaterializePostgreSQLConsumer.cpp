@@ -145,13 +145,32 @@ void MaterializePostgreSQLConsumer::readString(const char * message, size_t & po
 }
 
 
+template<typename T>
+T MaterializePostgreSQLConsumer::unhexN(const char * message, size_t pos, size_t n)
+{
+    T result = 0;
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (i) result <<= 8;
+        result |= UInt32(unhex2(message + pos + 2 * i));
+    }
+    return result;
+}
+
+
+Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+{
+    assert(size > pos + 16);
+    Int64 result = unhexN<Int64>(message, pos, 8);
+    pos += 16;
+    return result;
+}
+
+
 Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 8);
-    Int32 result = (UInt32(unhex2(message + pos)) << 24)
-                | (UInt32(unhex2(message + pos + 2)) << 16)
-                | (UInt32(unhex2(message + pos + 4)) << 8)
-                | (UInt32(unhex2(message + pos + 6)));
+    Int32 result = unhexN<Int32>(message, pos, 4);
     pos += 8;
     return result;
 }
@@ -160,8 +179,7 @@ Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & po
 Int16 MaterializePostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size > pos + 4);
-    Int16 result = (UInt32(unhex2(message + pos)) << 8)
-                | (UInt32(unhex2(message + pos + 2)));
+    Int16 result = unhexN<Int16>(message, pos, 2);
     pos += 4;
     return result;
 }
@@ -172,18 +190,6 @@ Int8 MaterializePostgreSQLConsumer::readInt8(const char * message, size_t & pos,
     assert(size > pos + 2);
     Int8 result = unhex2(message + pos);
     pos += 2;
-    return result;
-}
-
-
-Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
-{
-    assert(size > pos + 16);
-    Int64 result = (UInt64(unhex4(message + pos)) << 48)
-                | (UInt64(unhex4(message + pos + 4)) << 32)
-                | (UInt64(unhex4(message + pos + 8)) << 16)
-                | (UInt64(unhex4(message + pos + 12)));
-    pos += 16;
     return result;
 }
 

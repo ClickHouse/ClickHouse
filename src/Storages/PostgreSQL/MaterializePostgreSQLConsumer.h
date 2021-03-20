@@ -83,6 +83,8 @@ private:
 
     void readTupleData(Buffer & buffer, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
 
+    template<typename T>
+    static T unhexN(const char * message, size_t pos, size_t n);
     static void readString(const char * message, size_t & pos, size_t size, String & result);
     static Int64 readInt64(const char * message, size_t & pos, size_t size);
     static Int32 readInt32(const char * message, size_t & pos, size_t size);
