@@ -1,6 +1,6 @@
 ---
 toc_priority: 7
-toc_title: "\u0418\u0441\u0442\u043e\u0440\u0438\u044f\u0020\u0043\u006c\u0069\u0063\u006b\u0048\u006f\u0075\u0073\u0065"
+toc_title: "История ClickHouse"
 ---
 
 
@@ -52,4 +52,3 @@ OLAPServer хорошо подходил для неагрегированных
 
 Чтобы снять ограничения OLAPServer-а и решить задачу работы с неагрегированными данными для всех отчётов, разработана СУБД ClickHouse.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/ya_metrika_task/) <!--hide-->

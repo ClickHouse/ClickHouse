@@ -6,6 +6,6 @@ insert into dt_overflow values('2106-11-11', 1);
 
 insert into dt_overflow values('2106-11-12', 1);
 
-select * from dt_overflow;
+select * from dt_overflow ORDER BY d;
 
 drop table if exists dt_overflow;

@@ -42,19 +42,18 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/misc.h>
 
 #include <Interpreters/ActionsVisitor.h>
-
-#include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/GlobalSubqueriesVisitor.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/join_common.h>
+#include <Interpreters/misc.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Parsers/formatAST.h>
 
 namespace DB
@@ -208,13 +207,12 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             auto sample_columns = temp_actions->getResultColumns();
-            analyzedJoin().addJoinedColumnsAndCorrectNullability(sample_columns);
+            analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
             temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
 
         columns_after_join = columns_after_array_join;
-        const auto & added_by_join = analyzedJoin().columnsAddedByJoin();
-        columns_after_join.insert(columns_after_join.end(), added_by_join.begin(), added_by_join.end());
+        analyzedJoin().addJoinedColumnsAndCorrectTypes(columns_after_join, false);
     }
 
     has_aggregation = makeAggregateDescriptions(temp_actions);
@@ -320,7 +318,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
     auto io = interpreter_subquery->execute();
-    PullingPipelineExecutor executor(io.pipeline);
+    PullingAsyncPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
     set->setHeader(executor.getHeader());
@@ -328,6 +326,9 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     Block block;
     while (executor.pull(block))
     {
+        if (block.rows() == 0)
+            continue;
+
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
             return;
@@ -724,13 +725,17 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
 
 JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
 {
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
+    const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns);
+
+    if (syntax->analyzed_join->needConvert())
+    {
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(syntax->analyzed_join->leftConvertingActions()));
+        chain.addStep();
+    }
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
-
-    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
-            syntax->analyzed_join, table_join, step.getResultColumns()));
-
+    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(syntax->analyzed_join, table_join, step.getResultColumns()));
     chain.addStep();
     return table_join;
 }
@@ -795,7 +800,8 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join,
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
+    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -831,7 +837,13 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         }
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+        subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+
+        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
+        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
+        if (need_convert)
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
+
         subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
 
         /// Do not make subquery for join over dictionary.
@@ -841,6 +853,13 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
             subqueries_for_sets.erase(join_subquery_id);
             return join;
         }
+    }
+    else
+    {
+        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
+        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
+        if (need_convert)
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
     }
 
     return subquery_for_join.join;
@@ -854,6 +873,10 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
 
     if (!select_query->prewhere())
         return prewhere_actions;
+
+    Names first_action_names;
+    if (!chain.steps.empty())
+        first_action_names = chain.steps.front()->getRequiredColumns().getNames();
 
     auto & step = chain.lastStep(sourceColumns());
     getRootActions(select_query->prewhere(), only_types, step.actions());
@@ -879,6 +902,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag);
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
+        required_source_columns.insert(first_action_names.begin(), first_action_names.end());
 
         /// Add required columns to required output in order not to remove them after prewhere execution.
         /// TODO: add sampling and final execution to common chain.
@@ -1337,7 +1361,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         bool first_stage_,
         bool second_stage_,
         bool only_types,
-        const FilterInfoPtr & filter_info_,
+        const FilterDAGInfoPtr & filter_info_,
         const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
@@ -1400,7 +1424,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (storage && filter_info_)
         {
             filter_info = filter_info_;
-            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions_dag, filter_info->column_name);
+            filter_info->do_remove_column = true;
         }
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
@@ -1426,9 +1450,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (query_analyzer.hasTableJoin())
         {
             query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
-
             before_join = chain.getLastActions();
             join = query_analyzer.appendJoin(chain);
+            converting_join_columns = query_analyzer.analyzedJoin().leftConvertingActions();
             chain.addStep();
         }
 
@@ -1567,10 +1591,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
 void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
 {
+    size_t next_step_i = 0;
+
     if (hasPrewhere())
     {
-        const ExpressionActionsChain::Step & step = *chain.steps.at(0);
+        const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
         prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
+        prewhere_info->prewhere_actions->projectInput(false);
 
         NameSet columns_to_remove;
         for (size_t i = 1; i < step.required_output.size(); ++i)
@@ -1581,19 +1608,16 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
     }
-    else if (hasFilter())
-    {
-        /// Can't have prewhere and filter set simultaneously
-        filter_info->do_remove_column = chain.steps.at(0)->can_remove_required_output.at(0);
-    }
+
     if (hasWhere())
-        remove_where_filter = chain.steps.at(where_step_num)->can_remove_required_output.at(0);
+    {
+        const ExpressionActionsChain::Step & step = *chain.steps.at(where_step_num);
+        remove_where_filter = step.can_remove_required_output.at(0);
+    }
 }
 
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
-    if (hasFilter())
-        filter_info->actions_dag->projectInput();
     if (hasWhere())
         before_where->projectInput();
     if (hasHaving())

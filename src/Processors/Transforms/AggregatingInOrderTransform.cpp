@@ -1,5 +1,6 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Core/SortCursor.h>
 
 namespace DB
 {
@@ -45,21 +46,6 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 }
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
-
-static bool less(const MutableColumns & lhs, const Columns & rhs, size_t i, size_t j, const SortDescription & descr)
-{
-    for (const auto & elem : descr)
-    {
-        size_t ind = elem.column_number;
-        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
-        if (res < 0)
-            return true;
-        else if (res > 0)
-            return false;
-    }
-    return false;
-}
-
 
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
@@ -143,6 +129,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                     source_column = source_column->cut(key_begin, rows - key_begin);
 
                 current_chunk = Chunk(source_columns, rows - key_begin);
+                src_rows -= current_chunk.getNumRows();
                 block_end_reached = true;
                 need_generate = true;
                 cur_block_size = 0;

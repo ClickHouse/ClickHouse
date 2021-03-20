@@ -13,6 +13,7 @@ namespace ErrorCodes
 IInputFormat::IInputFormat(Block header, ReadBuffer & in_)
     : ISource(std::move(header)), in(in_)
 {
+    column_mapping = std::make_shared<ColumnMapping>();
 }
 
 void IInputFormat::resetParser()
