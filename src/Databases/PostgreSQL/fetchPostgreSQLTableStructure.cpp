@@ -154,7 +154,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
 
 
 template<typename T>
-PostgreSQLTableStructure fetchPostgreSQLTableStructureImpl(
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
 {
     PostgreSQLTableStructure table;
@@ -194,19 +194,14 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructureImpl(
 }
 
 
+template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::read_transaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
-{
-    return fetchPostgreSQLTableStructureImpl<pqxx::read_transaction>(tx, postgres_table_name, use_nulls, with_primary_key);
-}
+        std::shared_ptr<pqxx::read_transaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
 
 
-/// For the case when several operations are made on the transaction object before it can be used (like export snapshot and isolation level)
+template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::work> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
-{
-    return fetchPostgreSQLTableStructureImpl<pqxx::work>(tx, postgres_table_name, use_nulls, with_primary_key);
-}
+        std::shared_ptr<pqxx::work> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
 
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
