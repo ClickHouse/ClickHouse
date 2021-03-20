@@ -52,8 +52,6 @@ public:
 
     void createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void dropTable(const Context & context, const String & name, bool no_delay) override;
-
     void drop(const Context & context) override;
 
     void shutdown() override;
@@ -61,12 +59,11 @@ public:
 private:
     void startSynchronization();
 
-    StoragePtr getStorage(const String & name);
-
     Poco::Logger * log;
-    const Context global_context;
+    const Context & global_context;
     String metadata_path;
     ASTPtr database_engine_define;
+
     String database_name, remote_database_name;
     PostgreSQLConnectionPtr connection;
     std::unique_ptr<MaterializePostgreSQLSettings> settings;
