@@ -79,7 +79,7 @@ public:
 
     std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
     {
-        auto dict = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+        auto dict = context.getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
         if (!access_checked)
         {
@@ -118,7 +118,7 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return context.getExternalDictionariesLoader().getDictionaryStructure(dictionary_name);
+        return context.getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
     }
 
 private:
