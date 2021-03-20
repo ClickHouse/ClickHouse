@@ -154,6 +154,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -203,6 +205,11 @@ public:
     {
         return this->template doCompareColumn<Self>(assert_cast<const Self &>(rhs), rhs_row_num, row_indexes,
                                                     compare_results, direction, nan_direction_hint);
+    }
+
+    bool hasEqualValues() const override
+    {
+        return this->template hasEqualValuesImpl<Self>();
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;

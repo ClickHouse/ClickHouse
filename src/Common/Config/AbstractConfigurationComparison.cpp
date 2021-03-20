@@ -26,6 +26,10 @@ bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const P
     return isSameConfiguration(left, String(), right, String());
 }
 
+bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const Poco::Util::AbstractConfiguration & right, const String & key)
+{
+    return isSameConfiguration(left, key, right, key);
+}
 
 bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const String & left_key,
                          const Poco::Util::AbstractConfiguration & right, const String & right_key)

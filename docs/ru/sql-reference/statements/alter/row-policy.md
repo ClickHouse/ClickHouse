@@ -18,4 +18,3 @@ ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]t
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/alter/row-policy/) <!--hide-->
