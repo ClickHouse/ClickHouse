@@ -65,6 +65,7 @@ Types of sources (`source_type`):
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
@@ -661,7 +662,7 @@ Example of settings:
 
 Setting fields:
 - `host` – The Cassandra host or comma-separated list of hosts.
-- `port` – The port on the Cassandra servers. If not specified, default port is used.
+- `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
 - `user` – Name of the Cassandra user.
 - `password` – Password of the Cassandra user.
 - `keyspace` – Name of the keyspace (database).
@@ -675,52 +676,52 @@ Default value is 1 (the first key column is a partition key and other key column
 - `where` – Optional selection criteria.
 - `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 
-### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
+### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
 Example of settings:
 
 ``` xml
 <source>
-    <postgresql>
-        <db>clickhouse</db>
-        <host>localhost</host>
-        <port>5432</port>
-        <user>postgres</user>
-        <password>mysecretpassword</password>
-        <table>test_table</table>
-        <invalidate_query>SELECT value FROM test_table WHERE id = 0</invalidate_query>
-    </postgresql>
+  <postgresql>
+      <port>5432</port>
+      <user>clickhouse</user>
+      <password>qwerty</password>
+      <db>db_name</db>
+      <table>table_name</table>
+      <where>id=10</where>
+      <invalidate_query>SQL_QUERY</invalidate_query>
+  </postgresql>
 </source>
-<layout>
-    <hashed/>
-</layout>
-<structure>
-    <id>
-        <name>id</name>
-        <type>UInt32</type>
-    </id>
-    <attribute>
-        <name>id</name>
-        <type>UInt32</type>
-        <null_value></null_value>
-    </attribute>
-    <attribute>
-        <name>value</name>
-        <type>UInt32</type>
-        <null_value></null_value>
-    </attribute>
-</structure>
-<lifetime>1</lifetime>      
+```
+
+or
+
+``` sql
+SOURCE(POSTGRESQL(
+    port 5432
+    host 'postgresql-hostname'
+    user 'postgres_user'
+    password 'postgres_password'
+    db 'db_name'
+    table 'table_name'
+    replica(host 'example01-1' port 5432 priority 1)
+    replica(host 'example01-2' port 5432 priority 2)
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Setting fields:
 
-- `db` — Remote database name.
-- `host` — The PostgreSQL host.
-- `port` – The port on the PostgreSQL server. If not specified, default port is used.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `table` — Remote table name.
-- `invalidate_query` — Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dict-sources) <!--hide-->
+-   `host` – The host on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `replica` – Section of replica configurations. There can be multiple sections.
+        - `replica/host` – The PostgreSQL host.
+        - `replica/port` – The PostgreSQL port.
+        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+-   `db` – Name of the database.
+-   `table` – Name of the table.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).

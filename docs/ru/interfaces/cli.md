@@ -153,4 +153,3 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 </config>
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/cli/) <!--hide-->

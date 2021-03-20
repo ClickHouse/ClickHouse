@@ -1,5 +1,5 @@
 ---
-toc_priority: 54
+toc_priority: 42
 toc_title: postgresql
 ---
 
@@ -13,61 +13,89 @@ toc_title: postgresql
 postgresql('host:port', 'database', 'table', 'user', 'password')
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `host:port` — адрес сервера PostgreSQL.
--   `database` — имя удаленной БД.
--   `table` — таблица удаленной БД.
+
+-   `database` — имя базы данных на удалённом сервере.
+
+-   `table` — имя таблицы на удалённом сервере.
+
 -   `user` — пользователь PostgreSQL.
+
 -   `password` — пароль пользователя.
+
+
+SELECT запросы на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение  с коммитом после каждого `SELECT` запроса.
+
+Простые условия для `WHERE` такие как `=, !=, >, >=, <, <=, IN` исполняются на стороне PostgreSQL сервера.
+
+Все операции объединения, аггрегации, сортировки, условия `IN [ array ]` и ограничения `LIMIT` выполняются на стороне ClickHouse только после того как запрос к PostgreSQL закончился.
+
+INSERT запросы на стороне PostgreSQL выполняются как `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` внутри PostgreSQL транзакции с автоматическим коммитом после каждого `INSERT` запроса.
+
+PostgreSQL массивы конвертируются в массивы ClickHouse.
+Будьте осторожны в PostgreSQL массивы созданные как type_name[], являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы, внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
 **Возвращаемое значение**
 
-Таблица с теми же столбцами, как ив исходной таблице PostgreSQL.
+Объект таблицы с теми же столбцами, что и в исходной таблице PostgreSQL.
 
-!!! info "Замечения"
-    В запросах `INSERT` чтобы различать табличную функцию `postgresql(...)` от таблицы с таким именем и списком колонок, используйте ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже. 
+!!! info "Примечание"
+В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. See examples below.
 
 **Примеры**
 
-Рассмотрим таблицу в БД PostgreSQL:
-
-``` sql
-postgre> CREATE TABLE IF NOT EXISTS test_table (a integer, b text, c integer)
-postgre> INSERT INTO test_table (a, b, c) VALUES (1, 2, 3), (4, 5, 6)
-```
-
-Получение данных из ClickHouse:
-
-``` sql
-SELECT * FROM postgresql('localhost:5432', 'test_database', 'test_table', 'postgres', 'mysecretpassword');
-```
+Таблица в PostgreSQL:
 
 ``` text
-┌─a─┬─b─┬─c─┐
-│ 1 │ 2 │ 3 │
-│ 4 │ 5 │ 6 │
-└───┴───┴───┘
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> select * from test;
+ int_id | int_nullable | float | str  | float_nullable
+--------+--------------+-------+------+----------------
+      1 |              |     2 | test |
+(1 row)
 ```
 
-Вставка данных в таблицу PostgreSQL из таблицы ClickHouse:
+Получение данных в ClickHouse:
 
 ```sql
-INSERT INTO FUNCTION postgresql('localhost:5432', 'test_database', 'test_table', 'postgres', 'mysecretpassword') (a, b, c) VALUES (7, 8, 9);
-SELECT * FROM postgresql('localhost:5432', 'test_database', 'test_table', 'postgres', 'mysecretpassword');
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test'); 
 ```
 
 ``` text
-┌─a─┬─b─┬─c─┐
-│ 1 │ 2 │ 3 │
-│ 4 │ 5 │ 6 │
-│ 7 │ 8 │ 9 │
-└───┴───┴───┘
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
 ```
 
-**См. также**
+Вставка:
 
--   [Табличный бвижок PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
--   [Пример подключения PostgreSQL как источника внешнего словаря](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+```sql
+INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
+```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->
+``` text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+**Смотрите также**
+
+-   [Движок таблиц `PostgreSQL`](../../sql-reference/table-functions/postgresql.md)
+-   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/table-functions/postgresql.md#dicts-external_dicts_dict_sources-postgresql)

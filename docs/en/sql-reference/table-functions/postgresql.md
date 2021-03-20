@@ -1,5 +1,5 @@
 ---
-toc_priority: 54
+toc_priority: 42
 toc_title: postgresql
 ---
 
@@ -16,53 +16,85 @@ postgresql('host:port', 'database', 'table', 'user', 'password')
 **Arguments**
 
 -   `host:port` — PostgreSQL server address.
+
 -   `database` — Remote database name.
+
 -   `table` — Remote table name.
+
 -   `user` — PostgreSQL user.
+
 -   `password` — User password.
+
+
+`SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
+
+Simple `WHERE` clauses such as `=, !=, >, >=, <, <=, IN` are executed on the PostgreSQL server.
+
+All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+
+`INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
+
+PostgreSQL Array types converts into ClickHouse arrays.
+
+!!! info "Note"
+    Be careful in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
 
 **Returned Value**
 
 A table object with the same columns as the original PostgreSQL table.
 
 !!! info "Note"
-    In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below. 
+    In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 
 **Examples**
 
-Consider the table in PostgreSQL:
+Table in PostgreSQL:
 
-``` sql
-postgre> CREATE TABLE IF NOT EXISTS test_table (a integer, b text, c integer)
-postgre> INSERT INTO test_table (a, b, c) VALUES (1, 2, 3), (4, 5, 6)
+``` text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> select * from test;
+ int_id | int_nullable | float | str  | float_nullable
+--------+--------------+-------+------+----------------
+      1 |              |     2 | test |
+(1 row)
 ```
 
 Selecting data from ClickHouse:
 
-``` sql
-SELECT * FROM postgresql('localhost:5432', 'test_database', 'test_table', 'postgres', 'mysecretpassword');
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
 ``` text
-┌─a─┬─b─┬─c─┐
-│ 1 │ 2 │ 3 │
-│ 4 │ 5 │ 6 │
-└───┴───┴───┘
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
 ```
 
-Inserting into PostgreSQL from ClickHouse:
+Inserting:
 
 ```sql
-INSERT INTO FUNCTION postgresql('localhost:5432', 'test_database', 'test_table', 'postgres', 'mysecretpassword') (a, b, c) VALUES (7, 8, 9);
-SELECT * FROM postgresql('localhost:5432', 'test_database', 'test_table', 'postgres', 'mysecretpassword');
+INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
 ```
 
 ``` text
-┌─a─┬─b─┬─c─┐
-│ 1 │ 2 │ 3 │
-│ 4 │ 5 │ 6 │
-│ 7 │ 8 │ 9 │
-└───┴───┴───┘
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
 ```
 
 **See Also**
