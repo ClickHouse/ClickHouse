@@ -153,7 +153,7 @@ ASTPtr StorageMaterializePostgreSQL::getColumnDeclaration(const DataTypePtr & da
 /// For single storage MaterializePostgreSQL get columns and primary key columns from storage definition.
 /// For database engine MaterializePostgreSQL get columns and primary key columns by fetching from PostgreSQL, also using the same
 /// transaction with snapshot, which is used for initial tables dump.
-ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
+ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure)
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
@@ -175,9 +175,13 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(const std::functi
     }
     else
     {
-        auto table_structure = fetch_table_structure();
+        if (!table_structure)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "No table structure returned for table {}.{}", table_id.database_name, table_id.table_name);
+        }
 
-        if (!table_structure.columns)
+        if (!table_structure->columns)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "No columns returned for table {}.{}", table_id.database_name, table_id.table_name);
@@ -185,17 +189,17 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(const std::functi
 
         StorageInMemoryMetadata storage_metadata;
 
-        ordinary_columns_and_types = *table_structure.columns;
+        ordinary_columns_and_types = *table_structure->columns;
         storage_metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
         setInMemoryMetadata(storage_metadata);
 
-        if (!table_structure.primary_key_columns)
+        if (!table_structure->primary_key_columns)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "No primary key columns returned for table {}.{}", table_id.database_name, table_id.table_name);
         }
 
-        auto primary_key_columns = *table_structure.primary_key_columns;
+        auto primary_key_columns = *table_structure->primary_key_columns;
 
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -238,7 +242,7 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(const std::functi
 }
 
 
-void StorageMaterializePostgreSQL::createNestedIfNeeded(const std::function<PostgreSQLTableStructure()> & fetch_table_structure)
+void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
     if (nested_loaded)
     {
@@ -249,7 +253,7 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(const std::function<Post
     }
 
     auto context = makeNestedTableContext();
-    const auto ast_create = getCreateNestedTableQuery(fetch_table_structure);
+    const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
 
     try
     {

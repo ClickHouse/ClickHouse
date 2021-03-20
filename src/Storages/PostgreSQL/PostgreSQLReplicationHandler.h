@@ -44,8 +44,6 @@ public:
 
     NameSet fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
 
-    PostgreSQLTableStructure fetchTableStructure(std::shared_ptr<pqxx::work> tx, const std::string & table_name);
-
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
     using Storages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
@@ -73,6 +71,8 @@ private:
     NameSet fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_);
 
     std::unordered_map<Int32, String> reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
+
+    PostgreSQLTableStructurePtr fetchTableStructure(std::shared_ptr<pqxx::work> tx, const std::string & table_name);
 
     Poco::Logger * log;
     const Context & context;
