@@ -3,6 +3,15 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <boost/algorithm/string/join.hpp>
+#include <unordered_set>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -12,6 +21,117 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DEADLOCK_AVOIDED;
 }
+}
+
+namespace
+{
+
+using namespace DB;
+
+using Tables = std::unordered_set<std::string>;
+using DatabaseTables = std::unordered_map<std::string, Tables>;
+
+template <class Functor>
+void executeQuery(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const Functor & func, Settings * settings = nullptr)
+{
+    if (settings)
+        connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, settings);
+    else
+        connection.sendQuery(timeouts, query);
+
+    while (true)
+    {
+        Packet packet = connection.receivePacket();
+        switch (packet.type)
+        {
+            case Protocol::Server::Data:
+                func(packet.block);
+                continue;
+
+            case Protocol::Server::Progress:
+                continue;
+            case Protocol::Server::ProfileInfo:
+                continue;
+            case Protocol::Server::Totals:
+                continue;
+            case Protocol::Server::Extremes:
+                continue;
+            case Protocol::Server::Log:
+                continue;
+
+            case Protocol::Server::Exception:
+                packet.exception->rethrow();
+                return;
+
+            case Protocol::Server::EndOfStream:
+                return;
+
+            default:
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection.getDescription());
+        }
+    }
+}
+
+auto getTablesFromDatabase(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & database)
+{
+    Tables tables;
+    executeQuery(connection, timeouts, fmt::format("SHOW TABLES FROM {}", database), [&](const Block & block)
+    {
+        if (!block)
+            return;
+
+        if (block.columns() != 1)
+            throw Exception("Wrong number of columns received for SHOW TABLES FROM query", ErrorCodes::LOGICAL_ERROR);
+
+        const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
+
+        size_t rows = block.rows();
+        for (size_t i = 0; i < rows; ++i)
+            tables.emplace(column.getDataAt(i).toString());
+    });
+    return tables;
+}
+
+bool queryTablesExists(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, DatabaseTables & database_tables)
+{
+    ParserQuery parser(&query.back());
+    ASTPtr query_ast = parseQuery(parser, &query.front(), &query.back(),
+        /* max_query_size= */ 0,
+        /* max_parser_depth= */ 0);
+
+    for (const auto & select : query_ast->as<ASTSelectWithUnionQuery &>().list_of_selects->children)
+    {
+        for (const auto & db_table : getDatabaseAndTables(select->as<ASTSelectQuery &>(), "system"))
+        {
+            auto tables_it = database_tables.find(db_table.database);
+            if (tables_it == database_tables.end())
+            {
+                tables_it = database_tables.emplace(std::make_pair(db_table.database,
+                    getTablesFromDatabase(connection, timeouts, db_table.database))).first;
+            }
+            if (!tables_it->second.contains(db_table.table))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+/// Filter completion by removing queryes to non-existing tables.
+void filterCompletion(Connection & connection, const ConnectionTimeouts & timeouts, std::vector<std::string> & completion)
+{
+    DatabaseTables database_tables;
+    std::erase_if(completion, [&](const std::string & query)
+    {
+        return !queryTablesExists(connection, timeouts, query, database_tables);
+    });
+}
+
+}
+
+namespace DB
+{
 
 void Suggest::load(const ConnectionParameters & connection_parameters, size_t suggestion_limit)
 {
@@ -90,53 +210,44 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
 
-    std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-        "SELECT name FROM system.functions"
-        " UNION ALL "
-        "SELECT name FROM system.table_engines"
-        " UNION ALL "
-        "SELECT name FROM system.formats"
-        " UNION ALL "
-        "SELECT name FROM system.table_functions"
-        " UNION ALL "
-        "SELECT name FROM system.data_type_families"
-        " UNION ALL "
-        "SELECT name FROM system.merge_tree_settings"
-        " UNION ALL "
-        "SELECT name FROM system.settings"
-        " UNION ALL "
-        "SELECT cluster FROM system.clusters"
-        " UNION ALL "
-        "SELECT name FROM system.errors"
-        " UNION ALL "
-        "SELECT event FROM system.events"
-        " UNION ALL "
-        "SELECT metric FROM system.asynchronous_metrics"
-        " UNION ALL "
-        "SELECT metric FROM system.metrics"
-        " UNION ALL "
-        "SELECT macro FROM system.macros"
-        " UNION ALL "
-        "SELECT policy_name FROM system.storage_policies"
-        " UNION ALL "
-        "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+    std::vector<std::string> completion =
+    {
+        { "SELECT name FROM system.functions" },
+        { "SELECT name FROM system.table_engines" },
+        { "SELECT name FROM system.formats" },
+        { "SELECT name FROM system.table_functions" },
+        { "SELECT name FROM system.data_type_families" },
+        { "SELECT name FROM system.merge_tree_settings" },
+        { "SELECT name FROM system.settings" },
+        { "SELECT cluster FROM system.clusters" },
+        { "SELECT name FROM system.errors" },
+        { "SELECT event FROM system.events" },
+        { "SELECT metric FROM system.asynchronous_metrics" },
+        { "SELECT metric FROM system.metrics" },
+        { "SELECT macro FROM system.macros" },
+        { "SELECT policy_name FROM system.storage_policies" },
+        { "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate" },
+    };
 
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {
         String limit_str = toString(suggestion_limit);
-        query <<
-            " UNION ALL "
-            "SELECT name FROM system.databases LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
+        std::vector<std::string> extended_completion =
+        {
+            { "SELECT name FROM system.databases LIMIT " + limit_str },
+            { "SELECT DISTINCT name FROM system.tables LIMIT " + limit_str },
+            { "SELECT DISTINCT name FROM system.dictionaries LIMIT " + limit_str },
+            { "SELECT DISTINCT name FROM system.columns LIMIT " + limit_str },
+        };
+        std::copy(extended_completion.begin(), extended_completion.end(), std::back_inserter(completion));
     }
 
+    filterCompletion(connection, timeouts, completion);
+
+    std::stringstream query; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (";
+    query << boost::algorithm::join(completion, " UNION ALL ");
     query << ") WHERE notEmpty(res)";
 
     Settings settings;
@@ -144,45 +255,12 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     /// - system.errors
     /// - system.events
     settings.system_events_show_zero_values = true;
-    fetch(connection, timeouts, query.str(), settings);
-}
 
-void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings)
-{
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, &settings);
-
-    while (true)
+    /// FIXME: std::bind_front() can be used once libc++ will be updated.
+    executeQuery(connection, timeouts, query.str(), [&](const auto & block)
     {
-        Packet packet = connection.receivePacket();
-        switch (packet.type)
-        {
-            case Protocol::Server::Data:
-                fillWordsFromBlock(packet.block);
-                continue;
-
-            case Protocol::Server::Progress:
-                continue;
-            case Protocol::Server::ProfileInfo:
-                continue;
-            case Protocol::Server::Totals:
-                continue;
-            case Protocol::Server::Extremes:
-                continue;
-            case Protocol::Server::Log:
-                continue;
-
-            case Protocol::Server::Exception:
-                packet.exception->rethrow();
-                return;
-
-            case Protocol::Server::EndOfStream:
-                return;
-
-            default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection.getDescription());
-        }
-    }
+        fillWordsFromBlock(block);
+    }, &settings);
 }
 
 void Suggest::fillWordsFromBlock(const Block & block)
