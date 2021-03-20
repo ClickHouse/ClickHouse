@@ -197,7 +197,7 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             if (consumer)
                 consumer->updateNested(table_name, nested_storage);
         }
-        catch (Exception & e)
+        catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -396,7 +396,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_postgresql_replica_database_engine)
         return nullptr;
 
-    auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
+    auto use_nulls = context.getSettingsRef().external_databases_use_nulls;
     return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true));
 }
 
