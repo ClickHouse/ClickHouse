@@ -23,8 +23,9 @@ struct PostgreSQLTableStructure
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     PostgreSQLConnection::ConnectionPtr connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key = false);
 
+template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    std::shared_ptr<pqxx::work> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key = false);
+    std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key = false);
 
 }
 
