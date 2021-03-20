@@ -51,14 +51,14 @@ void MaterializePostgreSQLMetadata::writeMetadata(bool append_metadata)
 {
     WriteBufferFromFile out(tmp_metadata_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
 
-    if (!append_metadata)
+    if (append_metadata)
     {
-        writeString("\nLast version:\t" + toString(last_version), out);
-        writeString("\nLast LSN:\t" + toString(last_lsn), out);
+        writeString("\nActual LSN:\t" + toString(last_lsn), out);
     }
     else
     {
-        writeString("\nActual LSN:\t" + toString(last_lsn), out);
+        writeString("\nLast version:\t" + toString(last_version), out);
+        writeString("\nLast LSN:\t" + toString(last_lsn), out);
     }
 
     out.next();
@@ -78,20 +78,21 @@ void MaterializePostgreSQLMetadata::commitMetadata(std::string & lsn, const std:
     try
     {
         actual_lsn = finalizeStreamFunc();
+
+        /// This is not supposed to happen
+        if (actual_lsn != last_lsn)
+        {
+            writeMetadata(true);
+            LOG_WARNING(&Poco::Logger::get("MaterializePostgreSQLMetadata"),
+                    "Last written LSN {} is not equal to actual LSN {}", last_lsn, actual_lsn);
+        }
+
         Poco::File(tmp_metadata_file).renameTo(metadata_file);
     }
     catch (...)
     {
         Poco::File(tmp_metadata_file).remove();
         throw;
-    }
-
-    /// This is not supposed to happen
-    if (actual_lsn != last_lsn)
-    {
-        writeMetadata(true);
-        LOG_WARNING(&Poco::Logger::get("MaterializePostgreSQLMetadata"),
-                "Last written LSN {} is not equal to actual LSN {}", last_lsn, actual_lsn);
     }
 }
 
