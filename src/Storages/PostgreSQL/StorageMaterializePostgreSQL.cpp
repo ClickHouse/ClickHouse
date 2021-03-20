@@ -354,7 +354,7 @@ void StorageMaterializePostgreSQL::dropNested()
     interpreter.execute();
 
     nested_storage = nullptr;
-    LOG_WARNING(&Poco::Logger::get("StorageMaterializePostgreSQL"), "Dropped (or temporarily) nested table {}", getNestedTableName());
+    LOG_TRACE(&Poco::Logger::get("StorageMaterializePostgreSQL"), "Dropped (possibly temporarily) nested table {}", getNestedTableName());
 }
 
 
