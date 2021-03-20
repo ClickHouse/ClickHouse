@@ -27,7 +27,7 @@ public:
     using Storages = std::unordered_map<String, StoragePtr>;
 
     MaterializePostgreSQLConsumer(
-            std::shared_ptr<Context> context_,
+            const Context & context_,
             PostgreSQLConnectionPtr connection_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
@@ -100,7 +100,7 @@ private:
     }
 
     Poco::Logger * log;
-    std::shared_ptr<Context> context;
+    const Context & context;
     const std::string replication_slot_name, publication_name;
 
     MaterializePostgreSQLMetadata metadata;

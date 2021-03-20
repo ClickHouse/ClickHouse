@@ -23,7 +23,7 @@ namespace ErrorCodes
 }
 
 MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
-    std::shared_ptr<Context> context_,
+    const Context & context_,
     PostgreSQLConnectionPtr connection_,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
@@ -358,10 +358,11 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
         }
         case 'C': // Commit
         {
-            readInt8(replication_message, pos, size);  /// unused flags
-            readInt64(replication_message, pos, size); /// Int64 commit lsn
-            readInt64(replication_message, pos, size); /// Int64 transaction end lsn
-            readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
+            constexpr size_t unused_flags_len = 1;
+            constexpr size_t commit_lsn_len = 8;
+            constexpr size_t transaction_end_lsn_len = 8;
+            constexpr size_t transaction_commit_timestamp_len = 8;
+            pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
             final_lsn = current_lsn;
             LOG_DEBUG(log, "Commit lsn: {}", getLSNValue(current_lsn)); /// Will be removed
@@ -487,7 +488,7 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
                     insert->table_id = storage->getStorageID();
                     insert->columns = buffer.columnsAST;
 
-                    auto insert_context(*context);
+                    auto insert_context(context);
                     insert_context.makeQueryContext();
                     insert_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 

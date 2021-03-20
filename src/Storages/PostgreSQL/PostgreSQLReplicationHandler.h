@@ -24,12 +24,11 @@ class StorageMaterializePostgreSQL;
 class PostgreSQLReplicationHandler
 {
 public:
-    friend class PGReplicaLSN;
     PostgreSQLReplicationHandler(
             const std::string & database_name_,
             const std::string & conn_str_,
             const std::string & metadata_path_,
-            std::shared_ptr<Context> context_,
+            const Context & context_,
             const size_t max_block_size_,
             bool allow_minimal_ddl_,
             bool is_postgresql_replica_database_engine_,
@@ -76,7 +75,7 @@ private:
     std::unordered_map<Int32, String> reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
     Poco::Logger * log;
-    std::shared_ptr<Context> context;
+    const Context & context;
     const std::string database_name, connection_str, metadata_path;
     const size_t max_block_size;
     bool allow_minimal_ddl, is_postgresql_replica_database_engine;

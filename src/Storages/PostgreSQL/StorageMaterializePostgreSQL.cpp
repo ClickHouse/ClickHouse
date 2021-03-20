@@ -46,7 +46,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
-    , global_context(std::make_shared<Context>(context_.getGlobalContext()))
+    , global_context(context_.getGlobalContext())
     , replication_settings(std::move(replication_settings_))
     , is_postgresql_replica_database(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
@@ -71,7 +71,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     StoragePtr nested_storage_,
     const Context & context_)
     : IStorage(table_id_)
-    , global_context(std::make_shared<Context>(context_))
+    , global_context(context_)
     , nested_storage(nested_storage_)
     , is_postgresql_replica_database(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
@@ -267,7 +267,7 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(const std::function<Post
 
 Context StorageMaterializePostgreSQL::makeNestedTableContext() const
 {
-    auto context(*global_context);
+    auto context(global_context);
     context.makeQueryContext();
     context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
