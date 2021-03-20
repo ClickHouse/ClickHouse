@@ -65,8 +65,8 @@ private:
         /// Needed for insertPostgreSQLValue() method to parse array
         std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 
-        Buffer(StoragePtr storage) { fillBuffer(storage); }
-        void fillBuffer(StoragePtr storage);
+        Buffer(StoragePtr storage) { createEmptyBuffer(storage); }
+        void createEmptyBuffer(StoragePtr storage);
     };
 
     using Buffers = std::unordered_map<String, Buffer>;
