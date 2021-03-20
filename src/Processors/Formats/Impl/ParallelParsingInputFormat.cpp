@@ -89,6 +89,11 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         unit.chunk_ext.chunk.clear();
         unit.chunk_ext.block_missing_values.clear();
 
+        /// Propagate column_mapping to other parsers.
+        /// Note: column_mapping is used only for *WithNames types
+        if (current_ticket_number != 0)
+            input_format->setColumnMapping(column_mapping);
+
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
@@ -98,6 +103,14 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
             /// NOLINTNEXTLINE(bugprone-use-after-move)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+        }
+
+        /// Extract column_mapping from first parser to propagate it to others
+        if (current_ticket_number == 0)
+        {
+            column_mapping = input_format->getColumnMapping();
+            column_mapping->is_set = true;
+            first_parser_finished.set();
         }
 
         // We suppose we will get at least some blocks for a non-empty buffer,
@@ -117,8 +130,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-
     std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
@@ -129,6 +140,7 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
     }
     tryLogCurrentException(__PRETTY_FUNCTION__);
     parsing_finished = true;
+    first_parser_finished.set();
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();
 }

@@ -8,7 +8,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include "readInvalidateQuery.h"
 #endif
 
@@ -29,11 +28,10 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config_,
     const std::string & config_prefix,
-    PostgreSQLConnectionPtr connection_,
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , sample_block(sample_block_)
-    , connection(std::move(connection_))
+    , connection(std::make_shared<PostgreSQLReplicaConnection>(config_, config_prefix))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(config_.getString(fmt::format("{}.db", config_prefix), ""))
     , table(config_.getString(fmt::format("{}.table", config_prefix), ""))
@@ -50,7 +48,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
 PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other)
     : dict_struct(other.dict_struct)
     , sample_block(other.sample_block)
-    , connection(std::make_shared<PostgreSQLConnection>(other.connection->conn_str()))
+    , connection(other.connection)
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(other.db)
     , table(other.table)
@@ -95,7 +93,7 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_col
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->get());
     return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size);
 }
 
@@ -118,9 +116,8 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->conn());
+    auto tx = std::make_shared<pqxx::read_transaction>(*connection->get());
     PostgreSQLBlockInputStream<pqxx::read_transaction> block_input_stream(tx, request, invalidate_sample_block, 1);
-
     return readInvalidateQuery(block_input_stream);
 }
 
@@ -135,10 +132,9 @@ std::string PostgreSQLDictionarySource::getUpdateFieldAndDate()
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
-        auto tmp_time = update_time;
+        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - 1;
+        std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
-        std::string str_time = std::to_string(LocalDateTime(hr_time));
         return query_builder.composeUpdateQuery(update_field, str_time);
     }
     else
@@ -180,15 +176,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     {
 #if USE_LIBPQXX
         const auto config_prefix = root_config_prefix + ".postgresql";
-        auto connection = std::make_shared<PostgreSQLConnection>(
-            config.getString(fmt::format("{}.db", config_prefix), ""),
-            config.getString(fmt::format("{}.host", config_prefix), ""),
-            config.getUInt(fmt::format("{}.port", config_prefix), 0),
-            config.getString(fmt::format("{}.user", config_prefix), ""),
-            config.getString(fmt::format("{}.password", config_prefix), ""));
-
         return std::make_unique<PostgreSQLDictionarySource>(
-                dict_struct, config, config_prefix, connection, sample_block);
+                dict_struct, config, config_prefix, sample_block);
 #else
         (void)dict_struct;
         (void)config;
