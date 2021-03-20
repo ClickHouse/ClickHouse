@@ -53,7 +53,7 @@ public:
     /// Called right after shutdown() in case of drop query
     void shutdownFinal();
 
-    void createNestedIfNeeded(const std::function<PostgreSQLTableStructure()> & fetch_table_structure);
+    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
 
     /// Can be nullptr
     StoragePtr tryGetNested();
@@ -85,7 +85,7 @@ private:
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 
-    ASTPtr getCreateNestedTableQuery(const std::function<PostgreSQLTableStructure()> & fetch_table_structure);
+    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure);
 
     std::string getNestedTableName() const;
 

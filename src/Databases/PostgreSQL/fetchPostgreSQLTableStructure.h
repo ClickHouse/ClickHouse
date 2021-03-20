@@ -20,6 +20,8 @@ struct PostgreSQLTableStructure
     std::shared_ptr<NamesAndTypesList> primary_key_columns;
 };
 
+using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
+
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     PostgreSQLConnection::ConnectionPtr connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key = false);
 

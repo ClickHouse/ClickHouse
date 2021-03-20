@@ -167,7 +167,7 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
             tx->exec(query_str);
 
-            storage_data.second->createNestedIfNeeded([&]() { return fetchTableStructure(tx, table_name); });
+            storage_data.second->createNestedIfNeeded(fetchTableStructure(tx, table_name));
             auto nested_storage = storage_data.second->getNested();
 
             /// Load from snapshot, which will show table state before creation of replication slot.
@@ -392,11 +392,14 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(PostgreSQLConne
 }
 
 
-PostgreSQLTableStructure PostgreSQLReplicationHandler::fetchTableStructure(
+PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         std::shared_ptr<pqxx::work> tx, const std::string & table_name)
 {
+    if (!is_postgresql_replica_database_engine)
+        return nullptr;
+
     auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
-    return fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true);
+    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true));
 }
 
 
