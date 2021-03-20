@@ -11,7 +11,7 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLReplicaConnection.h>
 #include <pqxx/pqxx>
 
 
@@ -26,7 +26,6 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix,
-        PostgreSQLConnectionPtr connection_,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -37,7 +36,6 @@ public:
     BlockInputStreamPtr loadUpdatedAll() override;
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
-    BlockInputStreamPtr loadBase(const String & query);
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
@@ -49,10 +47,11 @@ public:
 private:
     std::string getUpdateFieldAndDate();
     std::string doInvalidateQuery(const std::string & request) const;
+    BlockInputStreamPtr loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    PostgreSQLConnectionPtr connection;
+    PostgreSQLReplicaConnectionPtr connection;
     Poco::Logger * log;
 
     const std::string db;

@@ -12,6 +12,9 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -30,7 +33,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
             StorageID(getDatabaseName(), table_name), remote_table_name,
-            connection, columns, ConstraintsDescription{}, context);
+            connection, columns, ConstraintsDescription{}, context, remote_table_schema);
 
     result->startup();
     return result;
@@ -40,7 +43,11 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Context & context) const
 {
     const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
-    auto columns = fetchPostgreSQLTableStructure(connection->conn(), remote_table_name, use_nulls).columns;
+    auto columns = fetchPostgreSQLTableStructure(
+            connection->conn(),
+            remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
+                                        : doubleQuoteString(remote_table_schema) + '.' + doubleQuoteString(remote_table_name),
+            use_nulls).columns;
 
     return ColumnsDescription{*columns};
 }
@@ -55,9 +62,9 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() != 5)
-        throw Exception("Table function 'PostgreSQL' requires 5 parameters: "
-                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password').",
+    if (args.size() < 5 || args.size() > 6)
+        throw Exception("Table function 'PostgreSQL' requires from 5 to 6 parameters: "
+                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password', [, 'schema']).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
@@ -65,6 +72,9 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
 
     auto parsed_host_port = parseAddress(args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args.size() == 6)
+        remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
     connection = std::make_shared<PostgreSQLConnection>(
         args[1]->as<ASTLiteral &>().value.safeGet<String>(),

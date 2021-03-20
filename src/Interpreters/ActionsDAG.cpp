@@ -91,7 +91,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
     return addNode(std::move(node), can_replace, add_to_index);
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace, bool add_to_index)
 {
     Node node;
     node.type = ActionType::INPUT;
@@ -99,7 +99,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace, bool materialize)
@@ -1360,7 +1360,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const std::vector<ActionsDAG::No
 ///
 /// Result actions add single column with conjunction result (it is always last in index).
 /// No other columns are added or removed.
-ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction)
+ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
         return nullptr;
@@ -1374,6 +1374,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
                             std::make_shared<FunctionAnd>()));
 
     std::unordered_map<const ActionsDAG::Node *, ActionsDAG::Node *> nodes_mapping;
+    std::unordered_map<std::string, std::list<Node *>> required_inputs;
 
     struct Frame
     {
@@ -1416,14 +1417,29 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
                     child = nodes_mapping[child];
 
                 if (node.type == ActionType::INPUT)
-                {
-                    actions->inputs.emplace_back(&node);
-                    actions->index.insert(&node);
-                }
+                    required_inputs[node.result_name].push_back(&node);
 
                 stack.pop();
             }
         }
+    }
+
+    /// Actions must have the same inputs as in all_inputs list.
+    /// See comment to cloneActionsForFilterPushDown.
+    for (const auto & col : all_inputs)
+    {
+        Node * input;
+        auto & list = required_inputs[col.name];
+        if (list.empty())
+            input = &const_cast<Node &>(actions->addInput(col, true, false));
+        else
+        {
+            input = list.front();
+            list.pop_front();
+            actions->inputs.push_back(input);
+        }
+
+        actions->index.insert(input);
     }
 
     Node * result_predicate = nodes_mapping[*conjunction.begin()];
@@ -1442,7 +1458,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
     return actions;
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs)
+ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
+    const std::string & filter_name,
+    bool can_remove_filter,
+    const Names & available_inputs,
+    const ColumnsWithTypeAndName & all_inputs)
 {
     Node * predicate;
 
@@ -1480,7 +1500,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    auto actions = cloneActionsForConjunction(conjunction.allowed);
+    auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 

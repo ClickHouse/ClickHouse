@@ -78,8 +78,15 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
             break;
         case ExternalResultDescription::ValueType::vtDateTime:
-            assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{std::string(value)}});
+        {
+            ReadBufferFromString in(value);
+            time_t time = 0;
+            readDateTimeText(time, in);
+            if (time < 0)
+                time = 0;
+            assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
+        }
         case ExternalResultDescription::ValueType::vtDateTime64:[[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal32: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal64: [[fallthrough]];
@@ -176,7 +183,13 @@ void preparePostgreSQLArrayInfo(
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
     else if (which.isDateTime())
-        parser = [](std::string & field) -> Field { return time_t{LocalDateTime{field}}; };
+        parser = [](std::string & field) -> Field
+        {
+            ReadBufferFromString in(field);
+            time_t time = 0;
+            readDateTimeText(time, in);
+            return time;
+        };
     else if (which.isDecimal32())
         parser = [nested](std::string & field) -> Field
         {
