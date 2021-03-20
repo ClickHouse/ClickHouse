@@ -297,7 +297,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(240)
 def test_table_schema_changes(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
