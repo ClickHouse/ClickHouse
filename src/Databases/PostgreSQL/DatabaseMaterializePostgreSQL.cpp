@@ -27,6 +27,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 static const auto METADATA_SUFFIX = ".postgresql_replica_metadata";
 
 template<>
@@ -83,9 +88,7 @@ void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
             connection->conn_str(),
             metadata_path + METADATA_SUFFIX,
             std::make_shared<Context>(global_context),
-            settings->postgresql_replica_max_block_size.changed
-                     ? settings->postgresql_replica_max_block_size.value
-                     : (global_context.getSettingsRef().max_insert_block_size.value),
+            settings->postgresql_replica_max_block_size.value,
             settings->postgresql_replica_allow_minimal_ddl, true,
             settings->postgresql_replica_tables_list.value);
 
@@ -93,29 +96,19 @@ void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
 
     for (const auto & table_name : tables_to_replicate)
     {
-        auto storage = getStorage(table_name);
+        auto storage = tryGetTable(table_name, global_context);
 
-        if (storage)
+        if (!storage)
         {
-            replication_handler->addStorage(table_name, storage->template as<StorageMaterializePostgreSQL>());
-            tables[table_name] = storage;
+            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), StoragePtr{}, global_context);
         }
+
+        replication_handler->addStorage(table_name, storage->template as<StorageMaterializePostgreSQL>());
+        tables[table_name] = storage;
     }
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", tables.size());
     replication_handler->startup();
-}
-
-
-template<typename Base>
-StoragePtr DatabaseMaterializePostgreSQL<Base>::getStorage(const String & name)
-{
-    auto storage = tryGetTable(name, global_context);
-
-    if (storage)
-        return storage;
-
-    return StorageMaterializePostgreSQL::create(StorageID(database_name, name), StoragePtr{}, global_context);
 }
 
 
@@ -151,6 +144,8 @@ void DatabaseMaterializePostgreSQL<Base>::loadStoredObjects(
 template<typename Base>
 StoragePtr DatabaseMaterializePostgreSQL<Base>::tryGetTable(const String & name, const Context & context) const
 {
+    /// When a nested ReplacingMergeTree table is managed from PostgreSQLReplicationHandler, its context is modified
+    /// to show the type of managed table.
     if (context.hasQueryContext())
     {
         auto storage_set = context.getQueryContext().getQueryFactoriesInfo().storages;
@@ -183,14 +178,8 @@ void DatabaseMaterializePostgreSQL<Base>::createTable(const Context & context, c
         }
     }
 
-    LOG_WARNING(log, "Create table query allowed only for ReplacingMergeTree engine and from synchronization thread");
-}
-
-
-template<typename Base>
-void DatabaseMaterializePostgreSQL<Base>::dropTable(const Context & context, const String & name, bool no_delay)
-{
-    Base::dropTable(context, name, no_delay);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Create table query allowed only for ReplacingMergeTree engine and from synchronization thread");
 }
 
 

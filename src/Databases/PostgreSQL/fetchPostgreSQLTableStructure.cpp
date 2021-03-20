@@ -141,8 +141,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
     }
     catch (const pqxx::undefined_table &)
     {
-        throw Exception(fmt::format(
-                    "PostgreSQL table {} does not exist", postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_name);
     }
     catch (Exception & e)
     {
