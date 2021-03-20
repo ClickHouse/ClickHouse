@@ -200,8 +200,6 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
         catch (Exception & e)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            e.addMessage("while initial data synchronization for table {}", storage_data.first);
-            throw;
         }
     }
 
