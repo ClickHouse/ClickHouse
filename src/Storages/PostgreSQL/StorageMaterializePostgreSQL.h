@@ -90,7 +90,7 @@ private:
     std::string getNestedTableName() const;
 
     std::string remote_table_name;
-    std::shared_ptr<Context> global_context;
+    const Context global_context;
 
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings;
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;

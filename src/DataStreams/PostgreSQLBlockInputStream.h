@@ -20,6 +20,7 @@ namespace DB
 template<typename T>
 class PostgreSQLBlockInputStream : public IBlockInputStream
 {
+
 public:
     PostgreSQLBlockInputStream(
         std::shared_ptr<T> tx_,

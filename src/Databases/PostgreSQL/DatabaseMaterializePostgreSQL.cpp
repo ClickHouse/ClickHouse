@@ -87,7 +87,7 @@ void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
             remote_database_name,
             connection->conn_str(),
             metadata_path + METADATA_SUFFIX,
-            std::make_shared<Context>(global_context),
+            global_context,
             settings->postgresql_replica_max_block_size.value,
             settings->postgresql_replica_allow_minimal_ddl, true,
             settings->postgresql_replica_tables_list.value);
