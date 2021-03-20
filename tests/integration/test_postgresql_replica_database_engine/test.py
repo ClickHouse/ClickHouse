@@ -43,6 +43,7 @@ def create_postgres_table(cursor, table_name, replica_identity_full=False, templ
         cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
 
 
+@pytest.mark.timeout(30)
 def assert_nested_table_is_created(table_name):
     database_tables = instance.query('SHOW TABLES FROM test_database')
     while table_name not in database_tables:
@@ -51,6 +52,7 @@ def assert_nested_table_is_created(table_name):
     assert(table_name in database_tables)
 
 
+@pytest.mark.timeout(30)
 def check_tables_are_synchronized(table_name, order_by='key'):
         assert_nested_table_is_created(table_name)
 
@@ -88,7 +90,7 @@ def postgresql_setup_teardown():
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(120)
 def test_load_and_sync_all_database_tables(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -115,7 +117,7 @@ def test_load_and_sync_all_database_tables(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(120)
 def test_replicating_dml(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -158,7 +160,7 @@ def test_replicating_dml(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(120)
 def test_different_data_types(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -242,7 +244,7 @@ def test_different_data_types(started_cluster):
     assert(result == expected)
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(120)
 def test_load_and_sync_subset_of_database_tables(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -295,7 +297,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(120)
 def test_table_schema_changes(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
