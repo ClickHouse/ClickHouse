@@ -52,7 +52,7 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
 }
 
 
-void MaterializePostgreSQLConsumer::Buffer::fillBuffer(StoragePtr storage)
+void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage)
 {
     const auto storage_metadata = storage->getInMemoryMetadataPtr();
     description.init(storage_metadata->getSampleBlock());
@@ -281,9 +281,7 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
             Int8 new_tuple = readInt8(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
             auto buffer = buffers.find(table_name);
-
-            if (buffer == buffers.end())
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Buffer for table {} does not exist", table_name);
+            assert(buffer != buffers.end());
 
             if (new_tuple)
                 readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::INSERT);
@@ -299,6 +297,7 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
 
             const auto & table_name = relation_id_to_name[relation_id];
             auto buffer = buffers.find(table_name);
+            assert(buffer != buffers.end());
 
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
@@ -352,6 +351,7 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
 
             const auto & table_name = relation_id_to_name[relation_id];
             auto buffer = buffers.find(table_name);
+            assert(buffer != buffers.end());
             readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::DELETE);
 
             break;
@@ -380,6 +380,16 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
 
             if (!isSyncAllowed(relation_id))
                 return;
+
+            if (storages.find(relation_name) == storages.end())
+            {
+                markTableAsSkipped(relation_id, relation_name);
+                LOG_ERROR(log, "Storage for table {} does not exist, but is included in replication stream", relation_name);
+                return;
+            }
+
+            assert(buffers.count(relation_name));
+
 
             /// 'd' - default (primary key if any)
             /// 'n' - nothing
@@ -442,15 +452,6 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
                     }
                 }
             }
-
-            if (storages.find(relation_name) == storages.end())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Storage for table {} does not exist, but is included in replication stream", relation_name);
-            }
-
-            [[maybe_unused]] auto buffer_iter = buffers.find(relation_name);
-            assert(buffer_iter != buffers.end());
 
             tables_to_sync.insert(relation_name);
 
@@ -530,6 +531,9 @@ String MaterializePostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransa
 }
 
 
+/// Sync for some table might not be allowed if:
+/// 1. Table schema changed and might break synchronization.
+/// 2. There is no storage for this table. (As a result of some exception or incorrect pg_publication)
 bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 {
     auto table_with_lsn = skip_list.find(relation_id);
@@ -665,7 +669,7 @@ void MaterializePostgreSQLConsumer::updateNested(const String & table_name, Stor
 {
     storages[table_name] = nested_storage;
     auto & buffer = buffers.find(table_name)->second;
-    buffer.fillBuffer(nested_storage);
+    buffer.createEmptyBuffer(nested_storage);
 }
 
 
