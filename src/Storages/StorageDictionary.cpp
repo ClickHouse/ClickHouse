@@ -133,7 +133,7 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name, context);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
@@ -153,7 +153,8 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (!args.attach)
         {
-            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+            const auto & context = args.context;
+            const auto & dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name, context);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }

@@ -762,7 +762,7 @@ static bool allowDictJoin(StoragePtr joined_storage, const Context & context, St
         return false;
 
     dict_name = dict->dictionaryName();
-    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name);
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name, context);
     if (!dictionary)
         return false;
 
