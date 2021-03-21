@@ -124,7 +124,7 @@ INSERT INTO mt VALUES (2);
 INSERT INTO mt VALUES (3);
 ```
 
-Или используйте параметр [EVENTS](../../../sql-reference/statements/watch.md#events-clause) для получения списка изменений.
+Или используйте ключевое слово [EVENTS](../../../sql-reference/statements/watch.md#events-clause) для получения списка изменений.
 
 ```sql
 WATCH [db.]live_view EVENTS
