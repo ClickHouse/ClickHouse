@@ -84,20 +84,20 @@ ClickHouse не удаляет данные из таблица автомати
 -   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `X-Forwarded-For`.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — `ключ квоты` из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к журналу. Представляет собой произвольную строку, длина которой должна быть не больше, чем [max_query_size](../../operations/settings/settings.md#settings-max_query_size). Если нет комментария, то пустая строка.
+-   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к записи в логе. Представляет собой произвольную строку, длина которой должна быть не больше, чем [max_query_size](../../operations/settings/settings.md#settings-max_query_size). Если нет комментария, то пустая строка.
 -   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — идентификаторы потоков, участвующих в обработке запросов.
 -   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 -   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 -   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — значения настроек, которые перечислены в столбце `Settings.Names`.
--   `used_aggregate_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `агрегатных функций`, созданных в результате запроса.
--   `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `комбинаторов агрегатных функций`, созданных в результате запроса.
--   `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков баз данных`, созданных в результате запроса.
--   `used_data_type_families` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `семейств типов данных`, созданных в результате запроса.
--   `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `источников словарей`, созданных в результате запроса.
--   `used_formats` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `форматов`, созданных в результате запроса.
--   `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `функций`, созданных в результате запроса.
--   `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков таблиц`, созданных в результате запроса.
+-   `used_aggregate_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `агрегатных функций`, использованных при выполнении запроса.
+-   `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `комбинаторов агрегатных функций`, использованных при выполнении запроса.
+-   `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков баз данных`, использованных при выполнении запроса.
+-   `used_data_type_families` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `семейств типов данных`, использованных при выполнении запроса.
+-   `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `источников словарей`, использованных при выполнении запроса.
+-   `used_formats` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `форматов`, использованных при выполнении запроса.
+-   `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `функций`, использованных при выполнении запроса.
+-   `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков таблиц`, использованных при выполнении запроса.
 -   `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `табличных функций`, использованных при выполнении запроса.
 
 **Пример**
