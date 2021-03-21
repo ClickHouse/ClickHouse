@@ -219,7 +219,7 @@ WATCH lv;
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist.. 
 ```
 
-### Использование
+### Использование {#live-view-usage}
 
 Наиболее вероятные применения живых представлений:
 
