@@ -79,12 +79,12 @@ Columns:
     -   0 — The query was launched from the TCP interface.
     -   1 — `GET` method was used.
     -   2 — `POST` method was used.
--   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
--   `http_referer` ([String](../../sql-reference/data-types/string.md)) — URL of the query source.
--   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — Headers passed in the HTTP query.
+-   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP query.
+-   `http_referer` ([String](../../sql-reference/data-types/string.md)) — HTTP header `Referer` (contains an absolute or partial address of the page making the query).
+-   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — The `X-Forwarded-For` header passed in the HTTP query.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — The `quota key` specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `log_comment` ([String](../../sql-reference/data-types/string.md)) — Comment on the column, or an empty string if it is not defined.
+-   `log_comment` ([String](../../sql-reference/data-types/string.md)) — Log comment. It can be set to arbitrary string no longer than [max_query_size](../../operations/settings/settings.md#settings-max_query_size). An empty string if it is not defined.
 -   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Thread ids that are participating in query execution.
 -   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events)
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
