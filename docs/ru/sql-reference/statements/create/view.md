@@ -182,7 +182,7 @@ CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 
 ```sql
 CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
-WATCH lv
+WATCH lv;
 ```
 
 ```bash
