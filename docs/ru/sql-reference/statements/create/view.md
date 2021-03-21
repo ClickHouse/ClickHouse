@@ -95,7 +95,7 @@ CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [
 CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
-
+### Отслеживание изменений {#live-view-monitoring}
 Отслеживаем изменения живого представления при вставке данных в исходную таблицу.
 
 ```sql
@@ -123,14 +123,9 @@ INSERT INTO mt VALUES (3);
 
 Или используйте ключевое слово [EVENTS](../../../sql-reference/statements/watch.md#events-clause) для получения списка изменений.
 
-```sql
-WATCH [db.]live_view EVENTS
-```
-
-**Пример:**
 
 ```sql
-WATCH lv EVENTS
+WATCH lv EVENTS;
 ```
 
 ```bash
@@ -146,7 +141,7 @@ WATCH lv EVENTS
 ...
 ```
 
-Используйте запрос [SELECT](../../../sql-reference/statements/select/index.md) для живого представления, как для любого другого представления. Если результат запроса кеширован, он будет возвращен немедленно, без обращения к исходным таблицам представления.
+Для работы с живыми представлениями, как и с любыми другими, можно использовать запросы [SELECT](../../../sql-reference/statements/select/index.md). Если результат запроса кеширован, он будет возвращен немедленно, без обращения к исходным таблицам представления.
 
 ```sql
 SELECT * FROM [db.]live_view WHERE ...
@@ -154,7 +149,6 @@ SELECT * FROM [db.]live_view WHERE ...
 
 ### Принудительное обновление {#live-view-alter-refresh}
 
-You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 Можно принудительно обновить живое представление, используя выражение `ALTER LIVE VIEW [db.]table_name REFRESH`.
 
 ### WITH TIMEOUT {#live-view-with-timeout}
@@ -165,7 +159,7 @@ You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRE
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
 
-Если не был указано значение временного промежутка, используется значение `temporary_live_view_timeout`.
+Если не было указано значение временного промежутка, используется значение настройки `temporary_live_view_timeout`.
 
 **Пример:**
 
@@ -176,7 +170,7 @@ CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 
 ### WITH REFRESH {#live-view-with-refresh}
 
-Живое представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться после определенного временного промежутка, прошедшего с последнего обновления.
+Живое представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться через указанные промежутки времени, начиная с момента последнего обновления.
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
@@ -188,7 +182,7 @@ CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 
 ```sql
 CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
-WATCH lv
+WATCH lv;
 ```
 
 ```bash
@@ -203,7 +197,7 @@ WATCH lv
 └─────────────────────┴──────────┘
 ```
 
-Можно сочетать параметры `WITH TIMEOUT` и `WITH REFRESH` с помощью `AND`. 
+Параметры `WITH TIMEOUT` и `WITH REFRESH` можно сочетать с помощью `AND`. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
@@ -215,23 +209,23 @@ CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
 ```
 
-По истечении 15 секунд, представление будет автоматически удалено, если нет активного запроса `WATCH`.
+По истечении 15 секунд представление будет автоматически удалено, если нет активного запроса `WATCH`.
 
 ```sql
-WATCH lv
+WATCH lv;
 ```
 
 ```
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist.. 
 ```
 
-### Использование
+### Использование {#live-view-usage}
 
-Наиболее вероятные применения живых представлений:
+Наиболее частые случаи использования живых представлений:
 
-- Получение push-уведомлений с изменениями представления, без необходимости отправки запроса для отслеживания изменений.
-- Кеширование результатов часто используемых запросов для их получения без задержки.
-- Отслеживание изменений таблицы и запуск последующих запросов `SELECT`.
+- Получение push-уведомлений об изменениях данных без дополнительных периодических запросов.
+- Кеширование результатов часто используемых запросов для получения их без задержки.
+- Отслеживание изменений таблицы для запуска других запросов `SELECT`.
 - Отслеживание показателей из системных таблиц с помощью периодических обновлений.
 
 ### Параметры {#live-view-settings}
@@ -239,11 +233,10 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 Для управления поведением живых представлений можно использовать следующие параметры.
 
 - `allow_experimental_live_view` - включить использование живых представлений. По умолчанию установлено `0`.
-- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default is `15` seconds.
+- `live_view_heartbeat_interval` - интервал в секундах для периодической проверки существования живого представления. Значение по умолчанию: 15 секунд.
 - `live_view_heartbeat_interval` - периодичность индикации активности в секундах, по истечении которого представление «подаст признаки жизни». По умолчанию установлено `15`.
 - `max_live_view_insert_blocks_before_refresh` - наибольшее число вставок, после которых запрос на формирование представления исполняется снова. По умолчанию количество вставок установлено `64`.
-- `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default is `5` seconds.
-- `temporary_live_view_timeout` - время в секундах, после которого представление удаляется. По умолчанию `5`.
+- `temporary_live_view_timeout` - время в секундах, после которого представление удаляется. Значение по умолчанию: 5 секунд.
 - `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
 - `periodic_live_view_refresh` - время в секундах, по истечении которого живое представление с установленным автообновлением обновляется. По умолчанию `60`.
 
