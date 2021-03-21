@@ -209,7 +209,7 @@ CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
 ```
 
-По истечении 15 секунд, представление будет автоматически удалено, если нет активного запроса `WATCH`.
+По истечении 15 секунд представление будет автоматически удалено, если нет активного запроса `WATCH`.
 
 ```sql
 WATCH lv
