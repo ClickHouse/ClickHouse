@@ -125,7 +125,7 @@ INSERT INTO mt VALUES (3);
 
 
 ```sql
-WATCH lv EVENTS
+WATCH lv EVENTS;
 ```
 
 ```bash
