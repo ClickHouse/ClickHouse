@@ -88,9 +88,6 @@ CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [
 
 Для отслеживания изменений живого представления используйте запрос [WATCH](../../../sql-reference/statements/watch.md).
 
-```sql
-WATCH [db.]live_view
-```
 
 **Пример:**
 
