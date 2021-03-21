@@ -1,4 +1,4 @@
-drop table if exists test_ttl_group_by01763;
+DROP TABLE IF EXISTS test_ttl_group_by01763;
 CREATE TABLE test_ttl_group_by01763
 (key UInt32, ts DateTime, value UInt32, min_value UInt32 default value, max_value UInt32 default value)
 ENGINE = MergeTree() PARTITION BY toYYYYMM(ts)
@@ -23,4 +23,4 @@ SELECT sum(value), min(min_value), max(max_value), uniqExact(key) FROM test_ttl_
 SELECT sum(value), min(min_value), max(max_value), uniqExact(key) FROM test_ttl_group_by01763 where key = 3 ;
 SELECT sum(value), min(min_value), max(max_value), uniqExact(key) FROM test_ttl_group_by01763 where key = 3 and ts <= today() - interval 30 day ;
 
-drop table  test_ttl_group_by01763;
+DROP TABLE test_ttl_group_by01763;
