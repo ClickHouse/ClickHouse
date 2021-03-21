@@ -95,7 +95,7 @@ CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [
 CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
-
+### Отслеживание изменений {#live-view-monitoring}
 Отслеживаем изменения живого представления при вставке данных в исходную таблицу.
 
 ```sql
