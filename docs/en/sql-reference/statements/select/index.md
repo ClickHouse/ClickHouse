@@ -57,6 +57,9 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
+
+### COLUMNS expression {#columns-expression}
+
 To match some columns in the result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 
 ``` sql
