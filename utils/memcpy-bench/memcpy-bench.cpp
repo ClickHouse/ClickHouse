@@ -23,6 +23,8 @@
 #include <boost/program_options.hpp>
 #include <fmt/format.h>
 
+#include <cpuid.h>
+
 
 template <typename F, typename MemcpyImpl>
 void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_distribution, MemcpyImpl && impl)
@@ -128,443 +130,6 @@ void * memcpy_fast_sse(void * dst, const void * src, size_t size);
 void * memcpy_fast_avx(void * dst, const void * src, size_t size);
 void * memcpy_tiny(void * dst, const void * src, size_t size);
 
-
-static void * memcpySSE2(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
-    const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
-    size_t padding;
-
-    // small memory copy
-    if (size <= 16)
-        return memcpy_tiny(dst, src, size);
-
-    // align destination to 16 bytes boundary
-    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-    if (padding > 0)
-    {
-        __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-        dst += padding;
-        src += padding;
-        size -= padding;
-    }
-
-    // medium size copy
-    __m128i c0;
-
-    for (; size >= 16; size -= 16)
-    {
-        c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-        src += 16;
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst)), c0);
-        dst += 16;
-    }
-
-    memcpy_tiny(dst, src, size);
-    return destination;
-}
-
-static void * memcpySSE2Unrolled2(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
-    const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
-    size_t padding;
-
-    // small memory copy
-    if (size <= 32)
-        return memcpy_tiny(dst, src, size);
-
-    // align destination to 16 bytes boundary
-    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-    if (padding > 0)
-    {
-        __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-        dst += padding;
-        src += padding;
-        size -= padding;
-    }
-
-    // medium size copy
-    __m128i c0, c1;
-
-    for (; size >= 32; size -= 32)
-    {
-        c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-        c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-        src += 32;
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
-        dst += 32;
-    }
-
-    memcpy_tiny(dst, src, size);
-    return destination;
-}
-
-static void * memcpySSE2Unrolled4(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
-    const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
-    size_t padding;
-
-    // small memory copy
-    if (size <= 64)
-        return memcpy_tiny(dst, src, size);
-
-    // align destination to 16 bytes boundary
-    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-    if (padding > 0)
-    {
-        __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-        dst += padding;
-        src += padding;
-        size -= padding;
-    }
-
-    // medium size copy
-    __m128i c0, c1, c2, c3;
-
-    for (; size >= 64; size -= 64)
-    {
-        c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-        c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-        c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
-        c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
-        src += 64;
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
-        dst += 64;
-    }
-
-    memcpy_tiny(dst, src, size);
-    return destination;
-}
-
-
-static void * memcpySSE2Unrolled8(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
-    const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
-    size_t padding;
-
-    // small memory copy
-    if (size <= 128)
-        return memcpy_tiny(dst, src, size);
-
-    // align destination to 16 bytes boundary
-    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-    if (padding > 0)
-    {
-        __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-        dst += padding;
-        src += padding;
-        size -= padding;
-    }
-
-    // medium size copy
-    __m128i c0, c1, c2, c3, c4, c5, c6, c7;
-
-    for (; size >= 128; size -= 128)
-    {
-        c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-        c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-        c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
-        c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
-        c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
-        c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
-        c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
-        c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
-        src += 128;
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 4), c4);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 5), c5);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 6), c6);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 7), c7);
-        dst += 128;
-    }
-
-    memcpy_tiny(dst, src, size);
-    return destination;
-}
-
-
-//static __attribute__((__always_inline__, __target__("sse2")))
-__attribute__((__always_inline__))
-void memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & src, size_t & size)
-{
-    /// Align destination to 16 bytes boundary.
-    size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-    if (padding > 0)
-    {
-        __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-        dst += padding;
-        src += padding;
-        size -= padding;
-    }
-
-    /// Aligned unrolled copy.
-    __m128i c0, c1, c2, c3, c4, c5, c6, c7;
-
-    while (size >= 128)
-    {
-        c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-        c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-        c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
-        c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
-        c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
-        c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
-        c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
-        c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
-        src += 128;
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 4), c4);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 5), c5);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 6), c6);
-        _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 7), c7);
-        dst += 128;
-
-        size -= 128;
-    }
-}
-
-__attribute__((__target__("avx")))
-void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const uint8_t * __restrict & __restrict src, size_t & __restrict size)
-{
-    size_t padding = (32 - (reinterpret_cast<size_t>(dst) & 31)) & 31;
-
-    if (padding > 0)
-    {
-        __m256i head = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src));
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst), head);
-        dst += padding;
-        src += padding;
-        size -= padding;
-    }
-
-    __m256i c0, c1, c2, c3, c4, c5, c6, c7;
-
-    while (size >= 256)
-    {
-        c0 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 0);
-        c1 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 1);
-        c2 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 2);
-        c3 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 3);
-        c4 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 4);
-        c5 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 5);
-        c6 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 6);
-        c7 = _mm256_loadu_si256((reinterpret_cast<const __m256i*>(src)) + 7);
-        src += 256;
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 0), c0);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 1), c1);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 2), c2);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 3), c3);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 4), c4);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 5), c5);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 6), c6);
-        _mm256_store_si256(((reinterpret_cast<__m256i*>(dst)) + 7), c7);
-        dst += 256;
-
-        size -= 256;
-    }
-}
-
-bool have_avx = true;
-
-
-static uint8_t * memcpy_my(uint8_t * __restrict dst, const uint8_t * __restrict src, size_t size)
-{
-    uint8_t * ret = dst;
-
-tail:
-    if (size <= 16)
-    {
-        if (size >= 8)
-        {
-            __builtin_memcpy(dst + size - 8, src + size - 8, 8);
-            __builtin_memcpy(dst, src, 8);
-        }
-        else if (size >= 4)
-        {
-            __builtin_memcpy(dst + size - 4, src + size - 4, 4);
-            __builtin_memcpy(dst, src, 4);
-        }
-        else if (size >= 2)
-        {
-            __builtin_memcpy(dst + size - 2, src + size - 2, 2);
-            __builtin_memcpy(dst, src, 2);
-        }
-        else if (size >= 1)
-        {
-            *dst = *src;
-        }
-    }
-    else if (have_avx)
-    {
-        if (size <= 32)
-        {
-            __builtin_memcpy(dst, src, 8);
-            __builtin_memcpy(dst + 8, src + 8, 8);
-
-            dst += 16;
-            src += 16;
-            size -= 16;
-
-            goto tail;
-        }
-
-        if (size <= 256)
-        {
-            __asm__(
-                "vmovups    -0x20(%[s],%[size],1), %%ymm0\n"
-                "vmovups    %%ymm0, -0x20(%[d],%[size],1)\n"
-                : [d]"+r"(dst), [s]"+r"(src)
-                : [size]"r"(size)
-                : "ymm0", "memory");
-
-            while (size > 32)
-            {
-                __asm__(
-                    "vmovups    (%[s]), %%ymm0\n"
-                    "vmovups    %%ymm0, (%[d])\n"
-                    : [d]"+r"(dst), [s]"+r"(src)
-                    :
-                    : "ymm0", "memory");
-
-                dst += 32;
-                src += 32;
-                size -= 32;
-            }
-        }
-        else
-        {
-            size_t padding = (32 - (reinterpret_cast<size_t>(dst) & 31)) & 31;
-
-            if (padding > 0)
-            {
-                __asm__(
-                    "vmovups    (%[s]), %%ymm0\n"
-                    "vmovups    %%ymm0, (%[d])\n"
-                    : [d]"+r"(dst), [s]"+r"(src)
-                    :
-                    : "ymm0", "memory");
-
-                dst += padding;
-                src += padding;
-                size -= padding;
-            }
-
-            while (size >= 256)
-            {
-                __asm__(
-                    "vmovups    (%[s]), %%ymm0\n"
-                    "vmovups    0x20(%[s]), %%ymm1\n"
-                    "vmovups    0x40(%[s]), %%ymm2\n"
-                    "vmovups    0x60(%[s]), %%ymm3\n"
-                    "vmovups    0x80(%[s]), %%ymm4\n"
-                    "vmovups    0xa0(%[s]), %%ymm5\n"
-                    "vmovups    0xc0(%[s]), %%ymm6\n"
-                    "vmovups    0xe0(%[s]), %%ymm7\n"
-                    "add        $0x100,%[s]\n"
-                    "vmovaps    %%ymm0, (%[d])\n"
-                    "vmovaps    %%ymm1, 0x20(%[d])\n"
-                    "vmovaps    %%ymm2, 0x40(%[d])\n"
-                    "vmovaps    %%ymm3, 0x60(%[d])\n"
-                    "vmovaps    %%ymm4, 0x80(%[d])\n"
-                    "vmovaps    %%ymm5, 0xa0(%[d])\n"
-                    "vmovaps    %%ymm6, 0xc0(%[d])\n"
-                    "vmovaps    %%ymm7, 0xe0(%[d])\n"
-                    "add        $0x100, %[d]\n"
-                    : [d]"+r"(dst), [s]"+r"(src)
-                    :
-                    : "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "memory");
-
-                size -= 256;
-            }
-
-            goto tail;
-        }
-    }
-    else
-    {
-        if (size <= 128)
-        {
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
-
-            while (size > 16)
-            {
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-                dst += 16;
-                src += 16;
-                size -= 16;
-            }
-        }
-        else
-        {
-            /// Align destination to 16 bytes boundary.
-            size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-            if (padding > 0)
-            {
-                __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-                dst += padding;
-                src += padding;
-                size -= padding;
-            }
-
-            /// Aligned unrolled copy.
-            __m128i c0, c1, c2, c3, c4, c5, c6, c7;
-
-            while (size >= 128)
-            {
-                c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-                c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-                c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
-                c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
-                c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
-                c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
-                c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
-                c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
-                src += 128;
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 4), c4);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 5), c5);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 6), c6);
-                _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 7), c7);
-                dst += 128;
-
-                size -= 128;
-            }
-
-            goto tail;
-        }
-    }
-
-    return ret;
-}
-
-
 extern "C" void * __memcpy_erms(void * __restrict destination, const void * __restrict source, size_t size);
 extern "C" void * __memcpy_sse2_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
 extern "C" void * __memcpy_ssse3(void * __restrict destination, const void * __restrict source, size_t size);
@@ -576,175 +141,7 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size);
 
 
-#define NAME_PART sse
-#define VEC_SIZE 16
-#define VZEROUPPER 0
-#include "memcpy_medium.inl.h"
-#undef NAME_PART
-#undef VEC_SIZE
-#undef VZEROUPPER
-
-#define NAME_PART avx
-#define VEC_SIZE 32
-#define VZEROUPPER 1
-#include "memcpy_medium.inl.h"
-#undef NAME_PART
-#undef VEC_SIZE
-#undef VZEROUPPER
-
-#define NAME_PART avx_novzeroupper
-#define VEC_SIZE 32
-#define VZEROUPPER 0
-#include "memcpy_medium.inl.h"
-#undef NAME_PART
-#undef VEC_SIZE
-#undef VZEROUPPER
-
-
-void * memcpy_medium_avx_forward2(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    void * __restrict ret = destination;
-
-    __asm__ __volatile__ (R"(
-    mov %[dst],%[ret]
-
-    vmovdqu (%[src]),%%ymm15
-    vmovdqu %%ymm15,(%[dst])
-
-    lea    -0x20(%[dst],%[size],1),%%rcx
-    mov    %[dst],%%r8
-    and    $0x1f,%%r8
-    sub    $0x20,%%r8
-    sub    %%r8,%[src]
-    sub    %%r8,%[dst]
-    add    %%r8,%[size]
-1:
-    vmovdqu (%[src]),%%ymm0
-    vmovdqu 0x20(%[src]),%%ymm1
-    vmovdqu 0x40(%[src]),%%ymm2
-    vmovdqu 0x60(%[src]),%%ymm3
-    vmovdqu 0x80(%[src]),%%ymm4
-    vmovdqu 0xa0(%[src]),%%ymm5
-    vmovdqu 0xc0(%[src]),%%ymm6
-    vmovdqu 0xe0(%[src]),%%ymm7
-
-    add    $0x100,%[src]
-    sub    $0x100,%[size]
-
-    vmovdqa %%ymm0,(%[dst])
-    vmovdqa %%ymm1,0x20(%[dst])
-    vmovdqa %%ymm2,0x40(%[dst])
-    vmovdqa %%ymm3,0x60(%[dst])
-    vmovdqa %%ymm4,0x80(%[dst])
-    vmovdqa %%ymm5,0xa0(%[dst])
-    vmovdqa %%ymm6,0xc0(%[dst])
-    vmovdqa %%ymm7,0xe0(%[dst])
-
-    add    $0x100,%[dst]
-    cmp    $0x100,%[size]
-    ja     1b
-
-    vmovdqu -0x20(%[src],%[size],1),%%ymm8
-    vmovdqu -0x40(%[src],%[size],1),%%ymm9
-    vmovdqu -0x60(%[src],%[size],1),%%ymm10
-    vmovdqu -0x80(%[src],%[size],1),%%ymm11
-    vmovdqu -0xa0(%[src],%[size],1),%%ymm12
-    vmovdqu -0xc0(%[src],%[size],1),%%ymm13
-    vmovdqu -0xe0(%[src],%[size],1),%%ymm14
-    vmovdqu -0x100(%[src],%[size],1),%%ymm15
-
-    vmovdqu %%ymm8,(%%rcx)
-    vmovdqu %%ymm9,-0x20(%%rcx)
-    vmovdqu %%ymm10,-0x40(%%rcx)
-    vmovdqu %%ymm11,-0x60(%%rcx)
-    vmovdqu %%ymm12,-0x80(%%rcx)
-    vmovdqu %%ymm13,-0xa0(%%rcx)
-    vmovdqu %%ymm14,-0xc0(%%rcx)
-    vmovdqu %%ymm15,-0xe0(%%rcx)
-
-    vzeroupper
-    )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
-    :
-    : "rcx", "r8",
-      "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
-      "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-      "memory");
-
-    return ret;
-}
-
-void * memcpy_medium_avx_forward3(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    void * __restrict ret;
-
-    __asm__ __volatile__ (R"(
-    mov %[dst],%[ret]
-
-    vmovdqu (%[src]),%%ymm15
-    vmovdqu %%ymm15,(%[dst])
-
-    mov    %[dst],%%r8
-    and    $0x1f,%%r8
-    sub    $0x20,%%r8
-    sub    %%r8,%[src]
-    sub    %%r8,%[dst]
-    add    %%r8,%[size]
-1:
-    vmovdqu (%[src]),%%ymm0
-    vmovdqu 0x20(%[src]),%%ymm1
-    vmovdqu 0x40(%[src]),%%ymm2
-    vmovdqu 0x60(%[src]),%%ymm3
-    vmovdqu 0x80(%[src]),%%ymm4
-    vmovdqu 0xa0(%[src]),%%ymm5
-    vmovdqu 0xc0(%[src]),%%ymm6
-    vmovdqu 0xe0(%[src]),%%ymm7
-
-    add    $0x100,%[src]
-    sub    $0x100,%[size]
-
-    vmovdqa %%ymm0,(%[dst])
-    vmovdqa %%ymm1,0x20(%[dst])
-    vmovdqa %%ymm2,0x40(%[dst])
-    vmovdqa %%ymm3,0x60(%[dst])
-    vmovdqa %%ymm4,0x80(%[dst])
-    vmovdqa %%ymm5,0xa0(%[dst])
-    vmovdqa %%ymm6,0xc0(%[dst])
-    vmovdqa %%ymm7,0xe0(%[dst])
-
-    add    $0x100,%[dst]
-    cmp    $0x100,%[size]
-    ja     1b
-
-    vmovdqu -0x20(%[src],%[size],1),%%ymm8
-    vmovdqu -0x40(%[src],%[size],1),%%ymm9
-    vmovdqu -0x60(%[src],%[size],1),%%ymm10
-    vmovdqu -0x80(%[src],%[size],1),%%ymm11
-    vmovdqu -0xa0(%[src],%[size],1),%%ymm12
-    vmovdqu -0xc0(%[src],%[size],1),%%ymm13
-    vmovdqu -0xe0(%[src],%[size],1),%%ymm14
-    vmovdqu -0x100(%[src],%[size],1),%%ymm15
-
-    vmovdqu %%ymm8,-0x20(%[dst],%[size],1)
-    vmovdqu %%ymm9,-0x40(%[dst],%[size],1)
-    vmovdqu %%ymm10,-0x60(%[dst],%[size],1)
-    vmovdqu %%ymm11,-0x80(%[dst],%[size],1)
-    vmovdqu %%ymm12,-0xa0(%[dst],%[size],1)
-    vmovdqu %%ymm13,-0xc0(%[dst],%[size],1)
-    vmovdqu %%ymm14,-0xe0(%[dst],%[size],1)
-    vmovdqu %%ymm15,-0x100(%[dst],%[size],1)
-
-    vzeroupper
-    )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
-    :
-    : "r8",
-      "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
-      "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-      "memory");
-
-    return ret;
-}
+#include "memcpy_medium_every_unroll_vec_type.inl.h"
 
 
 static ALWAYS_INLINE UInt32 rdtsc()
@@ -789,7 +186,14 @@ struct VariantWithStatistics
         count.store(1 + count.load(std::memory_order_relaxed) / 2, std::memory_order_relaxed);
     }
 
-    constexpr explicit VariantWithStatistics(size_t kind_, memcpy_type func_) : func(func_), kind(kind_) {}
+    constexpr VariantWithStatistics(size_t kind_, memcpy_type func_) : func(func_), kind(kind_) {}
+    constexpr VariantWithStatistics() : func(memcpy), kind(0) {}
+
+    void set(size_t kind_, memcpy_type func_)
+    {
+        func.store(func_, std::memory_order_relaxed);
+        kind.store(kind_, std::memory_order_relaxed);
+    }
 };
 
 /// NOTE: I would like to use Thompson Sampling, but it's too heavy.
@@ -798,44 +202,9 @@ struct MultipleVariantsWithStatistics
 {
     std::atomic<memcpy_type> selected_variant{memcpy};
 
-    static constexpr size_t num_cells = 16;
+    static constexpr size_t num_cells = 256;
 
-    VariantWithStatistics variants[num_cells]
-    {
-/*        VariantWithStatistics(1, memcpy),
-        VariantWithStatistics(4, memcpy_erms),
-        VariantWithStatistics(10, memcpy_fast_sse),
-        VariantWithStatistics(11, memcpy_fast_avx),
-        VariantWithStatistics(25, __memcpy_avx_unaligned),
-        VariantWithStatistics(26, __memcpy_avx_unaligned_erms),
-        VariantWithStatistics(23, __memcpy_ssse3),
-        VariantWithStatistics(24, __memcpy_ssse3_back),
-        VariantWithStatistics(2, memcpy_trivial),
-        VariantWithStatistics(31, memcpy_medium_avx_forward2),
-        VariantWithStatistics(6, memcpySSE2),
-        VariantWithStatistics(7, memcpySSE2Unrolled2),
-        VariantWithStatistics(8, memcpySSE2Unrolled4),
-        VariantWithStatistics(9, memcpySSE2Unrolled8),
-        VariantWithStatistics(32, memcpy_medium_sse_forward),
-        VariantWithStatistics(33, memcpy_medium_avx_forward)*/
-
-        VariantWithStatistics(1, memcpy_medium_forward_sse),
-        VariantWithStatistics(2, memcpy_medium_forward_avx),
-        VariantWithStatistics(3, memcpy_medium_forward_avx_novzeroupper),
-        VariantWithStatistics(4, memcpy_medium_backward_sse),
-        VariantWithStatistics(5, memcpy_medium_backward_avx),
-        VariantWithStatistics(6, memcpy_medium_backward_avx_novzeroupper),
-        VariantWithStatistics(7, memcpy_medium_twoway_sse),
-        VariantWithStatistics(8, memcpy_medium_twoway_avx),
-        VariantWithStatistics(9, memcpy_medium_twoway_avx_novzeroupper),
-        VariantWithStatistics(10, memcpy_medium_forward_simple_avx),
-        VariantWithStatistics(11, memcpy_medium_forward_simple_avx_novzeroupper),
-        VariantWithStatistics(12, memcpy_medium_backward_simple_sse),
-        VariantWithStatistics(13, memcpy_medium_backward_simple_avx),
-        VariantWithStatistics(14, memcpy_medium_backward_simple_avx_novzeroupper),
-        VariantWithStatistics(15, memcpy_medium_twoway_simple_sse),
-        VariantWithStatistics(16, memcpy_medium_twoway_simple_avx),
-    };
+    VariantWithStatistics variants[num_cells]{};
 
     std::atomic<size_t> count = 0;
     std::atomic<size_t> exploration_count = 0;
@@ -844,6 +213,11 @@ struct MultipleVariantsWithStatistics
     std::atomic<size_t> exploration_probability_threshold = 0;
 
     static constexpr size_t num_explorations_before_optimize = 256;
+
+    MultipleVariantsWithStatistics()
+    {
+        init();
+    }
 
 
     ALWAYS_INLINE void * call(void * __restrict dst, const void * __restrict src, size_t size)
@@ -874,13 +248,6 @@ struct MultipleVariantsWithStatistics
 
         UInt32 time1 = rdtsc();
         void * ret = variant.func.load(std::memory_order_relaxed)(dst, src, size);
-
-#if !defined(__AVX__)
-        /// Execute at least one SSE instruction as a penalty after running AVX code,
-        /// if the main code was not compiled with AVX.
-        __asm__ __volatile__ ("pxor %%xmm15, %%xmm15" ::: "xmm15");
-#endif
-
         UInt32 time2 = rdtsc();
         UInt32 time = time2 - time1;
 
@@ -925,6 +292,202 @@ struct MultipleVariantsWithStatistics
         }
 
         return ret;
+    }
+
+    void init()
+    {
+        UInt32 eax;
+        UInt32 ebx;
+        UInt32 ecx;
+        UInt32 edx;
+
+        __cpuid(1, eax, ebx, ecx, edx);
+        bool have_avx = ecx & bit_AVX;
+
+        bool have_avx512 = false;
+        if (have_avx)
+        {
+            __cpuid(0, eax, ebx, ecx, edx);
+            bool have_leaf7 = eax >= 7;
+
+            if (have_leaf7)
+            {
+                __cpuid(7, eax, ebx, ecx, edx);
+                have_avx512 = ebx & bit_AVX512F;
+            }
+        }
+
+        size_t idx = 0;
+
+        variants[idx].set(idx, memcpy_erms);
+
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled1_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled2_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled3_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled4_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled5_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled6_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled7_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled8_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled9_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled10_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled11_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled12_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled13_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled14_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled15_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled16_sse);
+
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled1_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled2_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled3_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled4_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled5_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled6_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled7_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled8_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled9_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled10_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled11_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled12_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled13_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled14_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled15_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled16_sse);
+
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled1_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled2_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled3_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled5_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled6_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled7_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled8_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled9_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled10_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled11_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled12_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled13_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled14_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled15_sse);
+        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled16_sse);
+
+        if (have_avx)
+        {
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled1_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled2_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled3_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled4_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled5_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled6_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled7_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled8_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled9_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled10_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled11_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled12_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled13_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled14_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled15_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled16_avx);
+
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled1_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled2_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled3_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled4_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled5_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled6_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled7_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled8_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled9_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled10_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled11_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled12_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled13_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled14_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled15_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled16_avx);
+
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled1_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled2_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled3_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled5_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled6_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled7_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled8_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled9_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled10_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled11_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled12_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled13_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled14_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled15_avx);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled16_avx);
+        }
+
+        if (have_avx512)
+        {
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled1_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled2_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled3_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled4_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled5_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled6_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled7_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled8_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled9_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled10_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled11_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled12_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled13_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled14_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled15_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled16_avx512);
+
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled1_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled2_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled3_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled4_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled5_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled6_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled7_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled8_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled9_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled10_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled11_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled12_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled13_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled14_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled15_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled16_avx512);
+
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled1_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled2_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled3_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled5_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled6_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled7_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled8_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled9_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled10_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled11_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled12_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled13_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled14_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled15_avx512);
+            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled16_avx512);
+        }
+
+        ++idx;
+        size_t num_variants = idx;
+        while (idx < num_cells)
+        {
+            size_t copy_from = idx % num_variants;
+            variants[idx].set(copy_from, variants[copy_from].func.load(std::memory_order_relaxed));
+            ++idx;
+        }
     }
 };
 
@@ -1142,13 +705,8 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(3, memcpy_libc_old)
     VARIANT(4, memcpy_erms)
     VARIANT(5, MemCpy)
-    VARIANT(6, memcpySSE2)
-    VARIANT(7, memcpySSE2Unrolled2)
-    VARIANT(8, memcpySSE2Unrolled4)
-    VARIANT(9, memcpySSE2Unrolled8)
     VARIANT(10, memcpy_fast_sse)
     VARIANT(11, memcpy_fast_avx)
-    VARIANT(12, memcpy_my)
 
     VARIANT(21, __memcpy_erms)
     VARIANT(22, __memcpy_sse2_unaligned)
@@ -1162,25 +720,22 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
 
     VARIANT(30, memcpy_selftuned)
 
-    VARIANT(31, memcpy_medium<memcpy_medium_forward_sse>)
-    VARIANT(32, memcpy_medium<memcpy_medium_forward_avx>)
-    VARIANT(33, memcpy_medium<memcpy_medium_forward_avx_novzeroupper>)
-    VARIANT(34, memcpy_medium<memcpy_medium_backward_sse>)
-    VARIANT(35, memcpy_medium<memcpy_medium_backward_avx>)
-    VARIANT(36, memcpy_medium<memcpy_medium_backward_avx_novzeroupper>)
-    VARIANT(37, memcpy_medium<memcpy_medium_twoway_sse>)
-    VARIANT(38, memcpy_medium<memcpy_medium_twoway_avx>)
-    VARIANT(39, memcpy_medium<memcpy_medium_twoway_avx_novzeroupper>)
-
-    VARIANT(41, memcpy_medium<memcpy_medium_forward_simple_sse>)
-    VARIANT(42, memcpy_medium<memcpy_medium_forward_simple_avx>)
-    VARIANT(43, memcpy_medium<memcpy_medium_forward_simple_avx_novzeroupper>)
-    VARIANT(44, memcpy_medium<memcpy_medium_backward_simple_sse>)
-    VARIANT(45, memcpy_medium<memcpy_medium_backward_simple_avx>)
-    VARIANT(46, memcpy_medium<memcpy_medium_backward_simple_avx_novzeroupper>)
-    VARIANT(47, memcpy_medium<memcpy_medium_twoway_simple_sse>)
-    VARIANT(48, memcpy_medium<memcpy_medium_twoway_simple_avx>)
-    VARIANT(49, memcpy_medium<memcpy_medium_twoway_simple_avx_novzeroupper>)
+    VARIANT(101, memcpy_medium<memcpy_medium_twoway_unrolled1_avx>)
+    VARIANT(102, memcpy_medium<memcpy_medium_twoway_unrolled2_avx>)
+    VARIANT(103, memcpy_medium<memcpy_medium_twoway_unrolled3_avx>)
+    VARIANT(104, memcpy_medium<memcpy_medium_twoway_unrolled4_avx>)
+    VARIANT(105, memcpy_medium<memcpy_medium_twoway_unrolled5_avx>)
+    VARIANT(106, memcpy_medium<memcpy_medium_twoway_unrolled6_avx>)
+    VARIANT(107, memcpy_medium<memcpy_medium_twoway_unrolled7_avx>)
+    VARIANT(108, memcpy_medium<memcpy_medium_twoway_unrolled8_avx>)
+    VARIANT(109, memcpy_medium<memcpy_medium_twoway_unrolled9_avx>)
+    VARIANT(110, memcpy_medium<memcpy_medium_twoway_unrolled10_avx>)
+    VARIANT(111, memcpy_medium<memcpy_medium_twoway_unrolled11_avx>)
+    VARIANT(112, memcpy_medium<memcpy_medium_twoway_unrolled12_avx>)
+    VARIANT(113, memcpy_medium<memcpy_medium_twoway_unrolled13_avx>)
+    VARIANT(114, memcpy_medium<memcpy_medium_twoway_unrolled14_avx>)
+    VARIANT(115, memcpy_medium<memcpy_medium_twoway_unrolled15_avx>)
+    VARIANT(116, memcpy_medium<memcpy_medium_twoway_unrolled16_avx>)
 
     return 0;
 }

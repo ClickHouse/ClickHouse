@@ -107,7 +107,6 @@ union CpuInfo
     } registers;
 
     inline CpuInfo(UInt32 op) noexcept { cpuid(op, info); }
-
     inline CpuInfo(UInt32 op, UInt32 sub_op) noexcept { cpuid(op, sub_op, info); }
 };
 
