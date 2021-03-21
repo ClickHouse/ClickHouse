@@ -66,7 +66,7 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 
 !!! important "Важно"
    Представления `LIVE VIEW` являются экспериментальной возможностью. Их использование может повлечь потерю совместимости в будущих версиях. 
-   Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку `set allow_experimental_live_view = 1`.
+   Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view). Используйте команду `set allow_experimental_live_view = 1`.
 
 ```sql
 CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
@@ -121,7 +121,7 @@ INSERT INTO mt VALUES (2);
 INSERT INTO mt VALUES (3);
 ```
 
-Или используйте ключевое слово [EVENTS](../../../sql-reference/statements/watch.md#events-clause) для получения списка изменений.
+Для получения списка изменений используйте ключевое слово [EVENTS](../../../sql-reference/statements/watch.md#events-clause).
 
 
 ```sql
@@ -149,7 +149,7 @@ SELECT * FROM [db.]live_view WHERE ...
 
 ### Принудительное обновление {#live-view-alter-refresh}
 
-Можно принудительно обновить живое представление, используя выражение `ALTER LIVE VIEW [db.]table_name REFRESH`.
+Чтобы принудительно обновить живое представление, используйте выражение `ALTER LIVE VIEW [db.]table_name REFRESH`.
 
 ### WITH TIMEOUT {#live-view-with-timeout}
 
@@ -159,7 +159,7 @@ SELECT * FROM [db.]live_view WHERE ...
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
 
-Если не было указано значение временного промежутка, используется значение настройки `temporary_live_view_timeout`.
+Если не было указано значение временного промежутка, используется значение настройки [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout).
 
 **Пример:**
 
@@ -168,7 +168,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 ```
 
-### WITH REFRESH {#live-view-with-refresh}
+### Параметр WITH REFRESH {#live-view-with-refresh}
 
 Живое представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться через указанные промежутки времени, начиная с момента последнего обновления.
 
@@ -176,7 +176,7 @@ CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 ```
 
-Если значение временного промежутка не задано, используется значение `periodic_live_view_refresh`.
+Если значение временного промежутка не задано, используется значение [periodic_live_view_refresh](../../../operations/settings/settings.md#periodic-live-view-refresh).
 
 **Пример:**
 
@@ -227,15 +227,5 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - Кеширование результатов часто используемых запросов для получения их без задержки.
 - Отслеживание изменений таблицы для запуска других запросов `SELECT`.
 - Отслеживание показателей из системных таблиц с помощью периодических обновлений.
-
-### Параметры {#live-view-settings}
-
-Для управления поведением живых представлений можно использовать следующие параметры.
-
-- `allow_experimental_live_view` - включить использование живых представлений. По умолчанию установлено `0`.
-- `live_view_heartbeat_interval` - интервал в секундах для периодической проверки существования живого представления. Значение по умолчанию: 15 секунд.
-- `max_live_view_insert_blocks_before_refresh` - наибольшее число вставок, после которых запрос на формирование представления исполняется снова. По умолчанию количество вставок установлено `64`.
-- `temporary_live_view_timeout` - время в секундах, после которого представление удаляется. Значение по умолчанию: 5 секунд.
-- `periodic_live_view_refresh` - время в секундах, по истечении которого живое представление с установленным автообновлением обновляется. Значение по умолчанию: 60 секунд.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/view) <!--hide-->
