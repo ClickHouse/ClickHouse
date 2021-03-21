@@ -236,7 +236,6 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - `live_view_heartbeat_interval` - интервал в секундах для периодической проверки существования живого представления. Значение по умолчанию: 15 секунд.
 - `max_live_view_insert_blocks_before_refresh` - наибольшее число вставок, после которых запрос на формирование представления исполняется снова. По умолчанию количество вставок установлено `64`.
 - `temporary_live_view_timeout` - время в секундах, после которого представление удаляется. Значение по умолчанию: 5 секунд.
-- `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
-- `periodic_live_view_refresh` - время в секундах, по истечении которого живое представление с установленным автообновлением обновляется. По умолчанию `60`.
+- `periodic_live_view_refresh` - время в секундах, по истечении которого живое представление с установленным автообновлением обновляется. Значение по умолчанию: 60 секунд.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/view) <!--hide-->
