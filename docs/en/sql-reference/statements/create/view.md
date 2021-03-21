@@ -68,7 +68,7 @@ There isn’t a separate query for deleting views. To delete a view, use [DROP T
 
 !!! important "Important"
     This is an experimental feature that may change in backwards-incompatible ways in the future releases.
-    Enable usage of live views and `WATCH` query using `set allow_experimental_live_view = 1`.
+    Enable usage of live views and `WATCH` query using [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view) setting. Input the command `set allow_experimental_live_view = 1`.
 
 
 ```sql
@@ -102,7 +102,7 @@ WATCH [db.]live_view
 CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
-
+### Monitoring Changes {#live-view-monitoring}
 Watch a live view while doing a parallel insert into the source table.
 
 ```sql
@@ -171,7 +171,7 @@ When a live view is created with a `WITH TIMEOUT` clause then the live view will
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
 
-If the timeout value is not specified then the value specified by the `temporary_live_view_timeout` setting is used.
+If the timeout value is not specified then the value specified by the [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout) setting is used.
 
 **Example:**
 
@@ -188,7 +188,7 @@ When a live view is created with a `WITH REFRESH` clause then it will be automat
 CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 ```
 
-If the refresh value is not specified then the value specified by the `periodic_live_view_refresh` setting is used.
+If the refresh value is not specified then the value specified by the [periodic_live_view_refresh](../../../operations/settings/settings.md#periodic-live-view-refresh) setting is used.
 
 **Example:**
 
@@ -231,7 +231,7 @@ WATCH lv
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist.. 
 ```
 
-### Usage
+### Usage {#live-view-usage}
 
 Most common uses of live view tables include:
 
@@ -239,15 +239,5 @@ Most common uses of live view tables include:
 - Caching results of most frequent queries to provide immediate query results.
 - Watching for table changes and triggering a follow-up select queries.
 - Watching metrics from system tables using periodic refresh.
-
-### Settings {#live-view-settings}
-
-You can use the following settings to control the behaviour of live views.
-
-- `allow_experimental_live_view` - enable live views. Default is `0`.
-- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default is `15` seconds.
-- `max_live_view_insert_blocks_before_refresh` - maximum number of inserted blocks after which mergeable blocks are dropped and query is re-executed. Default is `64` inserts.
-- `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default is `5` seconds.
-- `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/) <!--hide-->
