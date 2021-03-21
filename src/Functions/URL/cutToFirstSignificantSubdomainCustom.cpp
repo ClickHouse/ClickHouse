@@ -18,7 +18,7 @@ struct CutToFirstSignificantSubdomainCustom
         Pos tmp_data;
         size_t tmp_length;
         Pos domain_end;
-        ExtractFirstSignificantSubdomain<without_www>::execute(tld_lookup, data, size, tmp_data, tmp_length, &domain_end);
+        ExtractFirstSignificantSubdomain<without_www>::executeCustom(tld_lookup, data, size, tmp_data, tmp_length, &domain_end);
 
         if (tmp_length == 0)
             return;
