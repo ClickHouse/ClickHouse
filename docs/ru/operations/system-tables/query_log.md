@@ -80,11 +80,11 @@ ClickHouse не удаляет данные из таблица автомати
     -   1 — `GET`.
     -   2 — `POST`.
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `UserAgent`.
--   `http_referer` ([String](../../sql-reference/data-types/string.md)) — URL источника запроса.
--   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — заголовки, передаваемые в HTTP запросе.
+-   `http_referer` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `Referer` (содержит полный или частичный адрес страницы, с которой был выполнен запрос).
+-   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `X-Forwarded-For`.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — `ключ квоты` из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к столбцу или пустая строка.
+-   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к журналу. Представляет собой произвольную строку, длина которой должна быть не больше, чем [max_query_size](../../operations/settings/settings.md#settings-max_query_size). Если нет комментария, то пустая строка.
 -   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — идентификаторы потоков, участвующих в обработке запросов.
 -   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
@@ -94,11 +94,11 @@ ClickHouse не удаляет данные из таблица автомати
 -   `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `комбинаторов агрегатных функций`, созданных в результате запроса.
 -   `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков баз данных`, созданных в результате запроса.
 -   `used_data_type_families` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `семейств типов данных`, созданных в результате запроса.
--   `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `словарей`, созданных в результате запроса.
+-   `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `источников словарей`, созданных в результате запроса.
 -   `used_formats` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `форматов`, созданных в результате запроса.
 -   `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `функций`, созданных в результате запроса.
--   `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `хранилищ`, созданных в результате запроса.
--   `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `табличных функций`, созданных в результате запроса.
+-   `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков таблиц`, созданных в результате запроса.
+-   `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `табличных функций`, использованных при выполнении запроса.
 
 **Пример**
 
