@@ -212,7 +212,7 @@ CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
 По истечении 15 секунд представление будет автоматически удалено, если нет активного запроса `WATCH`.
 
 ```sql
-WATCH lv
+WATCH lv;
 ```
 
 ```
