@@ -10,7 +10,7 @@ struct CutToFirstSignificantSubdomainCustom
 {
     static size_t getReserveLengthForElement() { return 15; }
 
-    static void execute(FirstSignificantSubdomainCustomtLookup & tld_lookup, const Pos data, const size_t size, Pos & res_data, size_t & res_size)
+    static void execute(FirstSignificantSubdomainCustomLookup & tld_lookup, const Pos data, const size_t size, Pos & res_data, size_t & res_size)
     {
         res_data = data;
         res_size = 0;
