@@ -65,8 +65,8 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 ## Живые представления (экспериментальные) {#live-view}
 
 !!! important "Важно"
-    Нововведение работает в тестовом режиме. Его использование может повлечь потерю совместимости в будущих версиях.
-    Включить их и запрос `WATCH` можно установкой `set allow_experimental_live_view = 1`.
+   Представления `LIVE VIEW` являются экспериментальной возможностью. Их использование может повлечь потерю совместимости в будущих версиях. 
+   Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку `set allow_experimental_live_view = 1`.
 
 ```sql
 CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
