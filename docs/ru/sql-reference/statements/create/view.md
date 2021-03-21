@@ -149,7 +149,6 @@ SELECT * FROM [db.]live_view WHERE ...
 
 ### Принудительное обновление {#live-view-alter-refresh}
 
-You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 Можно принудительно обновить живое представление, используя выражение `ALTER LIVE VIEW [db.]table_name REFRESH`.
 
 ### WITH TIMEOUT {#live-view-with-timeout}
