@@ -15,7 +15,6 @@ class DataTypeMap final : public DataTypeWithSimpleSerialization
 private:
     DataTypePtr key_type;
     DataTypePtr value_type;
-    std::set<String> known_keys;
 
 public:
     static constexpr bool is_parametric = true;
