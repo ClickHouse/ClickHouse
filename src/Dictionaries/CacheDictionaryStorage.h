@@ -276,10 +276,11 @@ private:
                     }
                     else
                     {
+                        auto & data = column_typed.getData();
+
                         for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
                         {
                             auto fetched_key = fetched_keys[fetched_key_index];
-                            auto & data = column_typed.getData();
 
                             if (unlikely(fetched_key.is_default))
                                 column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
@@ -312,6 +313,7 @@ private:
             size_t cell_index = getCellIndexForInsert(key);
             auto & cell = cells[cell_index];
 
+            bool cell_was_default = cell.is_default;
             cell.is_default = false;
 
             bool was_inserted = cell.deadline == 0;
@@ -387,9 +389,11 @@ private:
                             StringRef string_ref_value = StringRef {string_value.data(), string_value.size()};
                             StringRef inserted_value = copyStringInArena(string_ref_value);
 
-                            StringRef previous_value = container[index_to_use];
-                            char * data = const_cast<char *>(previous_value.data);
-                            arena.free(data, previous_value.size);
+                            if (!cell_was_default)
+                            {
+                                StringRef previous_value = container[index_to_use];
+                                arena.free(const_cast<char *>(previous_value.data), previous_value.size);
+                            }
 
                             container[index_to_use] = inserted_value;
                         }
