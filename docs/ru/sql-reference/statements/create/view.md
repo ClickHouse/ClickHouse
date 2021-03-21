@@ -234,7 +234,6 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 
 - `allow_experimental_live_view` - включить использование живых представлений. По умолчанию установлено `0`.
 - `live_view_heartbeat_interval` - интервал в секундах для периодической проверки существования живого представления. Значение по умолчанию: 15 секунд.
-- `live_view_heartbeat_interval` - периодичность индикации активности в секундах, по истечении которого представление «подаст признаки жизни». По умолчанию установлено `15`.
 - `max_live_view_insert_blocks_before_refresh` - наибольшее число вставок, после которых запрос на формирование представления исполняется снова. По умолчанию количество вставок установлено `64`.
 - `temporary_live_view_timeout` - время в секундах, после которого представление удаляется. Значение по умолчанию: 5 секунд.
 - `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
