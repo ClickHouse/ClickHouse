@@ -248,6 +248,10 @@ endmacro ()
 dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
+if (NOT DEFINED USE_EMBEDDED_COMPILER)
+    set (USE_EMBEDDED_COMPILER ON)
+endif ()
+
 if (USE_EMBEDDED_COMPILER)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
