@@ -99,7 +99,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
 
-Отслеживайте изменения живого представления таблицы при параллельной вставке данных в нее.
+Отслеживаем изменения живого представления при вставке данных в исходную таблицу.
 
 ```sql
 WATCH lv
