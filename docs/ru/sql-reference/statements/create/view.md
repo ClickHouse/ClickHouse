@@ -197,7 +197,7 @@ WATCH lv;
 └─────────────────────┴──────────┘
 ```
 
-Можно сочетать параметры `WITH TIMEOUT` и `WITH REFRESH` с помощью `AND`. 
+Параметры `WITH TIMEOUT` и `WITH REFRESH` можно сочетать с помощью `AND`. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
