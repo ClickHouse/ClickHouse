@@ -101,7 +101,7 @@ struct MultipleVariantsWithStatistics
     static constexpr size_t probability_distribution_buckets = 256;
     std::atomic<size_t> exploration_probability_threshold = 0;
 
-    static constexpr size_t num_explorations_before_optimize = probability_distribution_buckets * 16;
+    static constexpr size_t num_explorations_before_optimize = num_cells * 16;
 
     MultipleVariantsWithStatistics()
     {
