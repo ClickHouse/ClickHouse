@@ -13,9 +13,27 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 
 If the left side is a single column that is in the index, and the right side is a set of constants, the system uses the index for processing the query.
 
-Don’t list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section “External data for query processing”), then use a subquery.
+Don’t list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section [External data for query processing](../../engines/table-engines/special/external-data.md)), then use a subquery.
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or SELECT subquery in brackets.
+
+ClickHouse allows types to differ in the left and the right parts of `IN` subquery. In this case it converts the left side value to the type of the right side, as if the [accurateCastOrNull](../functions/type-conversion-functions.md#type_conversion_function-accurate-cast_or_null) function is applied. That means, that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion cannot be performed, it returns [NULL](../../sql-reference/syntax.md#null-literal).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT '1' IN (SELECT 1);
+```
+
+Result:
+
+``` text
+┌─in('1', _subquery49)─┐
+│                    1 │
+└──────────────────────┘
+```
 
 If the right side of the operator is the name of a table (for example, `UserID IN users`), this is equivalent to the subquery `UserID IN (SELECT * FROM users)`. Use this when working with external data that is sent along with the query. For example, the query can be sent together with a set of user IDs loaded to the ‘users’ temporary table, which should be filtered.
 
@@ -203,7 +221,7 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
 
 ```sql
-SEELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
 SETTINGS max_parallel_replicas=3
 ```
 

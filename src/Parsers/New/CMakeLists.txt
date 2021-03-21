@@ -65,8 +65,6 @@ target_compile_options (clickhouse_parsers_new
         -Wno-documentation-deprecated-sync
         -Wno-shadow-field
         -Wno-unused-parameter
-
-    PUBLIC
         -Wno-extra-semi
         -Wno-inconsistent-missing-destructor-override
 )

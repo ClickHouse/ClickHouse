@@ -1,6 +1,7 @@
 #include <Databases/DatabaseFactory.h>
 
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
@@ -13,6 +14,7 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
+#include <Common/Macros.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -96,11 +98,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL" && engine_name != "Lazy" && engine_name != "PostgreSQL" && engine_define->engine->arguments)
+    bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "Lazy" ||
+                                     engine_name == "Replicated" || engine_name == "PostgreSQL";
+    if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
-    if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
-        engine_define->sample_by || (!endsWith(engine_name, "MySQL") && engine_define->settings))
+    bool has_unexpected_element = engine_define->engine->parameters || engine_define->partition_by ||
+                                  engine_define->primary_key || engine_define->order_by ||
+                                  engine_define->sample_by;
+    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated";
+    if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 
@@ -182,6 +189,32 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
+    }
+
+    else if (engine_name == "Replicated")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 3)
+            throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
+
+        String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
+        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
+
+        zookeeper_path = context.getMacros()->expand(zookeeper_path);
+        shard_name = context.getMacros()->expand(shard_name);
+        replica_name = context.getMacros()->expand(replica_name);
+
+        DatabaseReplicatedSettings database_replicated_settings{};
+        if (engine_define->settings)
+            database_replicated_settings.loadFromQuery(*engine_define);
+
+        return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid,
+                                                    zookeeper_path, shard_name, replica_name,
+                                                    std::move(database_replicated_settings), context);
     }
 
 #if USE_LIBPQXX

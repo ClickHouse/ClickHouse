@@ -1,5 +1,5 @@
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
@@ -16,6 +16,9 @@
 #include <Common/typeid_cast.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <algorithm>
+#include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseFactory.h>
 
 
 namespace DB
@@ -25,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -38,11 +42,21 @@ BlockIO InterpreterAlterQuery::execute()
     BlockIO res;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
+
     if (!alter.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
+
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        guard->releaseTableLock();
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+    }
+
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
     auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -80,8 +94,17 @@ BlockIO InterpreterAlterQuery::execute()
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
 
+    if (typeid_cast<DatabaseReplicated *>(database.get()))
+    {
+        int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !live_view_commands.empty() + !alter_commands.empty();
+        if (1 < command_types_count)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
+                                                         "to execute ALTERs of different types in single query");
+    }
+
     if (!mutation_commands.empty())
     {
+        table->checkMutationIsPossible(mutation_commands, context.getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate();
         table->mutate(mutation_commands, context);
     }
@@ -114,7 +137,7 @@ BlockIO InterpreterAlterQuery::execute()
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);
-        table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
+        table->checkAlterIsPossible(alter_commands, context);
         table->alter(alter_commands, context, alter_lock);
     }
 

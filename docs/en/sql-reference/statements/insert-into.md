@@ -62,8 +62,6 @@ If a list of columns doesn't include all existing columns, the rest of the colum
 -   The values calculated from the `DEFAULT` expressions specified in the table definition.
 -   Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-If [strict\_insert\_defaults=1](../../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
-
 Data can be passed to the INSERT in any [format](../../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
 ``` sql
@@ -119,4 +117,3 @@ Performance will not decrease if:
 -   Data is added in real time.
 -   You upload data that is usually sorted by time.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

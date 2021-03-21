@@ -72,7 +72,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         {
             settings.ostr << abs(frame.begin_offset);
             settings.ostr << " "
-                << (frame.begin_offset > 0 ? "FOLLOWING" : "PRECEDING");
+                << (!frame.begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
         settings.ostr << " AND ";
         if (frame.end_type == WindowFrame::BoundaryType::Current)
@@ -81,13 +81,13 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
         {
-            settings.ostr << "UNBOUNDED PRECEDING";
+            settings.ostr << "UNBOUNDED FOLLOWING";
         }
         else
         {
             settings.ostr << abs(frame.end_offset);
             settings.ostr << " "
-                << (frame.end_offset > 0 ? "FOLLOWING" : "PRECEDING");
+                << (!frame.end_preceding ? "FOLLOWING" : "PRECEDING");
         }
     }
 }

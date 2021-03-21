@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS alter_mt"
 
-$CLICKHOUSE_CLIENT --query "CREATE TABLE alter_mt (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01338/alter_mt', '1') ORDER BY key"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE alter_mt (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/alter_mt', '1') ORDER BY key"
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO alter_mt SELECT number, toString(number) FROM numbers(5)"
 

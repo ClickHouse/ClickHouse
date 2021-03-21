@@ -24,6 +24,7 @@
 #include <regex>
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
+#include <Common/setThreadName.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -86,9 +87,12 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 
 void MySQLHandler::run()
 {
+    setThreadName("MySQLHandler");
+    ThreadStatus thread_status;
     connection_context.makeSessionContext();
     connection_context.getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context.setDefaultFormat("MySQLWire");
+    connection_context.getClientInfo().connection_id = connection_id;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -286,7 +290,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
+            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
         );
         packet_endpoint->sendPacket(column_definition);
     }
@@ -340,7 +344,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
             affected_rows += progress.written_rows;
         });
 
-        executeQuery(should_replace ? replacement : payload, *out, true, query_context,
+        CurrentThread::QueryScope query_scope{query_context};
+
+        executeQuery(should_replace ? replacement : payload, *out, false, query_context,
             [&with_output](const String &, const String &, const String &, const String &)
             {
                 with_output = true;
