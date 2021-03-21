@@ -159,7 +159,7 @@ SELECT * FROM [db.]live_view WHERE ...
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
 
-Если не был указано значение временного промежутка, используется значение `temporary_live_view_timeout`.
+Если не было указано значение временного промежутка, используется значение настройки `temporary_live_view_timeout`.
 
 **Пример:**
 
