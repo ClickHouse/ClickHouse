@@ -576,144 +576,29 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size);
 
 
-#define NAME sse
+#define NAME_PART sse
 #define VEC_SIZE 16
 #define VZEROUPPER 0
 #include "memcpy_medium.inl.h"
-#undef NAME
+#undef NAME_PART
 #undef VEC_SIZE
 #undef VZEROUPPER
 
-
-#define NAME avx
+#define NAME_PART avx
 #define VEC_SIZE 32
 #define VZEROUPPER 1
 #include "memcpy_medium.inl.h"
-#undef NAME
+#undef NAME_PART
 #undef VEC_SIZE
 #undef VZEROUPPER
 
-#define NAME avx_novzeroupper
+#define NAME_PART avx_novzeroupper
 #define VEC_SIZE 32
 #define VZEROUPPER 0
 #include "memcpy_medium.inl.h"
-#undef NAME
+#undef NAME_PART
 #undef VEC_SIZE
 #undef VZEROUPPER
-
-
-
-
-void * memcpy_medium_avx_forward(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    void * __restrict ret = destination;
-
-    __asm__ __volatile__ (R"(
-    mov %[dst],%[ret]
-
-    vmovdqu (%[src]),%%ymm4
-    vmovdqu -0x20(%[src],%[size],1),%%ymm5
-    vmovdqu -0x40(%[src],%[size],1),%%ymm6
-    vmovdqu -0x60(%[src],%[size],1),%%ymm7
-    vmovdqu -0x80(%[src],%[size],1),%%ymm8
-
-    lea    -0x20(%[dst],%[size],1),%%rcx
-    mov    %[dst],%%r8
-    and    $0x1f,%%r8
-    sub    $0x20,%%r8
-    sub    %%r8,%[src]
-    sub    %%r8,%[dst]
-    add    %%r8,%[size]
-1:
-    vmovdqu (%[src]),%%ymm0
-    vmovdqu 0x20(%[src]),%%ymm1
-    vmovdqu 0x40(%[src]),%%ymm2
-    vmovdqu 0x60(%[src]),%%ymm3
-    add    $0x80,%[src]
-    sub    $0x80,%[size]
-    vmovdqa %%ymm0,(%[dst])
-    vmovdqa %%ymm1,0x20(%[dst])
-    vmovdqa %%ymm2,0x40(%[dst])
-    vmovdqa %%ymm3,0x60(%[dst])
-    add    $0x80,%[dst]
-    cmp    $0x80,%[size]
-    ja     1b
-
-    vmovdqu %%ymm5,(%%rcx)
-    vmovdqu %%ymm6,-0x20(%%rcx)
-    vmovdqu %%ymm7,-0x40(%%rcx)
-    vmovdqu %%ymm8,-0x60(%%rcx)
-    vmovdqu %%ymm4,(%[ret])
-
-    vzeroupper
-    )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
-    :
-    : "rcx", "r8", "r11", "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "memory");
-
-    return ret;
-}
-
-
-void * memcpy_medium_avx_backward(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    void * __restrict ret = destination;
-
-    __asm__ __volatile__ (R"(
-    mov %[dst],%[ret]
-
-    vmovdqu (%[src]),%%ymm4
-    vmovdqu 0x20(%[src]),%%ymm5
-    vmovdqu 0x40(%[src]),%%ymm6
-    vmovdqu 0x60(%[src]),%%ymm7
-    vmovdqu -0x20(%[src],%[size],1),%%ymm8
-
-    lea    -0x20(%[dst],%[size],1),%%r11
-    lea    -0x20(%[src],%[size],1),%%rcx
-    mov    %%r11,%%r9
-    mov    %%r11,%%r8
-    and    $0x1f,%%r8
-    sub    %%r8,%%rcx
-    sub    %%r8,%%r9
-    sub    %%r8,%[size]
-1:
-    vmovdqu (%%rcx),%%ymm0
-    vmovdqu -0x20(%%rcx),%%ymm1
-    vmovdqu -0x40(%%rcx),%%ymm2
-    vmovdqu -0x60(%%rcx),%%ymm3
-    sub    $0x80,%%rcx
-    sub    $0x80,%[size]
-    vmovdqa %%ymm0,(%%r9)
-    vmovdqa %%ymm1,-0x20(%%r9)
-    vmovdqa %%ymm2,-0x40(%%r9)
-    vmovdqa %%ymm3,-0x60(%%r9)
-    sub    $0x80,%%r9
-    cmp    $0x80,%[size]
-    ja     1b
-
-    vmovdqu %%ymm4,(%[dst])
-    vmovdqu %%ymm5,0x20(%[dst])
-    vmovdqu %%ymm6,0x40(%[dst])
-    vmovdqu %%ymm7,0x60(%[dst])
-    vmovdqu %%ymm8,(%%r11)
-
-    vzeroupper
-    )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
-    :
-    : "rcx", "r8", "r9", "r11", "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "memory");
-
-    return ret;
-}
-
-
-void * memcpy_medium_avx_twoway(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    if (source < destination)
-        return memcpy_medium_avx_forward(destination, source, size);
-    else
-        return memcpy_medium_avx_backward(destination, source, size);
-}
 
 
 void * memcpy_medium_avx_forward2(void * __restrict destination, const void * __restrict source, size_t size)
@@ -861,53 +746,6 @@ void * memcpy_medium_avx_forward3(void * __restrict destination, const void * __
     return ret;
 }
 
-void * memcpy_medium_sse_forward(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    void * ret = destination;
-
-    __asm__ __volatile__ (R"(
-    movdqu (%[src]),%%xmm4
-    movdqu -0x10(%[src],%[size],1),%%xmm5
-    movdqu -0x20(%[src],%[size],1),%%xmm6
-    movdqu -0x30(%[src],%[size],1),%%xmm7
-    movdqu -0x40(%[src],%[size],1),%%xmm8
-
-    mov    %[dst],%%r11
-    lea    -0x10(%[dst],%[size],1),%%rcx
-    mov    %[dst],%%r8
-    and    $0x0f,%%r8
-    sub    $0x10,%%r8
-    sub    %%r8,%[src]
-    sub    %%r8,%[dst]
-    add    %%r8,%[size]
-1:
-    movdqu (%[src]),%%xmm0
-    movdqu 0x10(%[src]),%%xmm1
-    movdqu 0x20(%[src]),%%xmm2
-    movdqu 0x30(%[src]),%%xmm3
-    add    $0x40,%[src]
-    sub    $0x40,%[size]
-    movdqa %%xmm0,(%[dst])
-    movdqa %%xmm1,0x10(%[dst])
-    movdqa %%xmm2,0x20(%[dst])
-    movdqa %%xmm3,0x30(%[dst])
-    add    $0x40,%[dst]
-    cmp    $0x40,%[size]
-    ja     1b
-
-    movdqu %%xmm5,(%%rcx)
-    movdqu %%xmm6,-0x10(%%rcx)
-    movdqu %%xmm7,-0x20(%%rcx)
-    movdqu %%xmm8,-0x30(%%rcx)
-    movdqu %%xmm4,(%%r11)
-    )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size)
-    :
-    : "rcx", "r8", "r11", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "memory");
-
-    return ret;
-}
-
 
 static ALWAYS_INLINE UInt32 rdtsc()
 {
@@ -981,22 +819,22 @@ struct MultipleVariantsWithStatistics
         VariantWithStatistics(32, memcpy_medium_sse_forward),
         VariantWithStatistics(33, memcpy_medium_avx_forward)*/
 
-        VariantWithStatistics(1, memcpy_medium_sse_forward),
-        VariantWithStatistics(2, memcpy_medium_avx_forward),
-        VariantWithStatistics(3, memcpy_medium_avx_forward2),
-        VariantWithStatistics(4, memcpy_medium_avx_forward3),
-        VariantWithStatistics(5, memcpy_medium_avx_backward),
-        VariantWithStatistics(6, memcpy_medium_avx_twoway),
-        VariantWithStatistics(7, memcpy_fast_avx),
-        VariantWithStatistics(8, __memcpy_avx_unaligned),
-        VariantWithStatistics(1, memcpy_medium_sse_forward),
-        VariantWithStatistics(2, memcpy_medium_avx_forward),
-        VariantWithStatistics(3, memcpy_medium_avx_forward2),
-        VariantWithStatistics(4, memcpy_medium_avx_forward3),
-        VariantWithStatistics(5, memcpy_medium_avx_backward),
-        VariantWithStatistics(6, memcpy_medium_avx_twoway),
-        VariantWithStatistics(7, memcpy_fast_avx),
-        VariantWithStatistics(8, __memcpy_avx_unaligned),
+        VariantWithStatistics(1, memcpy_medium_forward_sse),
+        VariantWithStatistics(2, memcpy_medium_forward_avx),
+        VariantWithStatistics(3, memcpy_medium_forward_avx_novzeroupper),
+        VariantWithStatistics(4, memcpy_medium_backward_sse),
+        VariantWithStatistics(5, memcpy_medium_backward_avx),
+        VariantWithStatistics(6, memcpy_medium_backward_avx_novzeroupper),
+        VariantWithStatistics(7, memcpy_medium_twoway_sse),
+        VariantWithStatistics(8, memcpy_medium_twoway_avx),
+        VariantWithStatistics(9, memcpy_medium_twoway_avx_novzeroupper),
+        VariantWithStatistics(10, memcpy_medium_forward_simple_avx),
+        VariantWithStatistics(11, memcpy_medium_forward_simple_avx_novzeroupper),
+        VariantWithStatistics(12, memcpy_medium_backward_simple_sse),
+        VariantWithStatistics(13, memcpy_medium_backward_simple_avx),
+        VariantWithStatistics(14, memcpy_medium_backward_simple_avx_novzeroupper),
+        VariantWithStatistics(15, memcpy_medium_twoway_simple_sse),
+        VariantWithStatistics(16, memcpy_medium_twoway_simple_avx),
     };
 
     std::atomic<size_t> count = 0;
@@ -1036,6 +874,13 @@ struct MultipleVariantsWithStatistics
 
         UInt32 time1 = rdtsc();
         void * ret = variant.func.load(std::memory_order_relaxed)(dst, src, size);
+
+#if !defined(__AVX__)
+        /// Execute at least one SSE instruction as a penalty after running AVX code,
+        /// if the main code was not compiled with AVX.
+        __asm__ __volatile__ ("pxor %%xmm15, %%xmm15" ::: "xmm15");
+#endif
+
         UInt32 time2 = rdtsc();
         UInt32 time = time2 - time1;
 
@@ -1317,12 +1162,25 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
 
     VARIANT(30, memcpy_selftuned)
 
-    VARIANT(31, memcpy_medium<memcpy_medium_sse_forward>)
-    VARIANT(32, memcpy_medium<memcpy_medium_avx_forward>)
-    VARIANT(33, memcpy_medium<memcpy_medium_avx_forward2>)
-    VARIANT(34, memcpy_medium<memcpy_medium_avx_forward3>)
-    VARIANT(35, memcpy_medium<memcpy_medium_avx_backward>)
-    VARIANT(36, memcpy_medium<memcpy_medium_avx_twoway>)
+    VARIANT(31, memcpy_medium<memcpy_medium_forward_sse>)
+    VARIANT(32, memcpy_medium<memcpy_medium_forward_avx>)
+    VARIANT(33, memcpy_medium<memcpy_medium_forward_avx_novzeroupper>)
+    VARIANT(34, memcpy_medium<memcpy_medium_backward_sse>)
+    VARIANT(35, memcpy_medium<memcpy_medium_backward_avx>)
+    VARIANT(36, memcpy_medium<memcpy_medium_backward_avx_novzeroupper>)
+    VARIANT(37, memcpy_medium<memcpy_medium_twoway_sse>)
+    VARIANT(38, memcpy_medium<memcpy_medium_twoway_avx>)
+    VARIANT(39, memcpy_medium<memcpy_medium_twoway_avx_novzeroupper>)
+
+    VARIANT(41, memcpy_medium<memcpy_medium_forward_simple_sse>)
+    VARIANT(42, memcpy_medium<memcpy_medium_forward_simple_avx>)
+    VARIANT(43, memcpy_medium<memcpy_medium_forward_simple_avx_novzeroupper>)
+    VARIANT(44, memcpy_medium<memcpy_medium_backward_simple_sse>)
+    VARIANT(45, memcpy_medium<memcpy_medium_backward_simple_avx>)
+    VARIANT(46, memcpy_medium<memcpy_medium_backward_simple_avx_novzeroupper>)
+    VARIANT(47, memcpy_medium<memcpy_medium_twoway_simple_sse>)
+    VARIANT(48, memcpy_medium<memcpy_medium_twoway_simple_avx>)
+    VARIANT(49, memcpy_medium<memcpy_medium_twoway_simple_avx_novzeroupper>)
 
     return 0;
 }
