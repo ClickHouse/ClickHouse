@@ -126,4 +126,3 @@ FROM dt
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime64`](datetime64.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

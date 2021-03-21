@@ -81,17 +81,17 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     return **it;
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace, bool add_to_index)
 {
     Node node;
     node.type = ActionType::INPUT;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace, bool add_to_index)
 {
     Node node;
     node.type = ActionType::INPUT;
@@ -99,7 +99,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace, bool materialize)
@@ -688,13 +688,18 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
-    bool ignore_constant_values)
+    bool ignore_constant_values,
+    bool add_casted_columns,
+    NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+
+    if (add_casted_columns && mode != MatchColumnsMode::Name)
+        throw Exception("Converting with add_casted_columns supported only for MatchColumnsMode::Name", ErrorCodes::LOGICAL_ERROR);
 
     auto actions_dag = std::make_shared<ActionsDAG>(source);
     std::vector<Node *> projection(num_result_columns);
@@ -715,12 +720,13 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     {
         const auto & res_elem = result[result_col_num];
         Node * src_node = nullptr;
+        Node * dst_node = nullptr;
 
         switch (mode)
         {
             case MatchColumnsMode::Position:
             {
-                src_node = actions_dag->inputs[result_col_num];
+                src_node = dst_node = actions_dag->inputs[result_col_num];
                 break;
             }
 
@@ -731,7 +737,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                     throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                                     ErrorCodes::THERE_IS_NO_COLUMN);
 
-                src_node = actions_dag->inputs[input.front()];
+                src_node = dst_node = actions_dag->inputs[input.front()];
                 input.pop_front();
                 break;
             }
@@ -740,10 +746,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
         /// Check constants.
         if (const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get()))
         {
-            if (const auto * src_const = typeid_cast<const ColumnConst *>(src_node->column.get()))
+            if (const auto * src_const = typeid_cast<const ColumnConst *>(dst_node->column.get()))
             {
                 if (ignore_constant_values)
-                   src_node = const_cast<Node *>(&actions_dag->addColumn(res_elem, true));
+                    dst_node = const_cast<Node *>(&actions_dag->addColumn(res_elem, true));
                 else if (res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
@@ -756,7 +762,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
         }
 
         /// Add CAST function to convert into result type if needed.
-        if (!res_elem.type->equals(*src_node->result_type))
+        if (!res_elem.type->equals(*dst_node->result_type))
         {
             ColumnWithTypeAndName column;
             column.name = res_elem.type->getName();
@@ -764,27 +770,49 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             column.type = std::make_shared<DataTypeString>();
 
             auto * right_arg = const_cast<Node *>(&actions_dag->addColumn(std::move(column), true));
-            auto * left_arg = src_node;
+            auto * left_arg = dst_node;
 
-            FunctionCast::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
+            FunctionCast::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
             FunctionOverloadResolverPtr func_builder_cast =
                     std::make_shared<FunctionOverloadResolverAdaptor>(
                             CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
 
             Inputs children = { left_arg, right_arg };
-            src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
+            dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
         }
 
-        if (src_node->column && isColumnConst(*src_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
+        if (dst_node->column && isColumnConst(*dst_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
         {
-            Inputs children = {src_node};
-            src_node = &actions_dag->addFunction(func_builder_materialize, std::move(children), {}, true);
+            Inputs children = {dst_node};
+            dst_node = &actions_dag->addFunction(func_builder_materialize, std::move(children), {}, true);
         }
 
-        if (src_node->result_name != res_elem.name)
-            src_node = &actions_dag->addAlias(*src_node, res_elem.name, true);
+        if (dst_node->result_name != res_elem.name)
+        {
+            if (add_casted_columns)
+            {
+                if (inputs.contains(dst_node->result_name))
+                    throw Exception("Cannot convert column " + backQuote(res_elem.name) +
+                                    " to "+ backQuote(dst_node->result_name) +
+                                    " because other column have same name",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+                if (new_names)
+                    new_names->emplace(res_elem.name, dst_node->result_name);
 
-        projection[result_col_num] = src_node;
+                /// Leave current column on same place, add converted to back
+                projection[result_col_num] = src_node;
+                projection.push_back(dst_node);
+            }
+            else
+            {
+                dst_node = &actions_dag->addAlias(*dst_node, res_elem.name, true);
+                projection[result_col_num] = dst_node;
+            }
+        }
+        else
+        {
+            projection[result_col_num] = dst_node;
+        }
     }
 
     actions_dag->removeUnusedActions(projection);
@@ -1332,7 +1360,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const std::vector<ActionsDAG::No
 ///
 /// Result actions add single column with conjunction result (it is always last in index).
 /// No other columns are added or removed.
-ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction)
+ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
         return nullptr;
@@ -1346,6 +1374,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
                             std::make_shared<FunctionAnd>()));
 
     std::unordered_map<const ActionsDAG::Node *, ActionsDAG::Node *> nodes_mapping;
+    std::unordered_map<std::string, std::list<Node *>> required_inputs;
 
     struct Frame
     {
@@ -1388,14 +1417,29 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
                     child = nodes_mapping[child];
 
                 if (node.type == ActionType::INPUT)
-                {
-                    actions->inputs.emplace_back(&node);
-                    actions->index.insert(&node);
-                }
+                    required_inputs[node.result_name].push_back(&node);
 
                 stack.pop();
             }
         }
+    }
+
+    /// Actions must have the same inputs as in all_inputs list.
+    /// See comment to cloneActionsForFilterPushDown.
+    for (const auto & col : all_inputs)
+    {
+        Node * input;
+        auto & list = required_inputs[col.name];
+        if (list.empty())
+            input = &const_cast<Node &>(actions->addInput(col, true, false));
+        else
+        {
+            input = list.front();
+            list.pop_front();
+            actions->inputs.push_back(input);
+        }
+
+        actions->index.insert(input);
     }
 
     Node * result_predicate = nodes_mapping[*conjunction.begin()];
@@ -1414,7 +1458,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
     return actions;
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name, bool can_remove_filter, const Names & available_inputs)
+ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
+    const std::string & filter_name,
+    bool can_remove_filter,
+    const Names & available_inputs,
+    const ColumnsWithTypeAndName & all_inputs)
 {
     Node * predicate;
 
@@ -1452,7 +1500,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilter(const std::string & filter_name,
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    auto actions = cloneActionsForConjunction(conjunction.allowed);
+    auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 

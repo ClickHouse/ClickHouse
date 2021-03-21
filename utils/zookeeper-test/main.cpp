@@ -10,6 +10,7 @@
 #include <iterator>
 #include <algorithm>
 #include <chrono>
+#include <Common/Stopwatch.h>
 
 #include <iostream>
 #include <sstream>
@@ -62,6 +63,8 @@ void testCreateList(zkutil::ZooKeeper & zk)
         throw std::runtime_error("Children of /data/lst doesn't equal to three");
     for (size_t i = 0; i < children.size(); ++i)
     {
+        std::cerr << "children:" << children[i] << std::endl;
+        std::cerr << "children size:" << children[i].size() << std::endl;
         if (children[i] != "d" + std::to_string(i + 1))
             throw std::runtime_error(fmt::format("Incorrect children #{} got {}, expected {}", i, children[i], "d" + std::to_string(i + 1)));
     }
@@ -212,6 +215,82 @@ void createPathAndSetWatch(zkutil::ZooKeeper & zk, const String & path_prefix, s
 
 }
 
+std::string random_string(size_t length)
+{
+    auto randchar = []() -> char
+    {
+        const char charset[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+        const size_t max_index = (sizeof(charset) - 1);
+        return charset[rand() % max_index];
+    };
+    std::string str(length, 0);
+    std::generate_n(str.begin(), length, randchar);
+    return str;
+}
+
+std::string currentDateTime()
+{
+    time_t now = time(nullptr);
+    tm tstruct;
+    char buf[80];
+    tstruct = *localtime(&now);
+    // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
+    // for more information about date/time format
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tstruct);
+
+    return buf;
+}
+
+
+void createOnPrefix(const std::string & zkhost, const String & path_prefix, size_t datasize, size_t total)
+{
+    zkutil::ZooKeeper zk(zkhost);
+    std::vector<std::future<Coordination::CreateResponse>> holder_futures;
+    using namespace std::chrono;
+    try
+    {
+        for (size_t i = 0; i < total; ++i)
+        {
+            std::cerr << currentDateTime() << "] Request:" << i << std::endl;
+            std::string path = path_prefix + "/element" + std::to_string(i);
+            holder_futures.push_back(zk.asyncCreate(path, random_string(datasize), zkutil::CreateMode::Persistent));
+        }
+
+        for (size_t i = 0; i < holder_futures.size(); ++i)
+            holder_futures[i].get();
+        }
+    catch (...)
+    {
+        ::exit(-1);
+    }
+}
+
+
+void createConcurrent(zkutil::ZooKeeper & testzk, const std::string & zkhost, size_t threads, size_t requests, size_t blobsize)
+{
+    std::vector<std::future<void>> asyncs;
+    for (size_t i = 0; i < threads; ++i)
+    {
+        std::string path_prefix = "/data/create_test" + std::to_string(i);
+        testzk.createIfNotExists(path_prefix, "");
+        auto callback = [&zkhost, path_prefix, requests, blobsize] ()
+        {
+            createOnPrefix(zkhost, path_prefix, blobsize, requests);
+        };
+        asyncs.push_back(std::async(std::launch::async, callback));
+    }
+
+    size_t i = 0;
+    for (auto & async : asyncs)
+    {
+        async.wait();
+        i++;
+    }
+}
+
 void tryConcurrentWatches(zkutil::ZooKeeper & zk)
 {
     std::string path_prefix = "/concurrent_watches";
@@ -244,6 +323,7 @@ void tryConcurrentWatches(zkutil::ZooKeeper & zk)
     std::cerr << "WatchesTriggered:" << watches_triggered << std::endl;
 }
 
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -259,15 +339,24 @@ int main(int argc, char *argv[])
 
     try
     {
+        std::cerr << "Removing\n";
         zk.tryRemoveRecursive("/data");
-        testCreateGetExistsNode(zk);
-        testCreateSetNode(zk);
-        testCreateList(zk);
-        testCreateSetVersionRequest(zk);
-        testMultiRequest(zk);
-        testCreateSetWatchEvent(zk);
-        testCreateListWatchEvent(zk);
-        tryConcurrentWatches(zk);
+        std::cerr << "Creating\n";
+        zk.createIfNotExists("/data", "");
+        std::cerr << "Created\n";
+
+        Stopwatch watch;
+        createConcurrent(zk, argv[1], 1, 1005000, 10);
+        std::cerr << "Finished in: " << watch.elapsedMilliseconds() << "ms" << std::endl;
+
+        //testCreateGetExistsNode(zk);
+        //testCreateSetNode(zk);
+        //testCreateList(zk);
+        //testCreateSetVersionRequest(zk);
+        //testMultiRequest(zk);
+        //testCreateSetWatchEvent(zk);
+        //testCreateListWatchEvent(zk);
+        //tryConcurrentWatches(zk);
     }
     catch (...)
     {
