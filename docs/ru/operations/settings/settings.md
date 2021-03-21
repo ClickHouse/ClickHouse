@@ -2554,7 +2554,7 @@ SELECT * FROM test2;
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
-Включает или отключает возможность выполнять запрос `SELECT` к таблице на движке `File`, не содержащей файл.
+Включает или отключает возможность выполнять запрос `SELECT` к таблице на движке [File](../../engines/table-engines/special/file.md), не содержащей файл.
 
 Возможные значения:
 - 0 — запрос `SELECT` генерирует исключение.
