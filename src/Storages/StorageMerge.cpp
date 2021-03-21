@@ -24,7 +24,6 @@
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
-#include <Processors/Transforms/AddingConstColumnTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 
@@ -38,6 +37,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 namespace
@@ -364,9 +364,13 @@ Pipe StorageMerge::createSources(
             column.name = "_table";
             column.type = std::make_shared<DataTypeString>();
             column.column = column.type->createColumnConst(0, Field(table_name));
+
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto adding_column_actions = std::make_shared<ExpressionActions>(std::move(adding_column_dag));
+
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
-                return std::make_shared<AddingConstColumnTransform>(stream_header, column);
+                return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions);
             });
         }
 
@@ -469,8 +473,9 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
 }
 
 
-void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -478,6 +483,17 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Se
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
+        if (command.type == AlterCommand::Type::DROP_COLUMN)
+        {
+            const auto & deps_mv = name_deps[command.column_name];
+            if (!deps_mv.empty())
+            {
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+        }
     }
 }
 

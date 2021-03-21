@@ -11,8 +11,8 @@ ${CLICKHOUSE_CLIENT} -n --query="
     DROP TABLE IF EXISTS fetches_r1;
     DROP TABLE IF EXISTS fetches_r2"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00715/fetches', 'r1') ORDER BY x"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00715/fetches', 'r2') ORDER BY x \
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r1') ORDER BY x"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r2') ORDER BY x \
     SETTINGS prefer_fetch_merged_part_time_threshold=0, \
              prefer_fetch_merged_part_size_threshold=0"
 

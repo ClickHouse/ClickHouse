@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 class FunctionMapPopulateSeries : public IFunction
@@ -188,9 +189,13 @@ private:
                 }
             }
 
+            static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
+            if (static_cast<size_t>(max_key - min_key) > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in the result of function {}", getName());
+
             /* fill the result arrays */
             KeyType key;
-            for (key = min_key; key <= max_key; ++key)
+            for (key = min_key;; ++key)
             {
                 to_keys_data.insert(key);
 
@@ -205,6 +210,8 @@ private:
                 }
 
                 ++offset;
+                if (key == max_key)
+                    break;
             }
 
             to_keys_offsets.push_back(offset);

@@ -63,8 +63,6 @@ SELECT * FROM insert_select_testtable
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 -   Нули и пустые строки, если `DEFAULT` не определены.
 
-Если [strict_insert_defaults=1](../../operations/settings/settings.md), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
-
 В INSERT можно передавать данные любого [формата](../../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
 ``` sql
@@ -121,4 +119,3 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 -   Данные поступают в режиме реального времени.
 -   Вы загружаете данные, которые как правило отсортированы по времени.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/insert_into/) <!--hide-->

@@ -532,7 +532,7 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -558,6 +558,7 @@ private:
 
         const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
+        const DataTypeTuple & tuple_result = static_cast<const DataTypeTuple &>(*result_type);
 
         ColumnsWithTypeAndName temporary_columns(3);
         temporary_columns[0] = arguments[0];
@@ -570,7 +571,7 @@ private:
             temporary_columns[1] = {col1_contents[i], type1.getElements()[i], {}};
             temporary_columns[2] = {col2_contents[i], type2.getElements()[i], {}};
 
-            tuple_columns[i] = executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count);
+            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count);
         }
 
         return ColumnTuple::create(tuple_columns);
@@ -988,7 +989,7 @@ public:
             || (res = executeTyped<UInt128, UInt128>(cond_col, arguments, result_type, input_rows_count))
             || (res = executeString(cond_col, arguments, result_type))
             || (res = executeGenericArray(cond_col, arguments, result_type))
-            || (res = executeTuple(arguments, input_rows_count))))
+            || (res = executeTuple(arguments, result_type, input_rows_count))))
         {
             return executeGeneric(cond_col, arguments, input_rows_count);
         }

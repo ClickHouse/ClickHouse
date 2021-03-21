@@ -149,11 +149,25 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
+    ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
+        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
+    bool is_table_function;
+};
+
+// A special function parser for view table function.
+// It parses an SELECT query as its argument and doesn't support getColumnName().
+class ParserTableFunctionView : public IParserBase
+{
+protected:
+    const char * getName() const override { return "function"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 // Window reference (the thing that goes after OVER) for window function.
@@ -321,18 +335,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         return tuple_parser.parse(pos, node, expected);
-    }
-};
-
-class ParserMapOfLiterals : public IParserBase
-{
-public:
-    ParserCollectionOfLiterals<Map> map_parser{TokenType::OpeningCurlyBrace, TokenType::ClosingCurlyBrace};
-protected:
-    const char * getName() const override { return "map"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return map_parser.parse(pos, node, expected);
     }
 };
 

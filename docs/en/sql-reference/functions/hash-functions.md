@@ -18,9 +18,9 @@ halfMD5(par1, ...)
 The function is relatively slow (5 million short strings per second per processor core).
 Consider using the [sipHash64](#hash_functions-siphash64) function instead.
 
-**Parameters**
+**Arguments**
 
-The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -29,7 +29,7 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 **Example**
 
 ``` sql
-SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type
+SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type;
 ```
 
 ``` text
@@ -61,9 +61,9 @@ Function [interprets](../../sql-reference/functions/type-conversion-functions.md
 3.  Then the function takes the hash value, calculated at the previous step, and the third element of the initial hash array, and calculates a hash for the array of them.
 4.  The previous step is repeated for all the remaining elements of the initial hash array.
 
-**Parameters**
+**Arguments**
 
-The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -72,7 +72,7 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 **Example**
 
 ``` sql
-SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type
+SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
 ```
 
 ``` text
@@ -97,9 +97,9 @@ cityHash64(par1,...)
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
-**Parameters**
+**Arguments**
 
-The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -110,7 +110,7 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 Call example:
 
 ``` sql
-SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
+SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;
 ```
 
 ``` text
@@ -166,9 +166,9 @@ farmHash64(par1, ...)
 
 These functions use the `Fingerprint64` and `Hash64` methods respectively from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
-**Parameters**
+**Arguments**
 
-The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -177,7 +177,7 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 **Example**
 
 ``` sql
-SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type
+SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;
 ```
 
 ``` text
@@ -193,7 +193,7 @@ Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add97
 **Syntax**
 
 ``` sql
-SELECT javaHash('');
+SELECT javaHash('')
 ```
 
 **Returned value**
@@ -226,7 +226,7 @@ Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add97
 javaHashUTF16LE(stringUtf16le)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `stringUtf16le` — a string in UTF-16LE encoding.
 
@@ -241,7 +241,7 @@ Correct query with UTF-16LE encoded string.
 Query:
 
 ``` sql
-SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
+SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'));
 ```
 
 Result:
@@ -257,7 +257,7 @@ Result:
 Calculates `HiveHash` from a string.
 
 ``` sql
-SELECT hiveHash('');
+SELECT hiveHash('')
 ```
 
 This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
@@ -292,9 +292,9 @@ Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/
 metroHash64(par1, ...)
 ```
 
-**Parameters**
+**Arguments**
 
-The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -303,7 +303,7 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 **Example**
 
 ``` sql
-SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type
+SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type;
 ```
 
 ``` text
@@ -327,9 +327,9 @@ murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
 
-**Parameters**
+**Arguments**
 
-Both functions take a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -339,7 +339,7 @@ Both functions take a variable number of input parameters. Parameters can be any
 **Example**
 
 ``` sql
-SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type
+SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;
 ```
 
 ``` text
@@ -355,10 +355,10 @@ Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash val
 **Syntax**
 
 ``` sql
-gccMurmurHash(par1, ...);
+gccMurmurHash(par1, ...)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `par1, ...` — A variable number of parameters that can be any of the [supported data types](../../sql-reference/data-types/index.md#data_types).
 
@@ -395,9 +395,9 @@ murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
 
-**Parameters**
+**Arguments**
 
-Both functions take a variable number of input parameters. Parameters can be any of the [supported data types](../../sql-reference/data-types/index.md).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -407,7 +407,7 @@ Both functions take a variable number of input parameters. Parameters can be any
 **Example**
 
 ``` sql
-SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
@@ -424,7 +424,7 @@ Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash valu
 murmurHash3_128( expr )
 ```
 
-**Parameters**
+**Arguments**
 
 -   `expr` — [Expressions](../../sql-reference/syntax.md#syntax-expressions) returning a [String](../../sql-reference/data-types/string.md)-type value.
 
@@ -435,7 +435,7 @@ A [FixedString(16)](../../sql-reference/data-types/fixedstring.md) data type has
 **Example**
 
 ``` sql
-SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
@@ -449,11 +449,11 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 
 ``` sql
-SELECT xxHash32('');
+SELECT xxHash32('')
 
 OR
 
-SELECT xxHash64('');
+SELECT xxHash64('')
 ```
 
 **Returned value**
@@ -482,4 +482,3 @@ Result:
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/hash_functions/) <!--hide-->

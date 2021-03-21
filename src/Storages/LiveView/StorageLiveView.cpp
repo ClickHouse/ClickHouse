@@ -512,8 +512,8 @@ Pipe StorageLiveView::read(
 
     else if (is_periodically_refreshed)
     {
-        Seconds current_time = std::chrono::duration_cast<Seconds> (std::chrono::system_clock::now().time_since_epoch());
-        Seconds blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
+        Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
+        Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime().time_since_epoch());
 
         if ((current_time - periodic_live_view_refresh) >= blocks_time)
             refresh(false);

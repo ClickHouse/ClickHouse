@@ -109,6 +109,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -542,6 +544,12 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
+void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
+    writeVectorBinary(uuids, *out);
+    out->next();
+}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
@@ -747,11 +755,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket()
 {
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT(in->setAsyncCallback({}));
-
     try
     {
         Packet res;
@@ -796,6 +801,10 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
                 return res;
 
             case Protocol::Server::EndOfStream:
+                return res;
+
+            case Protocol::Server::PartUUIDs:
+                readVectorBinary(res.part_uuids, *in);
                 return res;
 
             default:
