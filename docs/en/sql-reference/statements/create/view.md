@@ -106,7 +106,7 @@ CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 Watch a live view while doing a parallel insert into the source table.
 
 ```sql
-WATCH lv
+WATCH lv;
 ```
 
 ```bash
@@ -131,13 +131,13 @@ INSERT INTO mt VALUES (3);
 Or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
 
 ```sql
-WATCH [db.]live_view EVENTS
+WATCH [db.]live_view EVENTS;
 ```
 
 **Example:**
 
 ```sql
-WATCH lv EVENTS
+WATCH lv EVENTS;
 ```
 
 ```bash
