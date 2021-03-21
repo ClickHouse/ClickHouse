@@ -170,7 +170,7 @@ CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 
 ### WITH REFRESH {#live-view-with-refresh}
 
-Живое представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться после определенного временного промежутка, прошедшего с последнего обновления.
+Живое представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться через указанные промежутки времени, начиная с момента последнего обновления.
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
