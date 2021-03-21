@@ -102,7 +102,7 @@ CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 Отслеживаем изменения живого представления при вставке данных в исходную таблицу.
 
 ```sql
-WATCH lv
+WATCH lv;
 ```
 
 ```bash
