@@ -565,234 +565,6 @@ tail:
 }
 
 
-static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict src, size_t size)
-{
-    uint8_t * ret = dst;
-
-    if (size <= 16)
-    {
-        if (size >= 8)
-        {
-            __builtin_memcpy(dst + size - 8, src + size - 8, 8);
-            __builtin_memcpy(dst, src, 8);
-        }
-        else if (size >= 4)
-        {
-            __builtin_memcpy(dst + size - 4, src + size - 4, 4);
-            __builtin_memcpy(dst, src, 4);
-        }
-        else if (size >= 2)
-        {
-            __builtin_memcpy(dst + size - 2, src + size - 2, 2);
-            __builtin_memcpy(dst, src, 2);
-        }
-        else if (size >= 1)
-        {
-            *dst = *src;
-        }
-    }
-    else if (size <= 128)
-    {
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
-
-        while (size > 16)
-        {
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-            dst += 16;
-            src += 16;
-            size -= 16;
-        }
-    }
-    else if (size < 30000 || !have_avx)
-    {
-        /// Align destination to 16 bytes boundary.
-        size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
-
-        if (padding > 0)
-        {
-            __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
-            dst += padding;
-            src += padding;
-            size -= padding;
-        }
-
-        /// Aligned unrolled copy.
-        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
-
-        while (size >= 128)
-        {
-            c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-            c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-            c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
-            c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
-            c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
-            c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
-            c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
-            c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
-            src += 128;
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 4), c4);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 5), c5);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 6), c6);
-            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 7), c7);
-            dst += 128;
-
-            size -= 128;
-        }
-
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
-
-        while (size > 16)
-        {
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-            dst += 16;
-            src += 16;
-            size -= 16;
-        }
-    }
-    else
-    {
-        size_t padding = (32 - (reinterpret_cast<size_t>(dst) & 31)) & 31;
-
-        if (padding > 0)
-        {
-            __asm__(
-                "vmovups    (%[s]), %%ymm0\n"
-                "vmovups    %%ymm0, (%[d])\n"
-                : [d]"+r"(dst), [s]"+r"(src)
-                :
-                : "ymm0", "memory");
-
-            dst += padding;
-            src += padding;
-            size -= padding;
-        }
-
-        while (size >= 512)
-        {
-            __asm__(
-                "vmovups    (%[s]), %%ymm0\n"
-                "vmovups    0x20(%[s]), %%ymm1\n"
-                "vmovups    0x40(%[s]), %%ymm2\n"
-                "vmovups    0x60(%[s]), %%ymm3\n"
-                "vmovups    0x80(%[s]), %%ymm4\n"
-                "vmovups    0xa0(%[s]), %%ymm5\n"
-                "vmovups    0xc0(%[s]), %%ymm6\n"
-                "vmovups    0xe0(%[s]), %%ymm7\n"
-                "vmovups    0x100(%[s]), %%ymm8\n"
-                "vmovups    0x120(%[s]), %%ymm9\n"
-                "vmovups    0x140(%[s]), %%ymm10\n"
-                "vmovups    0x160(%[s]), %%ymm11\n"
-                "vmovups    0x180(%[s]), %%ymm12\n"
-                "vmovups    0x1a0(%[s]), %%ymm13\n"
-                "vmovups    0x1c0(%[s]), %%ymm14\n"
-                "vmovups    0x1e0(%[s]), %%ymm15\n"
-                "add        $0x200, %[s]\n"
-                "sub        $0x200, %[size]\n"
-                "vmovaps    %%ymm0, (%[d])\n"
-                "vmovaps    %%ymm1, 0x20(%[d])\n"
-                "vmovaps    %%ymm2, 0x40(%[d])\n"
-                "vmovaps    %%ymm3, 0x60(%[d])\n"
-                "vmovaps    %%ymm4, 0x80(%[d])\n"
-                "vmovaps    %%ymm5, 0xa0(%[d])\n"
-                "vmovaps    %%ymm6, 0xc0(%[d])\n"
-                "vmovaps    %%ymm7, 0xe0(%[d])\n"
-                "vmovaps    %%ymm8, 0x100(%[d])\n"
-                "vmovaps    %%ymm9, 0x120(%[d])\n"
-                "vmovaps    %%ymm10, 0x140(%[d])\n"
-                "vmovaps    %%ymm11, 0x160(%[d])\n"
-                "vmovaps    %%ymm12, 0x180(%[d])\n"
-                "vmovaps    %%ymm13, 0x1a0(%[d])\n"
-                "vmovaps    %%ymm14, 0x1c0(%[d])\n"
-                "vmovaps    %%ymm15, 0x1e0(%[d])\n"
-                "add        $0x200, %[d]\n"
-                : [d]"+r"(dst), [s]"+r"(src), [size]"+r"(size)
-                :
-                : "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
-                  "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-                  "memory");
-        }
-
-        /*while (size >= 256)
-        {
-            __asm__(
-                "vmovups    (%[s]), %%ymm0\n"
-                "vmovups    0x20(%[s]), %%ymm1\n"
-                "vmovups    0x40(%[s]), %%ymm2\n"
-                "vmovups    0x60(%[s]), %%ymm3\n"
-                "vmovups    0x80(%[s]), %%ymm4\n"
-                "vmovups    0xa0(%[s]), %%ymm5\n"
-                "vmovups    0xc0(%[s]), %%ymm6\n"
-                "vmovups    0xe0(%[s]), %%ymm7\n"
-                "add        $0x100,%[s]\n"
-                "vmovaps    %%ymm0, (%[d])\n"
-                "vmovaps    %%ymm1, 0x20(%[d])\n"
-                "vmovaps    %%ymm2, 0x40(%[d])\n"
-                "vmovaps    %%ymm3, 0x60(%[d])\n"
-                "vmovaps    %%ymm4, 0x80(%[d])\n"
-                "vmovaps    %%ymm5, 0xa0(%[d])\n"
-                "vmovaps    %%ymm6, 0xc0(%[d])\n"
-                "vmovaps    %%ymm7, 0xe0(%[d])\n"
-                "add        $0x100, %[d]\n"
-                : [d]"+r"(dst), [s]"+r"(src)
-                :
-                : "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "memory");
-
-            size -= 256;
-        }*/
-
-        /*while (size > 128)
-        {
-            __asm__(
-                "vmovups    (%[s]), %%ymm0\n"
-                "vmovups    0x20(%[s]), %%ymm1\n"
-                "vmovups    0x40(%[s]), %%ymm2\n"
-                "vmovups    0x60(%[s]), %%ymm3\n"
-                "add        $0x80, %[s]\n"
-                "sub        $0x80, %[size]\n"
-                "vmovaps    %%ymm0, (%[d])\n"
-                "vmovaps    %%ymm1, 0x20(%[d])\n"
-                "vmovaps    %%ymm2, 0x40(%[d])\n"
-                "vmovaps    %%ymm3, 0x60(%[d])\n"
-                "add        $0x80, %[d]\n"
-                : [d]"+r"(dst), [s]"+r"(src), [size]"+r"(size)
-                :
-                : "ymm0", "ymm1", "ymm2", "ymm3", "memory");
-        }*/
-
-        __asm__(
-            "vmovups    -0x20(%[s],%[size],1), %%ymm0\n"
-            "vmovups    %%ymm0, -0x20(%[d],%[size],1)\n"
-            : [d]"+r"(dst), [s]"+r"(src)
-            : [size]"r"(size)
-            : "ymm0", "memory");
-
-        while (size > 32)
-        {
-            __asm__(
-                "vmovups    (%[s]), %%ymm0\n"
-                "vmovups    %%ymm0, (%[d])\n"
-                : [d]"+r"(dst), [s]"+r"(src)
-                :
-                : "ymm0", "memory");
-
-            dst += 32;
-            src += 32;
-            size -= 32;
-        }
-
-        __asm__ __volatile__ ("vzeroupper"
-            ::: "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
-                "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15");
-    }
-
-    return ret;
-}
-
 extern "C" void * __memcpy_erms(void * __restrict destination, const void * __restrict source, size_t size);
 extern "C" void * __memcpy_sse2_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
 extern "C" void * __memcpy_ssse3(void * __restrict destination, const void * __restrict source, size_t size);
@@ -804,83 +576,47 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size);
 
 
-enum class VecType
-{
-    SSE,
-    AVX,
-    AVX512
-};
-
-template <VecType vec_type, bool vzeroupper, bool aligned>
-void * memcpy_medium_vec(void * __restrict destination, const void * __restrict source, size_t size)
-{
-    void * ret = destination;
-
-    __asm__ __volatile__ (R"(
-    vmovdqu (%[src]),%%ymm4
-    vmovdqu -0x20(%[src],%[size],1),%%ymm5
-    vmovdqu -0x40(%[src],%[size],1),%%ymm6
-    vmovdqu -0x60(%[src],%[size],1),%%ymm7
-    vmovdqu -0x80(%[src],%[size],1),%%ymm8
-    )");
-
-    if constexpr (aligned)
-        __asm__ __volatile__ (R"(
-    mov    %[dst],%%r11
-    lea    -0x20(%[dst],%[size],1),%%rcx
-    mov    %[dst],%%r8
-    and    $0x1f,%%r8
-    sub    $0x20,%%r8
-    sub    %%r8,%[src]
-    sub    %%r8,%[dst]
-    add    %%r8,%[size]
-    )");
+#define NAME sse
+#define VEC_SIZE 16
+#define VZEROUPPER 0
+#include "memcpy_medium.inl.h"
+#undef NAME
+#undef VEC_SIZE
+#undef VZEROUPPER
 
 
-1:
-    vmovdqu (%[src]),%%ymm0
-    vmovdqu 0x20(%[src]),%%ymm1
-    vmovdqu 0x40(%[src]),%%ymm2
-    vmovdqu 0x60(%[src]),%%ymm3
-    add    $0x80,%[src]
-    sub    $0x80,%[size]
-    vmovdqa %%ymm0,(%[dst])
-    vmovdqa %%ymm1,0x20(%[dst])
-    vmovdqa %%ymm2,0x40(%[dst])
-    vmovdqa %%ymm3,0x60(%[dst])
-    add    $0x80,%[dst]
-    cmp    $0x80,%[size]
-    ja     1b
+#define NAME avx
+#define VEC_SIZE 32
+#define VZEROUPPER 1
+#include "memcpy_medium.inl.h"
+#undef NAME
+#undef VEC_SIZE
+#undef VZEROUPPER
 
-    vmovdqu %%ymm5,(%%rcx)
-    vmovdqu %%ymm6,-0x20(%%rcx)
-    vmovdqu %%ymm7,-0x40(%%rcx)
-    vmovdqu %%ymm8,-0x60(%%rcx)
-    vmovdqu %%ymm4,(%%r11)
+#define NAME avx_novzeroupper
+#define VEC_SIZE 32
+#define VZEROUPPER 0
+#include "memcpy_medium.inl.h"
+#undef NAME
+#undef VEC_SIZE
+#undef VZEROUPPER
 
-    vzeroupper
-    )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size)
-    :
-    : "memory");
-
-    return ret;
-}
 
 
 
 void * memcpy_medium_avx_forward(void * __restrict destination, const void * __restrict source, size_t size)
 {
-    void * ret = destination;
+    void * __restrict ret = destination;
 
     __asm__ __volatile__ (R"(
+    mov %[dst],%[ret]
+
     vmovdqu (%[src]),%%ymm4
     vmovdqu -0x20(%[src],%[size],1),%%ymm5
     vmovdqu -0x40(%[src],%[size],1),%%ymm6
     vmovdqu -0x60(%[src],%[size],1),%%ymm7
     vmovdqu -0x80(%[src],%[size],1),%%ymm8
 
-    mov    %[dst],%%r11
     lea    -0x20(%[dst],%[size],1),%%rcx
     mov    %[dst],%%r8
     and    $0x1f,%%r8
@@ -907,26 +643,89 @@ void * memcpy_medium_avx_forward(void * __restrict destination, const void * __r
     vmovdqu %%ymm6,-0x20(%%rcx)
     vmovdqu %%ymm7,-0x40(%%rcx)
     vmovdqu %%ymm8,-0x60(%%rcx)
-    vmovdqu %%ymm4,(%%r11)
+    vmovdqu %%ymm4,(%[ret])
 
     vzeroupper
     )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size)
+    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
     :
     : "rcx", "r8", "r11", "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "memory");
 
     return ret;
 }
 
-void * memcpy_medium_avx_forward2(void * __restrict destination, const void * __restrict source, size_t size)
+
+void * memcpy_medium_avx_backward(void * __restrict destination, const void * __restrict source, size_t size)
 {
-    void * ret = destination;
+    void * __restrict ret = destination;
 
     __asm__ __volatile__ (R"(
+    mov %[dst],%[ret]
+
+    vmovdqu (%[src]),%%ymm4
+    vmovdqu 0x20(%[src]),%%ymm5
+    vmovdqu 0x40(%[src]),%%ymm6
+    vmovdqu 0x60(%[src]),%%ymm7
+    vmovdqu -0x20(%[src],%[size],1),%%ymm8
+
+    lea    -0x20(%[dst],%[size],1),%%r11
+    lea    -0x20(%[src],%[size],1),%%rcx
+    mov    %%r11,%%r9
+    mov    %%r11,%%r8
+    and    $0x1f,%%r8
+    sub    %%r8,%%rcx
+    sub    %%r8,%%r9
+    sub    %%r8,%[size]
+1:
+    vmovdqu (%%rcx),%%ymm0
+    vmovdqu -0x20(%%rcx),%%ymm1
+    vmovdqu -0x40(%%rcx),%%ymm2
+    vmovdqu -0x60(%%rcx),%%ymm3
+    sub    $0x80,%%rcx
+    sub    $0x80,%[size]
+    vmovdqa %%ymm0,(%%r9)
+    vmovdqa %%ymm1,-0x20(%%r9)
+    vmovdqa %%ymm2,-0x40(%%r9)
+    vmovdqa %%ymm3,-0x60(%%r9)
+    sub    $0x80,%%r9
+    cmp    $0x80,%[size]
+    ja     1b
+
+    vmovdqu %%ymm4,(%[dst])
+    vmovdqu %%ymm5,0x20(%[dst])
+    vmovdqu %%ymm6,0x40(%[dst])
+    vmovdqu %%ymm7,0x60(%[dst])
+    vmovdqu %%ymm8,(%%r11)
+
+    vzeroupper
+    )"
+    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
+    :
+    : "rcx", "r8", "r9", "r11", "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "memory");
+
+    return ret;
+}
+
+
+void * memcpy_medium_avx_twoway(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    if (source < destination)
+        return memcpy_medium_avx_forward(destination, source, size);
+    else
+        return memcpy_medium_avx_backward(destination, source, size);
+}
+
+
+void * memcpy_medium_avx_forward2(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * __restrict ret = destination;
+
+    __asm__ __volatile__ (R"(
+    mov %[dst],%[ret]
+
     vmovdqu (%[src]),%%ymm15
     vmovdqu %%ymm15,(%[dst])
 
-    mov    %[dst],%%r11
     lea    -0x20(%[dst],%[size],1),%%rcx
     mov    %[dst],%%r8
     and    $0x1f,%%r8
@@ -980,9 +779,81 @@ void * memcpy_medium_avx_forward2(void * __restrict destination, const void * __
 
     vzeroupper
     )"
-    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size)
+    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
     :
-    : "rcx", "r8", "r11",
+    : "rcx", "r8",
+      "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
+      "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+      "memory");
+
+    return ret;
+}
+
+void * memcpy_medium_avx_forward3(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * __restrict ret;
+
+    __asm__ __volatile__ (R"(
+    mov %[dst],%[ret]
+
+    vmovdqu (%[src]),%%ymm15
+    vmovdqu %%ymm15,(%[dst])
+
+    mov    %[dst],%%r8
+    and    $0x1f,%%r8
+    sub    $0x20,%%r8
+    sub    %%r8,%[src]
+    sub    %%r8,%[dst]
+    add    %%r8,%[size]
+1:
+    vmovdqu (%[src]),%%ymm0
+    vmovdqu 0x20(%[src]),%%ymm1
+    vmovdqu 0x40(%[src]),%%ymm2
+    vmovdqu 0x60(%[src]),%%ymm3
+    vmovdqu 0x80(%[src]),%%ymm4
+    vmovdqu 0xa0(%[src]),%%ymm5
+    vmovdqu 0xc0(%[src]),%%ymm6
+    vmovdqu 0xe0(%[src]),%%ymm7
+
+    add    $0x100,%[src]
+    sub    $0x100,%[size]
+
+    vmovdqa %%ymm0,(%[dst])
+    vmovdqa %%ymm1,0x20(%[dst])
+    vmovdqa %%ymm2,0x40(%[dst])
+    vmovdqa %%ymm3,0x60(%[dst])
+    vmovdqa %%ymm4,0x80(%[dst])
+    vmovdqa %%ymm5,0xa0(%[dst])
+    vmovdqa %%ymm6,0xc0(%[dst])
+    vmovdqa %%ymm7,0xe0(%[dst])
+
+    add    $0x100,%[dst]
+    cmp    $0x100,%[size]
+    ja     1b
+
+    vmovdqu -0x20(%[src],%[size],1),%%ymm8
+    vmovdqu -0x40(%[src],%[size],1),%%ymm9
+    vmovdqu -0x60(%[src],%[size],1),%%ymm10
+    vmovdqu -0x80(%[src],%[size],1),%%ymm11
+    vmovdqu -0xa0(%[src],%[size],1),%%ymm12
+    vmovdqu -0xc0(%[src],%[size],1),%%ymm13
+    vmovdqu -0xe0(%[src],%[size],1),%%ymm14
+    vmovdqu -0x100(%[src],%[size],1),%%ymm15
+
+    vmovdqu %%ymm8,-0x20(%[dst],%[size],1)
+    vmovdqu %%ymm9,-0x40(%[dst],%[size],1)
+    vmovdqu %%ymm10,-0x60(%[dst],%[size],1)
+    vmovdqu %%ymm11,-0x80(%[dst],%[size],1)
+    vmovdqu %%ymm12,-0xa0(%[dst],%[size],1)
+    vmovdqu %%ymm13,-0xc0(%[dst],%[size],1)
+    vmovdqu %%ymm14,-0xe0(%[dst],%[size],1)
+    vmovdqu %%ymm15,-0x100(%[dst],%[size],1)
+
+    vzeroupper
+    )"
+    : [dst]"+r"(destination), [src]"+r"(source), [size]"+r"(size), [ret]"=rax"(ret)
+    :
+    : "r8",
       "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
       "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
       "memory");
@@ -1093,7 +964,7 @@ struct MultipleVariantsWithStatistics
 
     VariantWithStatistics variants[num_cells]
     {
-        VariantWithStatistics(1, memcpy),
+/*        VariantWithStatistics(1, memcpy),
         VariantWithStatistics(4, memcpy_erms),
         VariantWithStatistics(10, memcpy_fast_sse),
         VariantWithStatistics(11, memcpy_fast_avx),
@@ -1108,7 +979,24 @@ struct MultipleVariantsWithStatistics
         VariantWithStatistics(8, memcpySSE2Unrolled4),
         VariantWithStatistics(9, memcpySSE2Unrolled8),
         VariantWithStatistics(32, memcpy_medium_sse_forward),
-        VariantWithStatistics(33, memcpy_medium_avx_forward)
+        VariantWithStatistics(33, memcpy_medium_avx_forward)*/
+
+        VariantWithStatistics(1, memcpy_medium_sse_forward),
+        VariantWithStatistics(2, memcpy_medium_avx_forward),
+        VariantWithStatistics(3, memcpy_medium_avx_forward2),
+        VariantWithStatistics(4, memcpy_medium_avx_forward3),
+        VariantWithStatistics(5, memcpy_medium_avx_backward),
+        VariantWithStatistics(6, memcpy_medium_avx_twoway),
+        VariantWithStatistics(7, memcpy_fast_avx),
+        VariantWithStatistics(8, __memcpy_avx_unaligned),
+        VariantWithStatistics(1, memcpy_medium_sse_forward),
+        VariantWithStatistics(2, memcpy_medium_avx_forward),
+        VariantWithStatistics(3, memcpy_medium_avx_forward2),
+        VariantWithStatistics(4, memcpy_medium_avx_forward3),
+        VariantWithStatistics(5, memcpy_medium_avx_backward),
+        VariantWithStatistics(6, memcpy_medium_avx_twoway),
+        VariantWithStatistics(7, memcpy_fast_avx),
+        VariantWithStatistics(8, __memcpy_avx_unaligned),
     };
 
     std::atomic<size_t> count = 0;
@@ -1296,6 +1184,103 @@ static uint8_t * memcpy_selftuned(uint8_t * __restrict dst, const uint8_t * __re
     return ret;
 }
 
+template <memcpy_type impl>
+static uint8_t * memcpy_medium(uint8_t * __restrict dst, const uint8_t * __restrict src, size_t size)
+{
+    uint8_t * ret = dst;
+
+    if (size <= 16)
+    {
+        if (size >= 8)
+        {
+            __builtin_memcpy(dst + size - 8, src + size - 8, 8);
+            __builtin_memcpy(dst, src, 8);
+        }
+        else if (size >= 4)
+        {
+            __builtin_memcpy(dst + size - 4, src + size - 4, 4);
+            __builtin_memcpy(dst, src, 4);
+        }
+        else if (size >= 2)
+        {
+            __builtin_memcpy(dst + size - 2, src + size - 2, 2);
+            __builtin_memcpy(dst, src, 2);
+        }
+        else if (size >= 1)
+        {
+            *dst = *src;
+        }
+    }
+    else if (size <= 128)
+    {
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
+
+        while (size > 16)
+        {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+            dst += 16;
+            src += 16;
+            size -= 16;
+        }
+    }
+    else if (size < 30000)
+    {
+        /// Align destination to 16 bytes boundary.
+        size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+
+        if (padding > 0)
+        {
+            __m128i head = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), head);
+            dst += padding;
+            src += padding;
+            size -= padding;
+        }
+
+        /// Aligned unrolled copy.
+        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+
+        while (size >= 128)
+        {
+            c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
+            c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
+            c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
+            c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
+            c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
+            c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
+            c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
+            c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
+            src += 128;
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 2), c2);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 3), c3);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 4), c4);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 5), c5);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 6), c6);
+            _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 7), c7);
+            dst += 128;
+
+            size -= 128;
+        }
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + size - 16), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + size - 16)));
+
+        while (size > 16)
+        {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+            dst += 16;
+            src += 16;
+            size -= 16;
+        }
+    }
+    else
+    {
+        return static_cast<uint8_t*>(impl(dst, src, size));
+    }
+
+    return ret;
+}
 
 
 #define VARIANT(N, NAME) \
@@ -1319,7 +1304,6 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(10, memcpy_fast_sse)
     VARIANT(11, memcpy_fast_avx)
     VARIANT(12, memcpy_my)
-    VARIANT(13, memcpy_my2)
 
     VARIANT(21, __memcpy_erms)
     VARIANT(22, __memcpy_sse2_unaligned)
@@ -1332,6 +1316,13 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(29, __memcpy_avx512_no_vzeroupper)
 
     VARIANT(30, memcpy_selftuned)
+
+    VARIANT(31, memcpy_medium<memcpy_medium_sse_forward>)
+    VARIANT(32, memcpy_medium<memcpy_medium_avx_forward>)
+    VARIANT(33, memcpy_medium<memcpy_medium_avx_forward2>)
+    VARIANT(34, memcpy_medium<memcpy_medium_avx_forward3>)
+    VARIANT(35, memcpy_medium<memcpy_medium_avx_backward>)
+    VARIANT(36, memcpy_medium<memcpy_medium_avx_twoway>)
 
     return 0;
 }
