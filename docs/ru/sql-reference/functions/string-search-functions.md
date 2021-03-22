@@ -24,7 +24,7 @@ position((haystack, needle[, start_pos]) | (needle IN haystack))
 Алиас: `locate(haystack, needle[, start_pos])`.
 
 !!! note "Примечание"
-   Синтаксис position(needle IN haystack) обеспечивает совместимость с SQL и работает также как position(haystack, needle).
+    Синтаксис position(needle IN haystack) обеспечивает совместимость с SQL и работает также как position(haystack, needle).
 
 **Аргументы**
 
@@ -72,6 +72,8 @@ SELECT position('Привет, мир!', '!');
 │                            21 │
 └───────────────────────────────┘
 ```
+
+**Для синтаксиса (needle IN haystack)**
 
 Запрос:
 

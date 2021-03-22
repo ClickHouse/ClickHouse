@@ -88,6 +88,8 @@ Result:
 └───────────────────────────────┘
 ```
 
+**For syntax (needle IN haystack)**
+
 Query:
 
 ```sql
