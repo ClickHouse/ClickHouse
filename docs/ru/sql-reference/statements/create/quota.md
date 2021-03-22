@@ -1,6 +1,6 @@
 ---
 toc_priority: 42
-toc_title: "\u041a\u0432\u043e\u0442\u0430"
+toc_title: "Квота"
 ---
 
 # CREATE QUOTA {#create-quota-statement}
@@ -37,5 +37,4 @@ CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
 CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/quota) 
 <!--hide-->

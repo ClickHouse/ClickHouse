@@ -10,7 +10,7 @@ Use it for tests or to process columns of types `AggregateFunction` and `Aggrega
 **Syntax**
 
 ``` sql
-initializeAggregation (aggregate_function, column_1, column_2);
+initializeAggregation (aggregate_function, column_1, column_2)
 ```
 
 **Arguments**

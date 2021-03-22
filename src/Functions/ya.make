@@ -210,6 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
+    connectionID.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -246,6 +247,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -291,7 +293,6 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
-    htmlOrXmlCoarseParse.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -376,6 +377,15 @@ SRCS(
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
+    polygonArea.cpp
+    polygonConvexHull.cpp
+    polygonPerimeter.cpp
+    polygonsDistance.cpp
+    polygonsEquals.cpp
+    polygonsIntersection.cpp
+    polygonsSymDifference.cpp
+    polygonsUnion.cpp
+    polygonsWithin.cpp
     position.cpp
     positionCaseInsensitive.cpp
     positionCaseInsensitiveUTF8.cpp
@@ -388,6 +398,7 @@ SRCS(
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
+    readWkt.cpp
     regexpQuoteMeta.cpp
     registerFunctions.cpp
     registerFunctionsArithmetic.cpp
@@ -446,6 +457,7 @@ SRCS(
     subtractSeconds.cpp
     subtractWeeks.cpp
     subtractYears.cpp
+    svg.cpp
     tan.cpp
     tanh.cpp
     tcpPort.cpp
@@ -524,6 +536,7 @@ SRCS(
     visitParamExtractString.cpp
     visitParamExtractUInt.cpp
     visitParamHas.cpp
+    wkt.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
 

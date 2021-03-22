@@ -116,6 +116,11 @@ const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
     return nested->deserializeAndInsertFromArena(pos);
 }
 
+const char * ColumnMap::skipSerializedInArena(const char * pos) const
+{
+    return nested->skipSerializedInArena(pos);
+}
+
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
 {
     nested->updateHashWithValue(n, hash);
@@ -187,6 +192,11 @@ void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnMap::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnMap>();
+}
+
 void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     nested->getPermutation(reverse, limit, nan_direction_hint, res);
@@ -229,7 +239,21 @@ void ColumnMap::protect()
 
 void ColumnMap::getExtremes(Field & min, Field & max) const
 {
-    nested->getExtremes(min, max);
+    Field nested_min;
+    Field nested_max;
+
+    nested->getExtremes(nested_min, nested_max);
+
+    /// Convert result Array fields to Map fields because client expect min and max field to have type Map
+
+    Array nested_min_value = nested_min.get<Array>();
+    Array nested_max_value = nested_max.get<Array>();
+
+    Map map_min_value(nested_min_value.begin(), nested_min_value.end());
+    Map map_max_value(nested_max_value.begin(), nested_max_value.end());
+
+    min = std::move(map_min_value);
+    max = std::move(map_max_value);
 }
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
