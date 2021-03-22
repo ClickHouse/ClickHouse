@@ -196,6 +196,9 @@ public:
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType reloadAllTriedToLoad() const;
 
+    /// Check if object with name exists in configuration
+    bool has(const String & name) const;
+
     /// Reloads all config repositories.
     void reloadConfig() const;
 
