@@ -126,6 +126,8 @@
 #endif
 
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 void * NAME_FORWARD_UNROLLED(void * __restrict destination, const void * __restrict source, size_t size)
 {
@@ -595,6 +597,8 @@ void * NAME_TWOWAY_UNROLLED(void * __restrict destination, const void * __restri
         return NAME_BACKWARD_UNROLLED(destination, source, size);
 }
 
+
+#pragma GCC diagnostic pop
 
 #undef NAME_PART
 #undef VEC_REGISTER

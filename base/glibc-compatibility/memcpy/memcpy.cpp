@@ -91,7 +91,7 @@ struct MultipleVariantsWithStatistics
 {
     std::atomic<memcpy_type> selected_variant{inline_memcpy};
 
-    static constexpr size_t num_cells = 256;
+    static constexpr size_t num_cells = 4;
 
     VariantWithStatistics variants[num_cells]{};
 
@@ -209,163 +209,16 @@ struct MultipleVariantsWithStatistics
 
         variants[idx].set(idx, memcpy_erms);
 
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled1_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled2_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled3_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled4_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled5_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled6_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled7_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled8_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled9_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled10_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled11_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled12_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled13_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled14_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled15_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled16_sse);
-
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled1_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled2_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled3_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled4_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled5_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled6_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled7_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled8_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled9_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled10_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled11_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled12_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled13_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled14_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled15_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled16_sse);
-
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled1_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled2_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled3_sse);
         ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled5_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled6_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled7_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled8_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled9_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled10_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled11_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled12_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled13_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled14_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled15_sse);
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled16_sse);
 
         if (have_avx)
         {
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled1_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled2_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled3_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled4_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled5_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled6_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled7_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled8_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled9_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled10_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled11_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled12_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled13_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled14_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled15_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled16_avx);
-
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled1_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled2_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled3_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled4_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled5_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled6_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled7_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled8_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled9_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled10_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled11_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled12_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled13_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled14_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled15_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled16_avx);
-
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled1_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled2_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled3_avx);
             ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled5_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled6_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled7_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled8_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled9_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled10_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled11_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled12_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled13_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled14_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled15_avx);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled16_avx);
         }
 
         if (have_avx512)
         {
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled1_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled2_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled3_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled4_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled5_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled6_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled7_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled8_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled9_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled10_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled11_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled12_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled13_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled14_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled15_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_forward_unrolled16_avx512);
-
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled1_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled2_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled3_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled4_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled5_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled6_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled7_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled8_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled9_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled10_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled11_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled12_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled13_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled14_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled15_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_backward_unrolled16_avx512);
-
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled1_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled2_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled3_avx512);
             ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled5_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled6_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled7_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled8_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled9_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled10_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled11_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled12_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled13_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled14_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled15_avx512);
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled16_avx512);
         }
 
         ++idx;
