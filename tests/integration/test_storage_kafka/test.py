@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import io
+import string
 
 import avro.schema
 import avro.io
