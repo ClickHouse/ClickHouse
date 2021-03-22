@@ -1262,28 +1262,26 @@ Block Aggregator::prepareBlockAndFill(
 
 void Aggregator::addToAggregateColumnsWithSingleKey(
     const AggregatedDataVariants & data_variants,
-    MutableColumns & final_aggregate_columns)
+    MutableColumns & aggregate_columns)
 {
     const auto & data = data_variants.without_key;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
+        auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
         column_aggregate_func.getData().push_back(data + offsets_of_aggregate_states[i]);
     }
 }
 
-void Aggregator::finalizeAggregateColumnsWithSingleKey(
-    AggregatedDataVariants & data_variants,
-    MutableColumns & final_aggregate_columns)
+void Aggregator::addArenasToAggregateColumns(
+    const AggregatedDataVariants & data_variants,
+    MutableColumns & aggregate_columns)
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
-        for (auto & pool : data_variants.aggregates_pools)
+        auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+        for (const auto & pool : data_variants.aggregates_pools)
             column_aggregate_func.addArena(pool);
     }
-
-    data_variants.without_key = nullptr;
 }
 
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
