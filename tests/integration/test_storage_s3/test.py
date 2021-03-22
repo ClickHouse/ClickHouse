@@ -281,9 +281,9 @@ def test_put_get_with_globs(cluster):
 
 # Test multipart put.
 @pytest.mark.parametrize("maybe_auth,positive", [
-    ("", True)
+    ("", True),
     # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
-    # ("'wrongid','wrongkey',", False) ClickHouse crashes in some time after this test, local integration tests run fails.
+    ("'wrongid','wrongkey',", False),
 ])
 def test_multipart_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
