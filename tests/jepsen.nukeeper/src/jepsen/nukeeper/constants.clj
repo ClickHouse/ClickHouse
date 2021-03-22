@@ -1,12 +1,18 @@
 (ns jepsen.nukeeper.constants)
 
-(def dir "/var/lib/clickhouse")
-(def binary "clickhouse")
-(def logdir "/var/log/clickhouse-server")
-(def logfile "/var/log/clickhouse-server/stderr.log")
-(def serverlog "/var/log/clickhouse-server/clickhouse-server.log")
-(def snapshotsdir "/var/lib/clickhouse/coordination/snapshots")
-(def coordinationdir "/var/lib/clickhouse/coordination")
-(def logsdir "/var/lib/clickhouse/coordination/logs")
-(def pidfile (str dir "/clickhouse.pid"))
-(def binary-path "/tmp")
+(def common-prefix "/tmp/clickhouse")
+
+(def binary-name "clickhouse")
+
+(def binary-path (str common-prefix "/" binary-name))
+(def pid-file-path (str common-prefix "/clickhouse.pid"))
+
+(def data-dir (str common-prefix "/db"))
+(def logs-dir (str common-prefix "/logs"))
+(def configs-dir (str common-prefix "/config"))
+(def sub-configs-dir (str configs-dir "/config.d"))
+(def coordination-data-dir (str data-dir "/coordination"))
+(def coordination-snapshots-dir (str coordination-data-dir "/snapshots"))
+(def coordination-logs-dir (str coordination-data-dir "/logs"))
+
+(def stderr-file (str logs-dir "/stderr.log"))

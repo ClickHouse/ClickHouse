@@ -3,6 +3,7 @@
             [jepsen.nukeeper.utils :refer :all]
             [clojure.pprint :refer [pprint]]
             [jepsen.nukeeper.set :as set]
+            [jepsen.nukeeper.db :refer :all]
             [jepsen.nukeeper.nemesis :as custom-nemesis]
             [jepsen.nukeeper.register :as register]
             [jepsen.nukeeper.unique :as unique]
@@ -30,60 +31,6 @@
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)
            (ch.qos.logback.classic Level)
            (org.slf4j Logger LoggerFactory)))
-
-(defn cluster-config
-  [test node config-template]
-  (let [nodes (:nodes test)
-        replacement-map {#"\{srv1\}" (get nodes 0)
-                         #"\{srv2\}" (get nodes 1)
-                         #"\{srv3\}" (get nodes 2)
-                         #"\{id\}" (str (inc (.indexOf nodes node)))
-                         #"\{quorum_reads\}" (str (boolean (:quorum test)))
-                         #"\{snapshot_distance\}" (str (:snapshot-distance test))
-                         #"\{stale_log_gap\}" (str (:stale-log-gap test))
-                         #"\{reserved_log_items\}" (str (:reserved-log-items test))}]
-    (reduce #(clojure.string/replace %1 (get %2 0) (get %2 1)) config-template replacement-map)))
-
-(defn db
-  [version]
-  (reify db/DB
-    (setup! [_ test node]
-      (info node "installing clickhouse" version)
-      (c/su
-       (if-not (cu/exists? (str binary-path "/clickhouse"))
-         (c/exec :sky :get :-d binary-path :-N :Backbone version))
-       (c/exec :mkdir :-p logdir)
-       (c/exec :touch logfile)
-       (c/exec (str binary-path "/clickhouse") :install)
-       (c/exec :chown :-R :root dir)
-       (c/exec :chown :-R :root logdir)
-       (c/exec :echo (slurp (io/resource "listen.xml")) :> "/etc/clickhouse-server/config.d/listen.xml")
-       (c/exec :echo (cluster-config test node (slurp (io/resource "test_keeper_config.xml"))) :> "/etc/clickhouse-server/config.d/test_keeper_config.xml")
-       (cu/start-daemon!
-        {:pidfile pidfile
-         :logfile logfile
-         :chdir dir}
-        (str binary-path "/clickhouse")
-        :server
-        :--config "/etc/clickhouse-server/config.xml")
-       (wait-clickhouse-alive! node test)))
-
-    (teardown! [_ test node]
-      (info node "tearing down clickhouse")
-      (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
-      (c/su
-       ;(c/exec :rm :-f (str binary-path "/clickhouse"))
-       (c/exec :rm :-rf dir)
-       (c/exec :rm :-rf logdir)
-       (c/exec :rm :-rf "/etc/clickhouse-server")))
-
-    db/LogFiles
-    (log-files [_ test node]
-      (c/su
-       (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
-       (c/cd dir
-             (c/exec :tar :czf "coordination.tar.gz" "coordination")))
-      [logfile serverlog (str dir "/coordination.tar.gz")])))
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
@@ -137,7 +84,7 @@
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:156b85947eac9c85ef5d0ef15757a9f9e7c9e430")
+            :db (db "rbtorrent:a284492c715974b69f73add62b4ff590110369af")
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)
