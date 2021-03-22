@@ -421,6 +421,7 @@ private:
             auto & cell = cells[cell_index];
 
             bool was_inserted = cell.deadline == 0;
+            bool cell_was_default = cell.is_default;
 
             cell.is_default = true;
 
@@ -444,6 +445,23 @@ private:
             }
             else
             {
+                for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+                {
+                    getAttributeContainer(attribute_index, [&](const auto & container)
+                    {
+                        using ElementType = std::decay_t<decltype(container[0])>;
+
+                        if constexpr (std::is_same_v<ElementType, StringRef>)
+                        {
+                            if (!cell_was_default)
+                            {
+                                StringRef previous_value = container[cell.element_index];
+                                arena.free(const_cast<char *>(previous_value.data), previous_value.size);
+                            }
+                        }
+                    });
+                }
+
                 if (cell.key != key)
                 {
                     if constexpr (std::is_same_v<KeyType, StringRef>)
