@@ -251,8 +251,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto pipe = plan ? plan->convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef())) : Pipe();
         if (!pipe.empty())
         {
-            // We already project the block at the end, using projection_block, so we can just add
-            // more colunms here without worrying
+            // If `key_actions` is not empty, transform input blocks by adding needed columns
+            // originated from key columns. We already project the block at the end, using
+            // projection_block, so we can just add more colunms here without worrying
             if (!query_info.key_actions.func_map.empty())
             {
                 ASTPtr expr = std::make_shared<ASTExpressionList>();
