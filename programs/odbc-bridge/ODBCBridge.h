@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <daemon/BaseDaemon.h>
 
+
 namespace DB
 {
 /** Class represents clickhouse-odbc-bridge server, which listen

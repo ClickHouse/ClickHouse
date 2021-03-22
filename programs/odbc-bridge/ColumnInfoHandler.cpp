@@ -2,29 +2,35 @@
 
 #if USE_ODBC
 
-#    include <DataTypes/DataTypeFactory.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#    include <IO/WriteHelpers.h>
-#    include <Parsers/ParserQueryWithOutput.h>
-#    include <Parsers/parseQuery.h>
-#    include <Poco/Data/ODBC/ODBCException.h>
-#    include <Poco/Data/ODBC/SessionImpl.h>
-#    include <Poco/Data/ODBC/Utility.h>
-#    include <Server/HTTP/HTMLForm.h>
-#    include <Poco/Net/HTTPServerRequest.h>
-#    include <Poco/Net/HTTPServerResponse.h>
-#    include <Poco/NumberParser.h>
-#    include <common/logger_useful.h>
-#    include <Common/quoteString.h>
-#    include <ext/scope_guard.h>
-#    include "getIdentifierQuote.h"
-#    include "validateODBCConnectionString.h"
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/NumberParser.h>
+#include <common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <ext/scope_guard.h>
+#include "getIdentifierQuote.h"
+#include "validateODBCConnectionString.h"
 
-#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#include <nanodbc/nanodbc.h>
+#include <sql.h>
+#include <sqlext.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     DataTypePtr getDataType(SQLSMALLINT type)
@@ -58,6 +64,7 @@ namespace
         }
     }
 }
+
 
 void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
@@ -93,71 +100,35 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     }
     else
         LOG_TRACE(log, "Will fetch info for table '{}'", table_name);
+
     LOG_TRACE(log, "Got connection str '{}'", connection_string);
 
     try
     {
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
-        POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-        SQLHDBC hdbc = session.dbc().handle();
-
-        SQLHSTMT hstmt = nullptr;
-
-        if (POCO_SQL_ODBC_CLASS::Utility::isError(SQLAllocStmt(hdbc, &hstmt)))
-            throw POCO_SQL_ODBC_CLASS::ODBCException("Could not allocate connection handle.");
-
-        SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
-
-        const auto & context_settings = context.getSettingsRef();
-
-        /// TODO Why not do SQLColumns instead?
-        std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);
-        WriteBufferFromOwnString buf;
-        std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
-        ParserQueryWithOutput parser(input.data() + input.size());
-        ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", context_settings.max_query_size, context_settings.max_parser_depth);
-
-        IAST::FormatSettings settings(buf, true);
-        settings.always_quote_identifiers = true;
-        settings.identifier_quoting_style = getQuotingStyle(hdbc);
-        select->format(settings);
-        std::string query = buf.str();
-
-        LOG_TRACE(log, "Inferring structure with query '{}'", query);
-
-        if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
-            throw POCO_SQL_ODBC_CLASS::DescriptorException(session.dbc());
-
-        if (POCO_SQL_ODBC_CLASS::Utility::isError(SQLExecute(hstmt)))
-            throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
-
-        SQLSMALLINT cols = 0;
-        if (POCO_SQL_ODBC_CLASS::Utility::isError(SQLNumResultCols(hstmt, &cols)))
-            throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
-
-        /// TODO cols not checked
+        nanodbc::connection connection(validateODBCConnectionString(connection_string));
+        nanodbc::catalog catalog(connection);
+        nanodbc::catalog::columns columns_definition = catalog.find_columns(NANODBC_TEXT("%"), table_name, schema_name);
 
         NamesAndTypesList columns;
-        for (SQLSMALLINT ncol = 1; ncol <= cols; ++ncol)
+        while (columns_definition.next())
         {
-            SQLSMALLINT type = 0;
-            /// TODO Why 301?
-            SQLCHAR column_name[301];
+            SQLSMALLINT type = columns_definition.sql_data_type();
+            std::string column_name = columns_definition.column_name();
 
-            SQLSMALLINT is_nullable;
-            const auto result = POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, &is_nullable);
-            if (POCO_SQL_ODBC_CLASS::Utility::isError(result))
-                throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
+            bool is_nullable = columns_definition.nullable() == SQL_NULLABLE;
 
             auto column_type = getDataType(type);
-            if (external_table_functions_use_nulls && is_nullable == SQL_NULLABLE)
-            {
-                column_type = std::make_shared<DataTypeNullable>(column_type);
-            }
 
-            columns.emplace_back(reinterpret_cast<char *>(column_name), std::move(column_type));
+            if (external_table_functions_use_nulls && is_nullable == SQL_NULLABLE)
+                column_type = std::make_shared<DataTypeNullable>(column_type);
+
+            columns.emplace_back(column_name, std::move(column_type));
         }
+
+        if (columns.empty())
+            throw Exception("Columns definition was not returned", ErrorCodes::LOGICAL_ERROR);
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
