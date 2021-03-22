@@ -31,7 +31,6 @@ position((haystack, needle[, start_pos]) | (needle in haystack))
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
 -   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
--   `needle in haystack` — дополнительный параметр  
 
 **Возвращаемые значения**
 
