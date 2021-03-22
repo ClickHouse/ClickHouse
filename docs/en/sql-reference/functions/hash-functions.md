@@ -482,3 +482,290 @@ Result:
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
+## ngramSimhash {#ngramsimhash}
+
+Returns the hash of a string in ASCII.
+
+**Syntax**
+
+``` sql
+ngramSimhash(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select ngramSimHash('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 1627567969 │
+└────────────┘
+```
+
+## ngramSimhashCaseInsensitive {#ngramsimhashcaseinsensitive}
+
+Returns the hash of a string in ASCII case insensitive.
+
+**Syntax**
+
+``` sql
+ngramSimhashCaseInsensitive(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
+```
+
+Result:
+
+``` text
+┌──────Hash─┐
+│ 562180645 │
+└───────────┘
+```
+
+## ngramSimhashUTF8 {#ngramSimhashutf8}
+
+Returns the hash of a string in UTF8.
+
+**Syntax**
+
+``` sql
+ngramSimhashUTF8(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select ngramSimHashUTF8('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 1628157797 │
+└────────────┘
+```
+
+## ngramSimHashCaseInsensitiveUTF8 {#ngramSimHashCaseInsensitiveutf8}
+
+Returns the hash of a string in UTF8 case insensitive.
+
+**Syntax**
+
+``` sql
+ngramSimHashCaseInsensitiveUTF8(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select ngramSimHashCaseInsensitiveUTF8('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 1636742693 │
+└────────────┘
+```
+
+## wordShingleSimHash {#wordshinglesimhash}
+
+Returns the hash of a string in ASCII.
+
+**Syntax**
+
+``` sql
+wordShingleSimHash(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select wordShingleSimHash('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 3415403737 │
+└────────────┘
+```
+
+## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseInsensitive}
+
+Returns the hash of a string in ASCII case insensitive.
+
+**Syntax**
+
+``` sql
+wordShingleSimHashCaseInsensitive(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select wordShingleSimHashCaseInsensitive('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 3468526407 │
+└────────────┘
+```
+
+## wordShingleSimHashUTF8 {#wordShingleSimHashutf8}
+
+Returns the hash of a string in UTF8.
+
+**Syntax**
+
+``` sql
+wordShingleSimHashUTF8(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select wordShingleSimHashUTF8('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 3415403737 │
+└────────────┘
+```
+
+## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimHashcaseinsensitiveutf8}
+
+Returns the hash of a string in UTF8 case insensitive.
+
+**Syntax**
+
+``` sql
+wordShingleSimHashCaseInsensitiveUTF8(string)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Hash value. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+select wordShingleSimHashCaseInsensitiveUTF8('ClickHouse') as Hash;
+```
+
+Result:
+
+``` text
+┌───────Hash─┐
+│ 3468526407 │
+└────────────┘
+```
