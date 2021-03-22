@@ -3,9 +3,6 @@ toc_priority: 58
 toc_title: External Dictionaries
 ---
 
-!!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
-
 # Functions for Working with External Dictionaries {#ext_dict_functions}
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -19,7 +16,7 @@ dictGet('dict_name', 'attr_name', id_expr)
 dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
@@ -108,10 +105,10 @@ Checks whether a key is present in a dictionary.
 dictHas('dict_name', id_expr)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+-   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
 
 **Returned value**
 
@@ -130,7 +127,7 @@ Creates an array, containing all the parents of a key in the [hierarchical dicti
 dictGetHierarchy('dict_name', key)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
@@ -149,7 +146,7 @@ Checks the ancestor of a key through the whole hierarchical chain in the diction
 dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `child_id_expr` — Key to be checked. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
@@ -185,12 +182,12 @@ dictGet[Type]('dict_name', 'attr_name', id_expr)
 dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
+-   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
+-   `default_value_expr` — Value which is returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
@@ -203,3 +200,4 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

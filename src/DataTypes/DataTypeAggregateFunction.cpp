@@ -10,6 +10,8 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromString.h>
@@ -241,7 +243,7 @@ void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer
 
 void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(serializeToString(function, column, row_num), ostr);
+    writeXMLString(serializeToString(function, column, row_num), ostr);
 }
 
 
@@ -258,6 +260,45 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
     deserializeFromString(function, column, s);
 }
 
+
+void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(
+        protobuf.writeAggregateFunction(function, assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num]));
+}
+
+void DataTypeAggregateFunction::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
+    Arena & arena = column_concrete.createOrGetArena();
+    size_t size_of_state = function->sizeOfData();
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
+    function->create(place);
+    try
+    {
+        if (!protobuf.readAggregateFunction(function, place, arena))
+        {
+            function->destroy(place);
+            return;
+        }
+        auto & container = column_concrete.getData();
+        if (allow_add_row)
+        {
+            container.emplace_back(place);
+            row_added = true;
+        }
+        else
+            container.back() = place;
+    }
+    catch (...)
+    {
+        function->destroy(place);
+        throw;
+    }
+}
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
@@ -316,23 +357,20 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
         function_name = parametric->name;
 
-        if (parametric->arguments)
+        const ASTs & parameters = parametric->arguments->children;
+        params_row.resize(parameters.size());
+
+        for (size_t i = 0; i < parameters.size(); ++i)
         {
-            const ASTs & parameters = parametric->arguments->children;
-            params_row.resize(parameters.size());
+            const auto * literal = parameters[i]->as<ASTLiteral>();
+            if (!literal)
+                throw Exception(
+                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                    "Parameters to aggregate functions must be literals. "
+                    "Got parameter '{}' for function '{}'",
+                    parameters[i]->formatForErrorMessage(), function_name);
 
-            for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const auto * literal = parameters[i]->as<ASTLiteral>();
-                if (!literal)
-                    throw Exception(
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                        "Parameters to aggregate functions must be literals. "
-                        "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(), function_name);
-
-                params_row[i] = literal->value;
-            }
+            params_row[i] = literal->value;
         }
     }
     else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))

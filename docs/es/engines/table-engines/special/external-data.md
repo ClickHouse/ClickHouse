@@ -27,10 +27,10 @@ Puede tener varias secciones como esta, para el número de tablas que se transmi
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 Solo se puede recuperar una sola tabla de stdin.
 
-Los siguientes parámetros son opcionales: **–name**– Name of the table. If omitted, _data is used.
+Los siguientes parámetros son opcionales: **–name**– Name of the table. If omitted, \_data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-Se requiere uno de los siguientes parámetros:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
+Se requiere uno de los siguientes parámetros:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Define los nombres y tipos de columna.
 
 Los archivos especificados en ‘file’ se analizará mediante el formato especificado en ‘format’ utilizando los tipos de datos especificados en ‘types’ o ‘structure’. La mesa será cargado en el servidor y accesibles, como una tabla temporal con el nombre de ‘name’.
@@ -48,7 +48,7 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/sync       1
 ```
 
-Cuando se utiliza la interfaz HTTP, los datos externos se pasan en el formato multipart/form-data. Cada tabla se transmite como un archivo separado. El nombre de la tabla se toma del nombre del archivo. El ‘query_string’ se pasa los parámetros ‘name_format’, ‘name_types’, y ‘name_structure’, donde ‘name’ es el nombre de la tabla a la que corresponden estos parámetros. El significado de los parámetros es el mismo que cuando se usa el cliente de línea de comandos.
+Cuando se utiliza la interfaz HTTP, los datos externos se pasan en el formato multipart/form-data. Cada tabla se transmite como un archivo separado. El nombre de la tabla se toma del nombre del archivo. El ‘query\_string’ se pasa los parámetros ‘name\_format’, ‘name\_types’, y ‘name\_structure’, donde ‘name’ es el nombre de la tabla a la que corresponden estos parámetros. El significado de los parámetros es el mismo que cuando se usa el cliente de línea de comandos.
 
 Ejemplo:
 

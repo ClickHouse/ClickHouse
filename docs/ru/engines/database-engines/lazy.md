@@ -1,8 +1,3 @@
----
-toc_priority: 31
-toc_title: Lazy
----
-
 # Lazy {#lazy}
 
 Сохраняет таблицы только в оперативной памяти `expiration_time_in_seconds` через несколько секунд после последнего доступа. Может использоваться только с таблицами \*Log.
@@ -15,3 +10,4 @@ toc_title: Lazy
 CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/database_engines/lazy/) <!--hide-->

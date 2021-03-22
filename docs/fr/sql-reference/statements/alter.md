@@ -208,7 +208,7 @@ Les opérations suivantes avec [partition](../../engines/table-engines/mergetree
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` répertoire à la table.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Copie la partition de données d'une table à l'autre et la remplace.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition) - déplace la partition de données d'une table à l'autre.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition) - déplace la partition de données d'une table à l'autre.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Rétablit la valeur d'une colonne spécifiée dans une partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Réinitialise l'index secondaire spécifié dans une partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -436,7 +436,7 @@ Vous pouvez spécifier l'expression de partition dans `ALTER ... PARTITION` requ
 -   Comme une valeur de l' `partition` la colonne de la `system.parts` table. Exemple, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   Comme expression de la colonne de la table. Les constantes et les expressions constantes sont prises en charge. Exemple, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   À l'aide de l'ID de partition. Partition ID est un identifiant de chaîne de la partition (lisible par l'homme, si possible) qui est utilisé comme noms de partitions dans le système de fichiers et dans ZooKeeper. L'ID de partition doit être spécifié dans `PARTITION ID` clause, entre guillemets simples. Exemple, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   Dans le [ALTER ATTACH PART](#alter_attach-partition) et [DROP DETACHED PART](#alter_drop-detached) requête, pour spécifier le nom d'une partie, utilisez le littéral de chaîne avec une valeur de `name` la colonne de la [système.detached_parts](../../operations/system-tables.md#system_tables-detached_parts) table. Exemple, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   Dans le [ALTER ATTACH PART](#alter_attach-partition) et [DROP DETACHED PART](#alter_drop-detached) requête, pour spécifier le nom d'une partie, utilisez le littéral de chaîne avec une valeur de `name` la colonne de la [système.detached\_parts](../../operations/system-tables.md#system_tables-detached_parts) table. Exemple, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 L'utilisation de guillemets lors de la spécification de la partition dépend du type d'expression de partition. Par exemple, pour la `String` type, vous devez spécifier son nom entre guillemets (`'`). Pour l' `Date` et `Int*` types aucune citation n'est nécessaire.
 

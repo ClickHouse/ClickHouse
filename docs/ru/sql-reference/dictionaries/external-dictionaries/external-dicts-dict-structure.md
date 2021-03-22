@@ -1,8 +1,3 @@
----
-toc_priority: 44
-toc_title: "Ключ и поля словаря"
----
-
 # Ключ и поля словаря {#kliuch-i-polia-slovaria}
 
 Секция `<structure>` описывает ключ словаря и поля, доступные для запросов.
@@ -169,3 +164,4 @@ CREATE DICTIONARY somename (
 
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

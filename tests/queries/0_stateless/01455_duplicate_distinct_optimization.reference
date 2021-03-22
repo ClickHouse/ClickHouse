@@ -9,7 +9,7 @@ FROM
 SELECT DISTINCT number * 2
 FROM 
 (
-    SELECT DISTINCT
+    SELECT DISTINCT 
         number * 2,
         number
     FROM numbers(1)
@@ -20,12 +20,12 @@ FROM
     SELECT DISTINCT number * 2 AS number
     FROM numbers(1)
 )
-SELECT
+SELECT 
     b,
     a
 FROM 
 (
-    SELECT DISTINCT
+    SELECT DISTINCT 
         number % 2 AS a,
         number % 3 AS b
     FROM numbers(100)
@@ -33,7 +33,7 @@ FROM
 SELECT DISTINCT a
 FROM 
 (
-    SELECT DISTINCT
+    SELECT DISTINCT 
         number % 2 AS a,
         number % 3 AS b
     FROM numbers(100)
@@ -44,7 +44,7 @@ FROM
     SELECT DISTINCT a
     FROM 
     (
-        SELECT DISTINCT
+        SELECT DISTINCT 
             number % 2 AS a,
             number % 3 AS b
         FROM numbers(100)
@@ -53,45 +53,45 @@ FROM
 SELECT DISTINCT a
 FROM 
 (
-    SELECT
+    SELECT 
         a,
         b
     FROM 
     (
-        SELECT DISTINCT
+        SELECT DISTINCT 
             number % 2 AS a,
             number % 3 AS b
         FROM numbers(100)
     )
 )
-SELECT
+SELECT 
     a,
     b
 FROM 
 (
-    SELECT
+    SELECT 
         b,
         a
     FROM 
     (
-        SELECT DISTINCT
+        SELECT DISTINCT 
             number AS a,
             number AS b
         FROM numbers(1)
     )
 )
-SELECT
+SELECT 
     a,
     b
 FROM 
 (
-    SELECT
+    SELECT 
         b,
         a,
         a + b
     FROM 
     (
-        SELECT DISTINCT
+        SELECT DISTINCT 
             number % 2 AS a,
             number % 3 AS b
         FROM numbers(100)
@@ -103,7 +103,7 @@ FROM
     SELECT a
     FROM 
     (
-        SELECT DISTINCT
+        SELECT DISTINCT 
             number % 2 AS a,
             number % 3 AS b
         FROM numbers(100)

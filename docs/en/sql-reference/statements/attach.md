@@ -1,5 +1,5 @@
 ---
-toc_priority: 40
+toc_priority: 42
 toc_title: ATTACH
 ---
 
@@ -17,8 +17,4 @@ If the table was previously detached ([DETACH](../../sql-reference/statements/de
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of some system tables, which are explicitly created on the server).
-
-If the table was detached permanently, it won't be reattached at the server start, so you need to use `ATTACH` query explicitly.
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/attach/) <!--hide-->
+This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).

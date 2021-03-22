@@ -1,8 +1,3 @@
----
-toc_priority: 55
-toc_title: Nullable
----
-
 # Nullable(TypeName) {#data_type-nullable}
 
 Позволяет работать как со значением типа `TypeName` так и с отсутствием этого значения ([NULL](../../sql-reference/data-types/nullable.md)) в одной и той же переменной, в том числе хранить `NULL` в таблицах вместе со значения типа `TypeName`. Например, в столбце типа `Nullable(Int8)` можно хранить значения типа `Int8`, а в тех строках, где значения нет, будет храниться `NULL`.
@@ -48,3 +43,4 @@ SELECT x + y from t_null
 └────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/nullable/) <!--hide-->

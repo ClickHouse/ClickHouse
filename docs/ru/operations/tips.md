@@ -1,8 +1,3 @@
----
-toc_priority: 58
-toc_title: "Советы по эксплуатации"
----
-
 # Советы по эксплуатации {#sovety-po-ekspluatatsii}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
@@ -35,7 +30,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Механизм прозрачных huge pages нужно отключить. Он мешает работе аллокаторов памяти, что приводит к значительной деградации производительности.
 
 ``` bash
-$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 С помощью `perf top` можно наблюдать за временем, проведенном в ядре операционной системы для управления памятью.
@@ -57,7 +52,7 @@ $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 Если бюджет позволяет, лучше выбрать RAID-10.
 
 На более чем 4 дисках вместо RAID-5 нужно использовать RAID-6 (предпочтительнее) или RAID-50.
-При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe_cache_size, так как значение по умолчанию выбрано не самым удачным образом.
+При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe\_cache\_size, так как значение по умолчанию выбрано не самым удачным образом.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -246,3 +241,4 @@ script
 end script
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/tips/) <!--hide-->

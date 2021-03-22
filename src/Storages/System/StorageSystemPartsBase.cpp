@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializeMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -120,13 +120,6 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
                     String engine_name = storage->getName();
 
-#if USE_MYSQL
-                    if (auto * proxy = dynamic_cast<StorageMaterializeMySQL *>(storage.get()))
-                    {
-                        auto nested = proxy->getNested();
-                        storage.swap(nested);
-                    }
-#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
@@ -233,7 +226,7 @@ StoragesInfo StoragesInfoStream::next()
 Pipe StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
@@ -245,29 +238,16 @@ Pipe StorageSystemPartsBase::read(
 
     /// Create the result.
 
-    NameSet names_set(column_names.begin(), column_names.end());
-
-    Block sample = metadata_snapshot->getSampleBlock();
-    Block header;
-
-    std::vector<UInt8> columns_mask(sample.columns());
-    for (size_t i = 0; i < sample.columns(); ++i)
-    {
-        if (names_set.count(sample.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-            header.insert(sample.getByPosition(i));
-        }
-    }
-    MutableColumns res_columns = header.cloneEmptyColumns();
+    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(res_columns, columns_mask, info, has_state_column);
+        processNextStorage(res_columns, info, has_state_column);
     }
 
+    Block header = metadata_snapshot->getSampleBlock();
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 

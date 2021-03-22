@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <ext/bit_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
@@ -85,7 +85,7 @@ static void assertIndexColumnsType(const Block & header)
         WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
-            !which.isDateOrDateTime() && !which.isEnum() && !which.isUUID())
+            !which.isDateOrDateTime() && !which.isEnum())
             throw Exception("Unexpected type " + type->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }

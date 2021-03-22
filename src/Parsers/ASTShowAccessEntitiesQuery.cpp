@@ -1,6 +1,5 @@
 #include <Parsers/ASTShowAccessEntitiesQuery.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -43,7 +42,7 @@ void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings
 }
 
 
-void ASTShowAccessEntitiesQuery::replaceEmptyDatabase(const String & current_database)
+void ASTShowAccessEntitiesQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
 {
     if (database_and_table_name)
     {

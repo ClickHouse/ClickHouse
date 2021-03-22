@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB

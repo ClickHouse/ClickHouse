@@ -7,19 +7,14 @@
 namespace DB
 {
 
-CompressionCodecNone::CompressionCodecNone()
-{
-    setCodecDescription("NONE");
-}
-
 uint8_t CompressionCodecNone::getMethodByte() const
 {
     return static_cast<uint8_t>(CompressionMethodByte::NONE);
 }
 
-void CompressionCodecNone::updateHash(SipHash & hash) const
+ASTPtr CompressionCodecNone::getCodecDesc() const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    return std::make_shared<ASTIdentifier>("NONE");
 }
 
 UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const

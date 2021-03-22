@@ -1,8 +1,3 @@
----
-toc_priority: 42
-toc_title: "Функции поиска и замены в строках"
----
-
 # Функции поиска и замены в строках {#funktsii-poiska-i-zameny-v-strokakh}
 
 ## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
@@ -83,3 +78,4 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_replace_functions/) <!--hide-->

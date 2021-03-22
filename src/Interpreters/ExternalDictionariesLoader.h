@@ -16,7 +16,7 @@ public:
     using DictPtr = std::shared_ptr<const IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    explicit ExternalDictionariesLoader(Context & context_);
+    ExternalDictionariesLoader(Context & context_);
 
     DictPtr getDictionary(const std::string & name) const
     {
@@ -26,11 +26,6 @@ public:
     DictPtr tryGetDictionary(const std::string & name) const
     {
         return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
-    }
-
-    bool hasDictionary(const std::string & name) const
-    {
-        return has(name);
     }
 
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");

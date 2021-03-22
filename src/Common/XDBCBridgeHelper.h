@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
@@ -12,7 +13,6 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 
@@ -307,6 +307,8 @@ struct ODBCBridgeMixin
         std::vector<std::string> cmd_args;
         path.setFileName("clickhouse-odbc-bridge");
 
+        std::stringstream command;
+
 #if !CLICKHOUSE_SPLIT_BINARY
         cmd_args.push_back("odbc-bridge");
 #endif
@@ -327,16 +329,6 @@ struct ODBCBridgeMixin
             cmd_args.push_back("--err-log-path");
             cmd_args.push_back(config.getString("logger." + configPrefix() + "_errlog"));
         }
-        if (config.has("logger." + configPrefix() + "_stdout"))
-        {
-            cmd_args.push_back("--stdout-path");
-            cmd_args.push_back(config.getString("logger." + configPrefix() + "_stdout"));
-        }
-        if (config.has("logger." + configPrefix() + "_stderr"))
-        {
-            cmd_args.push_back("--stderr-path");
-            cmd_args.push_back(config.getString("logger." + configPrefix() + "_stderr"));
-        }
         if (config.has("logger." + configPrefix() + "_level"))
         {
             cmd_args.push_back("--log-level");
@@ -345,7 +337,7 @@ struct ODBCBridgeMixin
 
         LOG_TRACE(log, "Starting {}", serviceAlias());
 
-        return ShellCommand::executeDirect(path.toString(), cmd_args, ShellCommandDestructorStrategy(true));
+        return ShellCommand::executeDirect(path.toString(), cmd_args, true);
     }
 };
 }

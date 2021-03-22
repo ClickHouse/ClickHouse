@@ -1,21 +1,20 @@
 ---
-toc_priority: 41
+toc_priority: 7
 toc_title: ROW POLICY
 ---
 
 # CREATE ROW POLICY {#create-row-policy-statement}
 
-Creates [filters for rows](../../../operations/access-rights.md#row-policy-management), which a user can read from a table.
+Creates a [filter for rows](../../../operations/access-rights.md#row-policy-management), which a user can read from a table.
 
 Syntax:
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1 
-        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...] 
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING condition]
-    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
 `ON CLUSTER` clause allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).

@@ -1,3 +1,4 @@
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -36,7 +37,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -270,8 +270,8 @@ namespace
                     throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
                                     ErrorCodes::TYPE_MISMATCH};
 
-                assert_cast<ColumnUInt16 &>(column).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())));
+                assert_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
                 break;
             }
 
@@ -298,8 +298,6 @@ namespace
                                     ErrorCodes::TYPE_MISMATCH};
                 break;
             }
-            default:
-                throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
         }
     }
 

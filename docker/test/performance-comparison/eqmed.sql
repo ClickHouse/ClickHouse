@@ -1,6 +1,4 @@
--- The input is table(test text, query text, run UInt32, version UInt8, metrics Array(float)).
--- Run like this:
--- clickhouse-local --queries-file eqmed.sql -S 'test text, query text, run UInt32, version UInt8, metrics Array(float)' --file analyze/tmp/modulo_0.tsv
+-- input is table(test text, query text, run UInt32, version int, metrics Array(float))
 select
    arrayMap(x -> floor(x, 4), original_medians_array.medians_by_version[1] as l) l_rounded,
    arrayMap(x -> floor(x, 4), original_medians_array.medians_by_version[2] as r) r_rounded,
@@ -10,19 +8,14 @@ select
 from
    (
       -- quantiles of randomization distributions
-      -- note that for small number of runs, the exact quantile might not make
-      -- sense, because the last possible value of randomization distribution
-      -- might take a larger percentage of distirbution (i.e. the distribution
-      -- actually has discrete values, and the last step can be large).
-      select quantileExactForEach(0.99)(
+      select quantileExactForEach(0.999)(
         arrayMap(x, y -> abs(x - y), metrics_by_label[1], metrics_by_label[2]) as d
       ) threshold
-      ---- Uncomment to see what the distribution is really like. This debug
-      ---- code only works for single (the first) metric.
-      --, uniqExact(d[1]) u
+      ---- uncomment to see what the distribution is really like
+      --, uniqExact(d.1) u
       --, arraySort(x->x.1,
       --      arrayZip(
-      --          (sumMap([d[1]], [1]) as f).1,
+      --          (sumMap([d.1], [1]) as f).1,
       --          f.2)) full_histogram
       from
          (
@@ -40,7 +33,7 @@ from
                                 -- strip the query away before the join -- it might be several kB long;
                                 (select metrics, run, version from table) no_query,
                                 -- duplicate input measurements into many virtual runs
-                                numbers(1, 10000) nn
+                                numbers(1, 100000) nn
                               -- for each virtual run, randomly reorder measurements
                               order by virtual_run, rand()
                            ) virtual_runs

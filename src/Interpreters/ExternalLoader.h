@@ -3,7 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
@@ -195,9 +195,6 @@ public:
     /// The function throws an exception if it's failed to load or reload something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType reloadAllTriedToLoad() const;
-
-    /// Check if object with name exists in configuration
-    bool has(const String & name) const;
 
     /// Reloads all config repositories.
     void reloadConfig() const;
