@@ -2,6 +2,8 @@
 
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
+#include <Access/Credentials.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 

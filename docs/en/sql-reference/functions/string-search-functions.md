@@ -26,9 +26,9 @@ Alias: `locate(haystack, needle[, start_pos])`.
 
 **Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -44,7 +44,7 @@ The phrase “Hello, world!” contains a set of bytes representing a single-byt
 Query:
 
 ``` sql
-SELECT position('Hello, world!', '!')
+SELECT position('Hello, world!', '!');
 ```
 
 Result:
@@ -72,7 +72,7 @@ The same phrase in Russian contains characters which can’t be represented usin
 Query:
 
 ``` sql
-SELECT position('Привет, мир!', '!')
+SELECT position('Привет, мир!', '!');
 ```
 
 Result:
@@ -97,9 +97,9 @@ positionCaseInsensitive(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -113,7 +113,7 @@ Type: `Integer`.
 Query:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello')
+SELECT positionCaseInsensitive('Hello, world!', 'hello');
 ```
 
 Result:
@@ -140,9 +140,9 @@ positionUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -158,7 +158,7 @@ The phrase “Hello, world!” in Russian contains a set of Unicode points repre
 Query:
 
 ``` sql
-SELECT positionUTF8('Привет, мир!', '!')
+SELECT positionUTF8('Привет, мир!', '!');
 ```
 
 Result:
@@ -174,7 +174,7 @@ The phrase “Salut, étudiante!”, where character `é` can be represented usi
 Query for the letter `é`, which is represented one Unicode point `U+00E9`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!');
 ```
 
 Result:
@@ -188,7 +188,7 @@ Result:
 Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!');
 ```
 
 Result:
@@ -213,9 +213,9 @@ positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
@@ -229,7 +229,7 @@ Type: `Integer`.
 Query:
 
 ``` sql
-SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир');
 ```
 
 Result:
@@ -258,8 +258,8 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -270,7 +270,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 Query:
 
 ``` sql
-SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 ```
 
 Result:
@@ -387,7 +387,7 @@ If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is r
 Query:
 
 ``` sql
-SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
@@ -428,7 +428,7 @@ If `haystack` doesn’t match the `pattern` regex, an empty array is returned.
 Query:
 
 ``` sql
-SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
@@ -506,7 +506,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT * FROM Months WHERE ilike(name, '%j%')
+SELECT * FROM Months WHERE ilike(name, '%j%');
 ```
 
 Result:
@@ -618,7 +618,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -631,7 +631,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select countSubstringsCaseInsensitive('aba', 'B');
+SELECT countSubstringsCaseInsensitive('aba', 'B');
 ```
 
 Result:
@@ -684,7 +684,7 @@ SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -773,4 +773,3 @@ Result:
 └───────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->

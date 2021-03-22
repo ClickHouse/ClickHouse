@@ -241,6 +241,8 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string 
         for (const auto & key_attribute : *key)
             if (key_attribute.name == attribute_name)
                 return key_attribute;
+
+        throw Exception{"No such attribute '" + attribute_name + "' in keys", ErrorCodes::BAD_ARGUMENTS};
     }
 
     size_t attribute_index = it->second;
@@ -304,14 +306,6 @@ bool DictionaryStructure::isKeySizeFixed() const
     return true;
 }
 
-size_t DictionaryStructure::getKeySize() const
-{
-    return std::accumulate(std::begin(*key), std::end(*key), size_t{}, [](const auto running_size, const auto & key_i)
-    {
-        return running_size + key_i.type->getSizeOfValueInMemory();
-    });
-}
-
 Strings DictionaryStructure::getKeysNames() const
 {
     if (id)
@@ -354,6 +348,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     config.keys(config_prefix, config_elems);
     auto has_hierarchy = false;
 
+    std::unordered_set<String> attribute_names;
     std::vector<DictionaryAttribute> res_attributes;
 
     const FormatSettings format_settings;
@@ -375,6 +370,15 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         /// columns will be duplicated
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
+
+        auto insert_result = attribute_names.insert(name);
+        bool inserted = insert_result.second;
+
+        if (!inserted)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary attributes names must be unique. Attribute name ({}) is not unique",
+                name);
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);

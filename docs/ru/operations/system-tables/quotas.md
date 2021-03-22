@@ -25,5 +25,4 @@
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/quotas) <!--hide-->
 
