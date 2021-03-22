@@ -38,7 +38,7 @@ ORDER BY key
 SETTINGS
     vertical_merge_algorithm_min_rows_to_activate=0,
     vertical_merge_algorithm_min_columns_to_activate=0,
-    min_bytes_for_wide_part = 0
+    min_bytes_for_wide_part = 0,
     index_granularity = 1;
 
 INSERT INTO collapsing_suspicious_granularity VALUES (1, 1, -1) (1, 1, 1);

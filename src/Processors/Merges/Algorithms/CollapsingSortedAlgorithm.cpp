@@ -208,7 +208,11 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
     }
 
     if (auto res = insertRows())
+    {
+        count_positive = 0;
+        count_negative = 0;
         return Status(std::move(*res));
+    }
 
     return Status(merged_data.pull(), true);
 }
