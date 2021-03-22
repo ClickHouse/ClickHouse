@@ -130,7 +130,7 @@
   [node test]
   (info "Checking server alive on" node)
   (try
-    (c/exec (str binary-path "/clickhouse") :client :--query "SELECT 1")
+    (c/exec binary-path :client :--query "SELECT 1")
     (catch Exception _ false)))
 
 (defn wait-clickhouse-alive!
@@ -144,18 +144,26 @@
   [node test]
   (info "Killing server on node" node)
   (c/su
-   (cu/stop-daemon! (str binary-path "/clickhouse") pidfile)
-   (c/exec :rm :-fr (str dir "/status"))))
+   (cu/stop-daemon! binary-path pid-file-path)
+   (c/exec :rm :-fr (str data-dir "/status"))))
 
 (defn start-clickhouse!
   [node test]
   (info "Starting server on node" node)
   (c/su
    (cu/start-daemon!
-    {:pidfile pidfile
-     :logfile logfile
-     :chdir dir}
-    (str binary-path "/clickhouse")
+    {:pidfile pid-file-path
+     :logfile stderr-file
+     :chdir data-dir}
+    binary-path
     :server
-    :--config "/etc/clickhouse-server/config.xml"))
-  (wait-clickhouse-alive! node test))
+    :--config (str configs-dir "/config.xml")
+    :--
+    :--path data-dir
+    :--user_files_path (str data-dir "/user_files")
+    :--top_level_domains_path (str data-dir "/top_level_domains")
+    :--logger.log (str logs-dir "/clickhouse-server.log")
+    :--logger.errorlog (str logs-dir "/clickhouse-server.err.log")
+    :--test_keeper_server.snapshot_storage_path coordination-snapshots-dir
+    :--test_keeper_server.logs_storage_path coordination-logs-dir)
+  (wait-clickhouse-alive! node test)))
