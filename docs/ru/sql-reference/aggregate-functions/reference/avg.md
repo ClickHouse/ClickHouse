@@ -61,4 +61,3 @@ SELECT avg(t) FROM test;
 └────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
