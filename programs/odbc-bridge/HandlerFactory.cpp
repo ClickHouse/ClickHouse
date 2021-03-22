@@ -21,7 +21,7 @@ std::unique_ptr<HTTPRequestHandler> HandlerFactory::createRequestHandler(const H
 
         if (uri.getPath() == "/columns_info")
 #if USE_ODBC
-            return std::make_unique<ODBCColumnsInfoHandler>(keep_alive_timeout, context);
+            return std::make_unique<ODBCColumnsInfoHandler>(keep_alive_timeout);
 #else
             return nullptr;
 #endif
@@ -38,9 +38,9 @@ std::unique_ptr<HTTPRequestHandler> HandlerFactory::createRequestHandler(const H
             return nullptr;
 #endif
         else if (uri.getPath() == "/write")
-            return std::make_unique<ODBCHandler>(pool_map, keep_alive_timeout, context, "write");
+            return std::make_unique<ODBCHandler>(keep_alive_timeout, context, "write");
         else
-            return std::make_unique<ODBCHandler>(pool_map, keep_alive_timeout, context, "read");
+            return std::make_unique<ODBCHandler>(keep_alive_timeout, context, "read");
     }
     return nullptr;
 }

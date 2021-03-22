@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Server/HTTP/HTTPRequestHandler.h>
-
 #include <Poco/Logger.h>
 
 #if USE_ODBC
+
 
 namespace DB
 {
