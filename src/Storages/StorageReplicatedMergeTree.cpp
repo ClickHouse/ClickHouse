@@ -1377,23 +1377,14 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const VolumePtr volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
             MergeTreeData::MutableDataPartPtr part = createPart(part_new_name, part_info, volume, part_path);
 
-            /// We don't check consistency as in that case this method may throw if the data is corrupted.
-            /// The faster way is to load invalid data and just check the checksums -- they won't match.
-            /// The issue here is that one of data part files may be corrupted (e.g. data.bin), but the
-            /// pre-calculated checksums.txt is correct, so that could lead to the invalid part being attached.
-            /// So we explicitly remove it and force recalculation.
-            disk->removeFileIfExists(part->getFullRelativePath() + "checksums.txt");
-
-            /// The try-catch here is for the case when one of the part's mandatory data files is missing, so the
-            /// internal loading method in the IMergeTreeDataPart throws.
-            /// We can't rethrow upper as in that case the fetching will not happen.
-            /// This situation is not thought to happen often, so handling the exception is ok.
             try
             {
-                part->loadColumnsChecksumsIndexes(false, false);
+                part->loadColumnsChecksumsIndexes(true, true);
             }
-            catch (const Exception&) // we don't really want to know what exactly happened
+            catch (const Exception&)
             {
+                /// This method throws if the part data is corrupted or partly missing. In this case, we simply don't
+                /// process the part.
                 continue;
             }
 
@@ -3333,11 +3324,15 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
     /// Select replicas in uniformly random order.
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
+    LOG_TRACE(log, "Candidate replicas: {}", replicas.size());
+
     for (const String & replica : replicas)
     {
         /// We aren't interested in ourself.
         if (replica == replica_name)
             continue;
+
+        LOG_TRACE(log, "Candidate replica: {}", replica);
 
         if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
