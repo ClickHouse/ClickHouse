@@ -1305,11 +1305,11 @@ protected:
 
     void addToAggregateColumnsWithSingleKey(
         const AggregatedDataVariants & data_variants,
-        MutableColumns & final_aggregate_columns);
+        MutableColumns & aggregate_columns);
 
-    void finalizeAggregateColumnsWithSingleKey(
-        AggregatedDataVariants & data_variants,
-        MutableColumns & final_aggregate_columns);
+    void addArenasToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns);
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,

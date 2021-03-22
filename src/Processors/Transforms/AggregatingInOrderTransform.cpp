@@ -89,6 +89,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             res_aggregate_columns[i] = res_header.safeGetByPosition(i + params->params.keys_size).type->createColumn();
 
         params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
+        params->aggregator.addArenasToAggregateColumns(variants, res_aggregate_columns);
         ++cur_block_size;
     }
 
@@ -136,7 +137,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                 need_generate = true;
                 cur_block_size = 0;
 
-                params->aggregator.finalizeAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+                variants.without_key = nullptr;
 
                 /// Arenas cannot be destroyed here, since later, in FinalizingSimpleTransform
                 /// there will be finalizeChunk(), but even after
@@ -244,7 +245,7 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         params->aggregator.addToAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
-        params->aggregator.finalizeAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+        variants.without_key = nullptr;
     }
 
     Block res = res_header.cloneEmpty();
