@@ -41,4 +41,3 @@ toc_title: "Прокси-серверы от сторонних разработ
 
 Реализован на Go.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/proxy/) <!--hide-->

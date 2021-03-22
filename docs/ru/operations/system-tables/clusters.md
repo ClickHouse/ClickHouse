@@ -13,4 +13,3 @@
 -   `port` (UInt16) — порт, на который обращаться для соединения с сервером.
 -   `user` (String) — имя пользователя, которого использовать для соединения с сервером.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/clusters) <!--hide-->
