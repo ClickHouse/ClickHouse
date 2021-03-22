@@ -271,7 +271,7 @@ class ClickhouseIntegrationTestsRunner:
         parallel_tests = []
         with open(parallel_tests_file_path, "r") as parallel_tests_file:
             for line in parallel_tests_file:
-                all_tests.append(line.strip())
+                parallel_tests.append(line.strip())
         return list(sorted(parallel_tests))
 
     def group_test_by_file(self, tests):
