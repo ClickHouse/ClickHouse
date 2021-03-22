@@ -384,42 +384,13 @@ void HashedDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        /// atomic since progress callbac called in parallel
-        std::atomic<uint64_t> new_size = 0;
         auto stream = source_ptr->loadAll();
-
-        /// preallocation can be used only when we know number of rows, for this we need:
-        /// - source clickhouse
-        /// - no filtering (i.e. lack of <where>), since filtering can filter
-        ///   too much rows and eventually it may allocate memory that will
-        ///   never be used.
-        bool preallocate = false;
-        if (const auto & clickhouse_source = dynamic_cast<ClickHouseDictionarySource *>(source_ptr.get()))
-        {
-            if (!clickhouse_source->hasWhere())
-                preallocate = true;
-        }
-
-        if (preallocate)
-        {
-            stream->setProgressCallback([&new_size](const Progress & progress)
-            {
-                new_size += progress.total_rows_to_read;
-            });
-        }
 
         stream->readPrefix();
 
         while (const auto block = stream->read())
         {
-            if (new_size)
-            {
-                size_t current_new_size = new_size.exchange(0);
-                if (current_new_size)
-                    resize(current_new_size);
-            }
-            else
-                resize(block.rows());
+            resize(block.rows());
             blockToAttributes(block);
         }
 
