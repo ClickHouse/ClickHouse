@@ -1446,7 +1446,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     {
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
             "Source replica {} will try to merge this part first", entry.new_part_name,
-            LocalDateTime(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
+            DateLUT::instance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
         return false;
     }
 
@@ -4612,7 +4612,7 @@ static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version,
         /// The date range is all month long.
         const auto & lut = DateLUT::instance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.partition_id + "01"));
-        DayNum left_date = lut.toDayNum(start_time);
+        DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
         DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
         return part_info.getPartNameV0(left_date, right_date);
     }

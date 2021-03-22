@@ -65,6 +65,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
@@ -113,6 +114,34 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+}
+
+
+static bool queryHasWithClause(const IAST * ast)
+{
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast);
+        select && select->with())
+    {
+        return true;
+    }
+
+    // This full recursive walk is somewhat excessive, because most of the
+    // children are not queries, but on the other hand it will let us to avoid
+    // breakage when the AST structure changes and some new variant of query
+    // nesting is added. This function is used in fuzzer, so it's better to be
+    // defensive and avoid weird unexpected errors.
+    // clang-tidy is confused by this function: it thinks that if `select` is
+    // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
+    // NOLINTNEXTLINE
+    for (const auto & child : ast->children)
+    {
+        if (queryHasWithClause(child.get()))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
@@ -390,7 +419,7 @@ private:
         for (auto d : chineseNewYearIndicators)
         {
             /// Let's celebrate until Lantern Festival
-            if (d <= days && d + 25u >= days)
+            if (d <= days && d + 25 >= days)
                 return true;
             else if (d > days)
                 return false;
@@ -1255,6 +1284,29 @@ private:
         return true;
     }
 
+    // Prints changed settings to stderr. Useful for debugging fuzzing failures.
+    void printChangedSettings() const
+    {
+        const auto & changes = context.getSettingsRef().changes();
+        if (!changes.empty())
+        {
+            fmt::print(stderr, "Changed settings: ");
+            for (size_t i = 0; i < changes.size(); ++i)
+            {
+                if (i)
+                {
+                    fmt::print(stderr, ", ");
+                }
+                fmt::print(stderr, "{} = '{}'", changes[i].name,
+                           toString(changes[i].value));
+            }
+            fmt::print(stderr, "\n");
+        }
+        else
+        {
+            fmt::print(stderr, "No changed settings.\n");
+        }
+    }
 
     /// Returns false when server is not available.
     bool processWithFuzzing(const String & text)
@@ -1317,9 +1369,14 @@ private:
 
                 auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
-                // Debug AST cloning errors.
+                // Check that the source AST didn't change after fuzzing. This
+                // helps debug AST cloning errors, where the cloned AST doesn't
+                // clone all its children, and erroneously points to some source
+                // child elements.
                 if (base_before_fuzz != base_after_fuzz)
                 {
+                    printChangedSettings();
+
                     fmt::print(stderr,
                         "Base before fuzz: {}\n"
                         "Base after fuzz: {}\n",
@@ -1334,7 +1391,7 @@ private:
 
                     fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
-                    assert(false);
+                    exit(1);
                 }
 
                 auto fuzzed_text = ast_to_process->formatForErrorMessage();
@@ -1378,27 +1435,74 @@ private:
 
                 // Print the changed settings because they might be needed to
                 // reproduce the error.
-                const auto & changes = context.getSettingsRef().changes();
-                if (!changes.empty())
-                {
-                    fmt::print(stderr, "Changed settings: ");
-                    for (size_t i = 0; i < changes.size(); ++i)
-                    {
-                        if (i)
-                        {
-                            fmt::print(stderr, ", ");
-                        }
-                        fmt::print(stderr, "{} = '{}'", changes[i].name,
-                            toString(changes[i].value));
-                    }
-                    fmt::print(stderr, "\n");
-                }
-                else
-                {
-                    fmt::print(stderr, "No changed settings.\n");
-                }
+                printChangedSettings();
 
                 return false;
+            }
+
+            // Check that after the query is formatted, we can parse it back,
+            // format again and get the same result. Unfortunately, we can't
+            // compare the ASTs, which would be more sensitive to errors. This
+            // double formatting check doesn't catch all errors, e.g. we can
+            // format query incorrectly, but to a valid SQL that we can then
+            // parse and format into the same SQL.
+            // There are some complicated cases where we can generate the SQL
+            // which we can't parse:
+            // * first argument of lambda() replaced by fuzzer with
+            //   something else, leading to constructs such as
+            //   arrayMap((min(x) + 3) -> x + 1, ....)
+            // * internals of Enum replaced, leading to:
+            //   Enum(equals(someFunction(y), 3)).
+            // And there are even the cases when we can parse the query, but
+            // it's logically incorrect and its formatting is a mess, such as
+            // when `lambda()` function gets substituted into a wrong place.
+            // To avoid dealing with these cases, run the check only for the
+            // queries we were able to successfully execute.
+            // The final caveat is that sometimes WITH queries are not executed,
+            // if they are not referenced by the main SELECT, so they can still
+            // have the aforementioned problems. Disable this check for such
+            // queries, for lack of a better solution.
+            if (!have_error && queryHasWithClause(parsed_query.get()))
+            {
+                ASTPtr parsed_formatted_query;
+                try
+                {
+                    const auto * tmp_pos = query_to_send.c_str();
+                    parsed_formatted_query = parseQuery(tmp_pos,
+                        tmp_pos + query_to_send.size(),
+                        false /* allow_multi_statements */);
+                }
+                catch (Exception & e)
+                {
+                    if (e.code() != ErrorCodes::SYNTAX_ERROR)
+                    {
+                        throw;
+                    }
+                }
+
+                if (parsed_formatted_query)
+                {
+                    const auto formatted_twice
+                        = parsed_formatted_query->formatForErrorMessage();
+
+                    if (formatted_twice != query_to_send)
+                    {
+                        fmt::print(stderr, "The query formatting is broken.\n");
+
+                        printChangedSettings();
+
+                        fmt::print(stderr, "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
+                            formatted_twice, query_to_send);
+                        fmt::print(stderr, "In more detail:\n");
+                        fmt::print(stderr, "AST-1:\n'{}'\n", parsed_query->dumpTree());
+                        fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_send);
+                        fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", parsed_formatted_query->dumpTree());
+                        fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", formatted_twice);
+                        fmt::print(stderr, "Text-1 must be equal to Text-2, but it is not.\n");
+
+                        exit(1);
+                    }
+                }
             }
 
             // The server is still alive so we're going to continue fuzzing.
