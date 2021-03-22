@@ -9,6 +9,8 @@
 namespace DB
 {
 
+/// A class that manages all operations with library dictionary.
+/// Every library dictionary source has its own object of this class, accessed by UUID.
 class SharedLibraryHandler
 {
 

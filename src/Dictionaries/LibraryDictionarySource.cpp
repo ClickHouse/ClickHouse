@@ -7,7 +7,6 @@
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
-#include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
@@ -39,7 +38,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     , dict_struct{dict_struct_}
     , config_prefix{config_prefix_}
     , path{config.getString(config_prefix + ".path", "")}
-    , dictionary_id(createDictID())
+    , dictionary_id(getDictID())
     , sample_block{sample_block_}
     , context(context_)
 {
@@ -75,7 +74,7 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , dict_struct{other.dict_struct}
     , config_prefix{other.config_prefix}
     , path{other.path}
-    , dictionary_id{createDictID()}
+    , dictionary_id{getDictID()}
     , sample_block{other.sample_block}
     , context(other.context)
     , description{other.description}

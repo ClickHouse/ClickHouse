@@ -12,6 +12,7 @@
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ namespace DB
 
 LibraryBridgeHelper::LibraryBridgeHelper(
         const Context & context_,
-        const std::string & dictionary_id_)
+        const Field & dictionary_id_)
     : log(&Poco::Logger::get("LibraryBridgeHelper"))
     , context(context_)
     , config(context.getConfigRef())
@@ -34,7 +35,7 @@ LibraryBridgeHelper::LibraryBridgeHelper(
 Poco::URI LibraryBridgeHelper::getDictionaryURI() const
 {
     auto uri = getMainURI();
-    uri.addQueryParameter("dictionary_id", dictionary_id);
+    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
     return uri;
 }
 
@@ -68,13 +69,13 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
 }
 
 
-bool LibraryBridgeHelper::cloneLibrary(const std::string & other_dictionary_id)
+bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
 {
     startBridgeSync();
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LIB_CLONE_METHOD);
-    uri.addQueryParameter("from_dictionary_id", other_dictionary_id);
+    uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
 
     return executeRequest(uri);
 }

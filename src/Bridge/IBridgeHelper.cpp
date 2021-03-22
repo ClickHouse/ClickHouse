@@ -92,11 +92,6 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
     std::vector<std::string> cmd_args;
     path.setFileName(serviceFileName());
 
-#if !CLICKHOUSE_SPLIT_BINARY
-    if (serviceFileName() == "clickhouse-odbc-bridge")
-        cmd_args.push_back("odbc-bridge");
-#endif
-
     cmd_args.push_back("--http-port");
     cmd_args.push_back(std::to_string(config.getUInt(configPrefix() + ".port", getDefaultPort())));
     cmd_args.push_back("--listen-host");
