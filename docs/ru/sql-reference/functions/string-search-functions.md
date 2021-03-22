@@ -18,7 +18,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u
 **Синтаксис**
 
 ``` sql
-position((haystack, needle[, start_pos]) | (needle in haystack))
+position((haystack, needle[, start_pos]) | (needle IN haystack))
 ```
 
 Алиас: `locate(haystack, needle[, start_pos])`.
