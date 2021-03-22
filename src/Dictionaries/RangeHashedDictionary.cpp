@@ -556,8 +556,9 @@ void RangeHashedDictionary::getIdsAndDates(
             start_dates.push_back(value.range.left);
             end_dates.push_back(value.range.right);
 
-            if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
-                end_dates.back() = 0;
+            if constexpr (std::numeric_limits<RangeType>::max() > DATE_LUT_MAX_DAY_NUM) /// Avoid warning about tautological comparison in next line.
+                if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
+                    end_dates.back() = 0;
         }
     }
 }

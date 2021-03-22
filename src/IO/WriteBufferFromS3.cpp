@@ -107,7 +107,14 @@ void WriteBufferFromS3::finalizeImpl()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    finalizeImpl();
+    try
+    {
+        finalizeImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()
@@ -152,7 +159,8 @@ void WriteBufferFromS3::writePart()
 
     auto outcome = client_ptr->UploadPart(req);
 
-    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, multipart_upload_id, temporary_buffer->tellp());
+    LOG_TRACE(
+        log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, multipart_upload_id, req.GetContentLength());
 
     if (outcome.IsSuccess())
     {
@@ -208,7 +216,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     auto outcome = client_ptr->PutObject(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}", bucket, key);
+        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}", bucket, key, req.GetContentLength());
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
