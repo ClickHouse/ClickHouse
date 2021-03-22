@@ -83,13 +83,37 @@ def check_settings(node_name, sleep_in_send_tables_status, sleep_in_send_data):
     assert attempts < 1000
 
 
+def check_changing_replica_events(expected_count):
+    result = NODES['node'].query("SELECT value FROM system.events WHERE event='HedgedRequestsChangeReplica'")
+    assert int(result) == expected_count
+
+
 def test_stuck_replica(started_cluster):
     cluster.pause_container("node_1")
+
     check_query(expected_replica="node_2")
+    check_changing_replica_events(1)
+
+    result = NODES['node'].query("SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'")
+
+    assert TSV(result) == TSV("1")
+
+    result = NODES['node'].query("SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1");
+
+    assert TSV(result) == TSV("node_2\t0")
+
+    # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
+    result = NODES['node'].query("SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'")
+
+    assert TSV(result) == TSV("1")
+
     cluster.unpause_container("node_1")
 
 
 def test_long_query(started_cluster):
+    # Restart to reset pool states.
+    NODES['node'].restart_clickhouse()
+
     result = NODES['node'].query("select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;")
     assert TSV(result) == TSV("node_1\t99")
 
@@ -114,6 +138,7 @@ def test_send_table_status_sleep(started_cluster):
     check_settings('node_3', 0, 0)
 
     check_query(expected_replica="node_2")
+    check_changing_replica_events(1)
 
 
 def test_send_table_status_sleep2(started_cluster):
@@ -134,6 +159,7 @@ def test_send_table_status_sleep2(started_cluster):
     check_settings('node_3', 0, 0)
 
     check_query(expected_replica="node_3")
+    check_changing_replica_events(2)
 
 
 def test_send_data(started_cluster):
@@ -154,6 +180,7 @@ def test_send_data(started_cluster):
     check_settings('node_3', 0, 0)
 
     check_query(expected_replica="node_2")
+    check_changing_replica_events(1)
 
 
 def test_send_data2(started_cluster):
@@ -174,6 +201,7 @@ def test_send_data2(started_cluster):
     check_settings('node_3', 0, 0)
 
     check_query(expected_replica="node_3")
+    check_changing_replica_events(2)
 
 
 def test_combination1(started_cluster):
@@ -194,6 +222,7 @@ def test_combination1(started_cluster):
     check_settings('node_3', 0, 0)
 
     check_query(expected_replica="node_3")
+    check_changing_replica_events(2)
 
 
 def test_combination2(started_cluster):
@@ -214,6 +243,7 @@ def test_combination2(started_cluster):
     check_settings('node_3', 0, 0)
     
     check_query(expected_replica="node_3")
+    check_changing_replica_events(2)
 
 
 def test_combination3(started_cluster):
@@ -234,6 +264,7 @@ def test_combination3(started_cluster):
     check_settings('node_3', 0, sleep_time)
 
     check_query(expected_replica="node_2")
+    check_changing_replica_events(3)
 
 
 def test_combination4(started_cluster):
@@ -254,6 +285,7 @@ def test_combination4(started_cluster):
     check_settings('node_3', 2, 0)
 
     check_query(expected_replica="node_2")
+    check_changing_replica_events(4)
 
 
 def test_receive_timeout1(started_cluster):
@@ -276,6 +308,7 @@ def test_receive_timeout1(started_cluster):
     check_settings('node_3', 0, 1)
 
     check_query(expected_replica="node_3", receive_timeout=2)
+    check_changing_replica_events(2)
 
 
 def test_receive_timeout2(started_cluster):
@@ -299,4 +332,5 @@ def test_receive_timeout2(started_cluster):
     check_settings('node_3', 2, 0)
 
     check_query(expected_replica="node_2", receive_timeout=3)
+    check_changing_replica_events(3)
 

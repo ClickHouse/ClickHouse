@@ -1,6 +1,6 @@
 ---
-toc_folder_title: "\u0414\u043e\u043c\u0435\u043d\u044b"
-toc_title_title: "\u041e\u0431\u0437\u043e\u0440"
+toc_folder_title: "Домены"
+toc_title_title: "Обзор"
 toc_priority: 56
 ---
 
@@ -30,4 +30,3 @@ toc_priority: 56
 -   Невозможно неявно преобразовывать строковые значение в значения с доменным типом данных при вставке данных из другого столбца или таблицы.
 -   Домен не добавляет ограничения на хранимые значения.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/domains/overview) <!--hide-->

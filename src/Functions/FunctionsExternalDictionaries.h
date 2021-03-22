@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -81,12 +80,29 @@ public:
     std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
     {
         String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+
+        bool can_load_dictionary = external_loader.hasDictionary(resolved_name);
+
+        if (!can_load_dictionary)
+        {
+            /// If dictionary not found. And database was not implicitly specified
+            /// we can qualify dictionary name with current database name.
+            /// It will help if dictionary is created with DDL and is in current database.
+            if (dictionary_name.find('.') == std::string::npos)
+            {
+                String dictionary_name_with_database = context.getCurrentDatabase() + '.' + dictionary_name;
+                resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name_with_database);
+            }
+        }
+
         auto dict = external_loader.getDictionary(resolved_name);
+
         if (!access_checked)
         {
             context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
+
         return dict;
     }
 
@@ -119,14 +135,29 @@ public:
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
         String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+
         auto load_result = external_loader.getLoadResult(resolved_name);
         if (!load_result.config)
+        {
+            /// If dictionary not found. And database was not implicitly specified
+            /// we can qualify dictionary name with current database name.
+            /// It will help if dictionary is created with DDL and is in current database.
+            if (dictionary_name.find('.') == std::string::npos)
+            {
+                String dictionary_name_with_database = context.getCurrentDatabase() + '.' + dictionary_name;
+                resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name_with_database);
+                load_result = external_loader.getLoadResult(resolved_name);
+            }
+        }
+
+        if (!load_result.config)
             throw Exception("Dictionary " + backQuote(dictionary_name) + " not found", ErrorCodes::BAD_ARGUMENTS);
+
         return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
     }
 
-private:
     const Context & context;
+private:
     const ExternalDictionariesLoader & external_loader;
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
@@ -154,13 +185,20 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+
+    bool isDeterministic() const override { return false; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments.size() < 2)
+            throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
         if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -172,8 +210,6 @@ private:
 
         return std::make_shared<DataTypeUInt8>();
     }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -193,6 +229,24 @@ private:
         const ColumnWithTypeAndName & key_column_with_type = arguments[1];
         const auto key_column = key_column_with_type.column;
         const auto key_column_type = WhichDataType(key_column_with_type.type);
+
+        ColumnPtr range_col = nullptr;
+        DataTypePtr range_col_type = nullptr;
+
+        if (dictionary_key_type == DictionaryKeyType::range)
+        {
+            if (arguments.size() != 3)
+                throw Exception{"Wrong argument count for function " + getName()
+                    + " when dictionary has key type range", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+            range_col = arguments[2].column;
+            range_col_type = arguments[2].type;
+
+            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+                throw Exception{"Illegal type " + range_col_type->getName() + " of fourth argument of function "
+                        + getName() + " must be convertible to Int64.",
+                    ErrorCodes::ILLEGAL_COLUMN};
+        }
 
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
@@ -217,7 +271,7 @@ private:
             return dictionary->hasKeys(key_columns, key_types);
         }
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Has not supported for range dictionary", dictionary->getDictionaryID().getNameForLogs());
+            return dictionary->hasKeys({key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type});
     }
 
     mutable FunctionDictHelper helper;
@@ -274,10 +328,12 @@ public:
 
         DataTypes types;
 
+        auto dictionary_structure = helper.getDictionaryStructure(dictionary_name);
+
         for (auto & attribute_name : attribute_names)
         {
             /// We're extracting the return type from the dictionary's config, without loading the dictionary.
-            auto attribute = helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name);
+            auto attribute = dictionary_structure.getAttribute(attribute_name);
             types.emplace_back(attribute.type);
         }
 
@@ -727,8 +783,9 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
         ColumnPtr res;
 
+        /// TODO: Rewrite this
         if (!((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<DirectDictionary>(arguments, result_type, dict))
+            || (res = executeDispatch<DirectDictionary<DictionaryKeyType::simple>>(arguments, result_type, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, result_type, dict))
             || (res = executeDispatch<CacheDictionary<DictionaryKeyType::simple>>(arguments, result_type, dict))))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -881,7 +938,7 @@ private:
 
         ColumnPtr res;
         if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
-            || (res = executeDispatch<DirectDictionary>(arguments, dict))
+            || (res = executeDispatch<DirectDictionary<DictionaryKeyType::simple>>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
             || (res = executeDispatch<CacheDictionary<DictionaryKeyType::simple>>(arguments, dict))))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
