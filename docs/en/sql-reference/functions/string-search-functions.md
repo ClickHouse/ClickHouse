@@ -19,13 +19,13 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 **Syntax**
 
 ``` sql
-position((haystack, needle[, start_pos]) | (needle in haystack))
+position((haystack, needle[, start_pos]) | (needle IN haystack))
 ``` 
 
 Alias: `locate(haystack, needle[, start_pos])`.
 
-!!! note 
-    Now it supports position(needle in haystack) syntax for SQL-compatibility, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly the same way as POSITION(haystack, needle).
+!!! note "Note"
+    Now it supports position(needle IN haystack) syntax for SQL-compatibility, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly the same way as POSITION(haystack, needle).
 
 **Arguments**
 
