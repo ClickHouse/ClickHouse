@@ -130,6 +130,8 @@ private:
 
 
 protected:
+    using URLParams = std::vector<std::pair<std::string, std::string>>;
+
     Poco::URI getColumnsInfoURI() const override
     {
         auto uri = createBaseURI();
@@ -137,8 +139,7 @@ protected:
         return uri;
     }
 
-    std::vector<std::pair<std::string, std::string>> getURLParams(
-            const std::string & cols, UInt64 max_block_size) const override
+    URLParams getURLParams(const std::string & cols, UInt64 max_block_size) const override
     {
         std::vector<std::pair<std::string, std::string>> result;
 

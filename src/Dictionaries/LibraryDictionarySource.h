@@ -3,7 +3,7 @@
 #include <Common/SharedLibrary.h>
 #include <Bridge/LibraryBridgeHelper.h>
 #include <common/LocalDateTime.h>
-#include <Common/thread_local_rng.h>
+#include <Core/UUID.h>
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>
 #include "IDictionarySource.h"
@@ -75,27 +75,20 @@ private:
 
     static String getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root);
 
+    static Field getDictID() { return UUIDHelpers::generateV4(); }
+
     Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
     const std::string config_prefix;
     const std::string path;
-    const std::string dictionary_id;
+    const Field dictionary_id;
 
     Block sample_block;
     Context context;
 
     LibraryBridgeHelperPtr bridge_helper;
     ExternalResultDescription description;
-
-    String createDictID()
-    {
-        std::uniform_int_distribution<int> distribution('a', 'z');
-        String random_str(16, ' ');
-        for (auto & c : random_str)
-            c = distribution(thread_local_rng);
-        return random_str;
-    }
 };
 
 }

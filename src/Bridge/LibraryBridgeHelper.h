@@ -17,11 +17,11 @@ class LibraryBridgeHelper : public IBridgeHelper
 public:
     static constexpr inline size_t DEFAULT_PORT = 9012;
 
-    LibraryBridgeHelper(const Context & context_, const std::string & dictionary_id_);
+    LibraryBridgeHelper(const Context & context_, const Field & dictionary_id_);
 
     bool initLibrary(const std::string & library_path, const std::string library_settings);
 
-    bool cloneLibrary(const std::string & other_dictionary_id);
+    bool cloneLibrary(const Field & other_dictionary_id);
 
     bool removeLibrary();
 
@@ -80,7 +80,7 @@ private:
     const Poco::Util::AbstractConfiguration & config;
     const Poco::Timespan http_timeout;
 
-    const std::string dictionary_id;
+    Field dictionary_id;
     std::string bridge_host;
     size_t bridge_port;
 };

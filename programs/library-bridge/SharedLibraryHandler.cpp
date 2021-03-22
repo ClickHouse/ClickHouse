@@ -1,8 +1,8 @@
 #include "SharedLibraryHandler.h"
 
-#include <boost/algorithm/string/split.hpp>
 #include <ext/scope_guard.h>
 #include <IO/ReadHelpers.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -20,15 +20,11 @@ SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_settings)
     : library_path(library_path_)
 {
-    library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY
-#if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
-    | RTLD_DEEPBIND
-#endif
-    );
+    library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY);
 
-    std::vector<std::string> lib_settings;
-    boost::split(lib_settings, library_settings, [](char c) { return c == ' '; });
-    settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(lib_settings));
+    std::vector<std::string> library_settings_container;
+    splitInto<' '>(library_settings_container, library_settings);
+    settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(library_settings_container));
 
     auto lib_new = library->tryGet<ClickHouseLibrary::LibraryNewFunc>(ClickHouseLibrary::LIBRARY_CREATE_NEW_FUNC_NAME);
 
@@ -95,7 +91,7 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 BlockInputStreamPtr SharedLibraryHandler::loadAll(const std::string & attributes_string, const Block & sample_block)
 {
     std::vector<std::string> dict_attributes;
-    boost::split(dict_attributes, attributes_string, [](char c) { return c == ' '; });
+    splitInto<' '>(dict_attributes, attributes_string);
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_attributes.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_attributes.size()};
@@ -121,13 +117,13 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll(const std::string & attributes
 BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes_string, const std::string & ids_string, const Block & sample_block)
 {
     std::vector<std::string> dict_string_ids;
-    boost::split(dict_string_ids, ids_string, [](char c) { return c == ' '; });
+    splitInto<' '>(dict_string_ids, ids_string);
     std::vector<UInt64> dict_ids(dict_string_ids.size());
     for (const auto & id : dict_string_ids)
         dict_ids.push_back(parseFromString<UInt64>(id));
 
     std::vector<std::string> dict_attributes;
-    boost::split(dict_attributes, attributes_string, [](char c) { return c == ' '; });
+    splitInto<' '>(dict_attributes, attributes_string);
 
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(dict_ids.data()), dict_ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_attributes.size());
