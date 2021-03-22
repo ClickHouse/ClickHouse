@@ -28,7 +28,7 @@ AddingDelayedSourceStep::AddingDelayedSourceStep(
 {
 }
 
-void AddingDelayedSourceStep::transformPipeline(QueryPipeline & pipeline)
+void AddingDelayedSourceStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     source->setQueryPlanStep(this);
     pipeline.addDelayedStream(source);
