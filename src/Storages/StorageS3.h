@@ -1,16 +1,22 @@
 #pragma once
 
 #include <Common/config.h>
-#include "TableFunctions/TableFunctionS3Distributed.h"
 
 #if USE_AWS_S3
 
+#include <Core/Types.h>
+
+#include <Compression/CompressionInfo.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
+
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
 #include <ext/shared_ptr_helper.h>
 #include <IO/S3Common.h>
+#include <IO/CompressionMethod.h>
 
 namespace Aws::S3
 {
@@ -19,6 +25,41 @@ namespace Aws::S3
 
 namespace DB
 {
+
+class StorageS3SequentialSource;
+class StorageS3Source : public SourceWithProgress
+{
+public:
+
+    static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
+
+    StorageS3Source(
+        bool need_path,
+        bool need_file,
+        const String & format,
+        String name_,
+        const Block & sample_block,
+        const Context & context,
+        const ColumnsDescription & columns,
+        UInt64 max_block_size,
+        const CompressionMethod compression_method,
+        const std::shared_ptr<Aws::S3::S3Client> & client,
+        const String & bucket,
+        const String & key);
+
+    String getName() const override;
+
+    Chunk generate() override;
+
+private:
+    String name;
+    std::unique_ptr<ReadBuffer> read_buf;
+    BlockInputStreamPtr reader;
+    bool initialized = false;
+    bool with_file_column = false;
+    bool with_path_column = false;
+    String file_path;
+};
 
 /**
  * This class represents table engine for external S3 urls.
@@ -60,6 +101,11 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 private:
+
+    friend class StorageS3Distributed;
+    friend class TableFunctionS3Distributed;
+    friend class StorageS3SequentialSource;
+    friend class StorageS3Distributed;
     struct ClientAuthentificaiton
     {
         const S3::URI uri;
@@ -78,9 +124,6 @@ private:
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
-
-
-    friend class TableFunctionS3Distributed;
 
     static Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri);
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);

@@ -3,8 +3,10 @@
 #include "Client/Connection.h"
 #include "Interpreters/Cluster.h"
 #include "Storages/IStorage.h"
+#include "Storages/StorageS3.h"
 
 #include <memory>
+#include <optional>
 #include "ext/shared_ptr_helper.h"
 
 namespace DB
@@ -36,12 +38,32 @@ public:
 
 
 protected:
-    StorageS3Distributed(const StorageID & table_id_, std::string cluster_name_, const Context & context);
+    StorageS3Distributed(
+        const S3::URI & uri_,
+        const String & access_key_id_,
+        const String & secret_access_key_,
+        const StorageID & table_id_,
+        String cluster_name_,
+        const String & format_name_,
+        UInt64 max_connections_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const Context & context_,
+        const String & compression_method_ = "");
 
 private:
+    /// Connections from initiator to other nodes
     std::vector<std::shared_ptr<Connection>> connections;
     std::string cluster_name;
     ClusterPtr cluster;
+
+    /// This will be used on non-initiator nodes.
+    std::optional<Cluster::Address> initiator;
+    std::shared_ptr<Connection> initiator_connection;
+    StorageS3::ClientAuthentificaiton client_auth;
+
+    String format_name;
+    String compression_method;
 };
 
 

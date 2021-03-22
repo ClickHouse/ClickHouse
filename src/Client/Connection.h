@@ -65,7 +65,7 @@ struct Packet
     Progress progress;
     BlockStreamProfileInfo profile_info;
     std::vector<UUID> part_uuids;
-    std::string next_task;
+    String next_task;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -205,9 +205,12 @@ public:
             in->setAsyncCallback(std::move(async_callback));
     }
 
-private:
+public:
     String host;
     UInt16 port;
+
+    std::optional<String> explicitly_resolved_address;
+
     String default_database;
     String user;
     String password;
@@ -303,15 +306,15 @@ private:
 #endif
     bool ping();
 
-    std::string receiveNextTask();
+    String receiveNextTask() const;
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
-    std::unique_ptr<Exception> receiveException();
-    Progress receiveProgress();
-    BlockStreamProfileInfo receiveProfileInfo();
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    std::unique_ptr<Exception> receiveException() const;
+    Progress receiveProgress() const;
+    BlockStreamProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
     void initBlockInput();

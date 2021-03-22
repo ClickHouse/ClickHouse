@@ -757,6 +757,15 @@ void TCPHandler::sendPartUUIDs()
     }
 }
 
+
+void TCPHandler::sendNextTaskReply(String reply)
+{
+    LOG_DEBUG(log, "Nexttask for id is {} ", reply);
+    writeVarUInt(Protocol::Server::NextTaskReply, *out);
+    writeStringBinary(reply, *out);
+    out->next();
+}
+
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -971,10 +980,14 @@ bool TCPHandler::receivePacket()
     switch (packet_type)
     {
         case Protocol::Client::NextTaskRequest:
+        {
             std::cout << "Protocol::Client::NextTaskRequest" << std::endl;
-            std::cout << StackTrace().toString() << std::endl;
-            receiveNextTaskRequest();
+            auto id = receiveNextTaskRequest();
+            auto next = TaskSupervisor::instance().getNextTaskForId(id);
+            sendNextTaskReply(next);
             return false;
+        }
+
         case Protocol::Client::IgnoredPartUUIDs:
             /// Part uuids packet if any comes before query.
             receiveIgnoredPartUUIDs();
@@ -1015,13 +1028,12 @@ bool TCPHandler::receivePacket()
 }
 
 
-void TCPHandler::receiveNextTaskRequest()
+String TCPHandler::receiveNextTaskRequest()
 {
     std::string id;
     readStringBinary(id, *in);
     LOG_DEBUG(log, "Got nextTaskRequest {}", id);
-    auto next = TaskSupervisor::instance().getNextTaskForId(id);
-    LOG_DEBUG(log, "Nexttask for id is {} ", next);
+    return id;
 }
 
 void TCPHandler::receiveIgnoredPartUUIDs()

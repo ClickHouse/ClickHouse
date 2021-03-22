@@ -99,7 +99,18 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
     TaskSupervisor::instance().registerNextTaskResolver(
         std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
 
-    StoragePtr storage = StorageS3Distributed::create(StorageID(getDatabaseName(), table_name), cluster_name, context);
+    StoragePtr storage = StorageS3Distributed::create(
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            StorageID(getDatabaseName(), table_name),
+            cluster_name,
+            format,
+            max_connections,
+            getActualTableStructure(context),
+            ConstraintsDescription{},
+            const_cast<Context &>(context),
+            compression_method);
 
     storage->startup();
 
