@@ -1,5 +1,6 @@
 #include <Parsers/ASTFunction.h>
 
+#include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <IO/Operators.h>
@@ -42,12 +43,20 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     if (is_window_function)
     {
-        writeCString(" OVER (", ostr);
-        FormatSettings settings{ostr, true /* one_line */};
-        FormatState state;
-        FormatStateStacked frame;
-        appendWindowDescription(settings, state, frame);
-        writeCString(")", ostr);
+        writeCString(" OVER ", ostr);
+        if (!window_name.empty())
+        {
+            ostr << window_name;
+        }
+        else
+        {
+            FormatSettings settings{ostr, true /* one_line */};
+            FormatState state;
+            FormatStateStacked frame;
+            writeCString("(", ostr);
+            window_definition->formatImpl(settings, state, frame);
+            writeCString(")", ostr);
+        }
     }
 }
 
@@ -65,22 +74,10 @@ ASTPtr ASTFunction::clone() const
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
-    if (window_name)
+    if (window_definition)
     {
-        res->window_name = window_name->clone();
-        res->children.push_back(res->window_name);
-    }
-
-    if (window_partition_by)
-    {
-        res->window_partition_by = window_partition_by->clone();
-        res->children.push_back(res->window_partition_by);
-    }
-
-    if (window_order_by)
-    {
-        res->window_order_by = window_order_by->clone();
-        res->children.push_back(res->window_order_by);
+        res->window_definition = window_definition->clone();
+        res->children.push_back(res->window_definition);
     }
 
     return res;
@@ -327,10 +324,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
+                // It can be printed in a form of 'x.1' only if right hand side
+                // is an unsigned integer lineral. We also allow nonnegative
+                // signed integer literals, because the fuzzer sometimes inserts
+                // them, and we want to have consistent formatting.
                 if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
                 {
-                    if (lit->value.getType() == Field::Types::UInt64)
+                    if (isInt64FieldType(lit->value.getType())
+                        && lit->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -487,44 +488,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         return;
     }
 
-    settings.ostr << " OVER (";
-    appendWindowDescription(settings, state, nested_dont_need_parens);
-    settings.ostr << ")";
-}
-
-std::string ASTFunction::getWindowDescription() const
-{
-    WriteBufferFromOwnString ostr;
-    FormatSettings settings{ostr, true /* one_line */};
-    FormatState state;
-    FormatStateStacked frame;
-    appendWindowDescription(settings, state, frame);
-    return ostr.str();
-}
-
-void ASTFunction::appendWindowDescription(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked frame) const
-{
-    if (!is_window_function)
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
     {
-        return;
+        settings.ostr << backQuoteIfNeed(window_name);
     }
-
-    if (window_partition_by)
+    else
     {
-        settings.ostr << "PARTITION BY ";
-        window_partition_by->formatImpl(settings, state, frame);
-    }
-
-    if (window_partition_by && window_order_by)
-    {
-        settings.ostr << " ";
-    }
-
-    if (window_order_by)
-    {
-        settings.ostr << "ORDER BY ";
-        window_order_by->formatImpl(settings, state, frame);
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
     }
 }
 

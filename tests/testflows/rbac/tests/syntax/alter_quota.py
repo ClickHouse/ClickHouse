@@ -33,12 +33,12 @@ def feature(self, node="clickhouse1"):
             node.query(f"CREATE USER user0")
             node.query(f"CREATE ROLE role0")
 
-        with Scenario("I alter quota with no options", flags=TE, requirements=[
+        with Scenario("I alter quota with no options", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter("1.0")]):
             with When("I alter quota"):
                 node.query("ALTER QUOTA quota0")
 
-        with Scenario("I alter quota that does not exist, throws an exception", flags=TE, requirements=[
+        with Scenario("I alter quota that does not exist, throws an exception", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter("1.0")]):
             quota = "quota1"
             cleanup_quota(quota)
@@ -47,11 +47,11 @@ def feature(self, node="clickhouse1"):
                 node.query(f"ALTER QUOTA {quota}", exitcode=exitcode, message=message)
             del quota
 
-        with Scenario("I alter quota with if exists, quota does exist", flags=TE, requirements=[
+        with Scenario("I alter quota with if exists, quota does exist", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_IfExists("1.0")]):
             node.query("ALTER QUOTA IF EXISTS quota0")
 
-        with Scenario("I alter quota with if exists, quota does not exist", flags=TE, requirements=[
+        with Scenario("I alter quota with if exists, quota does not exist", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_IfExists("1.0")]):
             quota = "quota1"
             cleanup_quota(quota)
@@ -59,11 +59,11 @@ def feature(self, node="clickhouse1"):
                 node.query(f"ALTER QUOTA IF EXISTS {quota}")
             del quota
 
-        with Scenario("I alter quota using rename, target available", flags=TE, requirements=[
+        with Scenario("I alter quota using rename, target available", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Rename("1.0")]):
             node.query("ALTER QUOTA quota0 RENAME TO quota0")
 
-        with Scenario("I alter quota using rename, target unavailable", flags=TE, requirements=[
+        with Scenario("I alter quota using rename, target unavailable", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Rename("1.0")]):
             new_quota = "quota1"
 
@@ -82,20 +82,20 @@ def feature(self, node="clickhouse1"):
 
         keys = ['none', 'user name', 'ip address', 'client key', 'client key or user name', 'client key or ip address']
         for key in keys:
-            with Scenario(f"I alter quota keyed by {key}", flags=TE, requirements=[
+            with Scenario(f"I alter quota keyed by {key}", requirements=[
                     RQ_SRS_006_RBAC_Quota_Alter_KeyedBy("1.0"),
                     RQ_SRS_006_RBAC_Quota_Alter_KeyedByOptions("1.0")]):
                 with When("I alter quota with a key"):
                     node.query(f"ALTER QUOTA quota0 KEYED BY '{key}'")
 
-        with Scenario("I alter quota for randomized interval", flags=TE, requirements=[
+        with Scenario("I alter quota for randomized interval", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Interval_Randomized("1.0")]):
             with When("I alter quota on a randomized interval"):
                 node.query("ALTER QUOTA quota0 FOR RANDOMIZED INTERVAL 1 DAY NO LIMITS")
 
         intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH']
         for i, interval in enumerate(intervals):
-            with Scenario(f"I alter quota for interval {interval}", flags=TE, requirements=[
+            with Scenario(f"I alter quota for interval {interval}", requirements=[
                     RQ_SRS_006_RBAC_Quota_Alter_Interval("1.0")]):
                 with When(f"I alter quota for {interval}"):
                     node.query(f"ALTER QUOTA quota0 FOR INTERVAL 1 {interval} NO LIMITS")
@@ -104,7 +104,7 @@ def feature(self, node="clickhouse1"):
             'MAX RESULT BYTES', 'MAX READ ROWS', 'MAX READ BYTES', 'MAX EXECUTION TIME',
             'NO LIMITS', 'TRACKING ONLY']
         for i, constraint in enumerate(constraints):
-            with Scenario(f"I alter quota for {constraint.lower()}", flags=TE, requirements=[
+            with Scenario(f"I alter quota for {constraint.lower()}", requirements=[
                     RQ_SRS_006_RBAC_Quota_Alter_Queries("1.0"),
                     RQ_SRS_006_RBAC_Quota_Alter_Errors("1.0"),
                     RQ_SRS_006_RBAC_Quota_Alter_ResultRows("1.0"),
@@ -117,7 +117,7 @@ def feature(self, node="clickhouse1"):
                 with When("I alter quota for a constraint"):
                     node.query(f"ALTER QUOTA quota0 FOR INTERVAL 1 DAY {constraint}{' 1024' if constraint.startswith('MAX') else ''}")
 
-        with Scenario("I create quota for multiple constraints", flags=TE, requirements=[
+        with Scenario("I create quota for multiple constraints", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Interval("1.0"),
                 RQ_SRS_006_RBAC_Quota_Alter_Queries("1.0")]):
             node.query("ALTER QUOTA quota0 \
@@ -125,12 +125,12 @@ def feature(self, node="clickhouse1"):
                  FOR INTERVAL 2 DAY MAX QUERIES 124, \
                  FOR INTERVAL 1 MONTH TRACKING ONLY")
 
-        with Scenario("I alter quota to assign to one role", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to one role", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment("1.0")]):
             with When("I alter quota to a role"):
                 node.query("ALTER QUOTA quota0 TO role0")
 
-        with Scenario("I alter quota to assign to role that does not exist, throws exception", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to role that does not exist, throws exception", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment("1.0")]):
             role = "role1"
             with Given(f"I drop {role} if it exists"):
@@ -140,7 +140,7 @@ def feature(self, node="clickhouse1"):
                 node.query(f"ALTER QUOTA quota0 TO {role}", exitcode=exitcode, message=message)
             del role
 
-        with Scenario("I alter quota to assign to all except role that does not exist, throws exception", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to all except role that does not exist, throws exception", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment("1.0")]):
             role = "role1"
             with Given(f"I drop {role} if it exists"):
@@ -150,32 +150,32 @@ def feature(self, node="clickhouse1"):
                 node.query(f"ALTER QUOTA quota0 TO ALL EXCEPT {role}", exitcode=exitcode, message=message)
             del role
 
-        with Scenario("I alter quota to assign to one role and one user", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to one role and one user", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment("1.0")]):
             with When("I alter quota to a role and a user"):
                 node.query("ALTER QUOTA quota0 TO role0, user0")
 
-        with Scenario("I alter quota assigned to none", flags=TE, requirements=[
+        with Scenario("I alter quota assigned to none", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment_None("1.0")]):
             with When("I alter quota to none"):
                 node.query("ALTER QUOTA quota0 TO NONE")
 
-        with Scenario("I alter quota to assign to all", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to all", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment_All("1.0")]):
             with When("I alter quota to all"):
                 node.query("ALTER QUOTA quota0 TO ALL")
 
-        with Scenario("I alter quota to assign to all except one role", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to all except one role", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment_Except("1.0")]):
             with When("I alter quota to all except one role"):
                 node.query("ALTER QUOTA quota0 TO ALL EXCEPT role0")
 
-        with Scenario("I alter quota to assign to all except multiple roles", flags=TE, requirements=[
+        with Scenario("I alter quota to assign to all except multiple roles", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment_Except("1.0")]):
             with When("I alter quota to all except one multiple roles"):
                 node.query("ALTER QUOTA quota0 TO ALL EXCEPT role0, user0")
 
-        with Scenario("I alter quota on cluster", flags=TE, requirements=[
+        with Scenario("I alter quota on cluster", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Cluster("1.0")]):
             try:
                 with Given("I have a quota on a cluster"):
@@ -193,7 +193,7 @@ def feature(self, node="clickhouse1"):
                 with Finally("I drop the quota"):
                     node.query("DROP QUOTA IF EXISTS quota1 ON CLUSTER sharded_cluster")
 
-        with Scenario("I alter quota on nonexistent cluster, throws exception", flags=TE, requirements=[
+        with Scenario("I alter quota on nonexistent cluster, throws exception", requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Cluster("1.0")]):
             with When("I run alter quota on a cluster"):
                 exitcode, message = errors.cluster_not_found("fake_cluster")

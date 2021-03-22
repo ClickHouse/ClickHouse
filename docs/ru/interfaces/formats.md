@@ -1,6 +1,6 @@
 ---
 toc_priority: 21
-toc_title: "\u0424\u043e\u0440\u043c\u0430\u0442\u044b\u0020\u0432\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0438\u0020\u0432\u044b\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_title: "Форматы входных и выходных данных"
 ---
 
 # Форматы входных и выходных данных {#formats}
@@ -24,6 +24,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
@@ -488,6 +489,33 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
         "rows_before_limit_at_least": 3
 }
+```
+
+## JSONAsString {#jsonasstring}
+
+В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они будут интерпретироваться как отдельные строки таблицы.
+
+В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values)), либо отсутствовать. Для дальнейшей обработки объекта JSON, представленного в строке, вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+Результат:
+
+``` text
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
 ```
 
 ## JSONCompact {#jsoncompact}
@@ -1145,7 +1173,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдержанные типы данных Parquet: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
@@ -1202,7 +1230,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдержанные типы данных ORC: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных, ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
+Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных, ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
 ### Вставка данных {#vstavka-dannykh-1}
 
@@ -1240,7 +1268,7 @@ SELECT * FROM line_as_string;
 
 ## Regexp {#data-format-regexp}
 
-Каждая строка импортируемых данных разбирается в соответствии с регулярным выражением. 
+Каждая строка импортируемых данных разбирается в соответствии с регулярным выражением.
 
 При работе с форматом `Regexp` можно использовать следующие параметры:
 
@@ -1251,15 +1279,15 @@ SELECT * FROM line_as_string;
     - Escaped (как в [TSV](#tabseparated))
     - Quoted (как в [Values](#data-format-values))
     - Raw (данные импортируются как есть, без сериализации)
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`. 
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`.
 
-**Использование** 
+**Использование**
 
-Регулярное выражение (шаблон) из параметра `format_regexp` применяется к каждой строке импортируемых данных. Количество частей в шаблоне (подшаблонов) должно соответствовать количеству колонок в импортируемых данных. 
+Регулярное выражение (шаблон) из параметра `format_regexp` применяется к каждой строке импортируемых данных. Количество частей в шаблоне (подшаблонов) должно соответствовать количеству колонок в импортируемых данных.
 
-Строки импортируемых данных должны разделяться символом новой строки `'\n'` или символами `"\r\n"` (перенос строки в формате DOS). 
+Строки импортируемых данных должны разделяться символом новой строки `'\n'` или символами `"\r\n"` (перенос строки в формате DOS).
 
-Данные, выделенные по подшаблонам, интерпретируются в соответствии с типом, указанным в параметре `format_regexp_escaping_rule`. 
+Данные, выделенные по подшаблонам, интерпретируются в соответствии с типом, указанным в параметре `format_regexp_escaping_rule`.
 
 Если строка импортируемых данных не соответствует регулярному выражению и параметр `format_regexp_skip_unmatched` равен 1, строка просто игнорируется. Если же параметр `format_regexp_skip_unmatched` равен 0, генерируется исключение.
 
@@ -1362,4 +1390,3 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

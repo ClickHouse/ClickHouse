@@ -28,7 +28,7 @@ try
             DB::writeIntText(i, lzma_buf);
             DB::writeChar('\t', lzma_buf);
         }
-        lzma_buf.finish();
+        lzma_buf.finalize();
 
         stopwatch.stop();
 

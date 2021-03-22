@@ -325,7 +325,7 @@ else ()
 endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
-    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_libcommon unit_tests_dbms)
+    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()

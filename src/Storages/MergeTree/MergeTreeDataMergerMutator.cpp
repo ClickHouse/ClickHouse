@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
@@ -29,7 +28,6 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <Common/DirectorySyncGuard.h>
 #include <Parsers/queryToString.h>
 
 #include <cmath>
@@ -759,6 +757,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
     std::optional<ColumnSizeEstimator> column_sizes;
 
+    SyncGuardPtr sync_guard;
+
     if (chosen_merge_algorithm == MergeAlgorithm::Vertical)
     {
         tmp_disk->createDirectories(new_part_tmp_path);
@@ -771,6 +771,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             part->accumulateColumnSizes(merged_column_to_size);
 
         column_sizes = ColumnSizeEstimator(merged_column_to_size, merging_column_names, gathering_column_names);
+
+        if (data.getSettings()->fsync_part_directory)
+            sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
     }
     else
     {
@@ -779,10 +782,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         gathering_columns.clear();
         gathering_column_names.clear();
     }
-
-    std::optional<DirectorySyncGuard> sync_guard;
-    if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, new_part_tmp_path);
 
     /** Read from all parts, merge and write into a new one.
       * In passing, we calculate expression for sorting.
@@ -1182,9 +1181,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     disk->createDirectories(new_part_tmp_path);
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, new_part_tmp_path);
+        sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
@@ -1236,7 +1235,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             if (files_to_skip.count(it->name()))
                 continue;
 
-            String destination = new_part_tmp_path + "/";
+            String destination = new_part_tmp_path;
             String file_name = it->name();
             auto rename_it = std::find_if(files_to_rename.begin(), files_to_rename.end(), [&file_name](const auto & rename_pair) { return rename_pair.first == file_name; });
             if (rename_it != files_to_rename.end())
@@ -1781,7 +1780,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     Block block;
     while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
-        minmax_idx.update(block, data.minmax_idx_columns);
+        minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
         out.write(block);
 
         merge_entry->rows_written += block.rows();
@@ -1896,8 +1895,8 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsSizesOnDisk();
+    new_data_part->storage.lockSharedData(*new_data_part);
 }
-
 
 bool MergeTreeDataMergerMutator::checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const
 {

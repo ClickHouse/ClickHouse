@@ -101,7 +101,8 @@ struct IntegerRoundingComputation
         return scale;
     }
 
-    static ALWAYS_INLINE T computeImpl(T x, T scale)
+    /// Integer overflow is Ok.
+    static ALWAYS_INLINE_NO_SANITIZE_UNDEFINED T computeImpl(T x, T scale)
     {
         switch (rounding_mode)
         {

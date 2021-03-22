@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS test_view_00597;
 CREATE TABLE test_00597(date Date, id Int8, name String, value Int64) ENGINE = MergeTree(date, (id, date), 8192);
 CREATE VIEW test_view_00597 AS SELECT * FROM test_00597;
 
+SELECT * FROM (SELECT floor(floor(1, floor(NULL), id = 257), floor(floor(floor(floor(NULL), '10485.76', '9223372036854775807', NULL), floor(10, floor(65535, NULL), 100.0000991821289), NULL)), '2.56'), b.* FROM (SELECT floor(floor(floor(floor(NULL), 1000.0001220703125))), * FROM test_00597) AS b) WHERE id = 257;
+
 INSERT INTO test_00597 VALUES('2000-01-01', 1, 'test string 1', 1);
 INSERT INTO test_00597 VALUES('2000-01-01', 2, 'test string 2', 2);
 

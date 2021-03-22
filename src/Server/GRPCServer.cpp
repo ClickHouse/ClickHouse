@@ -652,7 +652,6 @@ namespace
 
         /// Create context.
         query_context.emplace(iserver.context());
-        query_scope.emplace(*query_context);
 
         /// Authentication.
         query_context->setUser(user, password, user_address);
@@ -669,6 +668,8 @@ namespace
             query_context = session->context;
             query_context->setSessionContext(session->context);
         }
+
+        query_scope.emplace(*query_context);
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
@@ -782,8 +783,6 @@ namespace
         if (!io.out)
             return;
 
-        initializeBlockInputStream(io.out->getHeader());
-
         bool has_data_to_insert = (insert_query && insert_query->data)
                                   || !query_info.input_data().empty() || query_info.next_query_info();
         if (!has_data_to_insert)
@@ -793,6 +792,10 @@ namespace
             else
                 throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         }
+
+        /// This is significant, because parallel parsing may be used.
+        /// So we mustn't touch the input stream from other thread.
+        initializeBlockInputStream(io.out->getHeader());
 
         block_input_stream->readPrefix();
         io.out->writePrefix();
@@ -1613,7 +1616,10 @@ private:
 
 
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
-    : iserver(iserver_), address_to_listen(address_to_listen_), log(&Poco::Logger::get("GRPCServer"))
+    : iserver(iserver_)
+    , address_to_listen(address_to_listen_)
+    , log(&Poco::Logger::get("GRPCServer"))
+    , runner(std::make_unique<Runner>(*this))
 {}
 
 GRPCServer::~GRPCServer()
@@ -1644,7 +1650,6 @@ void GRPCServer::start()
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
-    runner = std::make_unique<Runner>(*this);
     runner->start();
 }
 

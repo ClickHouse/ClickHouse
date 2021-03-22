@@ -118,7 +118,7 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** 行的某尾不应该包含空格。
+**18.** 行的末尾不应该包含空格。
 
 **19.** 源文件应该用 UTF-8 编码。
 

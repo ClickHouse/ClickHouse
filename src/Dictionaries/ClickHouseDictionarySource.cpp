@@ -118,10 +118,9 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
-        auto tmp_time = update_time;
+        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - 1;
+        std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
-        std::string str_time = std::to_string(LocalDateTime(hr_time));
         return query_builder.composeUpdateQuery(update_field, str_time);
     }
     else
@@ -133,41 +132,25 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
 {
-    /** Query to local ClickHouse is marked internal in order to avoid
-      *    the necessity of holding process_list_element shared pointer.
-      */
-    if (is_local)
-    {
-        auto stream = executeQuery(load_all_query, context, true).getInputStream();
-        /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
-        stream = std::make_shared<ConvertingBlockInputStream>(stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return stream;
-    }
-    return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
+    return createStreamForQuery(load_all_query);
 }
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
 {
-    std::string load_update_query = getUpdateFieldAndDate();
-    if (is_local)
-    {
-        auto stream = executeQuery(load_update_query, context, true).getInputStream();
-        stream = std::make_shared<ConvertingBlockInputStream>(stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return stream;
-    }
-    return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, sample_block, context);
+    String load_update_query = getUpdateFieldAndDate();
+    return createStreamForQuery(load_update_query);
 }
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    return createStreamForSelectiveLoad(query_builder.composeLoadIdsQuery(ids));
+    return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
 }
 
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    return createStreamForSelectiveLoad(
-        query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES));
+    String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
+    return createStreamForQuery(query);
 }
 
 bool ClickHouseDictionarySource::isModified() const
@@ -194,17 +177,19 @@ std::string ClickHouseDictionarySource::toString() const
 }
 
 
-BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(const std::string & query)
+BlockInputStreamPtr ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
+    /// Sample block should not contain first row default values
+    auto empty_sample_block = sample_block.cloneEmpty();
+
     if (is_local)
     {
-        auto res = executeQuery(query, context, true).getInputStream();
-        res = std::make_shared<ConvertingBlockInputStream>(
-            res, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return res;
+        auto stream = executeQuery(query, context, true).getInputStream();
+        stream = std::make_shared<ConvertingBlockInputStream>(stream, empty_sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        return stream;
     }
 
-    return std::make_shared<RemoteBlockInputStream>(pool, query, sample_block, context);
+    return std::make_shared<RemoteBlockInputStream>(pool, query, empty_sample_block, context);
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const

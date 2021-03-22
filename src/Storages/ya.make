@@ -24,6 +24,7 @@ SRCS(
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
     LiveView/TemporaryLiveViewCleaner.cpp
+    MemorySettings.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundJobsExecutor.cpp
@@ -48,6 +49,7 @@ SRCS(
     MergeTree/MergeTreeDataPartInMemory.cpp
     MergeTree/MergeTreeDataPartTTLInfo.cpp
     MergeTree/MergeTreeDataPartType.cpp
+    MergeTree/MergeTreeDataPartUUID.cpp
     MergeTree/MergeTreeDataPartWide.cpp
     MergeTree/MergeTreeDataPartWriterCompact.cpp
     MergeTree/MergeTreeDataPartWriterInMemory.cpp
