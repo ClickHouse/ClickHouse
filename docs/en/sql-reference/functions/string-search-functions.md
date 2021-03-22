@@ -12,6 +12,8 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
+Searchs the substring `needle` in the string `haystack`.
+
 Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
@@ -25,14 +27,13 @@ position((haystack, needle[, start_pos]) | (needle IN haystack))
 Alias: `locate(haystack, needle[, start_pos])`.
 
 !!! note "Note"
-    Now it supports position(needle IN haystack) syntax for SQL-compatibility, which is same as position(haystack, needle). This new function POSITION(needle IN haystack) works exactly the same way as POSITION(haystack, needle).
+    Syntax of position(needle IN haystack) provides SQL-compatibility and works the same way as position(haystack, needle).
 
 **Arguments**
 
 -   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
--   `needle in haystack` — additional parameter
 
 **Returned values**
 
@@ -85,6 +86,34 @@ Result:
 ┌─position('Привет, мир!', '!')─┐
 │                            21 │
 └───────────────────────────────┘
+```
+
+Query:
+
+```sql
+select 3 = position('c' in 'abc');
+```
+
+Result:
+
+```text
+┌─equals(3, position('abc', 'c'))─┐
+│                               1 │
+└─────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
+```
+
+Result:
+
+```text
+┌─equals(6, position(s, '/'))─┐
+│                           1 │
+└─────────────────────────────┘
 ```
 
 ## positionCaseInsensitive {#positioncaseinsensitive}
