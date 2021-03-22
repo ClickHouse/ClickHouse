@@ -155,13 +155,11 @@ public:
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
-    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
-    DayNum getMinDate() const;
-    DayNum getMaxDate() const;
+    /// If the partition key includes date column (a common case), this function will return min and max values for that column.
+    std::pair<DayNum, DayNum> getMinMaxDate() const;
 
-    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
-    time_t getMinTime() const;
-    time_t getMaxTime() const;
+    /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
+    std::pair<time_t, time_t> getMinMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
 
