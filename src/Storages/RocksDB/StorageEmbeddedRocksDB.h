@@ -45,6 +45,9 @@ public:
         return node->getColumnName() == primary_key;
     }
 
+    bool storesDataOnDisk() const override { return true; }
+    Strings getDataPaths() const override { return {rocksdb_dir}; }
+
 protected:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,

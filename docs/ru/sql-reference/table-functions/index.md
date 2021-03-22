@@ -1,8 +1,7 @@
 ---
-toc_folder_title: "\u0422\u0430\u0431\u043B\u0438\u0447\u043D\u044B\u0435 \u0444\u0443\
-  \u043D\u043A\u0446\u0438\u0438"
+toc_folder_title: "Табличные функции"
 toc_priority: 34
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Табличные функции {#table-functions}
@@ -24,14 +23,15 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 
 | Функция               | Описание                                                                                                                              |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------|
-| [file](file.md)       | Создаёт таблицу с движком [File](../../engines/table-engines/special/file.md).                                                       |
-| [merge](merge.md)     | Создаёт таблицу с движком [Merge](../../engines/table-engines/special/merge.md).                                                      |
-| [numbers](numbers.md) | Создаёт таблицу с единственным столбцом, заполненным целыми числами.                                                                  |
-| [remote](remote.md)   | Предоставляет доступ к удалённым серверам, не создавая таблицу с движком [Distributed](../../engines/table-engines/special/distributed.md). |
-| [url](url.md)         | Создаёт таблицу с движком [Url](../../engines/table-engines/special/url.md).                                                        |
-| [mysql](mysql.md)     | Создаёт таблицу с движком [MySQL](../../engines/table-engines/integrations/mysql.md).                                                      |
-| [jdbc](jdbc.md)       | Создаёт таблицу с дижком [JDBC](../../engines/table-engines/integrations/jdbc.md).                                                        |
-| [odbc](odbc.md)       | Создаёт таблицу с движком [ODBC](../../engines/table-engines/integrations/odbc.md).                                                       |
-| [hdfs](hdfs.md)       | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                       |
+| [file](../../sql-reference/table-functions/file.md)             | Создаёт таблицу с движком [File](../../engines/table-engines/special/file.md).                                                              |
+| [merge](../../sql-reference/table-functions/merge.md)           | Создаёт таблицу с движком [Merge](../../engines/table-engines/special/merge.md).                                                            |
+| [numbers](../../sql-reference/table-functions/numbers.md)       | Создаёт таблицу с единственным столбцом, заполненным целыми числами.                                                                        |
+| [remote](../../sql-reference/table-functions/remote.md)         | Предоставляет доступ к удалённым серверам, не создавая таблицу с движком [Distributed](../../engines/table-engines/special/distributed.md). |
+| [url](../../sql-reference/table-functions/url.md)               | Создаёт таблицу с движком [Url](../../engines/table-engines/special/url.md).                                                                |
+| [mysql](../../sql-reference/table-functions/mysql.md)           | Создаёт таблицу с движком [MySQL](../../engines/table-engines/integrations/mysql.md).                                                       |
+| [postgresql](../../sql-reference/table-functions/postgresql.md) | Создаёт таблицу с движком [PostgreSQL](../../engines/table-engines/integrations/postgresql.md).                                             |
+| [jdbc](../../sql-reference/table-functions/jdbc.md)             | Создаёт таблицу с движком [JDBC](../../engines/table-engines/integrations/jdbc.md).                                                         |
+| [odbc](../../sql-reference/table-functions/odbc.md)             | Создаёт таблицу с движком [ODBC](../../engines/table-engines/integrations/odbc.md).                                                         |
+| [hdfs](../../sql-reference/table-functions/hdfs.md)             | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                         |
+| [s3](../../sql-reference/table-functions/s3.md)                 | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md).                                                            |
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/) <!--hide-->

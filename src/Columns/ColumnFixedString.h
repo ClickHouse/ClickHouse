@@ -112,6 +112,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -130,6 +132,11 @@ public:
     {
         return doCompareColumn<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, row_indexes,
                                                compare_results, direction, nan_direction_hint);
+    }
+
+    bool hasEqualValues() const override
+    {
+        return hasEqualValuesImpl<ColumnFixedString>();
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -184,8 +191,6 @@ public:
     const Chars & getChars() const { return chars; }
 
     size_t getN() const { return n; }
-
-    static void alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size);
 };
 
 }
