@@ -3,6 +3,7 @@
 #include "Common/Exception.h"
 #include <Common/Throttler.h>
 #include "Client/Connection.h"
+#include "Core/QueryProcessingStage.h"
 #include "DataStreams/RemoteBlockInputStream.h"
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -282,7 +283,8 @@ Pipe StorageS3Distributed::read(
                 /*connection=*/*connections.back(),
                 /*query=*/queryToString(query_info.query),
                 /*header=*/metadata_snapshot->getSampleBlock(),
-                /*context=*/context
+                /*context=*/context,
+                nullptr, Scalars(), Tables(), QueryProcessingStage::WithMergeableState
             );
             pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
         }
