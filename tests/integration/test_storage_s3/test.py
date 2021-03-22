@@ -14,6 +14,9 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/dummy/configs/config.d/defaultS3.xml')
+
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(cluster):
@@ -85,7 +88,8 @@ def cluster():
         cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
                              with_minio=True)
         cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
-        cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"], user_configs=["configs/s3_max_redirects.xml"])
+        cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"],
+                             user_configs=["configs/s3_max_redirects.xml"])
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -279,7 +283,7 @@ def test_put_get_with_globs(cluster):
 @pytest.mark.parametrize("maybe_auth,positive", [
     ("", True),
     # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
-    ("'wrongid','wrongkey',", False)
+    ("'wrongid','wrongkey',", False),
 ])
 def test_multipart_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -397,6 +401,16 @@ def run_s3_mock(cluster):
     logging.info("S3 mock started")
 
 
+def replace_config(old, new):
+    config = open(CONFIG_PATH, 'r')
+    config_lines = config.readlines()
+    config.close()
+    config_lines = [line.replace(old, new) for line in config_lines]
+    config = open(CONFIG_PATH, 'w')
+    config.writelines(config_lines)
+    config.close()
+
+
 def test_custom_auth_headers(cluster):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
@@ -408,6 +422,36 @@ def test_custom_auth_headers(cluster):
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     result = run_query(instance, get_query)
     assert result == '1\t2\t3\n'
+
+    instance.query(
+        "CREATE TABLE test ({table_format}) ENGINE = S3('http://resolver:8080/{bucket}/{file}', 'CSV')".format(
+            bucket=cluster.minio_restricted_bucket,
+            file=filename,
+            table_format=table_format
+        ))
+    assert run_query(instance, "SELECT * FROM test") == '1\t2\t3\n'
+
+    replace_config("<header>Authorization: Bearer TOKEN", "<header>Authorization: Bearer INVALID_TOKEN")
+    instance.query("SYSTEM RELOAD CONFIG")
+    ret, err = instance.query_and_get_answer_with_error("SELECT * FROM test")
+    assert ret == "" and err != ""
+    replace_config("<header>Authorization: Bearer INVALID_TOKEN", "<header>Authorization: Bearer TOKEN")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert run_query(instance, "SELECT * FROM test") == '1\t2\t3\n'
+
+
+def test_custom_auth_headers_exclusion(cluster):
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = f"SELECT * FROM s3('http://resolver:8080/{cluster.minio_restricted_bucket}/restricteddirectory/{filename}', 'CSV', '{table_format}')"
+
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        result = run_query(instance, get_query)
+        print(result)
+
+    assert ei.value.returncode == 243
+    assert '403 Forbidden' in ei.value.stderr
 
 
 def test_infinite_redirect(cluster):
@@ -429,10 +473,14 @@ def test_infinite_redirect(cluster):
         assert exception_raised
 
 
-def test_storage_s3_get_gzip(cluster):
+@pytest.mark.parametrize("extension,method", [
+    ("bin", "gzip"),
+    ("gz", "auto")
+])
+def test_storage_s3_get_gzip(cluster, extension, method):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
-    filename = "test_get_gzip.bin"
+    filename = f"test_get_gzip.{extension}"
     name = "test_get_gzip"
     data = [
         "Sophia Intrieri,55",
@@ -459,13 +507,15 @@ def test_storage_s3_get_gzip(cluster):
     put_s3_file_content(cluster, bucket, filename, buf.getvalue())
 
     try:
-        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
-            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+        run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
+                                    'http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                                    'CSV',
+                                    '{method}')""")
 
         run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["565"]
 
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")
 
 
 def test_storage_s3_put_uncompressed(cluster):
@@ -501,13 +551,17 @@ def test_storage_s3_put_uncompressed(cluster):
         uncompressed_content = get_s3_file_content(cluster, bucket, filename)
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 753
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")
 
 
-def test_storage_s3_put_gzip(cluster):
+@pytest.mark.parametrize("extension,method", [
+    ("bin", "gzip"),
+    ("gz", "auto")
+])
+def test_storage_s3_put_gzip(cluster, extension, method):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
-    filename = "test_put_gzip.bin"
+    filename = f"test_put_gzip.{extension}"
     name = "test_put_gzip"
     data = [
         "'Joseph Tomlinson',5",
@@ -527,8 +581,10 @@ def test_storage_s3_put_gzip(cluster):
         "'Yolanda Joseph',89"
     ]
     try:
-        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
-            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+        run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
+                                    'http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                                    'CSV',
+                                    '{method}')""")
 
         run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
 
@@ -539,4 +595,4 @@ def test_storage_s3_put_gzip(cluster):
         uncompressed_content = f.read().decode()
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")

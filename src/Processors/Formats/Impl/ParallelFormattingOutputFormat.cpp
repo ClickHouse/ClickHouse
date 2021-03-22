@@ -147,11 +147,12 @@ namespace DB
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer
             unit.segment.resize(DBMS_DEFAULT_BUFFER_SIZE);
-            /// The second invocation won't release memory, only set size equals to 0.
-            unit.segment.resize(0);
 
             unit.actual_memory_size = 0;
             BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
+
+            /// The second invocation won't release memory, only set size equals to 0.
+            unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
 

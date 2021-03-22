@@ -37,9 +37,6 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
-
 private:
     ASTPtr query_ptr;
     Context & context;
@@ -59,6 +56,8 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
+
+    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, const Context &) const override;
 };
 
 

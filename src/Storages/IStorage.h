@@ -50,12 +50,14 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class StoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
 struct SelectQueryInfo;
+
+using NameDependencies = std::unordered_map<String, std::vector<String>>;
 
 struct ColumnSize
 {
@@ -131,6 +133,10 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
+    /// Requires squashing small blocks to large for optimal storage.
+    /// This is true for most storages that store data on disk.
+    virtual bool prefersLargeBlocks() const { return true; }
+
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -169,8 +175,10 @@ public:
     virtual NamesAndTypesList getVirtuals() const;
 
     Names getAllRegisteredNames() const override;
-protected:
 
+    NameDependencies getDependentViewsByColumn(const Context & context) const;
+
+protected:
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
@@ -358,7 +366,12 @@ public:
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
-    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const;
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const;
+
+    /**
+      * Checks that mutation commands can be applied to storage.
+      */
+    virtual void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const;
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.

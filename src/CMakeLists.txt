@@ -60,6 +60,7 @@ add_subdirectory (Processors)
 add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
+add_subdirectory (Coordination)
 
 
 set(dbms_headers)
@@ -100,8 +101,8 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp)
-list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h)
+list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
+list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
@@ -180,6 +181,7 @@ add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_server Server)
+add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -190,6 +192,11 @@ add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+
+if (USE_NURAFT)
+    add_object_library(clickhouse_coordination Coordination)
+endif()
 
 set (DBMS_COMMON_LIBRARIES)
 # libgcc_s does not provide an implementation of an atomics library. Instead,
@@ -309,11 +316,12 @@ if (USE_CYRUS_SASL)
 endif()
 
 if (USE_KRB5)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 if (USE_NURAFT)
-    dbms_target_link_libraries(PRIVATE ${NURAFT_LIBRARY})
+    dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)
@@ -451,6 +459,8 @@ endif()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
+include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -471,6 +481,15 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_aggregate_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE
+        ${GTEST_BOTH_LIBRARIES}
+        clickhouse_functions
+        clickhouse_aggregate_functions
+        clickhouse_parsers
+        clickhouse_storages_system
+        dbms
+        clickhouse_common_zookeeper
+        string_utils)
+
     add_check(unit_tests_dbms)
 endif ()

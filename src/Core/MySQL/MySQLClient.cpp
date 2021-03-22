@@ -6,7 +6,9 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLReplication.h>
+#include <Common/DNSResolver.h>
 #include <Poco/String.h>
+
 
 namespace DB
 {
@@ -66,6 +68,7 @@ void MySQLClient::disconnect()
         socket->close();
     socket = nullptr;
     connected = false;
+    seq = 0;
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html

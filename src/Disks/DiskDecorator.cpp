@@ -103,11 +103,6 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
     delegate->replaceFile(from_path, to_path);
 }
 
-void DiskDecorator::copyFile(const String & from_path, const String & to_path)
-{
-    delegate->copyFile(from_path, to_path);
-}
-
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
@@ -150,6 +145,16 @@ void DiskDecorator::removeRecursive(const String & path)
     delegate->removeRecursive(path);
 }
 
+void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
+{
+    delegate->removeSharedFile(path, keep_s3);
+}
+
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    delegate->removeSharedRecursive(path, keep_s3);
+}
+
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
     delegate->setLastModified(path, timestamp);
@@ -175,24 +180,19 @@ void DiskDecorator::truncateFile(const String & path, size_t size)
     delegate->truncateFile(path, size);
 }
 
-int DiskDecorator::open(const String & path, mode_t mode) const
-{
-    return delegate->open(path, mode);
-}
-
-void DiskDecorator::close(int fd) const
-{
-    delegate->close(fd);
-}
-
-void DiskDecorator::sync(int fd) const
-{
-    delegate->sync(fd);
-}
-
 Executor & DiskDecorator::getExecutor()
 {
     return delegate->getExecutor();
+}
+
+SyncGuardPtr DiskDecorator::getDirectorySyncGuard(const String & path) const
+{
+    return delegate->getDirectorySyncGuard(path);
+}
+
+void DiskDecorator::onFreeze(const String & path)
+{
+    delegate->onFreeze(path);
 }
 
 }

@@ -38,7 +38,7 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 DictionaryStructure
 ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
 {
-    return {config, key_in_config + ".structure"};
+    return {config, key_in_config};
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const ObjectConfig & config)

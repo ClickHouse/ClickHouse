@@ -16,7 +16,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
@@ -24,6 +24,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -270,7 +271,8 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            system_context.dropCompiledExpressionCache();
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
@@ -606,7 +608,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, context).get()))
-        storage_distributed->flushClusterNodesAllData();
+        storage_distributed->flushClusterNodesAllData(context);
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
@@ -752,6 +754,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
+}
+
+void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, const Context &) const
+{
+    elem.query_kind = "System";
 }
 
 }

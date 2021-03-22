@@ -118,7 +118,9 @@ TRAP(logout)
 TRAP(logwtmp)
 TRAP(lrand48)
 TRAP(mallinfo)
-TRAP(mallopt)
+#if !defined(SANITIZER)
+TRAP(mallopt) // Used by tsan
+#endif
 TRAP(mblen)
 TRAP(mbrlen)
 TRAP(mbrtowc)
@@ -193,7 +195,9 @@ TRAP(dbm_nextkey)
 TRAP(dbm_open)
 TRAP(dbm_store)
 TRAP(dirname)
-TRAP(dlerror)
+#if !defined(SANITIZER)
+TRAP(dlerror) // Used by tsan
+#endif
 TRAP(ftw)
 TRAP(getc_unlocked)
 //TRAP(getenv) // Ok at program startup
