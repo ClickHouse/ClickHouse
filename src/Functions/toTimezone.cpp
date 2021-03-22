@@ -21,11 +21,11 @@ namespace
 {
 
 /// Just changes time zone information for data type. The calculation is free.
-class FunctionToTimeZone : public IFunction
+class FunctionToTimezone : public IFunction
 {
 public:
-    static constexpr auto name = "toTimeZone";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); }
+    static constexpr auto name = "toTimezone";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimezone>(); }
 
     String getName() const override
     {
@@ -64,7 +64,8 @@ public:
 
 void registerFunctionToTimeZone(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionToTimeZone>();
+    factory.registerFunction<FunctionToTimezone>();
+    factory.registerAlias("toTimeZone", "toTimezone");
 }
 
 }
