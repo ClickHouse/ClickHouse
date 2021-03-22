@@ -725,7 +725,8 @@ void TCPHandler::processTablesStatusRequest()
     if (settings.sleep_in_send_tables_status_ms.totalMilliseconds())
     {
         out->next();
-        std::this_thread::sleep_for(settings.sleep_in_send_tables_status_ms);
+        std::chrono::milliseconds ms(settings.sleep_in_send_tables_status_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
     }
 
     response.write(*out, client_tcp_protocol_version);
@@ -1417,7 +1418,8 @@ void TCPHandler::sendData(const Block & block)
     if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
     {
         out->next();
-        std::this_thread::sleep_for(settings.sleep_in_send_data_ms);
+        std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
     }
 
     state.block_out->write(block);
