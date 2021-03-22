@@ -37,17 +37,13 @@
           (if (not (nil? result))
             (assoc op :type :ok :value result)
             (assoc op :type :fail :value result)))
-        (catch KeeperException$BadVersionException _ (assoc op :type :fail, :error :bad-version))
         (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :drain
+      ; drain via delete is to long, just list all nodes
       (try
         (do
           (zk-sync conn)
-          (loop [result '()]
-            (let [deleted-child (zk-multi-delete-first-child conn "/")]
-              (if (not (nil? deleted-child))
-                (recur (concat result [deleted-child]))
-                (assoc op :type :ok :value result)))))
+          (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn "/")))))
         (catch Exception _ (assoc op :type :info, :error :connect-error)))))
 
   (teardown! [_ test])
@@ -66,7 +62,7 @@
    :checker   (checker/compose
                {:total-queue (checker/total-queue)
                 :timeline (timeline/html)})
-   :generator (->> (sorted-str-range 10000)
+   :generator (->> (sorted-str-range 50000)
                    (map (fn [x]
                           (rand-nth [{:type :invoke, :f :enqueue :value x}
                                      {:type :invoke, :f :dequeue}]))))

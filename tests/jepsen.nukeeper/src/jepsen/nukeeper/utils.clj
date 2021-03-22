@@ -9,7 +9,8 @@
             [clojure.tools.logging :refer :all])
   (:import (org.apache.zookeeper.data Stat)
            (org.apache.zookeeper CreateMode
-                                 ZooKeeper)))
+                                 ZooKeeper)
+           (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
 (defn parse-long
   "Parses a string to a Long. Passes through `nil` and empty strings."
@@ -111,11 +112,18 @@
         txn (.transaction conn)
         first-child (first (sort children))]
     (if (not (nil? first-child))
-      (do (.check txn path (:version stat))
-          (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
-          (.delete txn (str path first-child) -1)
-          (.commit txn)
-          first-child)
+      (try
+          (do (.check txn path (:version stat))
+              (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
+              (.delete txn (str path first-child) -1)
+              (.commit txn)
+              first-child)
+        (catch KeeperException$BadVersionException _ nil)
+        ; Even if we got connection loss, delete may actually be executed.
+        ; This function is used for queue model, which strictly require
+        ; all enqueued elements to be dequeued, but allow duplicates.
+        ; So even in case when we not sure about delete we return first-child.
+        (catch Exception _ first-child))
       nil)))
 
 (defn clickhouse-alive?

@@ -122,7 +122,8 @@
    [nil "--ops-per-key NUM" "Maximum number of operations on any given key."
     :default  100
     :parse-fn parse-long
-    :validate [pos? "Must be a positive integer."]]])
+    :validate [pos? "Must be a positive integer."]]
+   [nil, "--lightweight-run", "Subset of workloads/nemesises which is simple to validate"]])
 
 (defn nukeeper-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
@@ -136,7 +137,7 @@
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:71c60699aa56568ded73c4a48cecd2fd5e0956cb")
+            :db (db "rbtorrent:5fecc75309f38e302c95b4a226b2de60dfbb5681")
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)
@@ -158,20 +159,39 @@
 
 (def all-workloads (keys workloads))
 
+(def lightweight-workloads ["set" "unique-ids" "counter" "total-queue"])
+
+(def useful-nemesises ["random-node-killer"
+                       "simple-partitioner"
+                       "logs-and-snapshots-corruptor"
+                       "drop-data-corruptor"
+                       "bridge-partitioner"
+                       "blind-node-partitioner"
+                       "blind-others-partitioner"])
+
+(defn cart [colls]
+  (if (empty? colls)
+    '(())
+    (for [more (cart (rest colls))
+          x (first colls)]
+      (cons x more))))
+
 (defn all-test-options
   "Takes base cli options, a collection of nemeses, workloads, and a test count,
   and constructs a sequence of test options."
-  [cli nemeses workloads]
-  (take (:test-count cli) (shuffle (for [n nemeses, w workloads]
+  [cli worload-nemeseis-collection]
+  (take (:test-count cli)
+        (shuffle (for [[workload nemesis] worload-nemeseis-collection]
                                      (assoc cli
-                                            :nemesis   n
-                                            :workload  w
+                                            :nemesis   nemesis
+                                            :workload  workload
                                             :test-count 1)))))
-
 (defn all-tests
   "Turns CLI options into a sequence of tests."
   [test-fn cli]
-  (map test-fn (all-test-options cli all-nemesises all-workloads)))
+  (if (boolean (:lightweight-run cli))
+    (map test-fn (all-test-options cli (cart [all-workloads all-nemesises])))
+    (map test-fn (all-test-options cli (cart [lightweight-workloads useful-nemesises])))))
 
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
