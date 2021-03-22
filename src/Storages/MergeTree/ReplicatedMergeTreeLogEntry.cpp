@@ -1,4 +1,5 @@
 #include <Common/ZooKeeper/Types.h>
+#include "Access/IAccessEntity.h"
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -141,7 +142,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             break;
 
         default:
-            throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", static_cast<int>(type));
     }
 
     out << '\n';
@@ -161,7 +162,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     in >> "format version: " >> format_version >> "\n";
 
     if (format_version < 1 || format_version >= FORMAT_LAST)
-        throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown ReplicatedMergeTreeLogEntry format version: {}",
+                DB::toString(format_version));
 
     if (format_version >= FORMAT_WITH_CREATE_TIME)
     {

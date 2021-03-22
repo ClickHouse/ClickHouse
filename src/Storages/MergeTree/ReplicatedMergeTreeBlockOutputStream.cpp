@@ -270,13 +270,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 /// the MutableDataPartPtr here, we already have the data thus being able to
                 /// calculate the checksums.
                 log_entry.part_checksum = part->checksums.getTotalChecksumHex();
-
-                for (auto && [name, checksum] : part->checksums.files)
-                    LOG_TRACE(log, "> File {}, file size {}, file hash ({}, {})", name, checksum.file_size,
-                        checksum.file_hash.first, checksum.file_hash.second);
-
-                LOG_TRACE(log, "Checksums files: {}, clean checksum: {}", part->checksums.files.size(),
-                        log_entry.part_checksum);
             }
             else
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
