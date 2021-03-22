@@ -190,8 +190,8 @@
   "Turns CLI options into a sequence of tests."
   [test-fn cli]
   (if (boolean (:lightweight-run cli))
-    (map test-fn (all-test-options cli (cart [all-workloads all-nemesises])))
-    (map test-fn (all-test-options cli (cart [lightweight-workloads useful-nemesises])))))
+    (map test-fn (all-test-options cli (cart [lightweight-workloads useful-nemesises])))
+    (map test-fn (all-test-options cli (cart [all-workloads all-nemesises])))))
 
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for
