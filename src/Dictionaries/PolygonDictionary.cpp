@@ -159,7 +159,7 @@ BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_
 template <typename T>
 void IPolygonDictionary::appendNullValueImpl(const Field & null_value)
 {
-    null_values.emplace_back(T(null_value.get<NearestFieldType<T>>()));
+    null_values.emplace_back(T(null_value.get<T>()));
 }
 
 void IPolygonDictionary::appendNullValue(AttributeUnderlyingType type, const Field & null_value)
