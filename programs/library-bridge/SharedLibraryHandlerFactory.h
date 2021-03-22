@@ -8,7 +8,8 @@
 namespace DB
 {
 
-/// Creates map object: dictionary_id -> SharedLibararyHandler.
+/// Each library dictionary source has unique UUID. When clone() method is called, a new UUID is generated.
+/// There is a unique mapping from diciotnary UUID to sharedLibraryHandler.
 class SharedLibraryHandlerFactory final : private boost::noncopyable
 {
 public:
@@ -16,13 +17,14 @@ public:
 
     SharedLibraryHandlerPtr get(const std::string & dictionary_id);
 
-    bool create(const std::string & dictionary_id, const std::string & library_path, const std::string & library_settings);
+    void create(const std::string & dictionary_id, const std::string & library_path, const std::string & library_settings);
 
-    bool clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
+    void clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
 
-    bool remove(const std::string & dictionary_id);
+    void remove(const std::string & dictionary_id);
 
 private:
+    /// map: dict_id -> sharedLibraryHandler
     std::unordered_map<std::string, SharedLibraryHandlerPtr> library_handlers;
     std::mutex mutex;
 };
