@@ -126,6 +126,8 @@
         "quorum",
         "01650_drop_part_and_deduplication_zookeeper",
         "01532_execute_merges_on_single_replica",
+        "00652_replicated_mutations_default_database_zookeeper",
+        "00620_optimize_on_nonleader_replica_zookeeper",
         /// grep -c
         "01018_ddl_dictionaries_bad_queries",
         "00908_bloom_filter_index",
