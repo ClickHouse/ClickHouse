@@ -2533,6 +2533,64 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
 
     kafka_check_result(result, True)
 
+def random_string(size=8):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=size))
+
+@pytest.mark.timeout(180)
+def test_kafka_engine_put_errors_to_stream(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka_data;
+        DROP TABLE IF EXISTS test.kafka_errors;
+        CREATE TABLE test.kafka (i Int64, s String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'json',
+                     kafka_group_name = 'json',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 128,
+                     kafka_handle_error_mode = 'stream';
+        CREATE MATERIALIZED VIEW test.kafka_data (i Int64, s String)
+            ENGINE = MergeTree
+            ORDER BY i
+            AS SELECT i, s FROM test.kafka WHERE length(_error) == 0;
+        CREATE MATERIALIZED VIEW test.kafka_errors (topic String, partition Int64, offset Int64, raw String, error String)
+            ENGINE = MergeTree
+            ORDER BY (topic, offset)
+            AS SELECT
+               _topic AS topic,
+               _partition AS partition,
+               _offset AS offset,
+               _raw_message AS raw,
+               _error AS error
+               FROM test.kafka WHERE length(_error) > 0;
+        ''')
+
+    messages = []
+    for i in range(128):
+        if i % 2 == 0:
+            messages.append(json.dumps({'i': i, 's': random_string(8)}))
+        else:
+            # Unexpected json content for table test.kafka.
+            messages.append(json.dumps({'i': 'n_' + random_string(4), 's': random_string(8)}))
+
+    kafka_produce('json', messages)
+
+    while True:
+      total_rows = instance.query('SELECT count() FROM test.kafka_data', ignore_error=True)
+      if total_rows == '64\n':
+        break
+
+    while True:
+      total_error_rows = instance.query('SELECT count() FROM test.kafka_errors', ignore_error=True)
+      if total_error_rows == '64\n':
+        break
+
+    instance.query('''
+        DROP TABLE test.kafka;
+        DROP TABLE test.kafka_data;
+        DROP TABLE test.kafka_errors;
+    ''')
 
 if __name__ == '__main__':
     cluster.start()
