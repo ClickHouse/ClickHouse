@@ -72,15 +72,19 @@ def test_attach_without_fetching(start_cluster):
 
     check_data([node_1, node_2], detached_parts=[])
 
-    # 1. Detach the first two partitions/parts on the replicas
+    # 1.
     # This part will be fetched from other replicas as it would be missing in the detached/ folder and
     # also attached locally.
     node_1.query("ALTER TABLE test DETACH PART '0_0_0_0'")
     # This partition will be just fetched from other replicas as the checksums won't match
     # (we'll manually break the data).
     node_1.query("ALTER TABLE test DETACH PARTITION 1")
+    # This partition will be just fetched from other replicas as the part data will be corrupted with one of the
+    # files missing.
+    node_1.query("ALTER TABLE test DETACH PARTITION 2")
 
-    check_data([node_1, node_2], detached_parts=[0, 1])
+
+    check_data([node_1, node_2], detached_parts=[0, 1, 2])
 
     # 2. Create the third replica
     fill_node(node_3)
@@ -88,22 +92,30 @@ def test_attach_without_fetching(start_cluster):
     # 3. Break the part data on the second node to corrupt the checksums.
     # Replica 3 should download the data from replica 1 as there is no local data.
     # Replica 2 should also download the data from 1 as the checksums won't match.
-    print("Checking attach with corrupted checksums")
-
-    # corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
+    print("Checking attach with corrupted part data with files missing")
 
     print("Before deleting:", node_2.exec_in_container(['bash', '-c',
                             'cd {p} && ls *.bin'.format(
-                                p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True))
+                                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True))
 
     node_2.exec_in_container(['bash', '-c',
                             'cd {p} && rm -fr *.bin'.format(
-                                p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True)
+                                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True)
+
+    node_1.query("ALTER TABLE test ATTACH PARTITION 2")
+    check_data([node_1, node_2, node_3], detached_parts=[0, 1])
+
+    # 4. Break the part data on the second node to corrupt the checksums.
+    # Replica 3 should download the data from replica 1 as there is no local data.
+    # Replica 2 should also download the data from 1 as the checksums won't match.
+    print("Checking attach with corrupted part data with all of the files present")
+
+    corrupt_part_data_by_path(node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0")
 
     node_1.query("ALTER TABLE test ATTACH PARTITION 1")
     check_data([node_1, node_2, node_3], detached_parts=[0])
 
-    # 4. Attach the first part and check if it has been fetched correctly.
+    # 5. Attach the first part and check if it has been fetched correctly.
     # Replica 2 should attach the local data from detached/.
     # Replica 3 should download the data from replica 2 as there is no local data and other connections are broken.
     print("Checking attach with valid checksums")
