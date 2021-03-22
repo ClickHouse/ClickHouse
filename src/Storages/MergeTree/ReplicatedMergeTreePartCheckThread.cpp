@@ -213,7 +213,7 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     /// because our checks of local storage and zookeeper are not consistent.
     /// If part exists in zookeeper and doesn't exists in local storage definitely require
     /// to fetch this part. But if we check local storage first and than check zookeeper
-    /// some background process can successfully commit part between this checks (both to the local stoarge and zookeeper),
+    /// some background process can successfully commit part between this checks (both to the local storage and zookeeper),
     /// but checker thread will remove part from zookeeper and queue fetch.
     bool exists_in_zookeeper = zookeeper->exists(part_path);
 
@@ -233,6 +233,8 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
     auto [exists_in_zookeeper, part] = findLocalPart(part_name);
+
+    LOG_TRACE(log, "Part {} in zookeeper: {}, locally: {}", part_name, exists_in_zookeeper, part != nullptr);
 
     /// We do not have this or a covering part.
     if (!part)
