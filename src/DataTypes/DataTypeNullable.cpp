@@ -54,7 +54,7 @@ void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, Sub
 
 void DataTypeNullable::enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const
 {
-    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);    
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
     path.push_back(Substream::NullableElements);
     nested_data_type->enumerateDynamicStreams(col.getNestedColumn(), callback, path);
     path.pop_back();

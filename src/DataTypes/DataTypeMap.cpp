@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_READ_MAP_FROM_TEXT;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 DataTypeMap::DataTypeMap(const DataTypePtr & value_type_)
@@ -53,7 +54,8 @@ DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) cons
     {
         first_name = subcolumn_name;
     }
-    else{
+    else
+    {
         first_name = subcolumn_name.substr(0, loc);
         last_name = subcolumn_name.substr(loc+1);
     }
@@ -71,7 +73,8 @@ ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn
     {
         first_name = subcolumn_name;
     }
-    else{
+    else
+    {
         first_name = subcolumn_name.substr(0, loc);
         last_name = subcolumn_name.substr(loc+1);
     }

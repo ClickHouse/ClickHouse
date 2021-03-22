@@ -1722,7 +1722,6 @@ namespace
     };
 
 
-
     /// Serializes a ColumnLowCardinality.
     class ProtobufSerializerLowCardinality : public ProtobufSerializer
     {

@@ -20,9 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 ColumnMap::ColumnMap(const ColumnMap & rhs)
@@ -279,7 +277,8 @@ const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
             pos = mcp->deserializeAndInsertFromArena(pos);
             subColumns[key] = std::move(mcp);
         }
-        else{
+        else
+        {
             pos = it->second->assumeMutable()->deserializeAndInsertFromArena(pos);
         }
     }
@@ -408,7 +407,7 @@ int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direct
     {
         if (it_lhs == subColumns.end())
         {
-            return (it_rhs == rhs_map.subColumns.end()) ? 0: -1; 
+            return (it_rhs == rhs_map.subColumns.end()) ? 0: -1;
         }
         else
         {

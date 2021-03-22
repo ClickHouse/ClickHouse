@@ -40,8 +40,8 @@ public:
     }
 
     void enumerateDynamicStreams(
-        const IColumn & column, 
-        const IDataType::StreamCallback & callback, 
+        const IColumn & column,
+        const IDataType::StreamCallback & callback,
         IDataType::SubstreamPath & path) const override
     {
         addToPath(path);

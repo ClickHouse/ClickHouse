@@ -13,20 +13,18 @@
 #include <memory>
 
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include "array/arrayIndex.h"
+#include <Poco/Format.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 // map(x, y, ...) is a function that allows you to make key-value pair
 class FunctionMap : public IFunction
@@ -136,17 +134,15 @@ public:
 };
 
 
-struct NameMapContains { static constexpr auto name = "mapContains"; };
-
 class FunctionMapContains : public IFunction
 {
 public:
-    static constexpr auto name = NameMapContains::name;
+    static constexpr auto name = "mapContains";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapContains>(); }
 
     String getName() const override
     {
-        return NameMapContains::name;
+        return name;
     }
 
     size_t getNumberOfArguments() const override { return 2; }
@@ -172,9 +168,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
-        if (!col_map)
-            return nullptr;
+        const ColumnMap & col_map = assert_cast<const ColumnMap &>(*arguments[0].column.get());
         auto res = ColumnVector<UInt8>::create(input_rows_count);
         typename ColumnVector<UInt8>::Container & vec_to = res->getData();
 
@@ -182,7 +176,7 @@ public:
         if (isColumnConst(*col_key))
         {
             const String & key = col_key->getDataAt(0).toString();
-            const auto & col_val = col_map->getSubColumn(key);
+            const auto & col_val = col_map.getSubColumn(key);
             if (!col_val)
                 return res;
             const auto & col_val_nullable = assert_cast<const ColumnNullable &>(*col_val);
@@ -198,7 +192,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const String & key = col_key->getDataAt(i).toString();
-                const auto & col_val = col_map->getSubColumn(key);
+                const auto & col_val = col_map.getSubColumn(key);
                 if (!col_val)
                     continue;
                 auto & col_val_nullable = assert_cast<const ColumnNullable &>(*col_val);
@@ -211,12 +205,157 @@ public:
 };
 
 
-}
+class FunctionMapKeys : public IFunction
+{
+public:
+    static constexpr auto name = "mapKeys";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapKeys>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 1)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+
+        if (!map_type)
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        auto key_type = map_type->getKeyType();
+
+        return std::make_shared<DataTypeArray>(key_type);
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const ColumnMap & col_map = assert_cast<const ColumnMap &>(*arguments[0].column.get());
+        const auto & subColumns = col_map.subColumns;
+
+        auto res = result_type->createColumn();
+        auto & col_arr = assert_cast<ColumnArray &>(*res);
+        auto & vec_to = col_arr.getData();
+        auto & offsets = col_arr.getOffsets();
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            int size = 0;
+            for (const auto & elem : subColumns)
+            {
+                auto & col_val_nullable = assert_cast<const ColumnNullable &>(*elem.second);
+                if (!col_val_nullable.isNullAt(i))
+                {
+                    vec_to.insert(elem.first);
+                    size++;
+                }
+            }
+            offsets.push_back(offsets.back() + size);
+        }
+        return res;
+    }
+};
+
+
+class FunctionMapValues : public IFunction
+{
+public:
+    static constexpr auto name = "mapValues";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapValues>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 1)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+
+        if (!map_type)
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        auto value_type = map_type->getValueType();
+
+        return std::make_shared<DataTypeArray>(removeNullable(value_type));
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const ColumnMap & col_map = assert_cast<const ColumnMap &>(*arguments[0].column.get());
+        const auto & subColumns = col_map.subColumns;
+
+        auto res = result_type->createColumn();
+        auto & col_arr = assert_cast<ColumnArray &>(*res);
+        auto & vec_to = col_arr.getData();
+        auto & offsets = col_arr.getOffsets();
+
+        Int64 valI64;
+        Float64 valF64;
+        String valStr;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            int size = 0;
+            for (const auto & elem : subColumns)
+            {
+                auto & col_val_nullable = assert_cast<const ColumnNullable &>(*elem.second);
+                const Field & f = col_val_nullable[i];
+                switch (f.getType())
+                {
+                    case Field::Types::Int64:
+                        valI64 = f.safeGet<Int64>();
+                        vec_to.insert(valI64);
+                        size++;
+                        break;
+                    case Field::Types::Float64:
+                        valF64 = f.safeGet<Float64>();
+                        vec_to.insert(valF64);
+                        size++;
+                        break;
+                    case Field::Types::String:
+                        valStr = std::move(f.safeGet<String>());
+                        vec_to.insert(valStr);
+                        size++;
+                        break;
+                    case Field::Types::Null:
+                        break;
+                    default:
+                        throw Exception(Poco::format("Unexpected field type %s when reading %s", f.getTypeName(), col_map.getName()), ErrorCodes::LOGICAL_ERROR);
+                }
+            }
+            offsets.push_back(offsets.back() + size);
+        }
+        return res;
+    }
+};
+
 
 void registerFunctionsMap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMap>();
     factory.registerFunction<FunctionMapContains>();
+    factory.registerFunction<FunctionMapKeys>();
+    factory.registerFunction<FunctionMapValues>();
 }
 
 }

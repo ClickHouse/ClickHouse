@@ -13,6 +13,8 @@ private:
     friend class COWHelper<IColumn, ColumnMap>;
     friend class DataTypeMap;
     friend class FunctionCast;
+    friend class FunctionMapKeys;
+    friend class FunctionMapValues;
 
     DataTypePtr value_type;
     std::map<String, ColumnPtr> subColumns;

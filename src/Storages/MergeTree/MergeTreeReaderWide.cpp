@@ -185,7 +185,7 @@ void MergeTreeReaderWide::readData(
 
             String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
 
-            /// Add stream for dyanmic subcolumn.
+            /// Add stream for dynamic subcolumn.
             addStream(stream_name);
 
             auto it = streams.find(stream_name);
