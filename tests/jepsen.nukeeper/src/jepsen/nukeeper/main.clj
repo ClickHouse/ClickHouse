@@ -137,7 +137,7 @@
            opts
            {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:5fecc75309f38e302c95b4a226b2de60dfbb5681")
+            :db (db "rbtorrent:156b85947eac9c85ef5d0ef15757a9f9e7c9e430")
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)

@@ -61,6 +61,7 @@ void NuKeeperServer::startup()
     params.reserved_log_items_ = coordination_settings->reserved_log_items;
     params.snapshot_distance_ = coordination_settings->snapshot_distance;
     params.stale_log_gap_ = coordination_settings->stale_log_gap;
+    params.fresh_log_gap_ = coordination_settings->fresh_log_gap;
     params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
     params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
@@ -199,6 +200,18 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
         case nuraft::cb_func::BecomeLeader:
         {
             if (commited_store) /// We become leader and store is empty, ready to serve requests
+                set_initialized();
+            return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::BecomeFollower:
+        {
+            auto leader_index = raft_instance->get_leader_committed_log_idx();
+            auto our_index = raft_instance->get_committed_log_idx();
+            /// This may happen when we start RAFT claster from scratch.
+            /// Node first became leader, and after that some other node became leader.
+            /// BecameFresh for this node will not be called because it was already fresh
+            /// when it was leader.
+            if (isLeaderAlive() && leader_index < our_index + coordination_settings->fresh_log_gap)
                 set_initialized();
             return nuraft::cb_func::ReturnCode::Ok;
         }
