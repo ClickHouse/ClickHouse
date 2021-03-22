@@ -1073,7 +1073,7 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        Int64 month = static_cast<Int64>(values.month) + delta;
+        Int64 month = values.month + static_cast<UInt64>(delta);    /// Cast is to avoid UB in signed integer overflow.
 
         if (month > 0)
         {
