@@ -96,4 +96,3 @@ LIMIT 10
 
 Работоспособность запроса ALTER для элементов вложенных структур данных, является сильно ограниченной.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/nested_data_structures/nested/) <!--hide-->

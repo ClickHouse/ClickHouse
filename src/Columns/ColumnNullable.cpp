@@ -152,6 +152,17 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnNullable::skipSerializedInArena(const char * pos) const
+{
+    UInt8 val = unalignedLoad<UInt8>(pos);
+    pos += sizeof(val);
+
+    if (val == 0)
+        return getNestedColumn().skipSerializedInArena(pos);
+
+    return pos;
+}
+
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
@@ -269,6 +280,11 @@ void ColumnNullable::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 {
     return doCompareColumn<ColumnNullable>(assert_cast<const ColumnNullable &>(rhs), rhs_row_num, row_indexes,
                                            compare_results, direction, nan_direction_hint);
+}
+
+bool ColumnNullable::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnNullable>();
 }
 
 void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const

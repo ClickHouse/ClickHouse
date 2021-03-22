@@ -247,6 +247,11 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
+const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
+{
+    return getDictionary().skipSerializedInArena(pos);
+}
+
 void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = size();
@@ -309,6 +314,13 @@ void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num
     return doCompareColumn<ColumnLowCardinality>(
             assert_cast<const ColumnLowCardinality &>(rhs), rhs_row_num, row_indexes,
             compare_results, direction, nan_direction_hint);
+}
+
+bool ColumnLowCardinality::hasEqualValues() const
+{
+    if (getDictionary().size() <= 1)
+        return true;
+    return getIndexes().hasEqualValues();
 }
 
 void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const

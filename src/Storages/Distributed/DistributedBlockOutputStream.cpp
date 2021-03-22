@@ -114,6 +114,7 @@ Block DistributedBlockOutputStream::getHeader() const
 
 void DistributedBlockOutputStream::writePrefix()
 {
+    storage.delayInsertOrThrowIfNeeded();
 }
 
 
@@ -717,6 +718,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
+    auto file_size = Poco::File(first_file_tmp_path).getSize();
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
     Poco::File(first_file_tmp_path).remove();
@@ -726,7 +728,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     for (const auto & dir_name : dir_names)
     {
         auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
-        directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
+        directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
     }
 }
 

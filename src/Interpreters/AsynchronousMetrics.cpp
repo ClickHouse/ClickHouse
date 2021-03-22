@@ -188,7 +188,7 @@ void AsynchronousMetrics::update()
 
 #if USE_EMBEDDED_COMPILER
     {
-        if (auto compiled_expression_cache = global_context.getCompiledExpressionCache())
+        if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
             new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
     }
 #endif

@@ -54,9 +54,9 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
 }
 
 
-void ASTDropAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
+void ASTDropAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const
 {
     if (row_policy_names)
-        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
+        row_policy_names->replaceEmptyDatabase(current_database);
 }
 }

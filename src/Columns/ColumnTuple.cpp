@@ -180,6 +180,14 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnTuple::skipSerializedInArena(const char * pos) const
+{
+    for (const auto & column : columns)
+        pos = column->skipSerializedInArena(pos);
+
+    return pos;
+}
+
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)
@@ -310,6 +318,11 @@ void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
+}
+
+bool ColumnTuple::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnTuple>();
 }
 
 template <bool positive>

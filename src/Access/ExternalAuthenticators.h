@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Access/LDAPParams.h>
+#include <Access/LDAPClient.h>
+#include <Access/Credentials.h>
+#include <Access/GSSAcceptor.h>
 #include <common/types.h>
 
 #include <chrono>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 
@@ -28,25 +31,31 @@ class ExternalAuthenticators
 public:
     void reset();
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
-    bool checkLDAPCredentials(const String & server, const String & user_name, const String & password,
-        const LDAPSearchParamsList * search_params = nullptr, LDAPSearchResultsList * search_results = nullptr) const;
+
+    // The name and readiness of the credentials must be verified before calling these.
+    bool checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
+        const LDAPClient::SearchParamsList * search_params = nullptr, LDAPClient::SearchResultsList * search_results = nullptr) const;
+    bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
+
+    GSSAcceptorContext::Params getKerberosParams() const;
 
 private:
     struct LDAPCacheEntry
     {
         std::size_t last_successful_params_hash = 0;
         std::chrono::steady_clock::time_point last_successful_authentication_timestamp;
-        LDAPSearchResultsList last_successful_search_results;
+        LDAPClient::SearchResultsList last_successful_search_results;
     };
 
-    using LDAPServerCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry
-    using LDAPServerCaches = std::map<String, LDAPServerCache>;         // server name -> cache
-    using LDAPServersParams = std::map<String, LDAPServerParams>;       // server name -> params
+    using LDAPCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry
+    using LDAPCaches = std::map<String, LDAPCache>;               // server name -> cache
+    using LDAPParams = std::map<String, LDAPClient::Params>;      // server name -> params
 
 private:
     mutable std::recursive_mutex mutex;
-    LDAPServersParams ldap_server_params;
-    mutable LDAPServerCaches ldap_server_caches;
+    LDAPParams ldap_client_params_blueprint;
+    mutable LDAPCaches ldap_caches;
+    std::optional<GSSAcceptorContext::Params> kerberos_params;
 };
 
 }
