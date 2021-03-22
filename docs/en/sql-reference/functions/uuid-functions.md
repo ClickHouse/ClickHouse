@@ -165,4 +165,3 @@ SELECT
 
 -   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->
