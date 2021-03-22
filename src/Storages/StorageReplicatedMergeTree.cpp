@@ -1377,21 +1377,17 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const VolumePtr volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
             MergeTreeData::MutableDataPartPtr part = createPart(part_new_name, part_info, volume, part_path);
 
-            // We don't check consistency as in that case this method will throw.
-            // The faster way is to load invalid data and just check the checksums -- they won't match.
-            part->loadColumnsChecksumsIndexes(true, false);
-
-            for (auto && [name, checksum] : part->checksums.files)
-                LOG_TRACE(log, "> File {}, file size {}, file hash ({}, {})", name, checksum.file_size,
-                    checksum.file_hash.first, checksum.file_hash.second);
-
-            LOG_TRACE(log, "Checksums files: {}, path: {}, part checksum {}",
-                    part->checksums.files.size(), part->getFullPath(), part->checksums.getTotalChecksumHex());
+            /// We don't check consistency as in that case this method may throw.
+            /// The faster way is to load invalid data and just check the checksums -- they won't match.
+            /// The issue here is that one of data part files may be corrupted (e.g. data.bin), but the
+            /// pre-calculated checksums.txt is correct, so that could lead to the invalid part being attached.
+            /// So we explicitly remove it and force recalculation.
+            disk->removeFileIfExists(part->getFullRelativePath() + "checksums.txt");
+            part->loadColumnsChecksumsIndexes(false, false);
 
             if (entry.part_checksum == part->checksums.getTotalChecksumHex())
             {
-                //part->loadColumnsChecksumsIndexes(true, true); //not sure if it's needed TODO
-                //part->modification_time = disk->getLastModified(part->getFullRelativePath()).epochTime();
+                part->modification_time = disk->getLastModified(part->getFullRelativePath()).epochTime();
                 return part;
             }
         }
@@ -1447,11 +1443,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             renameTempPartAndAdd(part, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
-            writePartLog(PartLogElement::Type::NEW_PART, {},
-                0, // well, not really, but don't have the idea how to measure the time here TODO
-                part->name, part,
-                {part}, // not sure whether the initial parts vector should be empty or contain the part itself TODO
-                nullptr);
+            writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
+                part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr);
 
             return true;
         }
@@ -1492,8 +1485,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         default:
-            throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)),
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
 
     if (do_fetch)
@@ -1851,18 +1843,16 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 
     if (storage_settings_ptr->replicated_max_parallel_fetches &&
         total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-        throw Exception("Too many total fetches from replicas, maximum: " +
-            storage_settings_ptr->replicated_max_parallel_fetches.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
+        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many total fetches from replicas, maximum: {} ",
+            storage_settings_ptr->replicated_max_parallel_fetches.toString());
 
     ++total_fetches;
     SCOPE_EXIT({--total_fetches;});
 
     if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
         && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-        throw Exception("Too many fetches from replicas for table, maximum: " +
-            storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
+        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many fetches from replicas for table, maximum: {}",
+            storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString());
 
     ++current_table_fetches;
     SCOPE_EXIT({--current_table_fetches;});

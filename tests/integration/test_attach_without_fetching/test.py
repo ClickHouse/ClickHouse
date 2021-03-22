@@ -100,10 +100,6 @@ def test_attach_without_fetching(start_cluster):
                             'cd {p} && rm -fr *.bin'.format(
                                 p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True)
 
-    print("After deleting:", node_2.exec_in_container(['bash', '-c',
-                            'cd {p} && ls'.format(
-                                p="/var/lib/clickhouse/data/default/test/detached/1_0_0_0")], privileged=True))
-
     node_1.query("ALTER TABLE test ATTACH PARTITION 1")
     check_data([node_1, node_2, node_3], detached_parts=[0])
 
