@@ -25,5 +25,5 @@ skewSamp(expr)
 **示例**
 
 ``` sql
-SELECT skewSamp(value) FROM series_with_value_column
+SELECT skewSamp(value) FROM series_with_value_column;
 ```

@@ -10,7 +10,7 @@ toc_priority: 150
 **语法**
 
 ``` sql
-initializeAggregation (aggregate_function, column_1, column_2);
+initializeAggregation (aggregate_function, column_1, column_2)
 ```
 
 **参数**

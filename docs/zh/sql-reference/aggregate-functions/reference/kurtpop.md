@@ -23,4 +23,4 @@ kurtPop(expr)
 **示例**
 
 ``` sql
-SELECT kurtPop(value) FROM series_with_value_column
+SELECT kurtPop(value) FROM series_with_value_column;

@@ -23,5 +23,5 @@ skewPop(expr)
 **示例**
 
 ``` sql
-SELECT skewPop(value) FROM series_with_value_column
+SELECT skewPop(value) FROM series_with_value_column;
 ```

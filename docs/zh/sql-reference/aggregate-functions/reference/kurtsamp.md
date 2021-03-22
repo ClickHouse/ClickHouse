@@ -24,5 +24,5 @@ kurtSamp(expr)
 **示例**
 
 ``` sql
-SELECT kurtSamp(value) FROM series_with_value_column
+SELECT kurtSamp(value) FROM series_with_value_column;
 ```
