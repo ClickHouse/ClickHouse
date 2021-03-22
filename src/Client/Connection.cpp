@@ -1,5 +1,6 @@
 #include <string>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -91,7 +92,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
 
-        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
+        if (!explicitly_resolved_address)
+            current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
+        else 
+            current_resolved_address = Poco::Net::SocketAddress(explicitly_resolved_address.value());
 
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
         socket->connect(*current_resolved_address, connection_timeout);
@@ -554,13 +558,12 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendNextTaskRequest(const std::string &)
+void Connection::sendNextTaskRequest(const std::string & id)
 {
-    // std::cout << "Connection::sendNextTaskRequest" << std::endl;
-    // std::cout << StackTrace().toString() << std::endl;
-    // writeVarUInt(Protocol::Client::NextTaskRequest, *out);
-    // writeStringBinary(id, *out);
-    // out->next();
+    std::cout << "Connection::sendNextTaskRequest" << std::endl;
+    writeVarUInt(Protocol::Client::NextTaskRequest, *out);
+    writeStringBinary(id, *out);
+    out->next();
 }
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
@@ -784,15 +787,10 @@ Packet Connection::receivePacket()
             readVarUInt(res.type, *in);
         }
 
-        std::cerr << "res.type " << res.type << ' ' <<  Protocol::Server::NextTaskReply << std::endl;
-
         switch (res.type)
         {
             case Protocol::Server::Data: [[fallthrough]];
             case Protocol::Server::Totals: [[fallthrough]];
-            case Protocol::Server::NextTaskReply:
-                res.next_task = receiveNextTask();
-                return res;
             case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;
@@ -824,6 +822,10 @@ Packet Connection::receivePacket()
                 readVectorBinary(res.part_uuids, *in);
                 return res;
 
+            case Protocol::Server::NextTaskReply:
+                res.next_task = receiveNextTask();
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -846,7 +848,7 @@ Packet Connection::receivePacket()
 }
 
 
-std::string Connection::receiveNextTask()
+String Connection::receiveNextTask() const
 {
     String next_task;
     readStringBinary(next_task, *in);
@@ -932,13 +934,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -948,7 +950,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -956,7 +958,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);

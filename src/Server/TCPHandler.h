@@ -169,7 +169,7 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
-    void receiveNextTaskRequest();
+    String receiveNextTaskRequest();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
@@ -199,6 +199,7 @@ private:
     void sendLogs();
     void sendEndOfStream();
     void sendPartUUIDs();
+    void sendNextTaskReply(String reply);
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

@@ -47,98 +47,84 @@ namespace ErrorCodes
 }
 
 
-namespace
+Block StorageS3Source::getHeader(Block sample_block, bool with_path_column, bool with_file_column)
 {
-    class StorageS3Source : public SourceWithProgress
+    if (with_path_column)
+        sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+    if (with_file_column)
+        sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+
+    return sample_block;
+}
+
+StorageS3Source::StorageS3Source(
+    bool need_path,
+    bool need_file,
+    const String & format,
+    String name_,
+    const Block & sample_block,
+    const Context & context,
+    const ColumnsDescription & columns,
+    UInt64 max_block_size,
+    const CompressionMethod compression_method,
+    const std::shared_ptr<Aws::S3::S3Client> & client,
+    const String & bucket,
+    const String & key)
+    : SourceWithProgress(getHeader(sample_block, need_path, need_file))
+    , name(std::move(name_))
+    , with_file_column(need_file)
+    , with_path_column(need_path)
+    , file_path(bucket + "/" + key)
+{
+    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
+    auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+    reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+
+    if (columns.hasDefaults())
+        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
+}
+
+String StorageS3Source::getName() const
+{
+    return name;
+}
+
+Chunk StorageS3Source::generate()
+{
+    if (!reader)
+        return {};
+
+    if (!initialized)
     {
-    public:
+        reader->readSuffix();
+        initialized = true;
+    }
 
-        static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column)
+    if (auto block = reader->read())
+    {
+        auto columns = block.getColumns();
+        UInt64 num_rows = block.rows();
+
+        if (with_path_column)
+            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+        if (with_file_column)
         {
-            if (with_path_column)
-                sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
-            if (with_file_column)
-                sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
-
-            return sample_block;
+            size_t last_slash_pos = file_path.find_last_of('/');
+            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
+                    last_slash_pos + 1))->convertToFullColumnIfConst());
         }
 
-        StorageS3Source(
-            bool need_path,
-            bool need_file,
-            const String & format,
-            String name_,
-            const Block & sample_block,
-            ContextPtr context,
-            const ColumnsDescription & columns,
-            UInt64 max_block_size,
-            const CompressionMethod compression_method,
-            const std::shared_ptr<Aws::S3::S3Client> & client,
-            const String & bucket,
-            const String & key)
-            : SourceWithProgress(getHeader(sample_block, need_path, need_file))
-            , name(std::move(name_))
-            , with_file_column(need_file)
-            , with_path_column(need_path)
-            , file_path(bucket + "/" + key)
-        {
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
-            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
-            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+        return Chunk(std::move(columns), num_rows);
+    }
 
-            if (columns.hasDefaults())
-                reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
-        }
+    reader.reset();
 
-        String getName() const override
-        {
-            return name;
-        }
+    return {};
+}
 
-        Chunk generate() override
-        {
-            if (!reader)
-                return {};
-
-            if (!initialized)
-            {
-                reader->readSuffix();
-                initialized = true;
-            }
-
-            if (auto block = reader->read())
-            {
-                auto columns = block.getColumns();
-                UInt64 num_rows = block.rows();
-
-                if (with_path_column)
-                    columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
-                if (with_file_column)
-                {
-                    size_t last_slash_pos = file_path.find_last_of('/');
-                    columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
-                            last_slash_pos + 1))->convertToFullColumnIfConst());
-                }
-
-                return Chunk(std::move(columns), num_rows);
-            }
-
-            reader.reset();
-
-            return {};
-        }
-
-    private:
-        String name;
-        std::unique_ptr<ReadBuffer> read_buf;
-        BlockInputStreamPtr reader;
-        bool initialized = false;
-        bool with_file_column = false;
-        bool with_path_column = false;
-        String file_path;
-    };
-
-    class StorageS3BlockOutputStream : public IBlockOutputStream
+namespace 
+{
+   class StorageS3BlockOutputStream : public IBlockOutputStream
     {
     public:
         StorageS3BlockOutputStream(
