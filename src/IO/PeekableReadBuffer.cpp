@@ -143,11 +143,11 @@ bool PeekableReadBuffer::nextImpl()
 
     checkStateCorrect();
     bool res;
-    bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end();
+    bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
     if (checkpoint)
     {
-        if (currentlyReadFromOwnMemory() || checkpoint_at_end)
+        if (currentlyReadFromOwnMemory())
             res = sub_buf.hasPendingData() || sub_buf.next();
         else
             res = peekNext();
