@@ -47,6 +47,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -82,6 +83,7 @@
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
+#    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
 #endif
 
@@ -480,16 +482,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
-                " to the reference checksum stored in the binary ({1})."
-                " It may indicate one of the following:"
-                " - the file {2} was changed just after startup;"
-                " - the file {2} is damaged on disk due to faulty hardware;"
-                " - the loaded executable is damaged in memory due to faulty hardware;"
-                " - the file {2} was intentionally modified;"
-                " - logical error in code."
-                , calculated_binary_hash, stored_binary_hash, executable_path);
+            /// If program is run under debugger, ptrace will fail.
+            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            {
+                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                LOG_WARNING(log, "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                    " to the reference checksum stored in the binary ({1})."
+                    " It may indicate one of the following:"
+                    " - the file {2} was changed just after startup;"
+                    " - the file {2} is damaged on disk due to faulty hardware;"
+                    " - the loaded executable is damaged in memory due to faulty hardware;"
+                    " - the file {2} was intentionally modified;"
+                    " - logical error in code."
+                    , calculated_binary_hash, stored_binary_hash, executable_path);
+            }
         }
     }
     else
@@ -704,7 +716,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config)
+        [&](ConfigurationPtr config, bool initial_loading)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
@@ -754,14 +766,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("zookeeper"))
-                global_context->reloadZooKeeperIfChanged(config);
+            if (!initial_loading)
+            {
+                /// We do not load ZooKeeper configuration on the first config loading
+                /// because TestKeeper server is not started yet.
+                if (config->has("zookeeper"))
+                    global_context->reloadZooKeeperIfChanged(config);
 
-            global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+            }
 
             global_context->updateStorageConfiguration(*config);
         },
-        /* already_loaded = */ true);
+        /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     auto & access_control = global_context->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
@@ -814,8 +831,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
-    if (compiled_expression_cache_size)
-        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
@@ -1005,17 +1021,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
-
-    if (has_zookeeper && config().has("distributed_ddl"))
-    {
-        /// DDL worker should be started after all tables were loaded
-        String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        int pool_size = config().getInt("distributed_ddl.pool_size", 1);
-        if (pool_size < 1)
-            throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
-                                                                 "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
-    }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
     if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
@@ -1275,9 +1280,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         async_metrics.start();
         global_context->enableNamedSessions();
 
-        for (auto & server : *servers)
-            server.start();
-
         {
             String level_str = config().getString("text_log.level", "");
             int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
@@ -1298,6 +1300,39 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 std::thread::hardware_concurrency());
         }
 
+        /// try to load dictionaries immediately, throw on error and die
+        ext::scope_guard dictionaries_xmls, models_xmls;
+        try
+        {
+            if (!config().getBool("dictionaries_lazy_load", true))
+            {
+                global_context->tryCreateEmbeddedDictionaries();
+                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
+            }
+            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        if (has_zookeeper && config().has("distributed_ddl"))
+        {
+            /// DDL worker should be started after all tables were loaded
+            String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+            int pool_size = config().getInt("distributed_ddl.pool_size", 1);
+            if (pool_size < 1)
+                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+        }
+
+        for (auto & server : *servers)
+            server.start();
         LOG_INFO(log, "Ready for connections.");
 
         SCOPE_EXIT({
@@ -1346,26 +1381,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 _exit(Application::EXIT_OK);
             }
         });
-
-        /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls, models_xmls;
-        try
-        {
-            if (!config().getBool("dictionaries_lazy_load", true))
-            {
-                global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-            }
-            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
-            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
-            throw;
-        }
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

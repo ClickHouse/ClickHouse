@@ -208,7 +208,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         auto storage_dst = std::dynamic_pointer_cast<StorageDistributed>(table);
 
-        if (storage_src && storage_dst && storage_src->cluster_name == storage_dst->cluster_name)
+        if (storage_src && storage_dst && storage_src->getClusterName() == storage_dst->getClusterName())
         {
             is_distributed_insert_select = true;
 
@@ -250,7 +250,7 @@ BlockIO InterpreterInsertQuery::execute()
                 }
             }
 
-            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {});
+            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {}, ExpressionActionsSettings::fromContext(context));
         }
     }
 
@@ -378,7 +378,7 @@ BlockIO InterpreterInsertQuery::execute()
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag);
+        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context));
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
