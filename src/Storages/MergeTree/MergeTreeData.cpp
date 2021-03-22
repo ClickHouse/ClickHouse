@@ -500,7 +500,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
                 else
                 {
                     /// There is more than one DateTime column in partition key and we don't know which one to choose.
-                   minmax_idx_time_column_pos = -1;
+                    minmax_idx_time_column_pos = -1;
                 }
             }
         }
