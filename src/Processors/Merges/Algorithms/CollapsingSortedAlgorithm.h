@@ -66,7 +66,7 @@ private:
 
     void reportIncorrectData();
     void insertRow(RowRef & row);
-    void insertRows();
+    std::optional<Chunk> insertRows();
 };
 
 }
