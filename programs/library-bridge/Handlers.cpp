@@ -74,8 +74,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             std::string library_settings = params.get("library_settings");
             LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, library_settings);
 
-            bool res = SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings);
-            writeStringBinary(std::to_string(res), out);
+            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings);
+            writeStringBinary("1", out);
         }
         else if (method == "libClone")
         {
@@ -87,13 +87,13 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             std::string from_dictionary_id = params.get("from_dictionary_id");
             LOG_TRACE(log, "Calling libClone from {} to {}", from_dictionary_id, dictionary_id);
-            bool res = SharedLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
-            writeStringBinary(std::to_string(res), out);
+            SharedLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
+            writeStringBinary("1", out);
         }
         else if (method == "libDelete")
         {
-            bool res = SharedLibraryHandlerFactory::instance().remove(dictionary_id);
-            writeStringBinary(std::to_string(res), out);
+            SharedLibraryHandlerFactory::instance().remove(dictionary_id);
+            writeStringBinary("1", out);
         }
         else if (method == "isModified")
         {

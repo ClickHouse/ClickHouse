@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 SharedLibraryHandlerPtr SharedLibraryHandlerFactory::get(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);
@@ -16,23 +21,14 @@ SharedLibraryHandlerPtr SharedLibraryHandlerFactory::get(const std::string & dic
 }
 
 
-bool SharedLibraryHandlerFactory::create(const std::string & dictionary_id, const std::string & library_path, const std::string & library_settings)
+void SharedLibraryHandlerFactory::create(const std::string & dictionary_id, const std::string & library_path, const std::string & library_settings)
 {
     std::lock_guard lock(mutex);
-    try
-    {
-        library_handlers[dictionary_id] = std::make_shared<SharedLibraryHandler>(library_path, library_settings);
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    return true;
+    library_handlers[dictionary_id] = std::make_shared<SharedLibraryHandler>(library_path, library_settings);
 }
 
 
-bool SharedLibraryHandlerFactory::clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id)
+void SharedLibraryHandlerFactory::clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id)
 {
     std::lock_guard lock(mutex);
     auto from_library_handler = library_handlers.find(from_dictionary_id);
@@ -42,36 +38,18 @@ bool SharedLibraryHandlerFactory::clone(const std::string & from_dictionary_id, 
     /// And if for from_dictionary there was no shared library handler, it would have received and exception in
     /// its constructor, so no libClone would be made from it.
     if (from_library_handler == library_handlers.end())
-      return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No shared library handler found");
 
-    try
-    {
-        /// libClone method will be called in copy constructor
-        library_handlers[to_dictionary_id] = std::make_shared<SharedLibraryHandler>(*from_library_handler->second);
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    return true;
+    /// libClone method will be called in copy constructor
+    library_handlers[to_dictionary_id] = std::make_shared<SharedLibraryHandler>(*from_library_handler->second);
 }
 
 
-bool SharedLibraryHandlerFactory::remove(const std::string & dictionary_id)
+void SharedLibraryHandlerFactory::remove(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);
-    try
-    {
-        /// libDelete is called in destructor.
-        library_handlers.erase(dictionary_id);
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    return true;
+    /// libDelete is called in destructor.
+    library_handlers.erase(dictionary_id);
 }
 
 
