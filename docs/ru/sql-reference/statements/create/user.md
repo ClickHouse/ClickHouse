@@ -81,5 +81,4 @@ CREATE USER user DEFAULT ROLE ALL
 CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/user) 
 <!--hide-->

@@ -126,6 +126,9 @@ public:
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
+    constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
+    constexpr static auto DETACHED_DIR_NAME = "detached";
+
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
     {
@@ -725,7 +728,7 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get partition key expression on required columns
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key);
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
     /// Get column names required for partition key
     static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
     /// Get column types required for partition key

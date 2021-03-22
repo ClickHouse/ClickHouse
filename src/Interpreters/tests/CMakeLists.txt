@@ -38,7 +38,6 @@ target_link_libraries (two_level_hash_map PRIVATE dbms)
 
 add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.cpp)
 target_link_libraries (in_join_subqueries_preprocessor PRIVATE clickhouse_aggregate_functions dbms clickhouse_parsers)
-add_check(in_join_subqueries_preprocessor)
 
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)

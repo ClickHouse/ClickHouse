@@ -46,7 +46,7 @@ void MergingSortedStep::updateLimit(size_t limit_)
     }
 }
 
-void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
+void MergingSortedStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
