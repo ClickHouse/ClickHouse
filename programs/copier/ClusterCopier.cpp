@@ -599,8 +599,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                                                                   toString(current_piece_number));
 
         Settings settings_push = task_cluster->settings_push;
-
-        Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
         UInt64 max_successful_executions_per_shard = 0;
         if (settings_push.replication_alter_partitions_sync == 1)
