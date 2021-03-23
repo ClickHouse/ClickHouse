@@ -264,7 +264,7 @@ class ClickhouseIntegrationTestsRunner:
         return list(sorted(all_tests))
 
     def _get_parallel_tests(self, repo_path):
-        parallel_tests_file_path = "{}/tests/integration/all_tests.txt".format(repo_path)
+        parallel_tests_file_path = "{}/tests/integration/parallel.txt".format(repo_path)
         if not os.path.isfile(parallel_tests_file_path) or os.path.getsize(parallel_tests_file_path) == 0:
             raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(parallel_tests_file_path))
 
@@ -475,6 +475,7 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Not found %s tests first 3 %s", len(not_found_tests), ' '.join(not_found_tests[:3]))
 
         grouped_tests = self.group_test_by_file(filtered_unparallel_tests)
+        grouped_tests["parallel"] = filtered_parallel_tests
         logging.info("Found %s tests groups", len(grouped_tests))
 
         counters = {
@@ -487,9 +488,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_times = defaultdict(float)
 
         logs = []
-        items_to_run = list()
-        items_to_run += list(("parallel", filtered_parallel_tests))
-        items_to_run += list(grouped_tests.items())
+        items_to_run = list(grouped_tests.items())
 
         logging.info("Total test groups %s", len(items_to_run))
         if self.shuffle_test_groups():
