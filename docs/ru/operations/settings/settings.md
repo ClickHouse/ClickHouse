@@ -1747,7 +1747,7 @@ ClickHouse генерирует исключение
 
 ## insert_shard_id {#insert_shard_id}
 
-Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут добавлены синхронно.
+Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
 
 Если значение настройки `insert_shard_id` указано неверно, сервер выдаст ошибку.
 
