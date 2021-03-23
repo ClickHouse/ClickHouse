@@ -32,9 +32,14 @@
 #include <Storages/StorageS3.h>
 #include <Parsers/queryToString.h>
 
+#include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+
 #include <Poco/Logger.h>
 #include <Poco/Net/TCPServerConnection.h>
 
+#include <ios>
 #include <memory>
 #include <string>
 #include <thread>
@@ -115,10 +120,19 @@ public:
 
     Chunk generate() override
     {
-        auto chunk = inner->generate();
-        if (!chunk && !createOrUpdateInnerSource())
+        if (!inner)
             return {};
-        return inner->generate();
+
+        auto chunk = inner->generate();
+        if (!chunk) 
+        {
+            if (!createOrUpdateInnerSource())
+                return {};
+            else
+                chunk = inner->generate();
+        }
+        std::cout << "generate() " << chunk.dumpStructure() << std::endl;
+        return chunk;
     }
 
 private:
@@ -131,7 +145,7 @@ private:
             initiator_connection->sendNextTaskRequest(initial_query_id);
             auto packet = initiator_connection->receivePacket();
             assert(packet.type = Protocol::Server::NextTaskReply);
-            LOG_DEBUG(&Poco::Logger::get("StorageS3SequentialSource"), "Got new task {}", packet.next_task);
+            LOG_TRACE(&Poco::Logger::get("StorageS3SequentialSource"), "Got new task {}", packet.next_task);
             return packet.next_task;
         }
         catch (...)
@@ -144,10 +158,12 @@ private:
 
     bool createOrUpdateInnerSource()
     {
-        auto next_uri = S3::URI(Poco::URI(askAboutNextKey()));
-
-        if (next_uri.uri.empty())
+        auto next_string = askAboutNextKey();
+        std::cout << "createOrUpdateInnerSource " << next_string << std::endl;
+        if (next_string.empty())
             return false;
+
+        auto next_uri = S3::URI(Poco::URI(next_string));
 
         assert(next_uri.bucket == client_auth.uri.bucket);
 
@@ -223,7 +239,7 @@ Pipe StorageS3Distributed::read(
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
@@ -232,7 +248,6 @@ Pipe StorageS3Distributed::read(
     {
         StorageS3::updateClientAndAuthSettings(context, client_auth);
 
-        Pipes pipes;
         bool need_path_column = false;
         bool need_file_column = false;
         for (const auto & column : column_names)
@@ -243,7 +258,10 @@ Pipe StorageS3Distributed::read(
                 need_file_column = true;
         }
 
-        std::cout << metadata_snapshot->getSampleBlock().dumpStructure() << std::endl;
+        std::cout << need_file_column << std::boolalpha << need_file_column << std::endl;
+        std::cout << need_path_column << std::boolalpha << need_path_column << std::endl;
+
+        std::cout << "metadata_snapshot->getSampleBlock().dumpStructure() " << metadata_snapshot->getSampleBlock().dumpStructure() << std::endl;
 
         return Pipe(std::make_shared<StorageS3SequentialSource>(
             context.getInitialQueryId(),
@@ -265,6 +283,13 @@ Pipe StorageS3Distributed::read(
     connections.reserve(cluster->getShardCount());
 
     std::cout << "StorageS3Distributed::read" << std::endl;
+    std::cout << "QueryProcessingStage " << processed_stage << std::endl;
+
+
+    Block header =
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+    const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
     for (const auto & replicas : cluster->getShardsAddresses()) {
         /// There will be only one replica, because we consider each replica as a shard
@@ -282,9 +307,12 @@ Pipe StorageS3Distributed::read(
             auto stream = std::make_shared<RemoteBlockInputStream>(
                 /*connection=*/*connections.back(),
                 /*query=*/queryToString(query_info.query),
-                /*header=*/metadata_snapshot->getSampleBlock(),
+                /*header=*/header,
                 /*context=*/context,
-                nullptr, Scalars(), Tables(), QueryProcessingStage::WithMergeableState
+                nullptr,
+                scalars,
+                Tables(),
+                QueryProcessingStage::FetchColumns
             );
             pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
         }

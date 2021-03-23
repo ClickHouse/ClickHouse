@@ -205,7 +205,7 @@ public:
             in->setAsyncCallback(std::move(async_callback));
     }
 
-public:
+private:
     String host;
     UInt16 port;
 

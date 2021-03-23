@@ -1,4 +1,3 @@
-#include <string>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Core/Defines.h>
@@ -22,7 +21,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Protocol.h"
+#include <Core/Protocol.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
@@ -560,7 +559,6 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 
 void Connection::sendNextTaskRequest(const std::string & id)
 {
-    std::cout << "Connection::sendNextTaskRequest" << std::endl;
     writeVarUInt(Protocol::Client::NextTaskRequest, *out);
     writeStringBinary(id, *out);
     out->next();

@@ -67,13 +67,9 @@ struct URI
     String key;
     String storage_name;
 
-    /// Full representation of URI
-    String full;
-
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
-    String toString() const;
 };
 
 }
