@@ -49,6 +49,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
     const auto offset = _offset.get<typename ColumnType::ValueType>();
+    assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
@@ -117,7 +118,8 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    const auto offset = _offset.get<Float32>();
+    const auto offset = _offset.get<typename ColumnType::ValueType>();
+    assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
@@ -1403,6 +1405,7 @@ struct WindowFunctionRowNumber final : public WindowFunction
     }
 };
 
+// ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public WindowFunction
 {
