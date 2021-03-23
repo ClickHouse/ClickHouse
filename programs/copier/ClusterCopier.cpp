@@ -1549,7 +1549,6 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         {
             tryLogCurrentException(log, "An error occurred during copying, partition will be marked as dirty");
             create_is_dirty_node(clean_state_clock);
-            dropHelpingTablesByPieceNumber(task_table, current_piece_number);
             return TaskStatus::Error;
         }
     }
