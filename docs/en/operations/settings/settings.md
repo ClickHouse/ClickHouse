@@ -1874,7 +1874,7 @@ Default value: `0`.
 
 ## insert_shard_id {#insert_shard_id}
 
-Enables or disables synchronous data insertion into specific shards of [Distributed](../../engines/table-engines/special/distributed.md#distributed) tables.
+If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md#distributed) table into which the data will be inserted synchronously.
 
 If `insert_shard_id` value is incorrect, the server will throw an exception.
 
