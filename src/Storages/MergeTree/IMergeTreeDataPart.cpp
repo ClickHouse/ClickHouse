@@ -359,7 +359,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         /// The case of DateTime64
         else if (hyperrectangle.left.getType() == Field::Types::Decimal64)
         {
-            assert(hyperrectangle.right.getType() == Field::Types::UInt64);
+            assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
 
             auto left = hyperrectangle.left.get<DecimalField<Decimal64>>();
             auto right = hyperrectangle.right.get<DecimalField<Decimal64>>();
