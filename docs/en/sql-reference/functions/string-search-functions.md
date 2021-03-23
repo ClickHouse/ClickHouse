@@ -93,7 +93,7 @@ Result:
 Query:
 
 ```sql
-select 3 = position('c' in 'abc');
+SELECT 3 = position('c' IN 'abc');
 ```
 
 Result:
