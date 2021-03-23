@@ -1889,7 +1889,7 @@ Possible values:
 -   0 — Disabled.
 -   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
 
-Defauld value: `0`.
+Default value: `0`.
 
 **Example**
 
