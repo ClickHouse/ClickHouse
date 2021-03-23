@@ -24,10 +24,16 @@ set (SRCS
 
 add_library(amqp-cpp ${SRCS})
 
+if (COMPILER_CLANG)
+    target_compile_options (amqp-cpp
+        PRIVATE
+            -Wno-inconsistent-missing-destructor-override
+    )
+endif ()
+
 target_compile_options (amqp-cpp
     PRIVATE
         -Wno-old-style-cast
-        -Wno-inconsistent-missing-destructor-override
         -Wno-deprecated
         -Wno-unused-parameter
         -Wno-shadow

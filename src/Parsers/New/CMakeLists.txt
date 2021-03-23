@@ -68,8 +68,13 @@ target_compile_options (clickhouse_parsers_new
 
     PUBLIC
         -Wno-extra-semi
-        -Wno-inconsistent-missing-destructor-override
 )
+if (COMPILER_CLANG)
+    target_compile_options (clickhouse_parsers_new
+        PUBLIC
+            -Wno-inconsistent-missing-destructor-override
+    )
+endif ()
 if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
     target_compile_options (clickhouse_parsers_new
         PRIVATE
