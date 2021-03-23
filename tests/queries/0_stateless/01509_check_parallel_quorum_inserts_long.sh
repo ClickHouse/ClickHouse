@@ -12,7 +12,7 @@ NUM_INSERTS=5
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
         DROP TABLE IF EXISTS r$i;
-        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01509/parallel_quorum', 'r$i') ORDER BY x;
+        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parallel_quorum', 'r$i') ORDER BY x;
     "
 done
 

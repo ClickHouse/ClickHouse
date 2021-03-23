@@ -7,6 +7,8 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
 namespace DB
 {
@@ -130,7 +132,9 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelinePtr QueryPlan::buildQueryPipeline(const QueryPlanOptimizationSettings & optimization_settings)
+QueryPipelinePtr QueryPlan::buildQueryPipeline(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     checkInitialized();
     optimize(optimization_settings);
@@ -160,7 +164,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(const QueryPlanOptimizationSettin
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
-            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines));
+            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
@@ -177,7 +181,9 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(const QueryPlanOptimizationSettin
     return last_pipeline;
 }
 
-Pipe QueryPlan::convertToPipe(const QueryPlanOptimizationSettings & optimization_settings)
+Pipe QueryPlan::convertToPipe(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     if (!isInitialized())
         return {};
@@ -185,7 +191,7 @@ Pipe QueryPlan::convertToPipe(const QueryPlanOptimizationSettings & optimization
     if (isCompleted())
         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
 
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings)));
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
 
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
