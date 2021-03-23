@@ -18,7 +18,7 @@ RUN apt-get update \
     && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
     && nslookup -debug apt.llvm.org \
     && ping -c1 apt.llvm.org \
-    && wget --retry-connrefused --tries=10 -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && wget -nv --retry-connrefused --tries=10 -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
