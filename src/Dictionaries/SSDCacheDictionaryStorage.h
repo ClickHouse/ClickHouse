@@ -336,9 +336,7 @@ inline bool operator==(const SSDCacheIndex & lhs, const SSDCacheIndex & rhs)
     return lhs.block_index == rhs.block_index && lhs.offset_in_block == rhs.offset_in_block;
 }
 
-/** SSDCacheMemoryBuffer initialized with block size and memory buffer blocks size.
-  * Allocate block_size * memory_buffer_blocks_size bytes with page alignment.
-  * Logically represents multiple memory_buffer_blocks_size blocks and current write block.
+/** Logically represents multiple memory_buffer_blocks_size SSDCacheBlocks and current write block.
   * If key cannot be written into current_write_block, current block keys size and check summ is written
   * and buffer increase index of current_write_block_index.
   * If current_write_block_index == memory_buffer_blocks_size write key will always returns true.
@@ -443,7 +441,7 @@ private:
     size_t current_block_index = 0;
 };
 
-/// TODO: Add documentation
+/// Logically represents multiple memory_buffer_blocks_size SSDCacheBlocks on file system
 template <typename SSDCacheKeyType>
 class SSDCacheFileBuffer : private boost::noncopyable
 {
@@ -796,7 +794,13 @@ private:
     size_t current_blocks_size = 0;
 };
 
-/// TODO: Add documentation
+/** ICacheDictionaryStorage implementation that keeps column data serialized in memory index and in disk partitions.
+  * Data is first writen in memory buffer.
+  * If memory buffer is full then buffer is flushed to disk partition.
+  * If memory buffer cannot be flushed to associated disk partition, then if partition
+  * can be allocated (current partition index < max_partitions_size) storage allocates new partition, if not old partitions are reused.
+  * Index maps key to partition block and offset.
+  */
 template <DictionaryKeyType dictionary_key_type>
 class SSDCacheDictionaryStorage final : public ICacheDictionaryStorage
 {

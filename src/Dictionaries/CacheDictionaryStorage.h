@@ -31,7 +31,9 @@ struct CacheDictionaryStorageConfiguration
     const DictionaryLifetime lifetime;
 };
 
-/// TODO: Add documentation
+/** ICacheDictionaryStorage implementation that keeps key in hash table with fixed collision length.
+  * Value in hash table point to index in attributes arrays.
+  */
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
 {
@@ -484,7 +486,7 @@ private:
         PaddedPODArray<KeyType> result;
         result.reserve(size);
 
-        for (auto cell : cells)
+        for (auto & cell : cells)
         {
             if (cell.deadline == 0)
                 continue;
