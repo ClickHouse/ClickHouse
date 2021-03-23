@@ -1,4 +1,4 @@
-# jepsen.nukeeper
+# Jepsen tests ClickHouse Keeper
 
 A Clojure library designed to test ZooKeeper-like implementation inside ClickHouse.
 
