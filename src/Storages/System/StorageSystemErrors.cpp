@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Common/ErrorCodes.h>
 #include <Interpreters/Context.h>
@@ -16,7 +17,7 @@ NamesAndTypesList StorageSystemErrors::getNamesAndTypes()
         { "value",                   std::make_shared<DataTypeUInt64>() },
         { "last_error_time",         std::make_shared<DataTypeDateTime>() },
         { "last_error_message",      std::make_shared<DataTypeString>() },
-        { "last_error_stacktrace",   std::make_shared<DataTypeString>() },
+        { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
         { "remote",                  std::make_shared<DataTypeUInt8>() },
     };
 }
@@ -34,7 +35,14 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &
             res_columns[col_num++]->insert(error.count);
             res_columns[col_num++]->insert(error.error_time_ms / 1000);
             res_columns[col_num++]->insert(error.message);
-            res_columns[col_num++]->insert(error.stacktrace);
+            {
+                Array trace_array;
+                trace_array.reserve(error.trace.size());
+                for (size_t i = 0; i < error.trace.size(); ++i)
+                    trace_array.emplace_back(reinterpret_cast<intptr_t>(error.trace[i]));
+
+                res_columns[col_num++]->insert(trace_array);
+            }
             res_columns[col_num++]->insert(remote);
         }
     };
