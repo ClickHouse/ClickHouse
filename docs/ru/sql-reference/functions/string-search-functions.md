@@ -95,7 +95,7 @@ SELECT 1 = position('абв' IN 'абв');
 SELECT 0 = position('абв' IN '');
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─equals(0, position('', 'абв'))─┐
