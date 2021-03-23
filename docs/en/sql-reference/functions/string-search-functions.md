@@ -88,7 +88,8 @@ Result:
 └───────────────────────────────┘
 ```
 
-**For syntax (needle IN haystack)**
+**Examples**
+To see how the function position(needle IN haystack) works, check the queries below.
 
 Query:
 
