@@ -116,7 +116,7 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
     producer = KafkaProducer(bootstrap_servers="localhost:9092")
     producer.send(topic=topic, value=data)
     producer.flush()
-    print(("Produced {} messages for topic {}".format(num_messages, topic)))
+    print("Produced {} messages for topic {}".format(num_messages, topic))
 
 
 def avro_message(value):
