@@ -162,6 +162,9 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             last_positive_pos = 0;
             current_row_sources.resize(0);
 
+            /// Here we can return ready chunk.
+            /// Next iteration, last_row == current_row, and all the counters are zeroed.
+            /// So, current_row should be correctly processed.
             if (res)
                 return Status(std::move(*res));
         }
@@ -209,6 +212,8 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 
     if (auto res = insertRows())
     {
+        /// Queue is empty, and we have inserted all the rows.
+        /// Set counter to zero so that insertRows() will return immediately next time.
         count_positive = 0;
         count_negative = 0;
         return Status(std::move(*res));
