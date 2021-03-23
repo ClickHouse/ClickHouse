@@ -49,8 +49,11 @@ public:
     {}
 
     template <typename ... Args>
-    inline auto execute(const DateTime64 & t, Args && ... args) const
+    inline auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, Args && ... args) const
     {
+        /// Type conversion from float to integer may be required.
+        /// We are Ok with implementation specific result for out of range and denormals conversion.
+
         if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
         {
             return wrapped_transform.execute(t, scale_multiplier, std::forward<Args>(args)...);
