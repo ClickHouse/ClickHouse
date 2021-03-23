@@ -113,11 +113,7 @@ public:
             const ColumnsDescription & columns_,
             const ConstraintsDescription & constraints_,
             Context & context_,
-            const String & compression_method_)
-        : IStorageURLBase(uri_, context_, table_id_, format_name_,
-            format_settings_, columns_, constraints_, compression_method_)
-    {
-    }
+            const String & compression_method_);
 
     String getName() const override
     {
