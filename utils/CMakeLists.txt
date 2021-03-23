@@ -34,7 +34,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (check-mysql-binlog)
 
     if (NOT OS_DARWIN)
-    add_subdirectory (memcpy-bench)
+        add_subdirectory (memcpy-bench)
     endif ()
 endif ()
 
