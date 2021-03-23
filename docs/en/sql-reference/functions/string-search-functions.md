@@ -27,7 +27,7 @@ position((haystack, needle[, start_pos]) | (needle IN haystack))
 Alias: `locate(haystack, needle[, start_pos])`.
 
 !!! note "Note"
-    Syntax of position(needle IN haystack) provides SQL-compatibility and works the same way as position(haystack, needle).
+    Syntax of position(needle IN haystack) provides SQL-compatibility, the function works the same way as to position(haystack, needle).
 
 **Arguments**
 
