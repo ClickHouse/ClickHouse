@@ -21,9 +21,9 @@ public:
 
     ~SharedLibraryHandler();
 
-    BlockInputStreamPtr loadAll(const std::string & attributes_string, const Block & sample_block);
+    BlockInputStreamPtr loadAll(const Block & sample_block, size_t num_attributes);
 
-    BlockInputStreamPtr loadIds(const std::string & attributes_string, const std::string & ids_string, const Block & sample_block);
+    BlockInputStreamPtr loadIds(const std::string & ids_string, const Block & sample_block, size_t num_attributes);
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const Block & sample_block);
 

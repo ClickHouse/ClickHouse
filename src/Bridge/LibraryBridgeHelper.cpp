@@ -114,32 +114,34 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadAll(const std::string attributes_string, const Block & sample_block)
+BlockInputStreamPtr LibraryBridgeHelper::loadAll(const Block & sample_block, size_t num_attributes)
 {
     startBridgeSync();
 
     auto uri = getDictionaryURI();
-
     uri.addQueryParameter("method", LOAD_ALL_METHOD);
-    uri.addQueryParameter("attributes", attributes_string);
-    uri.addQueryParameter("sample_block", sample_block.getNamesAndTypesList().toString());
+    uri.addQueryParameter("num_attributes", std::to_string(num_attributes));
 
-    return loadBase(uri, sample_block);
+    return loadBase(uri, sample_block, [sample_block](std::ostream & os)
+    {
+        os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
+    });
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string attributes_string, const std::string ids_string, const Block & sample_block)
+BlockInputStreamPtr LibraryBridgeHelper::loadIds(const Block & sample_block, const std::string ids_string, size_t num_attributes)
 {
     startBridgeSync();
 
     auto uri = getDictionaryURI();
-
     uri.addQueryParameter("method", LOAD_IDS_METHOD);
-    uri.addQueryParameter("attributes", attributes_string);
-    uri.addQueryParameter("ids", ids_string);
-    uri.addQueryParameter("sample_block", sample_block.getNamesAndTypesList().toString());
+    uri.addQueryParameter("num_attributes", std::to_string(num_attributes));
 
-    return loadBase(uri, sample_block);
+    return loadBase(uri, sample_block, [sample_block, ids_string](std::ostream & os)
+    {
+        os << "ids=" << ids_string << "&";
+        os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
+    });
 }
 
 

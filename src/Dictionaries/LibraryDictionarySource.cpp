@@ -99,14 +99,14 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    return bridge_helper->loadAll(getDictAttributesString(), description.sample_block);
+    return bridge_helper->loadAll(description.sample_block, dict_struct.attributes.size());
 }
 
 
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(getDictAttributesString(), getDictIdsString(ids), description.sample_block);
+    return bridge_helper->loadIds(description.sample_block, getDictIdsString(ids), dict_struct.attributes.size());
 }
 
 
@@ -150,20 +150,6 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
         writeString(key_name, res);
         writeChar(' ', res);
         writeString(config.getString(config_root + "." + key), res);
-    }
-
-    return res.str();
-}
-
-
-String LibraryDictionarySource::getDictAttributesString()
-{
-    WriteBufferFromOwnString res;
-    for (const auto & attr : dict_struct.attributes)
-    {
-        if (res.stringRef().size)
-            writeChar(' ', res);
-        writeString(attr.name, res);
     }
 
     return res.str();
