@@ -20,8 +20,12 @@ To calculate the delta sum across an ordered collection you can simply use the
 
 **Arguments**
 
-- `value` must be some integer or floating point type or a Date or DateTime.
-- `timestamp` must be some integer or floating point type or a Date or DateTime.
+- `value` must be some [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
+- `timestamp` must be some [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
+
+**Returned value**
+
+- Accumulated differences between consecutive values, ordered by the `timestamp` parameter.
 
 **Example**
 
