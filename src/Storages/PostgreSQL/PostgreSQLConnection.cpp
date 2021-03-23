@@ -3,36 +3,68 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
-#include <IO/WriteBufferFromString.h>
+#include "PostgreSQLConnection.h"
+#include <common/logger_useful.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::conn()
+PostgreSQLConnection::PostgreSQLConnection(
+        const String & connection_str_,
+        const String & address_)
+    : connection_str(connection_str_)
+    , address(address_)
 {
-    checkUpdateConnection();
+}
+
+
+PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::get()
+{
+    connectIfNeeded();
     return connection;
 }
 
-void PostgreSQLConnection::checkUpdateConnection()
+
+PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::tryGet()
 {
-    if (!connection || !connection->is_open())
-        connection = std::make_unique<pqxx::connection>(connection_str);
+    if (tryConnectIfNeeded())
+        return connection;
+    return nullptr;
 }
 
-std::string PostgreSQLConnection::formatConnectionString(
-    std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
+
+void PostgreSQLConnection::connectIfNeeded()
 {
-    WriteBufferFromOwnString out;
-    out << "dbname=" << quote << dbname
-        << " host=" << quote << host
-        << " port=" << port
-        << " user=" << quote << user
-        << " password=" << quote << password;
-    return out.str();
+    if (!connection || !connection->is_open())
+    {
+        LOG_DEBUG(&Poco::Logger::get("PostgreSQLConnection"), "New connection to {}", getAddress());
+        connection = std::make_shared<pqxx::connection>(connection_str);
+    }
+}
+
+
+bool PostgreSQLConnection::tryConnectIfNeeded()
+{
+    try
+    {
+        connectIfNeeded();
+    }
+    catch (const pqxx::broken_connection & pqxx_error)
+    {
+        LOG_ERROR(
+            &Poco::Logger::get("PostgreSQLConnection"),
+            "Unable to setup connection to {}, reason: {}",
+            getAddress(), pqxx_error.what());
+        return false;
+    }
+    catch (...)
+    {
+        throw;
+    }
+
+    return true;
 }
 
 }

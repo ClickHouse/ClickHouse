@@ -907,66 +907,64 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## runningConcurrency {#runningconcurrency}
 
-Given a series of beginning time and ending time of events, this function calculates concurrency of the events at each of the data point, that is, the beginning time.
+Calculates the number of concurrent events.
+Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
+The function calculates the total number of active (concurrent) events for each event start time.
+
 
 !!! warning "Warning"
-    Events spanning multiple data blocks will not be processed correctly. The function resets its state for each new data block.
-
-The result of the function depends on the order of data in the block. It assumes the beginning time is sorted in ascending order.
+    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
+    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 
 **Syntax**
 
 ``` sql
-runningConcurrency(begin, end)
+runningConcurrency(start, end)
 ```
 
 **Arguments**
 
--   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-Note that two columns `begin` and `end` must have the same type.
+-   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned values**
 
--   The concurrency of events at the data point.
+-   The number of concurrent events at each event start time.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md)
 
 **Example**
 
-Input table:
+Consider the table:
 
 ``` text
-┌───────────────begin─┬─────────────────end─┐
-│ 2020-12-01 00:00:00 │ 2020-12-01 00:59:59 │
-│ 2020-12-01 00:30:00 │ 2020-12-01 00:59:59 │
-│ 2020-12-01 00:40:00 │ 2020-12-01 01:30:30 │
-│ 2020-12-01 01:10:00 │ 2020-12-01 01:30:30 │
-│ 2020-12-01 01:50:00 │ 2020-12-01 01:59:59 │
-└─────────────────────┴─────────────────────┘
+┌──────start─┬────────end─┐
+│ 2021-03-03 │ 2021-03-11 │
+│ 2021-03-06 │ 2021-03-12 │
+│ 2021-03-07 │ 2021-03-08 │
+│ 2021-03-11 │ 2021-03-12 │
+└────────────┴────────────┘
 ```
 
 Query:
 
 ``` sql
-SELECT runningConcurrency(begin, end) FROM example
+SELECT start, runningConcurrency(start, end) FROM example_table;
 ```
 
 Result:
 
 ``` text
-┌─runningConcurrency(begin, end)─┐
-│                              1 │
-│                              2 │
-│                              3 │
-│                              2 │
-│                              1 │
-└────────────────────────────────┘
+┌──────start─┬─runningConcurrency(start, end)─┐
+│ 2021-03-03 │                              1 │
+│ 2021-03-06 │                              2 │
+│ 2021-03-07 │                              3 │
+│ 2021-03-11 │                              2 │
+└────────────┴────────────────────────────────┘
 ```
 
 ## MACNumToString(num) {#macnumtostringnum}
