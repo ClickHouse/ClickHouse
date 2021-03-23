@@ -213,13 +213,12 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         socket,
         http_params);
 
-    server.start();
-    LOG_INFO(log, "Listening http://{}", address.toString());
-
     SCOPE_EXIT({
         LOG_DEBUG(log, "Received termination signal.");
         LOG_DEBUG(log, "Waiting for current connections to close.");
+
         server.stop();
+
         for (size_t count : ext::range(1, 6))
         {
             if (server.currentConnections() == 0)
@@ -228,6 +227,9 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     });
+
+    server.start();
+    LOG_INFO(log, "Listening http://{}", address.toString());
 
     waitForTerminationRequest();
     return Application::EXIT_OK;

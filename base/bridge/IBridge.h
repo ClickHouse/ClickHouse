@@ -17,6 +17,7 @@ class IBridge : public BaseDaemon
 {
 
 public:
+    /// Define command line arguments
     void defineOptions(Poco::Util::OptionSet & options) override;
 
 protected:
