@@ -12,7 +12,8 @@
 
 (defn get-clickhouse-sky
   [version]
-  (c/exec :sky :get :-d common-prefix :-N :Backbone version))
+  (c/exec :sky :get :-d common-prefix :-N :Backbone version)
+  (str common-prefix "/clickhouse"))
 
 (defn get-clickhouse-url
   [url]
@@ -20,22 +21,47 @@
     (do (c/exec :mv download-result common-prefix)
         (str common-prefix "/" download-result))))
 
+(defn download-clickhouse
+  [source]
+  (info "Downloading clickhouse from" source)
+  (cond
+    (clojure.string/starts-with? source "rbtorrent:") (get-clickhouse-sky source)
+    (clojure.string/starts-with? source "http") (get-clickhouse-url source)
+    :else (throw (Exception. (str "Don't know how to download clickhouse from" source)))))
+
 (defn unpack-deb
   [path]
   (do
-  (c/exec :dpkg :-x path :.)
-  (c/exec :mv "usr/bin/clickhouse" common-prefix)))
+  (c/exec :dpkg :-x path common-prefix)
+  (c/exec :rm :-f path)
+  (c/exec :mv (str common-prefix "/usr/bin/clickhouse") common-prefix)
+  (c/exec :rm :-rf (str common-prefix "/usr") (str common-prefix "/etc"))))
 
 (defn unpack-tgz
   [path]
   (do
-  (c/exec :tar :-zxvf path :.)
-  (c/exec :mv "usr/bin/clickhouse" common-prefix)))
+  (c/exec :mkdir :-p (str common-prefix "/unpacked"))
+  (c/exec :tar :-zxvf path :-C (str common-prefix "/unpacked"))
+  (c/exec :rm :-f path)
+  (let [subdir (c/exec :ls (str common-prefix "/unpacked"))]
+    (c/exec :mv (str common-prefix "/unpacked/" subdir "/usr/bin/clickhouse") common-prefix)
+    (c/exec :rm :-fr (str common-prefix "/unpacked")))))
+
+(defn chmod-binary
+  [path]
+  (c/exec :chmod :+x path))
+
+(defn install-downloaded-clickhouse
+  [path]
+  (cond
+    (clojure.string/ends-with? path ".deb") (unpack-deb path)
+    (clojure.string/ends-with? path ".tgz") (unpack-tgz path)
+    (clojure.string/ends-with? path "clickhouse") (chmod-binary path)
+    :else (throw (Exception. (str "Don't know how to install clickhouse from path" path)))))
 
 (defn prepare-dirs
   []
   (do
-    (c/exec :rm :-rf common-prefix)
     (c/exec :mkdir :-p common-prefix)
     (c/exec :mkdir :-p data-dir)
     (c/exec :mkdir :-p logs-dir)
@@ -72,8 +98,10 @@
        (do
        (info "Preparing directories")
        (prepare-dirs)
-       (info "Downloading clickhouse")
-       (get-clickhouse-sky version)
+       (if (not (cu/exists? binary-path))
+           (do (info "Downloading clickhouse")
+           (install-downloaded-clickhouse (download-clickhouse version)))
+           (info "Binary already exsist on path" binary-path "skipping download"))
        (info "Installing configs")
        (install-configs test node)
        (info "Starting server")
@@ -85,7 +113,8 @@
       (info node "Tearing down clickhouse")
       (kill-clickhouse! node test)
       (c/su
-       ;(c/exec :rm :-f binary-path)
+       (c/exec :rm :-rf binary-path)
+       (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
        (c/exec :rm :-rf logs-dir)
        (c/exec :rm :-rf configs-dir)))

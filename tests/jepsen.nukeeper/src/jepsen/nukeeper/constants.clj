@@ -1,6 +1,6 @@
 (ns jepsen.nukeeper.constants)
 
-(def common-prefix "/tmp/clickhouse")
+(def common-prefix "/home/robot-clickhouse")
 
 (def binary-name "clickhouse")
 

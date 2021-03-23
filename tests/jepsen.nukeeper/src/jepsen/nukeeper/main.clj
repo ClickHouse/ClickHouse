@@ -70,7 +70,9 @@
     :default  100
     :parse-fn parse-long
     :validate [pos? "Must be a positive integer."]]
-   [nil, "--lightweight-run", "Subset of workloads/nemesises which is simple to validate"]])
+   [nil, "--lightweight-run" "Subset of workloads/nemesises which is simple to validate"]
+   ["-c" "--clickhouse-source URL" "URL for clickhouse deb or tgz package"
+    :default "https://clickhouse-builds.s3.yandex.net/21677/ef82333089156907a0979669d9374c2e18daabe5/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/clickhouse-common-static_21.4.1.6313_amd64.deb"]])
 
 (defn nukeeper-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
@@ -82,9 +84,9 @@
         current-nemesis (get custom-nemesis/custom-nemesises (:nemesis opts))]
     (merge tests/noop-test
            opts
-           {:name (str "clickhouse-keeper quorum=" quorum " "  (name (:workload opts)) " " (name (:nemesis opts)))
+           {:name (str "clickhouse-keeper-quorum=" quorum "-"  (name (:workload opts)) "-" (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db "rbtorrent:a284492c715974b69f73add62b4ff590110369af")
+            :db (db (:clickhouse-source opts))
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)
