@@ -88,17 +88,16 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadAll(const std::string & attributes_string, const Block & sample_block)
+BlockInputStreamPtr SharedLibraryHandler::loadAll(const Block & sample_block, size_t num_attributes)
 {
-    std::vector<std::string> dict_attributes;
-    splitInto<' '>(dict_attributes, attributes_string);
+    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(num_attributes);
+    ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), num_attributes};
 
-    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_attributes.size());
-    ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_attributes.size()};
-    size_t i = 0;
-
-    for (const auto & attr : dict_attributes)
-        columns.data[i++] = attr.c_str();
+    size_t start_pos = sample_block.columns() - num_attributes, col_idx = 0;
+    for (size_t attr_idx = start_pos; attr_idx < sample_block.columns(); ++attr_idx)
+    {
+        columns.data[col_idx++] = sample_block.getByPosition(attr_idx).name.c_str();
+    }
 
     auto load_all_func = library->get<ClickHouseLibrary::LibraryLoadAllFunc>(ClickHouseLibrary::LIBRARY_LOAD_ALL_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
@@ -114,7 +113,7 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll(const std::string & attributes
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes_string, const std::string & ids_string, const Block & sample_block)
+BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & ids_string, const Block & sample_block, size_t num_attributes)
 {
     std::vector<std::string> dict_string_ids;
     splitInto<' '>(dict_string_ids, ids_string);
@@ -122,12 +121,10 @@ BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & attributes
     for (const auto & id : dict_string_ids)
         dict_ids.push_back(parseFromString<UInt64>(id));
 
-    std::vector<std::string> dict_attributes;
-    splitInto<' '>(dict_attributes, attributes_string);
-
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(dict_ids.data()), dict_ids.size()};
-    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_attributes.size());
-    ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_attributes.size()};
+
+    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(num_attributes);
+    ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), num_attributes};
 
     auto load_ids_func = library->get<ClickHouseLibrary::LibraryLoadIdsFunc>(ClickHouseLibrary::LIBRARY_LOAD_IDS_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);

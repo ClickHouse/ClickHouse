@@ -12,6 +12,7 @@
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Server/HTTP/HTMLForm.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -109,11 +110,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
         else if (method == "loadAll")
         {
-            if (!params.has("attributes"))
-            {
-                processError(response, "No 'attributes' in request URL");
-                return;
-            }
+            params.read(request.getStream());
 
             if (!params.has("sample_block"))
             {
@@ -121,7 +118,13 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            std::string attributes = params.get("attributes");
+            if (!params.has("num_attributes"))
+            {
+                processError(response, "No 'num_attributes' in request URL");
+                return;
+            }
+
+            size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
             std::string columns = params.get("sample_block");
             std::shared_ptr<Block> sample_block;
 
@@ -137,16 +140,18 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
-            auto input = library_handler->loadAll(attributes, *sample_block);
+            auto input = library_handler->loadAll(*sample_block, num_attributes);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
 
             copyData(*input, *output);
         }
         else if (method == "loadIds")
         {
-            if (!params.has("attributes"))
+            params.read(request.getStream());
+
+            if (!params.has("num_attributes"))
             {
-                processError(response, "No 'attributes' in request URL");
+                processError(response, "No 'num_attributes' in request URL");
                 return;
             }
 
@@ -162,7 +167,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            std::string attributes = params.get("attributes");
+            size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
             std::string ids = params.get("ids");
             std::string columns = params.get("sample_block");
 
@@ -179,7 +184,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
-            auto input = library_handler->loadIds(attributes, ids, *sample_block);
+            auto input = library_handler->loadIds(ids, *sample_block, num_attributes);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
 
             copyData(*input, *output);
