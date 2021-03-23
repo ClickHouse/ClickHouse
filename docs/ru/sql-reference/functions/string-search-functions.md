@@ -24,7 +24,7 @@ position((haystack, needle[, start_pos]) | (needle IN haystack))
 Алиас: `locate(haystack, needle[, start_pos])`.
 
 !!! note "Примечание"
-    Синтаксис position(needle IN haystack) обеспечивает совместимость с SQL и работает так же, как position(haystack, needle).
+    Синтаксис `position(needle IN haystack)` обеспечивает совместимость с SQL, функция работает так же, как `position(haystack, needle)`.
 
 **Аргументы**
 
@@ -791,4 +791,3 @@ SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
 │                                                          3 │
 └────────────────────────────────────────────────────────────┘
 ```
-
