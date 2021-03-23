@@ -32,7 +32,7 @@ Alias: `locate(haystack, needle[, start_pos])`.
 **Arguments**
 
 -   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
 
 **Returned values**
