@@ -2798,12 +2798,16 @@ private:
                 auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
                 out_data.resize(size);
 
+                auto default_enum_value = result_type.getValues().front().second;
+
                 if (nullable_col)
                 {
                     for (const auto i : ext::range(0, size))
                     {
                         if (!nullable_col->isNullAt(i))
                             out_data[i] = result_type.getValue(col->getDataAt(i));
+                        else
+                            out_data[i] = default_enum_value;
                     }
                 }
                 else
