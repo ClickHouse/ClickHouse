@@ -68,6 +68,7 @@ namespace JoinStuff
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void JoinUsedFlags::reinit(size_t size)
     {
+        (void)size;
         if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
         {
             assert(flags.size() <= size);
