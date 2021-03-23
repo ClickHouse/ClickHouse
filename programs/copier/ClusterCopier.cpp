@@ -877,7 +877,7 @@ bool ClusterCopier::tryDropPartitionPiece(
 
 bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table)
 {
-    //first  create destionation table
+    /// Create destination table
     TaskStatus task_status = TaskStatus::Error;
 
     task_status = tryCreateDestinationTable(timeouts, task_table);
