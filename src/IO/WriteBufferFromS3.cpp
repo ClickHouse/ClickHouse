@@ -240,7 +240,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     auto outcome = client_ptr->PutObject(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}", bucket, key);
+        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}", bucket, key, req.GetContentLength());
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }

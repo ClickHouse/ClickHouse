@@ -30,7 +30,7 @@ public:
 
     String getName() const override { return "SettingQuotaAndLimits"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     std::shared_ptr<Context> context;
