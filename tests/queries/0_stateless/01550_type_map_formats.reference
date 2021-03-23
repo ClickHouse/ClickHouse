@@ -3,44 +3,56 @@ JSON
 	"meta":
 	[
 		{
-			"name": "m",
-			"type": "Map(String,UInt32)"
+			"name": "seq",
+			"type": "UInt32"
 		},
 		{
-			"name": "m1",
-			"type": "Map(String,Date)"
+			"name": "orders",
+			"type": "Map(Nullable(UInt32))"
 		},
 		{
-			"name": "m2",
-			"type": "Map(String,Array(UInt32))"
+			"name": "prices",
+			"type": "Map(Nullable(Float32))"
+		},
+		{
+			"name": "phones",
+			"type": "Map(Nullable(String))"
+		},
+		{
+			"name": "birthday",
+			"type": "Map(Nullable(Date))"
 		}
 	],
 
 	"data":
 	[
 		{
-			"m": {"k1":1,"k2":2,"k3":3},
-			"m1": {"k1":"2020-05-05"},
-			"m2": {"k1":[],"k2":[7,8]}
+			"seq": 1,
+			"orders": {"apple":1,"banana":2},
+			"prices": {"apple":8.4,"mango":5.2},
+			"phones": {"fire":"119","medical":"120"},
+			"birthday": {"Jay":"2000-01-01"}
 		},
 		{
-			"m": {"k1":10,"k3":30},
-			"m1": {"k2":"2020-06-06"},
-			"m2": {}
+			"seq": 2,
+			"orders": {"mango":5,"pear":3},
+			"prices": {"meal":15.2,"orange":3.4},
+			"phones": {"mobile":"10086"},
+			"birthday": {"George":"2001-03-23"}
 		}
 	],
 
 	"rows": 2
 }
 JSONEachRow
-{"m":{"k1":1,"k2":2,"k3":3},"m1":{"k1":"2020-05-05"},"m2":{"k1":[],"k2":[7,8]}}
-{"m":{"k1":10,"k3":30},"m1":{"k2":"2020-06-06"},"m2":{}}
+{"seq":1,"orders":{"apple":1,"banana":2},"prices":{"apple":8.4,"mango":5.2},"phones":{"fire":"119","medical":"120"},"birthday":{"Jay":"2000-01-01"}}
+{"seq":2,"orders":{"mango":5,"pear":3},"prices":{"meal":15.2,"orange":3.4},"phones":{"mobile":"10086"},"birthday":{"George":"2001-03-23"}}
 CSV
-"{'k1':1,'k2':2,'k3':3}","{'k1':'2020-05-05'}","{'k1':[],'k2':[7,8]}"
-"{'k1':10,'k3':30}","{'k2':'2020-06-06'}","{}"
+1,"{'apple':1,'banana':2}","{'apple':8.4,'mango':5.2}","{'fire':'119','medical':'120'}","{'Jay':'2000-01-01'}"
+2,"{'mango':5,'pear':3}","{'meal':15.2,'orange':3.4}","{'mobile':'10086'}","{'George':'2001-03-23'}"
 TSV
-{'k1':1,'k2':2,'k3':3}	{'k1':'2020-05-05'}	{'k1':[],'k2':[7,8]}
-{'k1':10,'k3':30}	{'k2':'2020-06-06'}	{}
+1	{'apple':1,'banana':2}	{'apple':8.4,'mango':5.2}	{'fire':'119','medical':'120'}	{'Jay':'2000-01-01'}
+2	{'mango':5,'pear':3}	{'meal':15.2,'orange':3.4}	{'mobile':'10086'}	{'George':'2001-03-23'}
 TSKV
-m={'k1':1,'k2':2,'k3':3}	m1={'k1':'2020-05-05'}	m2={'k1':[],'k2':[7,8]}
-m={'k1':10,'k3':30}	m1={'k2':'2020-06-06'}	m2={}
+seq=1	orders={'apple':1,'banana':2}	prices={'apple':8.4,'mango':5.2}	phones={'fire':'119','medical':'120'}	birthday={'Jay':'2000-01-01'}
+seq=2	orders={'mango':5,'pear':3}	prices={'meal':15.2,'orange':3.4}	phones={'mobile':'10086'}	birthday={'George':'2001-03-23'}

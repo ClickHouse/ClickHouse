@@ -18,7 +18,7 @@ mapBuild(key1, value1[, key2, value2, ...])
 **Arguments** 
 
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md).
--   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `value` — The value part of the pair. Any type that can be nested into [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 

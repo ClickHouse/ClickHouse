@@ -8,7 +8,7 @@ toc_title: Map
 `Map(value_type)` data type stores `key:value` pairs. The key type is always [String](../../sql-reference/data-types/string.md).
 
 **Parameters** 
--   `value_type` — The value type. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `value_type` — The value type. Any type that can be nested into [Nullable](../../sql-reference/data-types/nullable.md).
 
 !!! warning "Warning"
     Currently `Map` data type is an experimental feature. To work with it you must set `allow_experimental_map_type = 1`.
