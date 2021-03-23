@@ -2,6 +2,8 @@
 #include <Common/FrequencyHolder.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/UTF8Helpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 #include <algorithm>
 #include <cstring>
@@ -133,7 +135,7 @@ struct TextClassificationImpl
         }
     }
 
-    static String get_tonality(Float64 tonality_level)
+    static String get_tonality(const Float64 & tonality_level)
     {
         if (tonality_level < 0.5) { return "NEG"; }
         if (tonality_level > 1) { return "POS"; }
@@ -170,12 +172,13 @@ struct TextClassificationImpl
             Float64 count_words = 0;
 
             String ans;
-            std::stringstream ss;
-            ss << data;
-            String to_check;
 
-            while (ss >> to_check)
+            String to_check;
+            ReadBufferFromString in(data);
+
+            while (!in.eof())
             {
+                readString(to_check, in);
                 word_processing(to_check);
 
                 if (emotional_dict.find(to_check) != emotional_dict.cend())
@@ -236,12 +239,14 @@ struct TextClassificationImpl
                 Float64 freq = 0;
                 Float64 count_words = 0;
 
-                std::stringstream  ss;
-                ss << str;
-                String to_check;
 
-                while (ss >> to_check)
+                String to_check;
+                ReadBufferFromString in(str);
+
+                while (!in.eof())
                 {
+                    readString(to_check, in);
+
                     word_processing(to_check);
 
                     if (emotional_dict.find(to_check) != emotional_dict.cend())
