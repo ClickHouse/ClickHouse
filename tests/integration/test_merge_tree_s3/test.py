@@ -137,8 +137,17 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD_PER_PART_WIDE * 6 + FILES_OVERHEAD
 
     node.query("SYSTEM START MERGES s3_test")
+
     # Wait for merges and old parts deletion
-    time.sleep(3)
+    for attempt in range(0, 10):
+        parts_count = node.query("SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' FORMAT Values")
+        if parts_count == "(1)":
+            break
+
+        if attempt == 9:
+            assert parts_count == "(1)"
+
+        time.sleep(1)
 
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
@@ -333,3 +342,28 @@ def test_move_replace_partition_to_another_table(cluster):
 
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
+
+
+def test_freeze_unfreeze(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
+    minio = cluster.minio_client
+
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
+    node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup1'")
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 4096)))
+    node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup2'")
+
+    node.query("TRUNCATE TABLE s3_test")
+    assert len(
+        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+
+    # Unfreeze single partition from backup1.
+    node.query("ALTER TABLE s3_test UNFREEZE PARTITION '2020-01-03' WITH NAME 'backup1'")
+    # Unfreeze all partitions from backup2.
+    node.query("ALTER TABLE s3_test UNFREEZE WITH NAME 'backup2'")
+
+    # Data should be removed from S3.
+    assert len(
+        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
