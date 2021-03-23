@@ -15,6 +15,7 @@ MAX_RETRY = 2
 SLEEP_BETWEEN_RETRIES = 5
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
+DOCKERD_LOGS_PATH = "/ClickHouse/tests/integration/dockerd.log"
 
 TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
@@ -446,6 +447,10 @@ class ClickhouseIntegrationTestsRunner:
         self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
         logging.info("Compression finished")
 
+        result_path_dockerd_logs = os.path.join(str(self.path()), "dockerd.log")
+        if os.path.exists(result_path_dockerd_logs):
+            shutil.copy(DOCKERD_LOGS_PATH, result_path_dockerd_logs)
+
         test_result = []
         for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY"):
             if state == "PASSED":
@@ -517,6 +522,10 @@ class ClickhouseIntegrationTestsRunner:
         test_logs = os.path.join(str(self.path()), "./test_dir.tar")
         self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
         logging.info("Compression finished")
+
+        result_path_dockerd_logs = os.path.join(str(self.path()), "dockerd.log")
+        if os.path.exists(result_path_dockerd_logs):
+            shutil.copy(DOCKERD_LOGS_PATH, result_path_dockerd_logs)
 
         if counters["FAILED"] or counters["ERROR"]:
             logging.info("Overall status failure, because we have tests in FAILED or ERROR state")
