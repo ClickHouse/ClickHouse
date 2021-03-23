@@ -44,9 +44,15 @@ Columns:
 -   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
 -   `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — RAM volume in bytes used to store a query result.
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
+-   `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
--   `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
+-   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identical hash value without the values of literals for similar queries.
+-   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
+-   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
+-   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.
+-   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the columns present in the query.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
+-   `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
 -   `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
     -   1 — Query was initiated by the client.
@@ -73,69 +79,98 @@ Columns:
     -   0 — The query was launched from the TCP interface.
     -   1 — `GET` method was used.
     -   2 — `POST` method was used.
--   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` ([String](../../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
+-   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP header `UserAgent` passed in the HTTP query.
+-   `http_referer` ([String](../../sql-reference/data-types/string.md)) — HTTP header `Referer` passed in the HTTP query (contains an absolute or partial address of the page making the query).
+-   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP header `X-Forwarded-For` passed in the HTTP query.
+-   `quota_key` ([String](../../sql-reference/data-types/string.md)) — The `quota key` specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `thread_numbers` ([Array(UInt32)](../../sql-reference/data-types/array.md)) — Number of threads that are participating in query execution.
+-   `log_comment` ([String](../../sql-reference/data-types/string.md)) — Log comment. It can be set to arbitrary string no longer than [max_query_size](../../operations/settings/settings.md#settings-max_query_size). An empty string if it is not defined.
+-   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Thread ids that are participating in query execution.
 -   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events)
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
 -   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 -   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — Values of settings that are listed in the `Settings.Names` column.
+-   `used_aggregate_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `aggregate functions`, which were used during query execution.
+-   `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `aggregate functions combinators`, which were used during query execution.
+-   `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `database engines`, which were used during query execution.
+-   `used_data_type_families` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `data type families`, which were used during query execution.
+-   `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `dictionaries`, which were used during query execution.
+-   `used_formats` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `formats`, which were used during query execution.
+-   `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `functions`, which were used during query execution.
+-   `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `storages`, which were used during query execution.
+-   `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
 
 **Example**
 
 ``` sql
-SELECT * FROM system.query_log LIMIT 1 \G
+SELECT * FROM system.query_log WHERE type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%') ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
 Row 1:
 ──────
-type:                          QueryStart
-event_date:                    2020-09-11
-event_time:                    2020-09-11 10:08:17
-event_time_microseconds:       2020-09-11 10:08:17.063321
-query_start_time:              2020-09-11 10:08:17
-query_start_time_microseconds: 2020-09-11 10:08:17.063321
-query_duration_ms:             0
-read_rows:                     0
-read_bytes:                    0
-written_rows:                  0
-written_bytes:                 0
-result_rows:                   0
-result_bytes:                  0
-memory_usage:                  0
-current_database:              default
-query:                         INSERT INTO test1 VALUES
-exception_code:                0
-exception:                     
-stack_trace:                   
-is_initial_query:              1
-user:                          default
-query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
-address:                       ::ffff:127.0.0.1
-port:                          33452
-initial_user:                  default
-initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
-initial_address:               ::ffff:127.0.0.1
-initial_port:                  33452
-interface:                     1
-os_user:                       bharatnc
-client_hostname:               tower
-client_name:                   ClickHouse 
-client_revision:               54437
-client_version_major:          20
-client_version_minor:          7
-client_version_patch:          2
-http_method:                   0
-http_user_agent:               
-quota_key:                     
-revision:                      54440
-thread_ids:                    []
-ProfileEvents.Names:           []
-ProfileEvents.Values:          []
-Settings.Names:                ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage','allow_introspection_functions']
-Settings.Values:               ['0','random','1','10000000000','1']
+type:                                QueryFinish
+event_date:                          2021-03-18
+event_time:                          2021-03-18 20:54:18
+event_time_microseconds:             2021-03-18 20:54:18.676686
+query_start_time:                    2021-03-18 20:54:18
+query_start_time_microseconds:       2021-03-18 20:54:18.673934
+query_duration_ms:                   2
+read_rows:                           100
+read_bytes:                          800
+written_rows:                        0
+written_bytes:                       0
+result_rows:                         2
+result_bytes:                        4858
+memory_usage:                        0
+current_database:                    default
+query:                               SELECT uniqArray([1, 1, 2]), SUBSTRING('Hello, world', 7, 5), flatten([[[BIT_AND(123)]], [[mod(3, 2)], [CAST('1' AS INTEGER)]]]), week(toDate('2000-12-05')), CAST(arrayJoin([NULL, NULL]) AS Nullable(TEXT)), avgOrDefaultIf(number, number % 2), sumOrNull(number), toTypeName(sumOrNull(number)), countIf(toDate('2000-12-05') + number as d, toDayOfYear(d) % 2) FROM numbers(100)
+normalized_query_hash:               17858008518552525706
+query_kind:                          Select
+databases:                           ['_table_function']
+tables:                              ['_table_function.numbers']
+columns:                             ['_table_function.numbers.number']
+exception_code:                      0
+exception:
+stack_trace:
+is_initial_query:                    1
+user:                                default
+query_id:                            58f3d392-0fa0-4663-ae1d-29917a1a9c9c
+address:                             ::ffff:127.0.0.1
+port:                                37486
+initial_user:                        default
+initial_query_id:                    58f3d392-0fa0-4663-ae1d-29917a1a9c9c
+initial_address:                     ::ffff:127.0.0.1
+initial_port:                        37486
+interface:                           1
+os_user:                             sevirov
+client_hostname:                     clickhouse.ru-central1.internal
+client_name:                         ClickHouse
+client_revision:                     54447
+client_version_major:                21
+client_version_minor:                4
+client_version_patch:                1
+http_method:                         0
+http_user_agent:
+http_referer:
+forwarded_for:
+quota_key:
+revision:                            54449
+log_comment:
+thread_ids:                          [587,11939]
+ProfileEvents.Names:                 ['Query','SelectQuery','ReadCompressedBytes','CompressedReadBufferBlocks','CompressedReadBufferBytes','IOBufferAllocs','IOBufferAllocBytes','ArenaAllocChunks','ArenaAllocBytes','FunctionExecute','TableFunctionExecute','NetworkSendElapsedMicroseconds','SelectedRows','SelectedBytes','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SystemTimeMicroseconds','SoftPageFaults','OSCPUVirtualTimeMicroseconds','OSWriteBytes']
+ProfileEvents.Values:                [1,1,36,1,10,2,1048680,1,4096,36,1,110,100,800,77,1,3137,1476,1101,8,2577,8192]
+Settings.Names:                      ['load_balancing','max_memory_usage']
+Settings.Values:                     ['random','10000000000']
+used_aggregate_functions:            ['groupBitAnd','avg','sum','count','uniq']
+used_aggregate_function_combinators: ['OrDefault','If','OrNull','Array']
+used_database_engines:               []
+used_data_type_families:             ['String','Array','Int32','Nullable']
+used_dictionaries:                   []
+used_formats:                        []
+used_functions:                      ['toWeek','CAST','arrayFlatten','toTypeName','toDayOfYear','addDays','array','toDate','modulo','substring','plus']
+used_storages:                       []
+used_table_functions:                ['numbers']
 ```
 
 **See Also**
@@ -143,4 +178,3 @@ Settings.Values:               ['0','random','1','10000000000','1']
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_log) <!--hide-->
-

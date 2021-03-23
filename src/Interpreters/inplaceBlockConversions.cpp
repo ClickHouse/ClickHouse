@@ -122,7 +122,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
     if (auto dag = createExpressions(block, conversion_expr_list, true, required_columns, context))
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(dag));
+        auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
     }
 }
