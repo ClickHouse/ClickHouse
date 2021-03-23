@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 RUN apt-get update \
     && apt-get install apt-utils ca-certificates lsb-release wget gnupg apt-transport-https \
         --yes --no-install-recommends --verbose-versions \
-    && echo "nameserver 1.1.1.1" > /etc/resolv.conf \
+    && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
@@ -32,7 +32,7 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-RUN echo "nameserver 1.1.1.1" > /etc/resolv.conf \
+RUN echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
     && apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
