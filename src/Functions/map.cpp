@@ -26,15 +26,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-// map(x, y, ...) is a function that allows you to make key-value pair
-class FunctionMap : public IFunction
+// mapBuild(x, y, ...) is a function that allows you to make key-value pair
+class FunctionMapBuild : public IFunction
 {
 public:
-    static constexpr auto name = "map";
+    static constexpr auto name = "mapBuild";
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionMap>();
+        return std::make_shared<FunctionMapBuild>();
     }
 
     String getName() const override
@@ -58,7 +58,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -169,7 +169,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnMap & col_map = assert_cast<const ColumnMap &>(*arguments[0].column.get());
-        auto res = ColumnVector<UInt8>::create(input_rows_count);
+        auto res = ColumnVector<UInt8>::create(input_rows_count, 0);
         typename ColumnVector<UInt8>::Container & vec_to = res->getData();
 
         ColumnPtr col_key = arguments[1].column;
@@ -352,7 +352,7 @@ public:
 
 void registerFunctionsMap(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMap>();
+    factory.registerFunction<FunctionMapBuild>();
     factory.registerFunction<FunctionMapContains>();
     factory.registerFunction<FunctionMapKeys>();
     factory.registerFunction<FunctionMapValues>();

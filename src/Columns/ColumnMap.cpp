@@ -41,7 +41,7 @@ ColumnMap::Ptr ColumnMap::create(DataTypePtr value_type, const std::vector<Strin
 {
     Ptr res = ColumnMap::create(value_type);
     MutableColumnPtr res_mut = res->assumeMutable();
-    auto new_map = assert_cast<ColumnMap &>(*res_mut);
+    auto & new_map = assert_cast<ColumnMap &>(*res_mut);
     size_t num_keys = keys.size();
     for (size_t i = 0; i < num_keys; ++i)
     {
@@ -55,7 +55,7 @@ ColumnMap::Ptr ColumnMap::create(DataTypePtr value_type, const ColumnPtr & col_k
 {
     Ptr res = ColumnMap::create(value_type);
     MutableColumnPtr res_mut = res->assumeMutable();
-    auto new_map = assert_cast<ColumnMap &>(*res_mut);
+    auto & new_map = assert_cast<ColumnMap &>(*res_mut);
     const IColumn & conv_keys = *col_keys;
     const IColumn & conv_values = *col_values;
 
@@ -97,7 +97,7 @@ ColumnMap::Ptr ColumnMap::create(const ColumnPtr & column)
     const ColumnMap & src_map = assert_cast<const ColumnMap &>(*column);
     Ptr res = ColumnMap::create(src_map.value_type);
     MutableColumnPtr res_mut = res->assumeMutable();
-    auto new_map = assert_cast<ColumnMap &>(*res_mut);
+    auto & new_map = assert_cast<ColumnMap &>(*res_mut);
     for (const auto & elem : src_map.subColumns)
     {
         new_map.subColumns[elem.first] = elem.second;
@@ -118,7 +118,7 @@ MutableColumnPtr ColumnMap::cloneEmpty() const
 MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 {
     MutableColumnPtr res = cloneEmpty();
-    auto new_map = assert_cast<ColumnMap &>(*res);
+    auto & new_map = assert_cast<ColumnMap &>(*res);
     for (auto & elem : subColumns)
     {
         new_map.subColumns[elem.first] = elem.second->cloneResized(new_size);
@@ -252,7 +252,7 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
         res.data = pos - res.size;
         res.size += sizeof(key_size) + key_size;
 
-        auto value_ref = elem.second->serializeValueIntoArena(n, arena, begin);
+        StringRef value_ref = elem.second->serializeValueIntoArena(n, arena, begin);
         res.data = value_ref.data - res.size;
         res.size += value_ref.size;
     }
@@ -534,7 +534,7 @@ MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & sele
         }
         for (size_t i = 0; i < scattered_columns.size(); ++i)
         {
-            ColumnMap & colMap = assert_cast<ColumnMap &>(*res[i]);
+            auto & colMap = assert_cast<ColumnMap &>(*res[i]);
             colMap.subColumns[elem.first] = std::move(scattered_columns[i]);
         }
     }
