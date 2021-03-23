@@ -972,9 +972,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         const auto & factory = TableFunctionFactory::instance();
         auto table_func = factory.get(create.as_table_function, context);
-        /// We should use global context here because there will be no query context on server startup
-        /// and because storage lifetime is bigger than query context lifetime.
-        res = table_func->execute(create.as_table_function, context.getGlobalContext(), create.table, properties.columns);
+        res = table_func->execute(create.as_table_function, context, create.table, properties.columns);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
