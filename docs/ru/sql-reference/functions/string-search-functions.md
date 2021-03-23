@@ -81,7 +81,7 @@ SELECT position('Привет, мир!', '!');
 SELECT 1 = position('абв' IN 'абв');
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─equals(1, position('абв', 'абв'))─┐
