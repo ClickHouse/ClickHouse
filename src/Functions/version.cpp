@@ -50,7 +50,7 @@ public:
 void registerFunctionVersion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVersion>();
-    factory.registerFunction<FunctionVersion>("VERSION", FunctionFactory::CaseInsensitive)
+    factory.registerFunction<FunctionVersion>("VERSION", FunctionFactory::CaseInsensitive);
 }
 
 }
