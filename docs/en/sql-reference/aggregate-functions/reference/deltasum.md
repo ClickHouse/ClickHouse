@@ -4,7 +4,7 @@ toc_priority: 141
 
 # deltaSum {#agg_functions-deltasum}
 
-Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored. Function is implemented as an aggregate function.
+Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored.
 
 **Syntax**
 
