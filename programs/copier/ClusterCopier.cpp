@@ -628,7 +628,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
             {
                 LOG_INFO(
                     log,
-                    "Destination tables {} have been executed alter query successfuly  on {} shards of {}",
+                    "Destination tables {} have been executed alter query successfully on {} shards of {}",
                     getQuotedTable(task_table.table_push),
                     num_nodes,
                     task_table.cluster_push->getShardCount());
