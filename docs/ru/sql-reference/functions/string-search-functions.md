@@ -78,7 +78,7 @@ SELECT position('Привет, мир!', '!');
 Запрос:
 
 ```sql
-SELECT 1 = position('абв' in 'абв');
+SELECT 1 = position('абв' IN 'абв');
 ```
 
 Ответ:
