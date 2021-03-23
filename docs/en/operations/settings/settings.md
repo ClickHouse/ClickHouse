@@ -1876,7 +1876,7 @@ Default value: `0`.
 
 Enables or disables synchronous data insertion into specific shards of [Distributed](../../engines/table-engines/special/distributed.md#distributed) tables.
 
-If `insert_shard_id` isn't specified or the value is incorrect, the server will throw an exception.
+If `insert_shard_id` value is incorrect, the server will throw an exception.
 
 To get the number of shards on `requested_cluster`, you can check server config or use this query:
 
