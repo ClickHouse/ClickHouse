@@ -91,14 +91,14 @@
      (c/exec :echo (cluster-config test node (slurp (io/resource "test_keeper_config.xml"))) :> (str sub-configs-dir "/test_keeper_config.xml")))
 
 (defn db
-  [version]
+  [version reuse-binary]
   (reify db/DB
     (setup! [_ test node]
       (c/su
        (do
        (info "Preparing directories")
        (prepare-dirs)
-       (if (not (cu/exists? binary-path))
+       (if (or (not (cu/exists? binary-path)) (not reuse-binary))
            (do (info "Downloading clickhouse")
            (install-downloaded-clickhouse (download-clickhouse version)))
            (info "Binary already exsist on path" binary-path "skipping download"))
@@ -113,7 +113,8 @@
       (info node "Tearing down clickhouse")
       (kill-clickhouse! node test)
       (c/su
-       (c/exec :rm :-rf binary-path)
+       (if (not reuse-binary)
+           (c/exec :rm :-rf binary-path))
        (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
        (c/exec :rm :-rf logs-dir)
