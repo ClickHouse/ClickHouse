@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 
-    LOG_INFO(logger, "Last commited index: {}", last_commited_index);
+    LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
     DB::NuKeeperLogStore changelog(argv[2], 10000000, true);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
