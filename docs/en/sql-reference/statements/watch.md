@@ -80,7 +80,7 @@ WATCH lv EVENTS;
 
 ## LIMIT Clause {#limit-clause}
 
-The `LIMIT n` clause specifies the number of updates the `WATCH` query should wait for before terminating. By default there is no limit on the number of updates and therefore the query will not terminate. The value of `0` indicates that the `WATCH` query should not wait for any new query results and therefore will return immediately once query is evaluated.
+The `LIMIT n` clause specifies the number of updates the `WATCH` query should wait for before terminating. By default there is no limit on the number of updates and therefore the query will not terminate. The value of `0` indicates that the `WATCH` query should not wait for any new query results and therefore will return immediately once query result is evaluated.
 
 ```sql
 WATCH [db.]live_view LIMIT 1;
