@@ -366,7 +366,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     {
         events_count = epoll.getManyReady(1, &event, false);
         if (!events_count && async_callback)
-            async_callback(epoll.getFileDescriptor(), 0, epoll.getDescription());
+            async_callback(epoll.getFileDescriptor(), settings.receive_timeout, epoll.getDescription());
     }
     return event.data.fd;
 }
