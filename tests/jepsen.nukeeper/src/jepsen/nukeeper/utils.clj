@@ -159,7 +159,7 @@
     :server
     :--config (str configs-dir "/config.xml")
     :--
-    :--path data-dir
+    :--path (str data-dir "/")
     :--user_files_path (str data-dir "/user_files")
     :--top_level_domains_path (str data-dir "/top_level_domains")
     :--logger.log (str logs-dir "/clickhouse-server.log")

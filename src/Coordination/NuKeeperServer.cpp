@@ -199,7 +199,8 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
     {
         case nuraft::cb_func::BecomeLeader:
         {
-            if (commited_store) /// We become leader and store is empty, ready to serve requests
+            /// We become leader and store is empty or we already committed it
+            if (commited_store || initial_batch_committed)
                 set_initialized();
             return nuraft::cb_func::ReturnCode::Ok;
         }
@@ -224,6 +225,7 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
         {
             if (isLeader()) /// We have committed our log store and we are leader, ready to serve requests.
                 set_initialized();
+            initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
         default: /// ignore other events
