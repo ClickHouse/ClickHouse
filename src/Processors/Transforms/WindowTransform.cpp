@@ -117,9 +117,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    // The underlying field type is Float64 for Float32 as well. get<Float32>()
-    // would be a reinterpret_cast and yield an incorrect result.
-    const auto offset = _offset.get<Float64>();
+    const auto offset = _offset.get<Float32>();
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
