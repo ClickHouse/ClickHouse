@@ -6,20 +6,12 @@ toc_priority: 141
 
 Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored.
 
-**Syntax**
-
-<<<<<<< HEAD
 Note that the underlying data must be sorted in order for this function to work properly.
 If you would like to use this function in a materialized view, you most likely want to use the
-[deltaSumTimestamp](deltasumtimestamp.md) method instead. 
+[deltaSumTimestamp](deltasumtimestamp.md) method instead.
 
-Example:
+**Syntax**
 
-```sql
-select deltaSum(arrayJoin([1, 2, 3]));                  -- => 2
-select deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));   -- => 7
-select deltaSum(arrayJoin([2.25, 3, 4.5]));             -- => 2.25
-=======
 ``` sql
 deltaSum(value)
 ```
@@ -46,7 +38,6 @@ Result:
 ┌─deltaSum(arrayJoin([1, 2, 3]))─┐
 │                              2 │
 └────────────────────────────────┘
->>>>>>> origin
 ```
 
 Query:
