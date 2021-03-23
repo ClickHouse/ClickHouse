@@ -92,7 +92,7 @@ SELECT 1 = position('абв' IN 'абв');
 Запрос: 
 
 ```sql
-select 0 = position('абв' in '');
+SELECT 0 = position('абв' IN '');
 ```
 
 Ответ:
