@@ -560,7 +560,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-#define M(VALUE, NAME) extern const Value NAME = VALUE;
+#define M(VALUE, NAME) extern const ErrorCode NAME = VALUE;
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
