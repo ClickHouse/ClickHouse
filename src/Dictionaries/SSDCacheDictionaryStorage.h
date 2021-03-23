@@ -795,7 +795,7 @@ private:
 };
 
 /** ICacheDictionaryStorage implementation that keeps column data serialized in memory index and in disk partitions.
-  * Data is first writen in memory buffer.
+  * Data is first written in memory buffer.
   * If memory buffer is full then buffer is flushed to disk partition.
   * If memory buffer cannot be flushed to associated disk partition, then if partition
   * can be allocated (current partition index < max_partitions_size) storage allocates new partition, if not old partitions are reused.
