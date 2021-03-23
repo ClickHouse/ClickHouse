@@ -1288,7 +1288,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ### Data Types Matching {#data_types-matching-3}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md).
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
 | ORC data type (`INSERT`) | ClickHouse data type                                | ORC data type (`SELECT`) |
 |--------------------------|-----------------------------------------------------|--------------------------|
@@ -1314,13 +1314,15 @@ Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM
 
 The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
-### Inserting and Selecting Data {#inserting-and-selecting-data-1}
+### Inserting Data {#inserting-data-2}
 
 You can insert ORC data from a file into ClickHouse table by the following command:
 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
+
+### Selecting Data {#selecting-data-2}
 
 You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
 
