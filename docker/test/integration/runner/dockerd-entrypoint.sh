@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=10.0.0.0/8,size=24 &>/var/log/somefile &
+dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=10.10.0.0/16,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 
 set +e
 reties=0
