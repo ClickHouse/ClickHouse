@@ -15,28 +15,13 @@
 
 namespace DB
 {
-/*
-struct TextClassificationDictionaries
-{
-    const std::unordered_map<std::string, std::vector<double>> emotional_dict;
-    const std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_frequency;
-    const std::string path;
-    TextClassificationDictionaries()
-        : emotional_dict(FrequencyHolder::getInstance().getEmotionalDict()),
-          encodings_frequency(FrequencyHolder::getInstance().getEncodingsFrequency()),
-          path(FrequencyHolder::getInstance().get_path())
-    {
-    }
-};
-*/
-// static std::unordered_map<std::string, std::vector<double>> emotional_dict = classification_dictionaries.getEncodingsFrequency();
-// static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = classification_dictionaries.getEmotionalDict();
 
-template <size_t N, bool Emo>
+
+template <size_t N, bool Tonality>
 struct TextClassificationImpl
 {
 
-    using ResultType = std::string;
+    using ResultType = String;
     using CodePoint = UInt8;
     /// map_size for ngram count.
     static constexpr size_t map_size = 1u << 16;
@@ -57,9 +42,9 @@ struct TextClassificationImpl
     using NgramCount = UInt16;
 
 
-    static double L2_distance(std::unordered_map<UInt16, double> standart, std::unordered_map<UInt16, double> model)
+    static ALWAYS_INLINE inline Float64 L2_distance(std::unordered_map<UInt16, Float64> standart, std::unordered_map<UInt16, Float64> model)
     {
-        double res = 0;
+        Float64 res = 0;
         for (auto& el : standart) {
             if (model.find(el.first) != model.end()) {
                 res += ((model[el.first] - el.second) * (model[el.first] - el.second));
@@ -69,27 +54,19 @@ struct TextClassificationImpl
     }
 
 
-    static double Naive_bayes(std::unordered_map<UInt16, double> standart, std::unordered_map<UInt16, double> model)
+    static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64> standart, std::unordered_map<UInt16, Float64> model)
     {
-        double res = 0;
+        Float64 res = 0;
         for (auto & el : model) {
             if (standart[el.first] != 0) {
                 res += el.second * log(standart[el.first]);
             } else {
-                res += el.second * log(0.00001);
+                res += el.second * log(0.0000001);
             }
         }
         return res;
     }
 
-    static double Simple(std::unordered_map<UInt16, double> standart, std::unordered_map<UInt16, double> model)
-    {
-        double res = 0;
-        for (auto & el : model) {
-            res += el.second * standart[el.first];
-        }
-        return res;
-    }
 
 
     static ALWAYS_INLINE size_t readCodePoints(CodePoint * code_points, const char *& pos, const char * end)
@@ -141,7 +118,7 @@ struct TextClassificationImpl
     }
     
     
-    static void word_processing(std::string & word)
+    static ALWAYS_INLINE inline void word_processing(String & word)
     {
         std::set<char> to_skip {',', '.', '!', '?', ')', '(', '\"', '\'', '[', ']', '{', '}', ':', ';'};
 
@@ -156,40 +133,46 @@ struct TextClassificationImpl
         }
     }
 
-    
-    static void constant(std::string data, std::string & res)
+    static String get_tonality(Float64 tonality_level)
     {
-        static std::unordered_map<std::string, double> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
-        static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
+        if (tonality_level < 0.5) { return "NEG"; }
+        if (tonality_level > 1) { return "POS"; }
+        return "NEUT";
+    } 
+    
+    static void constant(String data, String & res)
+    {
+        static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
+        static std::unordered_map<String, std::unordered_map<UInt16, Float64>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
-        if (!Emo)
+        if (!Tonality)
         {
             
             std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
             std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
             size_t len = calculateStats(data.data(), data.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
-            std::string ans;
-            // double count_bigram = data.size() - 1;
-            std::unordered_map<UInt16, double> model;
+            String ans;
+            // Float64 count_bigram = data.size() - 1;
+            std::unordered_map<UInt16, Float64> model;
             for (size_t i = 0; i < len; ++i) {
-                ans += std::to_string(ngram_storage.get()[i]) + " " + std::to_string(static_cast<double>(common_stats.get()[ngram_storage.get()[i]])) + "\n";
-                model[ngram_storage.get()[i]] = static_cast<double>(common_stats.get()[ngram_storage.get()[i]]);
+                ans += std::to_string(ngram_storage.get()[i]) + " " + std::to_string(static_cast<Float64>(common_stats.get()[ngram_storage.get()[i]])) + "\n";
+                model[ngram_storage.get()[i]] = static_cast<Float64>(common_stats.get()[ngram_storage.get()[i]]);
             }
 
             for (const auto& item : encodings_freq) {
-                ans += item.first + " " + std::to_string(Simple(item.second, model)) + "\n";
+                ans += item.first + " " + std::to_string(Naive_bayes(item.second, model)) + "\n";
             }
             res = ans;
         }
         else 
         {
-            double freq = 0;
-            double count_words = 0;
+            Float64 freq = 0;
+            Float64 count_words = 0;
 
-            std::string ans;
+            String ans;
             std::stringstream ss;
             ss << data;
-            std::string to_check;
+            String to_check;
 
             while (ss >> to_check)
             {
@@ -202,20 +185,8 @@ struct TextClassificationImpl
                     freq += emotional_dict[to_check];
                 }                
             }
-            double total_tonality = freq / count_words;
-            if (total_tonality < 0.5)
-            {
-                ans += "NEG";
-            }
-            else if (total_tonality > 1)
-            {
-                ans += "POS";
-            }
-            else
-            {
-                ans += "NEUT";
-            }
-            ans += " " + std::to_string(total_tonality) + "\n";
+            Float64 total_tonality = freq / count_words;
+            ans += get_tonality(total_tonality) + std::to_string(total_tonality) + std::to_string(emotional_dict.size()) + "\n";
             res = ans;
         }
     }
@@ -226,13 +197,9 @@ struct TextClassificationImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
+        static std::unordered_map<String, std::unordered_map<UInt16, Float64>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
+        static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
 
-        /*
-        static TextClassificationDictionaries classification_dictionaries;
-        static std::unordered_map<std::string, std::vector<double>> emotional_dict = classification_dictionaries.emotional_dict;
-        static std::unordered_map<std::string, std::unordered_map<UInt16, double>> encodings_freq = classification_dictionaries.encodings_frequency;
-        */
         res_data.reserve(1024);
         res_offsets.resize(offsets.size());
 
@@ -242,26 +209,53 @@ struct TextClassificationImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
-            std::string str = haystack;
-            std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
-            std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
+            String str = haystack;
 
-            size_t len = calculateStats(str.data(), str.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
-            std::string prom;
-            // double count_bigram = data.size() - 1;
-            std::unordered_map<UInt16, double> model;
-
-            for (size_t j = 0; j < len; ++j)
+            String prom;
+            if (!Tonality)
             {
-                model[ngram_storage.get()[j]] = static_cast<double>(common_stats.get()[ngram_storage.get()[j]]);
-            }
+                std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
+                std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
 
-            for (const auto& item : encodings_freq) {
-                prom += item.first + " " + std::to_string(Simple(item.second, model)) + "\n";
-            }
+                size_t len = calculateStats(str.data(), str.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
+                // Float64 count_bigram = data.size() - 1;
+                std::unordered_map<UInt16, Float64> model;
+
+                for (size_t j = 0; j < len; ++j)
+                {
+                    model[ngram_storage.get()[j]] = static_cast<Float64>(common_stats.get()[ngram_storage.get()[j]]);
+                }
+
+                for (const auto& item : encodings_freq) {
+                    prom += item.first + " " + std::to_string(Naive_bayes(item.second, model)) + "\n";
+                }
             
-            const auto ans = prom.c_str();
+            }
+            else 
+            {
+                Float64 freq = 0;
+                Float64 count_words = 0;
 
+                std::stringstream  ss;
+                ss << str;
+                String to_check;
+
+                while (ss >> to_check)
+                {
+                    word_processing(to_check);
+
+                    if (emotional_dict.find(to_check) != emotional_dict.cend())
+                    {
+                        count_words += 1;
+                        prom += to_check + " " + std::to_string(emotional_dict[to_check]) + "\n";
+                        freq += emotional_dict[to_check];
+                    }                
+                }
+                Float64 total_tonality = freq / count_words;
+                prom += get_tonality(total_tonality) + std::to_string(total_tonality) + "\n";
+            }
+
+            const auto ans = prom.c_str();
             size_t cur_offset = offsets[i];
 
             res_data.resize(res_offset + strlen(ans) + 1);
@@ -280,22 +274,23 @@ struct TextClassificationImpl
 };
 
 
-struct NameBiGramcount
+struct NameCharsetDetect
 {
-    static constexpr auto name = "biGramcount";
+    static constexpr auto name = "charsetDetect";
 };
-struct NameGetEmo
+struct NameGetTonality
 {
-    static constexpr auto name = "getEmo";
+    static constexpr auto name = "getTonality";
 };
 
 
-using FunctionBiGramcount = FunctionsTextClassification<TextClassificationImpl<2, false>, NameBiGramcount>;
-using FunctionGetEmo = FunctionsTextClassification<TextClassificationImpl<2, true>, NameGetEmo>;
+using FunctionCharsetDetect = FunctionsTextClassification<TextClassificationImpl<2, false>, NameCharsetDetect>;
+using FunctionGetTonality = FunctionsTextClassification<TextClassificationImpl<2, true>, NameGetTonality>;
+
 void registerFunctionsTextClassification(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBiGramcount>();
-    factory.registerFunction<FunctionGetEmo>();
+    factory.registerFunction<FunctionCharsetDetect>();
+    factory.registerFunction<FunctionGetTonality>();
 }
 
 }
