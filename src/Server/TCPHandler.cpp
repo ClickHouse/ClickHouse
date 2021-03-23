@@ -760,7 +760,7 @@ void TCPHandler::sendPartUUIDs()
 
 void TCPHandler::sendNextTaskReply(String reply)
 {
-    LOG_DEBUG(log, "Nexttask for id is {} ", reply);
+    LOG_TRACE(log, "Nexttask for id is {} ", reply);
     writeVarUInt(Protocol::Server::NextTaskReply, *out);
     writeStringBinary(reply, *out);
     out->next();
@@ -975,13 +975,10 @@ bool TCPHandler::receivePacket()
     readVarUInt(packet_type, *in);
 
 
-    std::cout << "TCPHander receivePacket" << packet_type << ' ' << Protocol::Client::NextTaskRequest << std::endl;
-
     switch (packet_type)
     {
         case Protocol::Client::NextTaskRequest:
         {
-            std::cout << "Protocol::Client::NextTaskRequest" << std::endl;
             auto id = receiveNextTaskRequest();
             auto next = TaskSupervisor::instance().getNextTaskForId(id);
             sendNextTaskReply(next);

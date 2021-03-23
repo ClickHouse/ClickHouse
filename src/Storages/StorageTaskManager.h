@@ -38,7 +38,6 @@ public:
 
 using NextTaskResolverBasePtr = std::unique_ptr<NextTaskResolverBase>;
 
-
 class S3NextTaskResolver : public NextTaskResolverBase
 {
 public:
@@ -73,19 +72,13 @@ private:
     TasksIterator current;
 };
 
-
-
 class TaskSupervisor
 {
 public:
     using QueryId = std::string;
 
-    TaskSupervisor()
-    {
-        auto nexttask = std::make_unique<S3NextTaskResolver>("12345", std::vector<Task>{"anime1", "anime2", "anime3"});
-        registerNextTaskResolver(std::move(nexttask));
-    }
-    
+    TaskSupervisor() = default;
+
     static TaskSupervisor & instance()
     {
         static TaskSupervisor task_manager;
@@ -105,12 +98,16 @@ public:
 
     Task getNextTaskForId(const QueryId & id)
     {
-        std::shared_lock lock(rwlock);
+        std::lock_guard lock(rwlock);
         auto it = dict.find(id);
         if (it == dict.end())
-            throw Exception(fmt::format("NextTaskResolver is not registered for query {}", id), ErrorCodes::LOGICAL_ERROR);
-        return it->second->next(); 
+            return "";
+        auto answer = it->second->next();
+        if (answer.empty())
+            dict.erase(it); 
+        return answer;
     }
+
 private:
     using ResolverDict = std::unordered_map<QueryId, NextTaskResolverBasePtr>;
     ResolverDict dict;

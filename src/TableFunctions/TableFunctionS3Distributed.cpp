@@ -1,6 +1,8 @@
 #include <thread>
 #include <Common/config.h>
 #include "DataStreams/RemoteBlockInputStream.h"
+#include "Parsers/ASTFunction.h"
+#include "Parsers/IAST_fwd.h"
 #include "Processors/Sources/SourceFromInputStream.h"
 #include "Storages/StorageS3Distributed.h"
 #include "Storages/System/StorageSystemOne.h"
@@ -73,7 +75,7 @@ ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(const Con
 }
 
 StoragePtr TableFunctionS3Distributed::executeImpl(
-    const ASTPtr & /*ast_function*/, const Context & context,
+    const ASTPtr & ast_function, const Context & context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     Poco::URI uri (filename);
@@ -89,11 +91,18 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
     Strings tasks;
     tasks.reserve(lists.size());
 
-    for (auto & value : lists) {
+    for (auto & value : lists)
+    {
         tasks.emplace_back(client_auth.uri.endpoint + '/' + client_auth.uri.bucket + '/' + value);
+        std::cout << tasks.back() << std::endl;
     }
 
     std::cout << "query_id " << context.getCurrentQueryId() << std::endl;
+
+    std::cout << ast_function->dumpTree() << std::endl;
+    auto * func = ast_function->as<ASTFunction>();
+
+    std::cout << func->arguments->dumpTree() << std::endl;
 
     /// Register resolver, which will give other nodes a task to execute
     TaskSupervisor::instance().registerNextTaskResolver(
@@ -109,12 +118,10 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
             max_connections,
             getActualTableStructure(context),
             ConstraintsDescription{},
-            const_cast<Context &>(context),
+            context,
             compression_method);
 
     storage->startup();
-
-    // std::this_thread::sleep_for(std::chrono::seconds(60));
 
     return storage;
 }

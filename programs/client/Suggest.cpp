@@ -3,7 +3,6 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
-#include "Core/Protocol.h"
 
 namespace DB
 {
@@ -33,8 +32,6 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
-
-                std::cerr << "Connection created" << std::endl;
 
                 loadImpl(connection, connection_parameters.timeouts, suggestion_limit);
             }
@@ -159,7 +156,6 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
         Packet packet = connection.receivePacket();
         switch (packet.type)
         {
-            case Protocol::Server::NextTaskReply: [[fallthrough]];
             case Protocol::Server::Data:
                 fillWordsFromBlock(packet.block);
                 continue;

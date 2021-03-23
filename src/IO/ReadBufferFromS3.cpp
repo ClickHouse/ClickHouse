@@ -43,9 +43,6 @@ bool ReadBufferFromS3::nextImpl()
         initialized = true;
     }
 
-    if (hasPendingData())
-        return true;
-
     Stopwatch watch;
     auto res = impl->next();
     watch.stop();
