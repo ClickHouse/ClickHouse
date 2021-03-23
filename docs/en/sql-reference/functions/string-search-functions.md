@@ -12,7 +12,7 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Searchs the substring `needle` in the string `haystack`.
+Searches for the substring `needle` in the string `haystack`.
 
 Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
@@ -807,4 +807,3 @@ Result:
 │                             2 │
 └───────────────────────────────┘
 ```
-
