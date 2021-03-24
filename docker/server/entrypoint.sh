@@ -50,7 +50,7 @@ LOG_DIR=""
 if [ -n "$LOG_PATH" ]; then LOG_DIR="$(dirname "$LOG_PATH")"; fi
 ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.errorlog || true)"
 ERROR_LOG_DIR=""
-if [ -n "$ERROR_LOG_PATH" ]; then LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
+if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
