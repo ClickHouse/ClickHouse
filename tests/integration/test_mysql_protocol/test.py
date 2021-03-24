@@ -20,7 +20,7 @@ node = cluster.add_instance('node', main_configs=["configs/log_conf.xml", "confi
                                                   "configs/dhparam.pem", "configs/server.crt", "configs/server.key"],
                             user_configs=["configs/users.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
-server_port = cluster.mysql_port
+server_port = 9001
 
 @pytest.fixture(scope="module")
 def server_address():
@@ -70,7 +70,7 @@ def golang_container():
 def php_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_php_client.yml')
     run_and_check(
-        ['docker-compose', '--env-file', cluster.instances["mysql57"].env_file, '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+        ['docker-compose', '--env-file', cluster.instances["node"].env_file, '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=180).containers.get(cluster.project_name + '_php1_1')
 
 
@@ -78,7 +78,7 @@ def php_container():
 def nodejs_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_js_client.yml')
     run_and_check(
-        ['docker-compose', '--env-file', cluster.instances["mysql57"].env_file, '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+        ['docker-compose', '--env-file', cluster.instances["node"].env_file, '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=180).containers.get(cluster.project_name + '_mysqljs1_1')
 
 
@@ -86,7 +86,7 @@ def nodejs_container():
 def java_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_java_client.yml')
     run_and_check(
-        ['docker-compose', '--env-file', cluster.instances["mysql57"].env_file, '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+        ['docker-compose', '--env-file', cluster.instances["node"].env_file, '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=180).containers.get(cluster.project_name + '_java1_1')
 
 

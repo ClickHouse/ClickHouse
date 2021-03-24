@@ -24,7 +24,7 @@ def started_cluster():
     try:
         cluster.start()
 
-        conn = get_mysql_conn()
+        conn = get_mysql_conn(cluster)
         ## create mysql db and table
         create_mysql_db(conn, 'clickhouse')
         yield cluster
@@ -35,7 +35,7 @@ def started_cluster():
 
 def test_many_connections(started_cluster):
     table_name = 'test_many_connections'
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -54,7 +54,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_insert_select(started_cluster):
     table_name = 'test_insert_select'
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -70,7 +70,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_replace_select(started_cluster):
     table_name = 'test_replace_select'
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -89,7 +89,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_insert_on_duplicate_select(started_cluster):
     table_name = 'test_insert_on_duplicate_select'
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -108,7 +108,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_where(started_cluster):
     table_name = 'test_where'
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, table_name)
     node1.query('''
 CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
@@ -128,7 +128,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 
 def test_table_function(started_cluster):
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, 'table_function')
     table_function = "mysql('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('table_function')
     assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '0'
@@ -149,7 +149,7 @@ def test_table_function(started_cluster):
     conn.close()
 
 def test_binary_type(started_cluster):
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     with conn.cursor() as cursor:
         cursor.execute("CREATE TABLE clickhouse.binary_type (id INT PRIMARY KEY, data BINARY(16) NOT NULL)")
     table_function = "mysql('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('binary_type')
@@ -158,7 +158,7 @@ def test_binary_type(started_cluster):
 
 def test_enum_type(started_cluster):
     table_name = 'test_enum_type'
-    conn = get_mysql_conn()
+    conn = get_mysql_conn(started_cluster)
     create_mysql_table(conn, table_name)
     node1.query('''
 CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('IP' = 1, 'URL' = 2)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse', 1);
@@ -168,8 +168,8 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
     conn.close()
 
 
-def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host=cluster.mysql_host, port=cluster.mysql_port)
+def get_mysql_conn(started_cluster):
+    conn = pymysql.connect(user='root', password='clickhouse', host=started_cluster.mysql_ip, port=started_cluster.mysql_port)
     return conn
 
 
