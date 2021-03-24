@@ -350,7 +350,7 @@ void RangeHashedDictionary::calculateBytesAllocated()
 template <typename T>
 void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = T(null_value.get<T>());
     attribute.maps = std::make_unique<Collection<T>>();
 }
 
@@ -458,7 +458,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         }
         else
         {
-            value_to_insert = Value<ValueType>{ range, { value.get<NearestFieldType<ValueType>>() }};
+            value_to_insert = Value<ValueType>{ range, { value.get<ValueType>() }};
         }
     }
 
