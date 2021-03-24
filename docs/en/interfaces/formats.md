@@ -1308,7 +1308,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
 
-ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` or `SELECT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
+ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
 Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
