@@ -94,6 +94,8 @@ def create_table(node, table_name, additional_settings=None):
 def purge_s3(cluster, bucket):
     minio = cluster.minio_client
     for obj in list(minio.list_objects(bucket, recursive=True)):
+        if str(obj.object_name).find(".SCHEMA_VERSION") != -1:
+            continue
         minio.remove_object(bucket, obj.object_name)
 
 
