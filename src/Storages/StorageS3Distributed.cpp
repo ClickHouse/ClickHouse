@@ -1,5 +1,9 @@
 #include "Storages/StorageS3Distributed.h"
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "Common/Exception.h"
 #include <Common/Throttler.h>
 #include "Client/Connection.h"
@@ -368,3 +372,4 @@ Pipe StorageS3Distributed::read(
 }
 }
 
+#endif
