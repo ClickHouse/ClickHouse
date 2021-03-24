@@ -22,7 +22,7 @@ public:
         const std::string & library_path,
         const std::vector<std::string> & library_settings,
         const Block & sample_block,
-        size_t num_attributes);
+        const std::vector<std::string> & attributes_names);
 
     void clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
 

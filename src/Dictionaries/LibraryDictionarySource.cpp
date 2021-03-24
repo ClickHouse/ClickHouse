@@ -55,7 +55,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
     description.init(sample_block);
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
-    auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"), dict_struct.attributes.size());
+    auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"), getDictAttributesString());
 
     if (!res)
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
@@ -157,6 +157,17 @@ String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids
 {
     WriteBufferFromOwnString out;
     writeVectorBinary(ids, out);
+    return out.str();
+}
+
+
+String LibraryDictionarySource::getDictAttributesString()
+{
+    std::vector<String> attributes_names(dict_struct.attributes.size());
+    for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
+        attributes_names[i] = dict_struct.attributes[i].name;
+    WriteBufferFromOwnString out;
+    writeVectorBinary(attributes_names, out);
     return out.str();
 }
 

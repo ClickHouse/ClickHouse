@@ -69,9 +69,9 @@ public:
     std::string toString() const override;
 
 private:
-    String getDictAttributesString();
-
     static String getDictIdsString(const std::vector<UInt64> & ids);
+
+    String getDictAttributesString();
 
     static String getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root);
 

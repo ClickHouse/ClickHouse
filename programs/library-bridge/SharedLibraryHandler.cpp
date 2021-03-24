@@ -19,9 +19,10 @@ SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_path_,
     const std::vector<std::string> & library_settings,
     const Block & sample_block_,
-    size_t num_attributes)
+    const std::vector<std::string> & attributes_names_)
     : library_path(library_path_)
     , sample_block(sample_block_)
+    , attributes_names(attributes_names_)
 {
     library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY);
     settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(library_settings));
@@ -32,11 +33,6 @@ SharedLibraryHandler::SharedLibraryHandler(
         lib_data = lib_new(&settings_holder->strings, ClickHouseLibrary::log);
     else
         throw Exception("Method libNew failed", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
-
-    attributes_names.resize(num_attributes);
-    size_t start_pos = sample_block.columns() - num_attributes, col_idx = 0;
-    for (size_t attr_idx = start_pos; attr_idx < sample_block.columns(); ++attr_idx)
-        attributes_names[col_idx++] = sample_block.getByPosition(attr_idx).name.c_str();
 }
 
 
