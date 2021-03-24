@@ -151,7 +151,7 @@ SELECT * FROM [db.]live_view WHERE ...
 
 Чтобы принудительно обновить живое представление, используйте выражение `ALTER LIVE VIEW [db.]table_name REFRESH`.
 
-### WITH TIMEOUT {#live-view-with-timeout}
+### Секция WITH TIMEOUT {#live-view-with-timeout}
 
 Живое представление, созданное с параметром `WITH TIMEOUT`, будет автоматически удалено через определенное количество секунд с момента предыдущего запроса [WATCH](../../../sql-reference/statements/watch.md), примененного к данному живому представлению. 
 
