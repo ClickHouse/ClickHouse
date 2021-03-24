@@ -209,7 +209,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     return canReferColumnToTable(identifier, table_with_columns.table);
 }
 
-/// Strip qualificators from left side of column name.
+/// Strip qualifications from left side of column name.
 /// Example: 'database.table.name' -> 'name'.
 void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
