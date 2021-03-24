@@ -220,8 +220,8 @@ class IColumn;
     M(Milliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.", 0) \
     \
     /** Settings for testing hedged requests */ \
-    M(Int64, sleep_in_send_tables_status, 0, "Time to sleep in sending tables status response in TCPHandler", 0) \
-    M(Int64, sleep_in_send_data, 0, "Time to sleep in sending data in TCPHandler", 0) \
+    M(Milliseconds, sleep_in_send_tables_status_ms, 0, "Time to sleep in sending tables status response in TCPHandler", 0) \
+    M(Milliseconds, sleep_in_send_data_ms, 0, "Time to sleep in sending data in TCPHandler", 0) \
     \
     M(Bool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.", 0) \
     M(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, "HTTP connection timeout.", 0) \
