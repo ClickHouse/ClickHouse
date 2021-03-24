@@ -221,6 +221,49 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     return result;
 }
 
+ColumnPtr FlatDictionary::getDescendands(
+    ColumnPtr key_column,
+    const DataTypePtr &,
+    size_t level) const
+{
+    PaddedPODArray<UInt64> keys_backup;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
+    size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+    const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+
+    const UInt64 null_value = std::get<UInt64>(hierarchical_attribute.null_values);
+    const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.arrays);
+
+    HashMap<UInt64, UInt64> parent_to_child;
+
+    for (size_t i = 0; i < parent_keys.size(); ++i)
+    {
+        auto parent_key = parent_keys[i];
+        parent_to_child[parent_key] = static_cast<UInt64>(i);
+    }
+
+    auto is_key_valid_func = [&](auto & key)
+    {
+        return parent_to_child.find(key) != nullptr;
+    };
+
+    auto get_child_key_func = [&](auto & key)
+    {
+        std::optional<UInt64> result;
+
+        auto it = parent_to_child.find(key);
+
+        if (it)
+            result = it->getMapped();
+
+        return result;
+    };
+
+    auto result = getDescendandsArray(keys, null_value, level, is_key_valid_func, get_child_key_func);
+    return result;
+}
+
 void FlatDictionary::createAttributes()
 {
     const auto size = dict_struct.attributes.size();

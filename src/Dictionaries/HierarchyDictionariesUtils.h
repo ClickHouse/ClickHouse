@@ -32,17 +32,17 @@ struct IsKeyValidFuncInterface
 };
 
 template <typename T>
-struct GetParentKeyFuncInterface
+struct GetKeyFuncInterface
 {
     std::optional<T> operator()(T key [[maybe_unused]]) { return {}; }
 };
 
-template <typename KeyType, typename IsKeyValidFunc, typename GetParentKeyFunc>
+template <typename KeyType, typename IsKeyValidFunc, typename GetKeyFunc>
 ElementsAndOffsets<KeyType> getKeysHierarchy(
     const PaddedPODArray<KeyType> & hierarchy_keys,
     const KeyType & hierarchy_null_value,
     IsKeyValidFunc && is_key_valid_func,
-    GetParentKeyFunc && get_parent_func)
+    GetKeyFunc && get_key_func)
 {
     size_t hierarchy_keys_size = hierarchy_keys.size();
 
@@ -114,7 +114,7 @@ ElementsAndOffsets<KeyType> getKeysHierarchy(
             elements.emplace_back(hierarchy_key);
             ++current_hierarchy_depth;
 
-            std::optional<KeyType> parent_key = std::forward<GetParentKeyFunc>(get_parent_func)(hierarchy_key);
+            std::optional<KeyType> parent_key = std::forward<GetKeyFunc>(get_key_func)(hierarchy_key);
 
             if (!parent_key.has_value())
                 break;
@@ -162,7 +162,11 @@ PaddedPODArray<UInt8> isInKeysHierarchy(
     PaddedPODArray<UInt8> result;
     result.resize_fill(hierarchy_keys.size());
 
-    ElementsAndOffsets<KeyType> hierarchy = getKeysHierarchy(hierarchy_keys, hierarchy_null_value, std::forward<IsKeyValidFunc>(is_key_valid_func), std::forward<GetParentKeyFunc>(get_parent_func));
+    ElementsAndOffsets<KeyType> hierarchy = getKeysHierarchy(
+        hierarchy_keys,
+        hierarchy_null_value,
+        std::forward<IsKeyValidFunc>(is_key_valid_func),
+        std::forward<GetParentKeyFunc>(get_parent_func));
 
     auto & offsets = hierarchy.offsets;
     auto & elements = hierarchy.elements;
@@ -184,6 +188,53 @@ PaddedPODArray<UInt8> isInKeysHierarchy(
     }
 
     return result;
+}
+
+template <typename KeyType, typename IsKeyValidFunc, typename GetDescendantKeyFunc>
+ColumnPtr getDescendandsArray(
+    const PaddedPODArray<KeyType> & hierarchy_keys,
+    const KeyType & hierarchy_null_value,
+    size_t level,
+    IsKeyValidFunc && is_key_valid_func,
+    GetDescendantKeyFunc && get_descendant_func)
+{
+    auto elements_and_offsets = getKeysHierarchy(
+        hierarchy_keys,
+        hierarchy_null_value,
+        std::forward<IsKeyValidFunc>(is_key_valid_func),
+        std::forward<GetDescendantKeyFunc>(get_descendant_func));
+
+    auto & elements = elements_and_offsets.elements;
+    auto & offsets = elements_and_offsets.offsets;
+
+    PaddedPODArray<KeyType> descendants;
+    descendants.reserve(elements.size());
+
+    PaddedPODArray<size_t> descendants_offsets;
+    descendants_offsets.reserve(elements.size());
+
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        size_t offset_start_index = i > 0 ? offsets[i - 1] : 0;
+        size_t offset_end_index = offsets[i];
+        size_t size = offset_end_index - offset_start_index;
+
+        if (level == 0)
+            descendants.insert(elements.begin() + offset_start_index + 1, elements.begin() + offset_end_index);
+        else if (level < size)
+            descendants.emplace_back(elements[offset_start_index + level]);
+
+        descendants_offsets.emplace_back(descendants.size());
+    }
+
+    auto elements_column = ColumnVector<KeyType>::create();
+    elements_column->getData() = std::move(elements_and_offsets.elements);
+
+    auto offsets_column = ColumnVector<IColumn::Offset>::create();
+    offsets_column->getData() = std::move(offsets);
+
+    auto column_array = ColumnArray::create(std::move(elements_column), std::move(offsets_column));
+    return column_array;
 }
 
 ColumnPtr getHierarchyDefaultImplementation(const IDictionary * dictionary, ColumnPtr key_column, const DataTypePtr & key_type);

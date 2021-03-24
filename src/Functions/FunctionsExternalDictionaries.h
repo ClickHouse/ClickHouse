@@ -806,4 +806,123 @@ private:
     mutable FunctionDictHelper helper;
 };
 
+class FunctionDictGetChildren final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetChildren";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDictGetChildren>(context);
+    }
+
+    explicit FunctionDictGetChildren(const Context & context_)
+        : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 2; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+
+    bool isDeterministic() const override { return false; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dict = helper.getDictionary(arguments[0]);
+
+        if (!dict->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary ({}) does not support hierarchy", dict->getFullName());
+
+        ColumnPtr res = dict->getDescendands(arguments[1].column, std::make_shared<DataTypeUInt64>(), 0);
+
+        return res;
+    }
+
+    mutable FunctionDictHelper helper;
+};
+
+class FunctionDictGetDescendands final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetDescendands";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDictGetDescendands>(context);
+    }
+
+    explicit FunctionDictGetDescendands(const Context & context_)
+        : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 3; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 2}; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!WhichDataType(arguments[2]).isUInt64())
+            throw Exception{"Illegal type " + arguments[1]->getName() + " of third argument of function " + getName()
+                + ", must be const UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    bool isDeterministic() const override { return false; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        const auto * level_const_column = checkAndGetColumnConst<ColumnVector<UInt64>>(arguments[2].column.get());
+
+        if (!level_const_column)
+            throw Exception{"Illegal type " + arguments[1].type->getName() + " of third argument of function " + getName()
+                + ", must be const UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        auto dict = helper.getDictionary(arguments[0]);
+
+        if (!dict->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary ({}) does not support hierarchy", dict->getFullName());
+
+        size_t level = static_cast<size_t>(level_const_column->getValue<UInt64>());
+        ColumnPtr res = dict->getDescendands(arguments[1].column, std::make_shared<DataTypeUInt64>(), level);
+
+        return res;
+    }
+
+    mutable FunctionDictHelper helper;
+};
+
 }
