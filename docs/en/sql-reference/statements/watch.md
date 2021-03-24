@@ -20,7 +20,7 @@ WATCH [db.]live_view
 The `WATCH` query performs continuous data retrieval from a [live view](./create/view.md#live-view) table. Unless the `LIMIT` clause is specified it provides an infinite stream of query results from a [live view](./create/view.md#live-view).
 
 ```sql
-WATCH [db.]live_view;
+WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```
 
 The virtual `_version` column in the query result indicates the current result version.
@@ -105,4 +105,3 @@ The `FORMAT` clause works the same way as for the [SELECT](../../sql-reference/s
 
 !!! info "Note"
     The [JSONEachRowWithProgress](../../../interfaces/formats/#jsoneachrowwithprogress) format should be used when watching [live view](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
-
