@@ -23,6 +23,8 @@ The `WATCH` query performs continuous data retrieval from a [live view](./create
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```
 
+## Virtual columns {#watch-virtual-columns}
+
 The virtual `_version` column in the query result indicates the current result version.
 
 **Example:**
