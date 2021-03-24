@@ -200,8 +200,21 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
     for (size_t i = 0; i < attributes.size(); ++i)
     {
-        const auto & attribute_name = attributes[i].name;
+        const auto & attribute = attributes[i];
+        const auto & attribute_name = attribute.name;
         attribute_name_to_index[attribute_name] = i;
+
+        if (attribute.hierarchical)
+        {
+            if (id && attribute.underlying_type != AttributeUnderlyingType::utUInt64)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Hierarchical attribute type for dictionary with simple key must be UInt64. Actual ({})",
+                    toString(attribute.underlying_type));
+            else if (key)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary with complex key does not support hierarchy");
+
+            hierarchical_attribute_index = i;
+        }
     }
 
     if (attributes.empty())

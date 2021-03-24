@@ -370,9 +370,10 @@ private:
 
  * If column is constant parameter backup_storage is used to store values.
  */
+/// TODO: Remove
 template <typename T>
 static const PaddedPODArray<T> & getColumnVectorData(
-    const IDictionaryBase * dictionary,
+    const IDictionary * dictionary,
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {
