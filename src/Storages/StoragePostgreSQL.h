@@ -9,14 +9,13 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 #include <pqxx/pqxx>
 
 
 namespace DB
 {
 
-class PostgreSQLConnection;
-using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
@@ -24,8 +23,8 @@ class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
-        const std::string & remote_table_name_,
-        PostgreSQLConnectionPtr connection_,
+        const String & remote_table_name_,
+        PostgreSQLConnectionPoolPtr connection_pool_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
@@ -50,7 +49,7 @@ private:
     String remote_table_name;
     String remote_table_schema;
     Context global_context;
-    PostgreSQLConnectionPtr connection;
+    PostgreSQLConnectionPoolPtr connection_pool;
 };
 
 }
