@@ -17,8 +17,10 @@ namespace ErrorCodes
 
 SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_path_,
-    const std::vector<std::string> & library_settings)
+    const std::vector<std::string> & library_settings,
+    const Block & sample_block_)
     : library_path(library_path_)
+    , sample_block(sample_block_)
 {
     library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY);
     settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(library_settings));
@@ -85,7 +87,7 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadAll(const Block & sample_block, size_t num_attributes)
+BlockInputStreamPtr SharedLibraryHandler::loadAll(size_t num_attributes)
 {
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(num_attributes);
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), num_attributes};
@@ -104,13 +106,13 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll(const Block & sample_block, si
     SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
     ClickHouseLibrary::RawClickHouseLibraryTable data = load_all_func(data_ptr, &settings_holder->strings, &columns);
-    auto block = dataToBlock(sample_block, data);
+    auto block = dataToBlock(data);
 
     return std::make_shared<OneBlockInputStream>(block);
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids, const Block & sample_block, size_t num_attributes)
+BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids, size_t num_attributes)
 {
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
@@ -125,13 +127,13 @@ BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & 
     SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
     ClickHouseLibrary::RawClickHouseLibraryTable data = load_ids_func(data_ptr, &settings_holder->strings, &columns_pass, &ids_data);
-    auto block = dataToBlock(sample_block, data);
+    auto block = dataToBlock(data);
 
     return std::make_shared<OneBlockInputStream>(block);
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadKeys(const Columns & key_columns, const Block & sample_block)
+BlockInputStreamPtr SharedLibraryHandler::loadKeys(const Columns & key_columns)
 {
     auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
     std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
@@ -168,13 +170,13 @@ BlockInputStreamPtr SharedLibraryHandler::loadKeys(const Columns & key_columns, 
     SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
     ClickHouseLibrary::RawClickHouseLibraryTable data = load_keys_func(data_ptr, &settings_holder->strings, &request_cols);
-    auto block = dataToBlock(sample_block, data);
+    auto block = dataToBlock(data);
 
     return std::make_shared<OneBlockInputStream>(block);
 }
 
 
-Block SharedLibraryHandler::dataToBlock(const Block & sample_block, const ClickHouseLibrary::RawClickHouseLibraryTable data)
+Block SharedLibraryHandler::dataToBlock(const ClickHouseLibrary::RawClickHouseLibraryTable data)
 {
     if (!data)
         throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);

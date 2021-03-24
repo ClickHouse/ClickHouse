@@ -17,7 +17,7 @@ class LibraryBridgeHelper : public IBridgeHelper
 public:
     static constexpr inline size_t DEFAULT_PORT = 9012;
 
-    LibraryBridgeHelper(const Context & context_, const Field & dictionary_id_);
+    LibraryBridgeHelper(const Context & context_, const Block & sample_block, const Field & dictionary_id_);
 
     bool initLibrary(const std::string & library_path, const std::string library_settings);
 
@@ -29,15 +29,15 @@ public:
 
     bool supportsSelectiveLoad();
 
-    BlockInputStreamPtr loadAll(const Block & sample_block, size_t num_attributes);
+    BlockInputStreamPtr loadAll(size_t num_attributes);
 
-    BlockInputStreamPtr loadIds(const Block & sample_block, const std::string ids_string, size_t num_attributes);
+    BlockInputStreamPtr loadIds(const std::string ids_string, size_t num_attributes);
 
-    BlockInputStreamPtr loadKeys(const Block & key_columns, const Block & sample_block);
+    BlockInputStreamPtr loadKeys(const Block & key_columns);
 
-    BlockInputStreamPtr loadBase(const Poco::URI & uri, const Block & sample_block, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+    BlockInputStreamPtr loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
-    bool executeRequest(const Poco::URI & uri);
+    bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
 
 protected:
@@ -77,6 +77,7 @@ private:
 
     Poco::Logger * log;
     const Context & context;
+    const Block sample_block;
     const Poco::Util::AbstractConfiguration & config;
     const Poco::Timespan http_timeout;
 
