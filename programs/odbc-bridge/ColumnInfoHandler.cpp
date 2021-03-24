@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -84,22 +85,19 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         process_error("No 'table' param in request URL");
         return;
     }
+
     if (!params.has("connection_string"))
     {
         process_error("No 'connection_string' in request URL");
         return;
     }
+
     std::string schema_name;
     std::string table_name = params.get("table");
     std::string connection_string = params.get("connection_string");
 
     if (params.has("schema"))
-    {
         schema_name = params.get("schema");
-        LOG_TRACE(log, "Will fetch info for table '{}'", schema_name + "." + table_name);
-    }
-    else
-        LOG_TRACE(log, "Will fetch info for table '{}'", table_name);
 
     LOG_TRACE(log, "Got connection str '{}'", connection_string);
 
@@ -109,7 +107,34 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
 
         nanodbc::connection connection(validateODBCConnectionString(connection_string));
         nanodbc::catalog catalog(connection);
-        nanodbc::catalog::columns columns_definition = catalog.find_columns(NANODBC_TEXT("%"), table_name, schema_name);
+        std::string catalog_name;
+
+        /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.
+        /// They both are passed as 'schema' parameter in request URL, so it is not clear whether it is database_name or schema_name passed.
+        /// If it is schema_name then we know that database is specified in connection_string. But if we have database_name as 'schema',
+        /// it is not guaranteed. For nanodbc database_name must be either in connection_string or as catalog_name.
+        auto get_columns = [&]()
+        {
+            nanodbc::catalog::tables tables = catalog.find_tables(table_name, /* type =  */ "", /* schema =  */ "", /* catalog = */ schema_name);
+            if (tables.next())
+            {
+                catalog_name = tables.table_catalog();
+                LOG_TRACE(log, "Will fetch info for table '{}'",  catalog_name + "." + table_name);
+                return catalog.find_columns(/* column = */ "", table_name, /* schema_name = */ "", catalog_name);
+            }
+
+            tables = catalog.find_tables(table_name, /* type =  */ "", /* schema = */ schema_name);
+            if (tables.next())
+            {
+                catalog_name = tables.table_catalog();
+                LOG_TRACE(log, "Will fetch info for table '{}'", catalog_name + "." + schema_name + "." + table_name);
+                return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
+            }
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} not found", schema_name.empty() ? table_name : schema_name + '.' + table_name);
+        };
+
+        nanodbc::catalog::columns columns_definition = get_columns();
 
         NamesAndTypesList columns;
         while (columns_definition.next())
