@@ -12,10 +12,7 @@ toc_title: WATCH
 **Синтаксис**
 
 ``` sql
-WATCH [db.]live_view
-[EVENTS]
-[LIMIT n]
-[FORMAT format]
+WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```
 
 Запрос `WATCH` постоянно возвращает содержимое [живого представления](./create/view.md#live-view). Если параметр `LIMIT` не был задан, запрос `WATCH` не перестанет непрерывно возвращать содержимое [живого представления](./create/view.md#live-view).
