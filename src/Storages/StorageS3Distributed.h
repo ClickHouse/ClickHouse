@@ -20,6 +20,12 @@ namespace ErrorCodes
 
 class Context;
 
+struct ClientAuthentificationBuilder
+{
+    String access_key_id;
+    String secret_access_key;
+    UInt64 max_connections;
+};
 
 class StorageS3Distributed : public ext::shared_ptr_helper<StorageS3Distributed>, public IStorage 
 {
@@ -39,7 +45,8 @@ public:
 
 protected:
     StorageS3Distributed(
-        const S3::URI & uri_,
+        IAST::Hash tree_hash_,
+        const String & address_hash_or_filename_,
         const String & access_key_id_,
         const String & secret_access_key_,
         const StorageID & table_id_,
@@ -49,21 +56,19 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
-        const String & compression_method_ = "");
+        const String & compression_method_);
 
 private:
     /// Connections from initiator to other nodes
     std::vector<std::shared_ptr<Connection>> connections;
+    IAST::Hash tree_hash;
+    String address_hash_or_filename;
     std::string cluster_name;
     ClusterPtr cluster;
 
-    /// This will be used on non-initiator nodes.
-    std::optional<Cluster::Address> initiator;
-    std::shared_ptr<Connection> initiator_connection;
-    StorageS3::ClientAuthentificaiton client_auth;
-
     String format_name;
     String compression_method;
+    ClientAuthentificationBuilder cli_builder;
 };
 
 

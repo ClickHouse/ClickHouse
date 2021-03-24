@@ -114,7 +114,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
   */
-[[maybe_unused]] static Block adaptBlockStructure(const Block & block, const Block & header)
+static Block adaptBlockStructure(const Block & block, const Block & header)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
     if (!header)
@@ -122,9 +122,6 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 
     Block res;
     res.info = block.info;
-
-    std::cout << "block " << block.dumpStructure() << std::endl;
-    std::cout << "header " << header.dumpStructure() << std::endl;
 
     for (const auto & elem : header)
     {
@@ -156,17 +153,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
                 column = elem.column->cloneResized(block.rows());
         }
         else
-        {
-            // if (!block.has(elem.name))
-            // {
-            //     column = elem.type->createColumn();
-            // }
-            // else
-            // {
-            //     column = castColumn(block.getByName(elem.name), elem.type);
-            // }
             column = castColumn(block.getByName(elem.name), elem.type);
-        }
 
         res.insert({column, elem.type, elem.name});
     }
@@ -327,12 +314,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
         case Protocol::Server::Data:
             /// If the block is not empty and is not a header block
             if (packet.block && (packet.block.rows() > 0))
-            {
-                // return packet.block;
-                Block anime = adaptBlockStructure(packet.block, header);
-                std::cout << "RemoteQueryExecutor " << anime.dumpStructure() << std::endl;
-                return anime;
-            }
+                return adaptBlockStructure(packet.block, header);
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:

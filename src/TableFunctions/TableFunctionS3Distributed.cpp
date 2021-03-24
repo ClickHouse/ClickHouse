@@ -1,6 +1,7 @@
 #include <thread>
 #include <Common/config.h>
 #include "DataStreams/RemoteBlockInputStream.h"
+#include "Parsers/ASTExpressionList.h"
 #include "Parsers/ASTFunction.h"
 #include "Parsers/IAST_fwd.h"
 #include "Processors/Sources/SourceFromInputStream.h"
@@ -49,7 +50,7 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, con
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    filename = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    filename_or_initiator_hash = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() < 5)
     {
@@ -78,38 +79,38 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
     const ASTPtr & ast_function, const Context & context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri (filename);
-    S3::URI s3_uri (uri);
-    // UInt64 min_upload_part_size = context.getSettingsRef().s3_min_upload_part_size;
-    // UInt64 max_single_part_upload_size = context.getSettingsRef().s3_max_single_part_upload_size;
     UInt64 max_connections = context.getSettingsRef().s3_max_connections;
 
-    StorageS3::ClientAuthentificaiton client_auth{s3_uri, access_key_id, secret_access_key, max_connections, {}, {}};
-    StorageS3::updateClientAndAuthSettings(context, client_auth);
-
-    auto lists = StorageS3::listFilesWithRegexpMatching(*client_auth.client, client_auth.uri);
-    Strings tasks;
-    tasks.reserve(lists.size());
-
-    for (auto & value : lists)
+    /// Initiator specific logic
+    while (context.getInitialQueryId() == context.getCurrentQueryId())
     {
-        tasks.emplace_back(client_auth.uri.endpoint + '/' + client_auth.uri.bucket + '/' + value);
-        std::cout << tasks.back() << std::endl;
+        auto poco_uri = Poco::URI{filename_or_initiator_hash};
+
+        /// This is needed, because secondary query on local replica has the same query-id
+        if (poco_uri.getHost().empty() || poco_uri.getPort() == 0)
+            break;
+
+        S3::URI s3_uri(poco_uri);
+        StorageS3::ClientAuthentificaiton client_auth{s3_uri, access_key_id, secret_access_key, max_connections, {}, {}};
+        StorageS3::updateClientAndAuthSettings(context, client_auth);
+
+        auto lists = StorageS3::listFilesWithRegexpMatching(*client_auth.client, client_auth.uri);
+        Strings tasks;
+        tasks.reserve(lists.size());
+
+        for (auto & value : lists)
+            tasks.emplace_back(client_auth.uri.endpoint + '/' + client_auth.uri.bucket + '/' + value);
+
+        /// Register resolver, which will give other nodes a task to execute
+        TaskSupervisor::instance().registerNextTaskResolver(
+            std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
+
+        break;
     }
 
-    std::cout << "query_id " << context.getCurrentQueryId() << std::endl;
-
-    std::cout << ast_function->dumpTree() << std::endl;
-    auto * func = ast_function->as<ASTFunction>();
-
-    std::cout << func->arguments->dumpTree() << std::endl;
-
-    /// Register resolver, which will give other nodes a task to execute
-    TaskSupervisor::instance().registerNextTaskResolver(
-        std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
-
     StoragePtr storage = StorageS3Distributed::create(
-            s3_uri,
+            ast_function->getTreeHash(),
+            filename_or_initiator_hash,
             access_key_id,
             secret_access_key,
             StorageID(getDatabaseName(), table_name),

@@ -399,7 +399,6 @@ namespace S3
         else
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
     }
-
 }
 
 }
