@@ -920,6 +920,34 @@ FROM numbers(2)
 ;
 1	0
 1	1
+-- optimize_read_in_order conflicts with sorting for window functions, must
+-- be disabled.
+create table window_mt engine MergeTree order by number
+    as select number, mod(number, 3) p from numbers(100);
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 0;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,
