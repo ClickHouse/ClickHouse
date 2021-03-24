@@ -1,0 +1,8 @@
+add_subdirectory(ASTs)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath_asts)
+
+add_subdirectory(Generators)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath_generators)
+
+add_subdirectory(Parsers)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath_parsers)

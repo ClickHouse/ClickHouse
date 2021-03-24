@@ -240,6 +240,9 @@ Token Lexer::nextTokenImpl()
         case '*':
             ++pos;
             return Token(TokenType::Asterisk, token_begin, pos);
+        case '$':
+            ++pos;
+            return Token(TokenType::DollarSign, token_begin, pos);
         case '/':   /// division (/) or start of comment (//, /*)
         {
             ++pos;
