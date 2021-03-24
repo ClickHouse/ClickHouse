@@ -12,7 +12,7 @@
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -28,6 +28,22 @@ namespace
             sample_block->insert({column_data.type, column_data.name});
 
         return sample_block;
+    }
+
+    std::vector<uint64_t> parseIdsFromBinary(const std::string & ids_string)
+    {
+        ReadBufferFromString buf(ids_string);
+        std::vector<uint64_t> ids;
+        readVectorBinary(ids, buf);
+        return ids;
+    }
+
+    std::vector<std::string> parseSettingsFromBinary(const std::string & settings_string)
+    {
+        ReadBufferFromString buf(settings_string);
+        std::vector<std::string> settings;
+        readVectorBinary(settings, buf);
+        return settings;
     }
 }
 
@@ -72,8 +88,9 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             std::string library_path = params.get("library_path");
-            std::string library_settings = params.get("library_settings");
-            LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, library_settings);
+            const auto & settings_string = params.get("library_settings");
+            std::vector<std::string> library_settings = parseSettingsFromBinary(settings_string);
+            LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, settings_string);
 
             SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings);
             writeStringBinary("1", out);
@@ -168,7 +185,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
-            std::string ids = params.get("ids");
+            std::vector<uint64_t> ids = parseIdsFromBinary(params.get("ids"));
             std::string columns = params.get("sample_block");
 
             std::shared_ptr<Block> sample_block;

@@ -21,7 +21,7 @@ SharedLibraryHandlerPtr SharedLibraryHandlerFactory::get(const std::string & dic
 }
 
 
-void SharedLibraryHandlerFactory::create(const std::string & dictionary_id, const std::string & library_path, const std::string & library_settings)
+void SharedLibraryHandlerFactory::create(const std::string & dictionary_id, const std::string & library_path, const std::vector<std::string> & library_settings)
 {
     std::lock_guard lock(mutex);
     library_handlers[dictionary_id] = std::make_shared<SharedLibraryHandler>(library_path, library_settings);

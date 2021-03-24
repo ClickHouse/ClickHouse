@@ -17,14 +17,11 @@ namespace ErrorCodes
 
 SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_path_,
-    const std::string & library_settings)
+    const std::vector<std::string> & library_settings)
     : library_path(library_path_)
 {
     library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY);
-
-    std::vector<std::string> library_settings_container;
-    splitInto<' '>(library_settings_container, library_settings);
-    settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(library_settings_container));
+    settings_holder = std::make_shared<CStringsHolder>(CStringsHolder(library_settings));
 
     auto lib_new = library->tryGet<ClickHouseLibrary::LibraryNewFunc>(ClickHouseLibrary::LIBRARY_CREATE_NEW_FUNC_NAME);
 
@@ -113,15 +110,9 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll(const Block & sample_block, si
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::string & ids_string, const Block & sample_block, size_t num_attributes)
+BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids, const Block & sample_block, size_t num_attributes)
 {
-    std::vector<std::string> dict_string_ids;
-    splitInto<' '>(dict_string_ids, ids_string);
-    std::vector<UInt64> dict_ids(dict_string_ids.size());
-    for (const auto & id : dict_string_ids)
-        dict_ids.push_back(parseFromString<UInt64>(id));
-
-    const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(dict_ids.data()), dict_ids.size()};
+    const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(num_attributes);
     ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), num_attributes};
