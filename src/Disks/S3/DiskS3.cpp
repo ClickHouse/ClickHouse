@@ -1074,10 +1074,9 @@ void DiskS3::migrateToRestorableSchema()
 
         Futures results;
 
-        if (exists("data"))
-            migrateToRestorableSchemaRecursive("data/", results);
-        if (exists("store"))
-            migrateToRestorableSchemaRecursive("store/", results);
+        for (const auto & root : data_roots)
+            if (exists(root))
+                migrateToRestorableSchemaRecursive(root + '/', results);
 
         for (auto & result : results)
             result.wait();
@@ -1249,10 +1248,9 @@ void DiskS3::restore()
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Removing old metadata...");
 
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != s3_root_path;
-        if (exists("data"))
-            removeSharedRecursive("data/", !cleanup_s3);
-        if (exists("store"))
-            removeSharedRecursive("data/", !cleanup_s3);
+        for (const auto & root : data_roots)
+            if (exists(root))
+                removeSharedRecursive(root + '/', !cleanup_s3);
 
         restoreFiles(information.source_bucket, information.source_path, information.revision);
         restoreFileOperations(information.source_bucket, information.source_path, information.revision);
