@@ -155,7 +155,7 @@ namespace
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
                 std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
-            writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block, context);
+            writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
         }
 
         Block getHeader() const override
@@ -171,6 +171,11 @@ namespace
         void writePrefix() override
         {
             writer->writePrefix();
+        }
+
+        void flush() override
+        {
+            writer->flush();
         }
 
         void writeSuffix() override

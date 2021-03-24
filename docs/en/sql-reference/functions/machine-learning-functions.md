@@ -9,7 +9,7 @@ toc_title: Machine Learning
 
 Prediction using fitted regression models uses `evalMLMethod` function. See link in `linearRegression`.
 
-## stochasticLinearRegressionn {#stochastic-linear-regression}
+## stochasticLinearRegression {#stochastic-linear-regression}
 
 The [stochasticLinearRegression](../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression) aggregate function implements stochastic gradient descent method using linear model and MSE loss function. Uses `evalMLMethod` to predict on new data.
 

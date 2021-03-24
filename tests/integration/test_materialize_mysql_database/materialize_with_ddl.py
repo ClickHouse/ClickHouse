@@ -653,10 +653,17 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
     check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table FORMAT TSV", '11\n')
 
+
+    # When ClickHouse dump all history data we can query it on ClickHouse
+    # but it don't mean that the sync thread is already to connect to MySQL.
+    # So After ClickHouse can query data, insert some rows to MySQL. Use this to re-check sync successed.
+    mysql_node.query("INSERT INTO test_database_auto.test_table VALUES (22)")
+    mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
+    check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table ORDER BY id FORMAT TSV", '11\n22\n')
+
     get_sync_id_query = "select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'"
     result = mysql_node.query_and_get_data(get_sync_id_query)
-    assert len(result) == 2
-
     for row in result:
         row_result = {}
         query = "kill " + str(row[0]) + ";"
@@ -671,13 +678,13 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
 
     clickhouse_node.query("DETACH DATABASE test_database")
     clickhouse_node.query("ATTACH DATABASE test_database")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
-
-    mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
 
-    mysql_node.query("INSERT INTO test_database_auto.test_table VALUES (12)")
-    check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table ORDER BY id FORMAT TSV", '11\n12\n')
+    mysql_node.query("INSERT INTO test_database.test_table VALUES (3)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n3\n')
+
+    mysql_node.query("INSERT INTO test_database_auto.test_table VALUES (33)")
+    check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table ORDER BY id FORMAT TSV", '11\n22\n33\n')
 
     clickhouse_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database_auto")
@@ -756,6 +763,7 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE TABLE utf8mb4_test.test (id INT(11) NOT NULL PRIMARY KEY, name VARCHAR(255)) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4")
     mysql_node.query("INSERT INTO utf8mb4_test.test VALUES(1, '🦄'),(2, '\u2601')")
     clickhouse_node.query("CREATE DATABASE utf8mb4_test ENGINE = MaterializeMySQL('{}:3306', 'utf8mb4_test', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM utf8mb4_test FORMAT TSV", "test\n")
     check_query(clickhouse_node, "SELECT id, name FROM utf8mb4_test.test ORDER BY id", "1\t\U0001F984\n2\t\u2601\n")
 
 def system_parts_test(clickhouse_node, mysql_node, service_name):

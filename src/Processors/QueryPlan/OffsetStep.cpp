@@ -28,7 +28,7 @@ OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
 {
 }
 
-void OffsetStep::transformPipeline(QueryPipeline & pipeline)
+void OffsetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<OffsetTransform>(
             pipeline.getHeader(), offset, pipeline.getNumStreams());

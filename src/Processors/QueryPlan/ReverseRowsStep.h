@@ -8,11 +8,11 @@ namespace DB
 class ReverseRowsStep : public ITransformingStep
 {
 public:
-    ReverseRowsStep(const DataStream & input_stream_);
+    explicit ReverseRowsStep(const DataStream & input_stream_);
 
     String getName() const override { return "ReverseRows"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 };
 
 }

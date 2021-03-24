@@ -31,7 +31,11 @@ FilterStep::FilterStep(
     bool remove_filter_column_)
     : ITransformingStep(
         input_stream_,
-        FilterTransform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_), filter_column_name_, remove_filter_column_),
+        FilterTransform::transformHeader(
+            input_stream_.header,
+            std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{}),
+            filter_column_name_,
+            remove_filter_column_),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
@@ -45,7 +49,11 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = std::move(output_stream->header);
     if (keep_header)
-        out_header = FilterTransform::transformHeader(input_stream.header, std::make_shared<ExpressionActions>(actions_dag), filter_column_name, remove_filter_column);
+        out_header = FilterTransform::transformHeader(
+            input_stream.header,
+            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{}),
+            filter_column_name,
+            remove_filter_column);
 
     output_stream = createOutputStream(
             input_stream,
@@ -56,9 +64,9 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
     input_streams.emplace_back(std::move(input_stream));
 }
 
-void FilterStep::transformPipeline(QueryPipeline & pipeline)
+void FilterStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
@@ -71,7 +79,7 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -90,7 +98,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 
     bool first = true;
-    auto expression = std::make_shared<ExpressionActions>(actions_dag);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
