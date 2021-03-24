@@ -2673,7 +2673,7 @@ Default value: `0`.
 Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
 
 Possible values:
-- 0 — `INSERT` query appends new data into the end of the file.
+- 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` replaces existing content of the file with the new data.
 
 Default value: `0`.
