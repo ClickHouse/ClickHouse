@@ -168,7 +168,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 ```
 
-### Параметр WITH REFRESH {#live-view-with-refresh}
+### Секция WITH REFRESH {#live-view-with-refresh}
 
 Живое представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться через указанные промежутки времени, начиная с момента последнего обновления.
 
