@@ -15,7 +15,7 @@ class SharedLibraryHandler
 {
 
 public:
-    SharedLibraryHandler(const std::string & library_path_, const std::string & library_settings);
+    SharedLibraryHandler(const std::string & library_path_, const std::vector<std::string> & library_settings);
 
     SharedLibraryHandler(const SharedLibraryHandler & other);
 
@@ -23,7 +23,7 @@ public:
 
     BlockInputStreamPtr loadAll(const Block & sample_block, size_t num_attributes);
 
-    BlockInputStreamPtr loadIds(const std::string & ids_string, const Block & sample_block, size_t num_attributes);
+    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids, const Block & sample_block, size_t num_attributes);
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const Block & sample_block);
 

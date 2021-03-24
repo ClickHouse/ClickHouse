@@ -134,7 +134,8 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
-    WriteBufferFromOwnString res;
+    WriteBufferFromOwnString out;
+    std::vector<std::string> settings;
 
     for (const auto & key : config_keys)
     {
@@ -144,29 +145,20 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
         if (bracket_pos != std::string::npos && bracket_pos > 0)
             key_name = key.substr(0, bracket_pos);
 
-        if (res.stringRef().size)
-            writeChar(' ', res);
-
-        writeString(key_name, res);
-        writeChar(' ', res);
-        writeString(config.getString(config_root + "." + key), res);
+        settings.push_back(key_name);
+        settings.push_back(config.getString(config_root + "." + key));
     }
 
-    return res.str();
+    writeVectorBinary(settings, out);
+    return out.str();
 }
 
 
 String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids)
 {
-    WriteBufferFromOwnString res;
-    for (const auto & id : ids)
-    {
-        if (res.stringRef().size)
-            writeChar(' ', res);
-        writeString(std::to_string(id), res);
-    }
-
-    return res.str();
+    WriteBufferFromOwnString out;
+    writeVectorBinary(ids, out);
+    return out.str();
 }
 
 

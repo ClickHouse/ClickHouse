@@ -17,7 +17,7 @@ public:
 
     SharedLibraryHandlerPtr get(const std::string & dictionary_id);
 
-    void create(const std::string & dictionary_id, const std::string & library_path, const std::string & library_settings);
+    void create(const std::string & dictionary_id, const std::string & library_path, const std::vector<std::string> & library_settings);
 
     void clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
 

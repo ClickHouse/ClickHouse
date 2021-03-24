@@ -155,11 +155,12 @@ BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns, con
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LOAD_KEYS_METHOD);
     uri.addQueryParameter("sample_block", sample_block.getNamesAndTypesList().toString());
+    /// Sample block to parse block from callback
     uri.addQueryParameter("requested_block", keys_sample_block.getNamesAndTypesList().toString());
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [key_columns, sample_block, this](std::ostream & ostr)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [key_columns, sample_block, this](std::ostream & os)
     {
-        WriteBufferFromOStream out_buffer(ostr);
+        WriteBufferFromOStream out_buffer(os);
         auto output_stream = context.getOutputStream(
                 LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
         formatBlock(output_stream, key_columns);

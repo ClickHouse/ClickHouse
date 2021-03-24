@@ -77,8 +77,10 @@ def test_load_ids(ch_cluster):
     ''')
 
     result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(0));''')
-    instance.query('DROP DICTIONARY lib_dict_c')
     assert(result.strip() == '100')
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+    instance.query('DROP DICTIONARY lib_dict_c')
 
 
 def test_load_keys(ch_cluster):
@@ -90,9 +92,11 @@ def test_load_keys(ch_cluster):
         LIFETIME(2);
     ''')
 
+    result = instance.query('''select dictGet(lib_dict_ckc, 'value1', tuple(toUInt64(0)));''')
+    assert(result.strip() == '100')
     result = instance.query('''select dictGet(lib_dict_ckc, 'value2', tuple(toUInt64(0)));''')
-    instance.query('DROP DICTIONARY lib_dict_ckc')
     assert(result.strip() == '200')
+    instance.query('DROP DICTIONARY lib_dict_ckc')
 
 
 def test_load_all_many_rows(ch_cluster):
