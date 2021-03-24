@@ -874,7 +874,7 @@ public:
             time += values.amount_of_offset_change();
             time = time / seconds * seconds;
 
-            /// Should substract the shift back but only if rounded time is not before shift.
+            /// Should subtract the shift back but only if rounded time is not before shift.
             if (time >= values.time_at_offset_change())
             {
                 time -= values.amount_of_offset_change();
