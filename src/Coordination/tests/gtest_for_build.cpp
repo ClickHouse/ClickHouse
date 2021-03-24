@@ -1232,6 +1232,37 @@ TEST(CoordinationTest, TestStateMachineAndLogStore)
     }
 }
 
+TEST(CoordinationTest, TestEphemeralNodeRemove)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+
+    ResponsesQueue queue;
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<NuKeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
+    state_machine->init();
+
+    std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
+    request_c->path = "/hello";
+    request_c->is_ephemeral = true;
+    auto entry_c = getLogEntryFromZKRequest(0, 1, request_c);
+    state_machine->commit(1, entry_c->get_buf());
+    const auto & storage = state_machine->getStorage();
+
+    EXPECT_EQ(storage.ephemerals.size(), 1);
+    std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
+    request_d->path = "/hello";
+    /// Delete from other session
+    auto entry_d = getLogEntryFromZKRequest(0, 2, request_d);
+    state_machine->commit(2, entry_d->get_buf());
+
+    EXPECT_EQ(storage.ephemerals.size(), 0);
+}
+
+
 int main(int argc, char ** argv)
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
