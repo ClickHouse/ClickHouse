@@ -20,9 +20,11 @@ namespace DB
 
 LibraryBridgeHelper::LibraryBridgeHelper(
         const Context & context_,
+        const Block & sample_block_,
         const Field & dictionary_id_)
     : log(&Poco::Logger::get("LibraryBridgeHelper"))
     , context(context_)
+    , sample_block(sample_block_)
     , config(context.getConfigRef())
     , http_timeout(context.getSettingsRef().http_receive_timeout.value.totalSeconds())
     , dictionary_id(dictionary_id_)
@@ -65,7 +67,10 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
     uri.addQueryParameter("library_path", library_path);
     uri.addQueryParameter("library_settings", library_settings);
 
-    return executeRequest(uri);
+    return executeRequest(uri, [this](std::ostream & os)
+    {
+        os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
+    });
 }
 
 
@@ -114,7 +119,7 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadAll(const Block & sample_block, size_t num_attributes)
+BlockInputStreamPtr LibraryBridgeHelper::loadAll(size_t num_attributes)
 {
     startBridgeSync();
 
@@ -122,14 +127,11 @@ BlockInputStreamPtr LibraryBridgeHelper::loadAll(const Block & sample_block, siz
     uri.addQueryParameter("method", LOAD_ALL_METHOD);
     uri.addQueryParameter("num_attributes", std::to_string(num_attributes));
 
-    return loadBase(uri, sample_block, [sample_block](std::ostream & os)
-    {
-        os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
-    });
+    return loadBase(uri);
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadIds(const Block & sample_block, const std::string ids_string, size_t num_attributes)
+BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string, size_t num_attributes)
 {
     startBridgeSync();
 
@@ -137,15 +139,11 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const Block & sample_block, con
     uri.addQueryParameter("method", LOAD_IDS_METHOD);
     uri.addQueryParameter("num_attributes", std::to_string(num_attributes));
 
-    return loadBase(uri, sample_block, [sample_block, ids_string](std::ostream & os)
-    {
-        os << "ids=" << ids_string << "&";
-        os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
-    });
+    return loadBase(uri, [ids_string](std::ostream & os) { os << "ids=" << ids_string; });
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns, const Block & sample_block)
+BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns)
 {
     startBridgeSync();
 
@@ -154,11 +152,10 @@ BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns, con
 
     auto uri = getDictionaryURI();
     uri.addQueryParameter("method", LOAD_KEYS_METHOD);
-    uri.addQueryParameter("sample_block", sample_block.getNamesAndTypesList().toString());
     /// Sample block to parse block from callback
     uri.addQueryParameter("requested_block", keys_sample_block.getNamesAndTypesList().toString());
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [key_columns, sample_block, this](std::ostream & os)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [key_columns, this](std::ostream & os)
     {
         WriteBufferFromOStream out_buffer(os);
         auto output_stream = context.getOutputStream(
@@ -166,16 +163,16 @@ BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns, con
         formatBlock(output_stream, key_columns);
     };
 
-    return loadBase(uri, sample_block, out_stream_callback);
+    return loadBase(uri, out_stream_callback);
 }
 
 
-bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri)
+bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
     ReadWriteBufferFromHTTP buf(
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
-        {},
+        std::move(out_stream_callback),
         ConnectionTimeouts::getHTTPTimeouts(context));
 
     bool res;
@@ -184,7 +181,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri)
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, const Block & sample_block, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
+BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,

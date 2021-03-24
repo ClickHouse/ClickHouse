@@ -53,13 +53,12 @@ LibraryDictionarySource::LibraryDictionarySource(
     if (!Poco::File(path).exists())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", Poco::File(path).path());
 
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, dictionary_id);
+    description.init(sample_block);
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
     auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"));
 
     if (!res)
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
-
-    description.init(sample_block);
 }
 
 
@@ -79,7 +78,7 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , context(other.context)
     , description{other.description}
 {
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, dictionary_id);
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
     bridge_helper->cloneLibrary(other.dictionary_id);
 }
 
@@ -99,14 +98,14 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    return bridge_helper->loadAll(description.sample_block, dict_struct.attributes.size());
+    return bridge_helper->loadAll(dict_struct.attributes.size());
 }
 
 
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(description.sample_block, getDictIdsString(ids), dict_struct.attributes.size());
+    return bridge_helper->loadIds(getDictIdsString(ids), dict_struct.attributes.size());
 }
 
 
@@ -114,7 +113,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return bridge_helper->loadKeys(block, description.sample_block);
+    return bridge_helper->loadKeys(block);
 }
 
 

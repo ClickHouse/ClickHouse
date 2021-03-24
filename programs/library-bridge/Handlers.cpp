@@ -87,12 +87,33 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            params.read(request.getStream());
+            if (!params.has("sample_block"))
+            {
+                processError(response, "No 'sample_block' in request URL");
+                return;
+            }
+
+            std::string columns = params.get("sample_block");
+            std::shared_ptr<Block> sample_block;
+
+            try
+            {
+                sample_block = parseColumns(std::move(columns));
+            }
+            catch (const Exception & ex)
+            {
+                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
+                LOG_WARNING(log, ex.getStackTraceString());
+                return;
+            }
+
             std::string library_path = params.get("library_path");
             const auto & settings_string = params.get("library_settings");
             std::vector<std::string> library_settings = parseSettingsFromBinary(settings_string);
             LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, settings_string);
 
-            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings);
+            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, *sample_block);
             writeStringBinary("1", out);
         }
         else if (method == "libClone")
@@ -129,12 +150,6 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             params.read(request.getStream());
 
-            if (!params.has("sample_block"))
-            {
-                processError(response, "No 'sample_block' in request URL");
-                return;
-            }
-
             if (!params.has("num_attributes"))
             {
                 processError(response, "No 'num_attributes' in request URL");
@@ -142,23 +157,10 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
-            std::string columns = params.get("sample_block");
-            std::shared_ptr<Block> sample_block;
-
-            try
-            {
-                sample_block = parseColumns(std::move(columns));
-            }
-            catch (const Exception & ex)
-            {
-                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-                LOG_WARNING(log, ex.getStackTraceString());
-                return;
-            }
-
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
-            auto input = library_handler->loadAll(*sample_block, num_attributes);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
+            const auto & sample_block = library_handler->getSampleBlock();
+            auto input = library_handler->loadAll(num_attributes);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
 
             copyData(*input, *output);
         }
@@ -178,31 +180,13 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            if (!params.has("sample_block"))
-            {
-                processError(response, "No 'sample_block' in request URL");
-                return;
-            }
-
             size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
             std::vector<uint64_t> ids = parseIdsFromBinary(params.get("ids"));
-            std::string columns = params.get("sample_block");
-
-            std::shared_ptr<Block> sample_block;
-            try
-            {
-                sample_block = parseColumns(std::move(columns));
-            }
-            catch (const Exception & ex)
-            {
-                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-                LOG_WARNING(log, ex.getStackTraceString());
-                return;
-            }
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
-            auto input = library_handler->loadIds(ids, *sample_block, num_attributes);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
+            const auto & sample_block = library_handler->getSampleBlock();
+            auto input = library_handler->loadIds(ids, num_attributes);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
 
             copyData(*input, *output);
         }
@@ -214,14 +198,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            if (!params.has("sample_block"))
-            {
-                processError(response, "No 'sample_block' in request URL");
-                return;
-            }
-
             std::string requested_block_string = params.get("requested_block");
-            std::string sample_block_string = params.get("sample_block");
 
             std::shared_ptr<Block> requested_sample_block;
             try
@@ -235,26 +212,15 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            std::shared_ptr<Block> sample_block;
-            try
-            {
-                sample_block = parseColumns(std::move(sample_block_string));
-            }
-            catch (const Exception & ex)
-            {
-                processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-                LOG_WARNING(log, ex.getStackTraceString());
-                return;
-            }
-
             auto & read_buf = request.getStream();
             auto format = FormatFactory::instance().getInput(FORMAT, read_buf, *requested_sample_block, context, DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto block = reader->read();
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
-            auto input = library_handler->loadKeys(block.getColumns(), *sample_block);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, *sample_block, context);
+            const auto & sample_block = library_handler->getSampleBlock();
+            auto input = library_handler->loadKeys(block.getColumns());
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
 
             copyData(*input, *output);
         }
