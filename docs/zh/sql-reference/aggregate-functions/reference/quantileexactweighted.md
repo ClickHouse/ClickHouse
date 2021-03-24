@@ -61,5 +61,6 @@ SELECT quantileExactWeighted(n, val) FROM t
 ```
 
 **参见**
+
 -   [中位数](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [分位数](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

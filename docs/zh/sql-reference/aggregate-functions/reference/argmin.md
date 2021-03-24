@@ -12,6 +12,8 @@ toc_priority: 105
 
 **示例:**
 
+输入表:
+
 ``` text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
@@ -20,9 +22,13 @@ toc_priority: 105
 └──────────┴────────┘
 ```
 
+查询:
+
 ``` sql
-SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary
+SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
 ```
+
+结果:
 
 ``` text
 ┌─argMin(user, salary)─┬─argMin(tuple(user, salary))─┐

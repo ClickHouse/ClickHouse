@@ -70,5 +70,3 @@ ClickHouse 特有的聚合函数:
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
