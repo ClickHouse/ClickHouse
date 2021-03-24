@@ -204,6 +204,8 @@ private:
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
     /// Version with possibility to backup-restore metadata.
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
+    /// Directories with data.
+    const std::vector<String> data_roots {"data", "store"};
 };
 
 }
