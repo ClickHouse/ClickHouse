@@ -18,10 +18,14 @@ anyHeavy(column)
 
 使用 [OnTime](../../../getting-started/example-datasets/ontime.md) 数据集，并选择在 `AirlineID` 列任何频繁出现的值。
 
+查询:
+
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
-FROM ontime
+FROM ontime;
 ```
+
+结果:
 
 ``` text
 ┌───res─┐
