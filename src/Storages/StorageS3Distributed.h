@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "Client/Connection.h"
 #include "Interpreters/Cluster.h"
 #include "Storages/IStorage.h"
@@ -73,3 +77,5 @@ private:
 
 
 }
+
+#endif
