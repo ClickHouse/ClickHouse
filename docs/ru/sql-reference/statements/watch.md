@@ -15,7 +15,7 @@ toc_title: WATCH
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```
 
-Запрос `WATCH` постоянно возвращает содержимое [живого представления](./create/view.md#live-view). Если параметр `LIMIT` не был задан, запрос `WATCH` не перестанет непрерывно возвращать содержимое [живого представления](./create/view.md#live-view).
+Запрос `WATCH` постоянно возвращает содержимое [живого представления](./create/view.md#live-view). Если параметр `LIMIT` не был задан, запрос `WATCH` будет непрерывно обновлять содержимое [живого представления](./create/view.md#live-view).
 
 ```sql
 WATCH [db.]live_view;
