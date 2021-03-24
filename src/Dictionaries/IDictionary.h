@@ -165,7 +165,7 @@ struct IDictionary : public IExternalLoadable
         const DataTypePtr & key_type [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Hierarchy is not supported for {} dictionary.",
+                        "Method getHierarchy is not supported for {} dictionary.",
                         getDictionaryID().getNameForLogs());
     }
 
@@ -175,7 +175,17 @@ struct IDictionary : public IExternalLoadable
         const DataTypePtr & key_type [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Hierarchy is not supported for {} dictionary.",
+                        "Method isInHierarchy is not supported for {} dictionary.",
+                        getDictionaryID().getNameForLogs());
+    }
+
+    virtual ColumnPtr getDescendands(
+        ColumnPtr key_column [[maybe_unused]],
+        const DataTypePtr & key_type [[maybe_unused]],
+        size_t level [[maybe_unused]]) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method getDescendands is not supported for {} dictionary.",
                         getDictionaryID().getNameForLogs());
     }
 
