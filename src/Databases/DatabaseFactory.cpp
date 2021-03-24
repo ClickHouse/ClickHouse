@@ -141,11 +141,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         try
         {
             const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
+                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, remote_host_name, remote_port, mysql_user_name, mysql_user_password);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -155,6 +155,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             }
 
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
+            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password);
+
 
             auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 

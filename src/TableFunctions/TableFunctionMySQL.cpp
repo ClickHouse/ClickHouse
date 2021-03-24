@@ -77,7 +77,7 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & c
 {
     assert(!parsed_host_port.first.empty());
     if (!pool)
-        pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+        pool.emplace(remote_database_name, parsed_host_port.first, parsed_host_port.second, user_name, password);
 
     const auto & settings = context.getSettingsRef();
     const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
@@ -93,7 +93,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, cons
 {
     assert(!parsed_host_port.first.empty());
     if (!pool)
-        pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+        pool.emplace(remote_database_name, parsed_host_port.first, parsed_host_port.second, user_name, password);
 
     auto columns = getActualTableStructure(context);
 

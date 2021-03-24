@@ -6,11 +6,14 @@
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
+#define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES 3
 
 
 namespace mysqlxx
 {
     /** MySQL connection pool with support of failover.
+      *
+      * For dictionary source:
       * Have information about replicas and their priorities.
       * Tries to connect to replica in an order of priority. When equal priority, choose replica with maximum time without connections.
       *
@@ -68,16 +71,17 @@ namespace mysqlxx
         using PoolPtr = std::shared_ptr<Pool>;
         using Replicas = std::vector<PoolPtr>;
 
-        /// [priority][index] -> replica.
+        /// Mysql dictionary sourse related priotity:
+        /// [priority][index] -> replica. Highest priotity is 0.
         using ReplicasByPriority = std::map<int, Replicas>;
-
         ReplicasByPriority replicas_by_priority;
+
+        /// Mysql storage related priotity:
 
         /// Number of connection tries.
         size_t max_tries;
         /// Mutex for set of replicas.
         std::mutex mutex;
-
         /// Can the Pool be shared
         bool shareable;
 
@@ -85,21 +89,38 @@ namespace mysqlxx
         using Entry = Pool::Entry;
 
         /**
-         * config_name           Name of parameter in configuration file.
+         * * Mysql dictionary sourse related params:
+         * config_name           Name of parameter in configuration file for dictionary source.
+         *
+         * * Mysql storage related parameters:
+         * replicas_description
+         *
+         * * Mutual parameters:
          * default_connections   Number of connection in pool to each replica at start.
          * max_connections       Maximum number of connections in pool to each replica.
          * max_tries_            Max number of connection tries.
          */
-        PoolWithFailover(const std::string & config_name_,
-            unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-            size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
-
-        PoolWithFailover(const Poco::Util::AbstractConfiguration & config_,
+        PoolWithFailover(
             const std::string & config_name_,
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+
+        PoolWithFailover(
+            const Poco::Util::AbstractConfiguration & config_,
+            const std::string & config_name_,
+            unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+            unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+            size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+
+        PoolWithFailover(
+            const std::string & database,
+            const std::string & host_pattern,
+            uint16_t port,
+            const std::string & user,
+            const std::string & password,
+            const size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            const size_t max_addresses = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES);
 
         PoolWithFailover(const PoolWithFailover & other);
 

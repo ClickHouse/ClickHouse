@@ -41,7 +41,7 @@ static String backQuoteMySQL(const String & x)
 
 StorageMySQL::StorageMySQL(
     const StorageID & table_id_,
-    mysqlxx::Pool && pool_,
+    mysqlxx::PoolWithFailover && pool_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const bool replace_query_,
@@ -94,9 +94,8 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    /// TODO: rewrite MySQLBlockInputStream
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLLazyBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
+            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
 }
 
 
@@ -224,7 +223,7 @@ void registerStorageMySQL(StorageFactory & factory)
 
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(
-                "Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
+                "Storage MySQL requires 5-7 parameters: MySQL('host:port' (or 'addresses_pattern'), database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
@@ -238,7 +237,7 @@ void registerStorageMySQL(StorageFactory & factory)
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-        mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
+        mysqlxx::PoolWithFailover pool(remote_database, parsed_host_port.first, parsed_host_port.second, username, password);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
