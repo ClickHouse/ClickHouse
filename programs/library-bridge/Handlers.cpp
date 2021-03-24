@@ -38,12 +38,12 @@ namespace
         return ids;
     }
 
-    std::vector<std::string> parseSettingsFromBinary(const std::string & settings_string)
+    std::vector<std::string> parseNamesFromBinary(const std::string & names_string)
     {
-        ReadBufferFromString buf(settings_string);
-        std::vector<std::string> settings;
-        readVectorBinary(settings, buf);
-        return settings;
+        ReadBufferFromString buf(names_string);
+        std::vector<std::string> names;
+        readVectorBinary(names, buf);
+        return names;
     }
 }
 
@@ -91,12 +91,12 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             std::string library_path = params.get("library_path");
             const auto & settings_string = params.get("library_settings");
-            std::vector<std::string> library_settings = parseSettingsFromBinary(settings_string);
+            std::vector<std::string> library_settings = parseNamesFromBinary(settings_string);
             LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, settings_string);
 
-            if (!params.has("num_attributes"))
+            if (!params.has("attributes_names"))
             {
-                processError(response, "No 'num_attributes' in request URL");
+                processError(response, "No 'attributes_names' in request URL");
                 return;
             }
 
@@ -106,7 +106,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
+            const auto & attributes_string = params.get("attributes_names");
+            std::vector<std::string> attributes_names = parseNamesFromBinary(attributes_string);
             std::string columns = params.get("sample_block");
             std::shared_ptr<Block> sample_block;
 
@@ -121,7 +122,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, *sample_block, num_attributes);
+            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, *sample_block, attributes_names);
             writeStringBinary("1", out);
         }
         else if (method == "libClone")

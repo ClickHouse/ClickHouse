@@ -59,15 +59,15 @@ void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 }
 
 
-bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const std::string library_settings, size_t num_attributes)
+bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const std::string library_settings, const std::string attributes_names)
 {
     startBridgeSync();
     auto uri = createRequestURI(LIB_NEW_METHOD);
-    return executeRequest(uri, [library_path, library_settings, num_attributes, this](std::ostream & os)
+    return executeRequest(uri, [library_path, library_settings, attributes_names, this](std::ostream & os)
     {
         os << "library_path=" << library_path << "&";
         os << "library_settings=" << library_settings << "&";
-        os << "num_attributes=" << std::to_string(num_attributes) << "&";
+        os << "attributes_names=" << attributes_names << "&";
         os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
     });
 }

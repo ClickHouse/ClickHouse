@@ -18,8 +18,8 @@ public:
     SharedLibraryHandler(
         const std::string & library_path_,
         const std::vector<std::string> & library_settings,
-        const Block & sample_block,
-        size_t num_attributes);
+        const Block & sample_block_,
+        const std::vector<std::string> & attributes_names_);
 
     SharedLibraryHandler(const SharedLibraryHandler & other);
 
