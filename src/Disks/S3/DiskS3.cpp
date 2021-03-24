@@ -966,6 +966,8 @@ void DiskS3::findLastRevision()
         if (checkObjectExists(bucket, s3_root_path + "r" + revision_str)
             || checkObjectExists(bucket, s3_root_path + "operations/r" + revision_str))
             l = revision;
+        else if (revision == 0)
+            r = 0;
         else
             r = revision - 1;
     }
@@ -999,6 +1001,7 @@ void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & met
     request.SetBucket(bucket);
     request.SetKey(key);
     request.SetMetadata(metadata);
+    request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
 
     auto outcome = client->CopyObject(request);
     throwIfError(outcome);
@@ -1070,7 +1073,10 @@ void DiskS3::migrateToRestorableSchema()
 
         Futures results;
 
-        migrateToRestorableSchemaRecursive("data/", results);
+        if (exists("data"))
+            migrateToRestorableSchemaRecursive("data/", results);
+        if (exists("store"))
+            migrateToRestorableSchemaRecursive("store/", results);
 
         for (auto & result : results)
             result.wait();
@@ -1242,13 +1248,18 @@ void DiskS3::restore()
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Removing old metadata...");
 
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != s3_root_path;
-        removeSharedRecursive("data/", !cleanup_s3);
+        if (exists("data"))
+            removeSharedRecursive("data/", !cleanup_s3);
+        if (exists("store"))
+            removeSharedRecursive("data/", !cleanup_s3);
 
         restoreFiles(information.source_bucket, information.source_path, information.revision);
         restoreFileOperations(information.source_bucket, information.source_path, information.revision);
 
         Poco::File restore_file(metadata_path + RESTORE_FILE_NAME);
         restore_file.remove();
+
+        saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
     }
@@ -1315,7 +1326,11 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         /// Restore file if object has 'path' in metadata.
         auto path_entry = object_metadata.find("path");
         if (path_entry == object_metadata.end())
-            throw Exception("Failed to restore key " + key + " because it doesn't have 'path' in metadata", ErrorCodes::S3_ERROR);
+        {
+            /// Such keys can remain after migration, we can skip them.
+            LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} because it doesn't have 'path' in metadata", key);
+            continue;
+        }
 
         const auto & path = path_entry->second;
 
