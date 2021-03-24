@@ -1,158 +1,33 @@
 #include "DirectDictionary.h"
-#include <IO/WriteHelpers.h>
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
-#include <Core/Defines.h>
-#include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Common/HashTable/HashMap.h>
-#include <Interpreters/AggregationCommon.h>
 
+#include <Core/Defines.h>
+#include <Common/HashTable/HashMap.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Functions/FunctionHelpers.h>
+
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/HierarchyDictionariesUtils.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-
-    inline UInt64 getAt(const PaddedPODArray<UInt64> & arr, const size_t idx)
-    {
-        return arr[idx];
-    }
-
-    inline UInt64 getAt(const UInt64 & value, const size_t)
-    {
-        return value;
-    }
-
 }
 
 template <DictionaryKeyType dictionary_key_type>
 DirectDictionary<dictionary_key_type>::DirectDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_,
-    BlockPtr saved_block_)
+    DictionarySourcePtr source_ptr_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , saved_block{std::move(saved_block_)}
 {
     if (!source_ptr->supportsSelectiveLoad())
         throw Exception{full_name + ": source cannot be used with DirectDictionary", ErrorCodes::UNSUPPORTED_METHOD};
-
-    setup();
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void DirectDictionary<dictionary_key_type>::toParent(const PaddedPODArray<Key> & ids [[maybe_unused]], PaddedPODArray<Key> & out [[maybe_unused]]) const
-{
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-    {
-        const auto & attribute_name = hierarchical_attribute->name;
-
-        auto result_type = std::make_shared<DataTypeUInt64>();
-        auto input_column = result_type->createColumn();
-        auto & input_column_typed = assert_cast<ColumnVector<UInt64> &>(*input_column);
-        auto & data = input_column_typed.getData();
-        data.insert(ids.begin(), ids.end());
-
-        auto column = getColumn({attribute_name}, result_type, {std::move(input_column)}, {result_type}, {nullptr});
-        const auto & result_column_typed = assert_cast<const ColumnVector<UInt64> &>(*column);
-        const auto & result_data = result_column_typed.getData();
-
-        out.assign(result_data);
-    }
-    else
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Hierarchy is not supported for complex key DirectDictionary");
-}
-
-template <DictionaryKeyType dictionary_key_type>
-UInt64 DirectDictionary<dictionary_key_type>::getValueOrNullByKey(const Key & to_find) const
-{
-    std::vector<Key> required_key = {to_find};
-
-    auto stream = source_ptr->loadIds(required_key);
-    stream->readPrefix();
-
-    bool is_found = false;
-    UInt64 result = hierarchical_attribute->null_value.template get<UInt64>();
-
-    while (const auto block = stream->read())
-    {
-        const IColumn & id_column = *block.safeGetByPosition(0).column;
-
-        for (const size_t attribute_idx : ext::range(0, dict_struct.attributes.size()))
-        {
-            if (is_found)
-                break;
-
-            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-
-            for (const auto row_idx : ext::range(0, id_column.size()))
-            {
-                const auto key = id_column[row_idx].get<UInt64>();
-
-                if (key == to_find && hierarchical_attribute->name == attribute_name_by_index.at(attribute_idx))
-                {
-                    result = attribute_column[row_idx].get<Key>();
-                    is_found = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    stream->readSuffix();
-
-    return result;
-}
-
-template <DictionaryKeyType dictionary_key_type>
-template <typename ChildType, typename AncestorType>
-void DirectDictionary<dictionary_key_type>::isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    const auto null_value = hierarchical_attribute->null_value.template get<UInt64>();
-    const auto rows = out.size();
-
-    for (const auto row : ext::range(0, rows))
-    {
-        auto id = getAt(child_ids, row);
-        const auto ancestor_id = getAt(ancestor_ids, row);
-
-        for (size_t i = 0; id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
-            id = getValueOrNullByKey(id);
-
-        out[row] = id != null_value && id == ancestor_id;
-    }
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void DirectDictionary<dictionary_key_type>::isInVectorVector(
-    const PaddedPODArray<UInt64> & child_ids, const PaddedPODArray<UInt64> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_ids, out);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void DirectDictionary<dictionary_key_type>::isInVectorConstant(const PaddedPODArray<UInt64> & child_ids, const UInt64 ancestor_id, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_id, out);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void DirectDictionary<dictionary_key_type>::isInConstantVector(const UInt64 child_id, const PaddedPODArray<UInt64> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_id, ancestor_ids, out);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -179,7 +54,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
 
     auto fetched_from_storage = attribute.type->createColumn();
     size_t fetched_key_index = 0;
-    size_t requested_attribute_index = attribute_index_by_name.find(attribute_name)->second;
+    size_t requested_attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
 
     Columns block_key_columns;
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
@@ -311,6 +186,37 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
 }
 
 template <DictionaryKeyType dictionary_key_type>
+ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
+    ColumnPtr key_column,
+    const DataTypePtr & key_type) const
+{
+    if (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        auto result = getHierarchyDefaultImplementation(this, key_column, key_type);
+        query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        return result;
+    }
+    else
+        return nullptr;
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
+    ColumnPtr key_column,
+    ColumnPtr in_key_column,
+    const DataTypePtr & key_type) const
+{
+    if (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        auto result = isInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
+        query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        return result;
+    }
+    else
+        return nullptr;
+}
+
+template <DictionaryKeyType dictionary_key_type>
 BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
@@ -340,32 +246,6 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
     }
 
     return stream;
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void DirectDictionary<dictionary_key_type>::setup()
-{
-    /// TODO: Move this to DictionaryStructure
-    size_t dictionary_attributes_size = dict_struct.attributes.size();
-    for (size_t i = 0; i < dictionary_attributes_size; ++i)
-    {
-        const auto & attribute = dict_struct.attributes[i];
-        attribute_index_by_name[attribute.name] = i;
-        attribute_name_by_index[i] = attribute.name;
-
-        if (attribute.hierarchical)
-        {
-            if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "({}): hierarchical attributes are not supported for complex key direct dictionary",
-                    full_name);
-
-            hierarchical_attribute = &attribute;
-
-            if (attribute.underlying_type != AttributeUnderlyingType::utUInt64)
-                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
-        }
-    }
 }
 
 template <DictionaryKeyType dictionary_key_type>

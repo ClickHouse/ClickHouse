@@ -1,217 +1,169 @@
 #include "HashedDictionary.h"
+
 #include <ext/size.h>
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
-#include "ClickHouseDictionarySource.h"
+
 #include <Core/Defines.h>
-#include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Functions/FunctionHelpers.h>
 
-namespace
-{
-
-/// NOTE: Trailing return type is explicitly specified for SFINAE.
-
-/// google::sparse_hash_map
-template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; } // NOLINT
-template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; } // NOLINT
-
-/// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); } // NOLINT
-template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); } // NOLINT
-
-}
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/HierarchyDictionariesUtils.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
 }
 
-
-HashedDictionary::HashedDictionary(
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
-    bool sparse_,
     BlockPtr saved_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
-    , source_ptr{std::move(source_ptr_)}
+    , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
-    , sparse(sparse_)
-    , saved_block{std::move(saved_block_)}
+    , saved_block(std::move(saved_block_))
 {
     createAttributes();
     loadData();
     calculateBytesAllocated();
 }
 
-
-void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
-{
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    DictionaryDefaultValueExtractor<UInt64> extractor(null_value);
-
-    getItemsImpl<UInt64, UInt64>(
-        *hierarchical_attribute,
-        ids,
-        [&](const size_t row, const UInt64 value) { out[row] = value; },
-        extractor);
-}
-
-
-/// Allow to use single value in same way as array.
-static inline HashedDictionary::Key getAt(const PaddedPODArray<HashedDictionary::Key> & arr, const size_t idx)
-{
-    return arr[idx];
-}
-static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, const size_t)
-{
-    return value;
-}
-
-template <typename AttrType, typename ChildType, typename AncestorType>
-void HashedDictionary::isInAttrImpl(const AttrType & attr, const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    const auto rows = out.size();
-
-    for (const auto row : ext::range(0, rows))
-    {
-        auto id = getAt(child_ids, row);
-        const auto ancestor_id = getAt(ancestor_ids, row);
-
-        for (size_t i = 0; id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
-        {
-            auto it = attr.find(id);
-            if (it != std::end(attr))
-                id = second(*it);
-            else
-                break;
-        }
-
-        out[row] = id != null_value && id == ancestor_id;
-    }
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-}
-template <typename ChildType, typename AncestorType>
-void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    if (!sparse)
-        return isInAttrImpl(*std::get<CollectionPtrType<Key>>(hierarchical_attribute->maps), child_ids, ancestor_ids, out);
-    return isInAttrImpl(*std::get<SparseCollectionPtrType<Key>>(hierarchical_attribute->sparse_maps), child_ids, ancestor_ids, out);
-}
-
-void HashedDictionary::isInVectorVector(
-    const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_ids, out);
-}
-
-void HashedDictionary::isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_id, out);
-}
-
-void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_id, ancestor_ids, out);
-}
-
-ColumnPtr HashedDictionary::getColumn(
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
     const Columns & key_columns,
-    const DataTypes &,
+    const DataTypes & key_types,
     const ColumnPtr & default_values_column) const
 {
-    ColumnPtr result;
+    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        dict_struct.validateKeyTypes(key_types);
 
-    PaddedPODArray<Key> backup_storage;
-    const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+    Arena temporary_complex_key_arena;
 
-    auto size = ids.size();
+    const DictionaryAttribute & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    DefaultValueProvider default_value_provider(dictionary_attribute.null_value, default_values_column);
 
-    const auto & attribute = getAttribute(attribute_name);
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, temporary_complex_key_arena);
+    const auto & requested_keys = extractor.getKeys();
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    auto result_column = dictionary_attribute.type->createColumn();
+    result_column->reserve(requested_keys.size());
+
+    size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
+    const auto & attribute = attributes[attribute_index];
+
+    Field row_value_to_insert;
+
+    if (unlikely(attribute.is_complex_type))
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+        auto & attribute_container = std::get<CollectionType<Field>>(attribute.container);
 
-        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
-        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
-
-        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
-
-        if constexpr (std::is_same_v<AttributeType, String>)
+        for (size_t requested_key_index = 0; requested_key_index < requested_keys.size(); ++requested_key_index)
         {
-            auto * out = column.get();
+            auto & requested_key = requested_keys[requested_key_index];
+            auto it = attribute_container.find(requested_key);
 
-            getItemsImpl<StringRef, StringRef>(
-                attribute,
-                ids,
-                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                default_value_extractor);
+            if (it != attribute_container.end())
+                row_value_to_insert = it->second;
+            else
+                row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+
+            result_column->insert(row_value_to_insert);
         }
-        else
-        {
-            auto & out = column->getData();
-
-            getItemsImpl<AttributeType, AttributeType>(
-                attribute,
-                ids,
-                [&](const size_t row, const auto value) { return out[row] = value; },
-                default_value_extractor);
-        }
-
-        result = std::move(column);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    if (attribute.nullable_set)
+    }
+    else
     {
-        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(size, false);
-        ColumnUInt8::Container& vec_null_map_to = col_null_map_to->getData();
-
-        for (size_t row = 0; row < ids.size(); ++row)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            auto id = ids[row];
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            using ValueType = DictionaryValueType<AttributeType>;
+            using ColumnType = std::conditional_t<
+                std::is_same_v<AttributeType, String>,
+                ColumnString,
+                std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>, ColumnVector<AttributeType>>>;
 
-            if (attribute.nullable_set->find(id) != nullptr)
-                vec_null_map_to[row] = true;
-        }
+            auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
+            ColumnType & result_column_typed = static_cast<ColumnType &>(*result_column);
 
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+            if constexpr (std::is_same_v<ColumnType, ColumnString>)
+            {
+                for (size_t requested_key_index = 0; requested_key_index < requested_keys.size(); ++requested_key_index)
+                {
+                    auto & requested_key = requested_keys[requested_key_index];
+                    auto it = attribute_container.find(requested_key);
+
+                    if (it != attribute_container.end())
+                    {
+                        auto item = it->second;
+                        result_column->insertData(item.data, item.size);
+                    }
+                    else
+                    {
+                        row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+                        result_column->insert(row_value_to_insert);
+                    }
+                }
+            }
+            else
+            {
+                auto & result_data = result_column_typed.getData();
+
+                for (size_t requested_key_index = 0; requested_key_index < requested_keys.size(); ++requested_key_index)
+                {
+                    auto & requested_key = requested_keys[requested_key_index];
+                    auto it = attribute_container.find(requested_key);
+
+                    if (it != attribute_container.end())
+                    {
+                        auto item = it->second;
+                        result_data.emplace_back(item);
+                    }
+                    else
+                    {
+                        row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+                        result_data.emplace_back(row_value_to_insert.get<NearestFieldType<ValueType>>());
+                    }
+                }
+            }
+        };
+
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 
-    return result;
+    query_count.fetch_add(requested_keys.size(), std::memory_order_relaxed);
+
+    return result_column;
 }
 
-ColumnUInt8::Ptr HashedDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
-    PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+    if (dictionary_key_type == DictionaryKeyType::complex)
+        dict_struct.validateKeyTypes(key_types);
 
-    size_t ids_count = ext::size(ids);
+    Arena complex_keys_arena;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
 
-    auto result = ColumnUInt8::create(ext::size(ids));
+    const auto & keys = extractor.getKeys();
+    size_t keys_size = keys.size();
+
+    auto result = ColumnUInt8::create(keys_size);
     auto& out = result->getData();
 
     const auto & attribute = attributes.front();
@@ -220,52 +172,157 @@ ColumnUInt8::Ptr HashedDictionary::hasKeys(const Columns & key_columns, const Da
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        has<AttributeType>(attribute, ids, out);
+        using ValueType = DictionaryValueType<AttributeType>;
+
+        const auto & attribute_map = std::get<CollectionType<ValueType>>(attribute.container);
+
+        for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+        {
+            const auto & requested_key = keys[requested_key_index];
+            out[requested_key_index] = attribute_map.find(requested_key) != attribute_map.end();
+        }
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    query_count.fetch_add(ids_count, std::memory_order_relaxed);
+    query_count.fetch_add(keys_size, std::memory_order_relaxed);
 
     return result;
 }
 
-void HashedDictionary::createAttributes()
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr key_column, const DataTypePtr &) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        PaddedPODArray<UInt64> keys_backup_storage;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
+
+        size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+
+        auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
+        auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+
+        const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+        const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+
+        auto is_key_valid_func = [&](auto & key)
+        {
+            return parent_keys_map.find(key) != parent_keys_map.end();
+        };
+
+        auto get_parent_func = [&](auto & hierarchy_key)
+        {
+            std::optional<UInt64> result;
+
+            auto it = parent_keys_map.find(hierarchy_key);
+
+            if (it == parent_keys_map.end())
+                return result;
+
+            result = it->second;
+
+            return result;
+        };
+
+        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
+
+        query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+
+        return dictionary_hierarchy_array;
+    }
+    else
+        return nullptr;
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
+    ColumnPtr key_column,
+    ColumnPtr in_key_column,
+    const DataTypePtr &) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        PaddedPODArray<UInt64> keys_backup_storage;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
+
+        PaddedPODArray<UInt64> keys_in_backup_storage;
+        const auto & keys_in = getColumnVectorData(this, in_key_column, keys_in_backup_storage);
+
+        size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+
+        auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
+        auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+
+        const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+        const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+
+        auto is_key_valid_func = [&](auto & key)
+        {
+            return parent_keys_map.find(key) != parent_keys_map.end();
+        };
+
+        auto get_parent_func = [&](auto & hierarchy_key)
+        {
+            std::optional<UInt64> result;
+
+            auto it = parent_keys_map.find(hierarchy_key);
+
+            if (it == parent_keys_map.end())
+                return result;
+
+            result = it->second;
+
+            return result;
+        };
+
+        auto is_in_hierarchy_result = isInKeysHierarchy(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
+
+        auto result = ColumnUInt8::create();
+        result->getData() = std::move(is_in_hierarchy_result);
+
+        return result;
+    }
+    else
+        return nullptr;
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 {
     const auto size = dict_struct.attributes.size();
     attributes.reserve(size);
 
-    for (const auto & attribute : dict_struct.attributes)
+    for (const auto & dictionary_attribute : dict_struct.attributes)
     {
-        attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttribute(attribute, attribute.null_value));
+        bool is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
 
-        if (attribute.hierarchical)
+        auto type_call = [&, this](const auto & dictionary_attribute_type)
         {
-            hierarchical_attribute = &attributes.back();
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            using ValueType = DictionaryValueType<AttributeType>;
 
-            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
-                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
-        }
+            std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
+
+            if (is_complex_type)
+            {
+                Attribute attribute{dictionary_attribute.underlying_type, is_complex_type, CollectionType<Field>(), std::move(string_arena)};
+                attributes.emplace_back(std::move(attribute));
+            }
+            else
+            {
+                Attribute attribute{dictionary_attribute.underlying_type, is_complex_type, CollectionType<ValueType>(), std::move(string_arena)};
+                attributes.emplace_back(std::move(attribute));
+            }
+        };
+
+        callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
     }
 }
 
-void HashedDictionary::blockToAttributes(const Block & block)
-{
-    const auto & id_column = *block.safeGetByPosition(0).column;
-
-    for (const size_t attribute_idx : ext::range(0, attributes.size()))
-    {
-        const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-        auto & attribute = attributes[attribute_idx];
-
-        for (const auto row_idx : ext::range(0, id_column.size()))
-            if (setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]))
-                ++element_count;
-    }
-}
-
-void HashedDictionary::updateData()
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::updateData()
 {
     if (!saved_block || saved_block->rows() == 0)
     {
@@ -288,34 +345,50 @@ void HashedDictionary::updateData()
     }
     else
     {
+        Arena temporary_complex_key_arena;
+
+        size_t skip_keys_size_offset = dict_struct.getKeysSize();
+
+        Columns saved_block_key_columns;
+        saved_block_key_columns.reserve(skip_keys_size_offset);
+
+        /// Split into keys columns and attribute columns
+        for (size_t i = 0; i < skip_keys_size_offset; ++i)
+            saved_block_key_columns.emplace_back(saved_block->safeGetByPosition(i).column);
+
+        DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, temporary_complex_key_arena);
+        const auto & saved_keys_extracted_from_block = saved_keys_extractor.getKeys();
+
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
         while (Block block = stream->read())
         {
-            const auto & saved_id_column = *saved_block->safeGetByPosition(0).column;
-            const auto & update_id_column = *block.safeGetByPosition(0).column;
+            /// TODO: Rewrite
+            Columns block_key_columns;
+            block_key_columns.reserve(skip_keys_size_offset);
 
-            std::unordered_map<Key, std::vector<size_t>> update_ids;
-            for (size_t row = 0; row < update_id_column.size(); ++row)
+            /// Split into keys columns and attribute columns
+            for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(saved_block_key_columns, temporary_complex_key_arena);
+            const auto & keys_extracted_from_block = block_keys_extractor.getKeys();
+
+            absl::flat_hash_map<KeyType, std::vector<size_t>, DefaultHash<KeyType>> update_keys;
+            for (size_t row = 0; row < keys_extracted_from_block.size(); ++row)
             {
-                const auto id = update_id_column.get64(row);
-                update_ids[id].push_back(row);
+                const auto key = keys_extracted_from_block[row];
+                update_keys[key].push_back(row);
             }
 
-            const size_t saved_rows = saved_id_column.size();
-            IColumn::Filter filter(saved_rows);
-            std::unordered_map<Key, std::vector<size_t>>::iterator it;
+            IColumn::Filter filter(saved_keys_extracted_from_block.size());
 
-            for (size_t row = 0; row < saved_id_column.size(); ++row)
+            for (size_t row = 0; row < saved_keys_extracted_from_block.size(); ++row)
             {
-                auto id = saved_id_column.get64(row);
-                it = update_ids.find(id);
-
-                if (it != update_ids.end())
-                    filter[row] = 0;
-                else
-                    filter[row] = 1;
+                auto key = saved_keys_extracted_from_block[row];
+                auto it = update_keys.find(key);
+                filter[row] = (it == update_keys.end());
             }
 
             auto block_columns = block.mutateColumns();
@@ -323,12 +396,12 @@ void HashedDictionary::updateData()
             {
                 auto & column = saved_block->safeGetByPosition(attribute_idx).column;
                 const auto & filtered_column = column->filter(filter, -1);
-
                 block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
             }
 
             saved_block->setColumns(std::move(block_columns));
         }
+
         stream->readSuffix();
     }
 
@@ -339,48 +412,106 @@ void HashedDictionary::updateData()
     }
 }
 
-template <typename T>
-void HashedDictionary::resize(Attribute & attribute, size_t added_rows)
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Block & block [[maybe_unused]])
 {
-    if (!sparse)
+    Arena temporary_complex_key_arena;
+
+    size_t skip_keys_size_offset = dict_struct.getKeysSize();
+
+    Columns key_columns;
+    key_columns.reserve(skip_keys_size_offset);
+
+    /// Split into keys columns and attribute columns
+    for (size_t i = 0; i < skip_keys_size_offset; ++i)
+        key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, temporary_complex_key_arena);
+    const auto & keys_extracted_from_block = keys_extractor.getKeys();
+
+    Field column_value_to_insert;
+
+    for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
     {
-        const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
-        added_rows += map_ref->size();
-        map_ref->reserve(added_rows);
-    }
-    else
-    {
-        const auto & map_ref = std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
-        added_rows += map_ref->size();
-        map_ref->resize(added_rows);
+        const IColumn & attribute_column = *block.safeGetByPosition(skip_keys_size_offset + attribute_index).column;
+        auto & attribute = attributes[attribute_index];
+
+        getAttributeContainer(attribute_index, [&](auto & container)
+        {
+            using ContainerType = std::decay_t<decltype(container)>;
+            using AttributeValueType = typename ContainerType::mapped_type;
+
+            for (size_t key_index = 0; key_index < keys_extracted_from_block.size(); ++key_index)
+            {
+                auto key = keys_extracted_from_block[key_index];
+                auto it = container.find(key);
+
+                if (it != container.end())
+                    continue;
+
+                if constexpr (std::is_same_v<KeyType, StringRef>)
+                    key = copyKeyInArena(key);
+
+                attribute_column.get(key_index, column_value_to_insert);
+
+                if constexpr (std::is_same_v<AttributeValueType, Field>)
+                {
+                    container.insert({key, column_value_to_insert});
+                }
+                else if constexpr (std::is_same_v<AttributeValueType, StringRef>)
+                {
+                    String & value_to_insert = column_value_to_insert.get<String>();
+                    size_t value_to_insert_size = value_to_insert.size();
+
+                    const char * string_in_arena = attribute.string_arena->insert(value_to_insert.data(), value_to_insert_size);
+
+                    StringRef string_in_arena_reference = StringRef{string_in_arena, value_to_insert_size};
+                    container.insert({key, string_in_arena_reference});
+                }
+                else
+                {
+                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    container.insert({key, value_to_insert});
+                }
+
+                ++element_count;
+            }
+        });
     }
 }
 
-template <>
-void HashedDictionary::resize<String>(Attribute & attribute, size_t added_rows)
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
 {
-    resize<StringRef>(attribute, added_rows);
-}
-
-void HashedDictionary::resize(size_t added_rows)
-{
-    if (!added_rows)
+    if (unlikely(!added_rows))
         return;
 
-    for (auto & attribute : attributes)
+    for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
     {
-        auto type_call = [&](const auto & dictionary_attribute_type)
+        getAttributeContainer(attribute_index, [added_rows](auto & attribute_map)
         {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
-            resize<AttributeType>(attribute, added_rows);
-        };
+            size_t reserve_size = added_rows + attribute_map.size();
 
-        callOnDictionaryAttributeType(attribute.type, type_call);
+            if constexpr (sparse)
+                attribute_map.resize(reserve_size);
+            else
+                attribute_map.reserve(reserve_size);
+        });
     }
 }
 
-void HashedDictionary::loadData()
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+StringRef HashedDictionary<dictionary_key_type, sparse>::copyKeyInArena(StringRef key)
+{
+    size_t key_size = key.size;
+    char * place_for_key = complex_key_arena.alloc(key_size);
+    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
+    StringRef updated_key{place_for_key, key_size};
+    return updated_key;
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
@@ -400,262 +531,94 @@ void HashedDictionary::loadData()
         updateData();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
+            "({}): dictionary source is empty and 'require_nonempty' property is set.",
+            full_name);
 }
 
-template <typename T>
-void HashedDictionary::addAttributeSize(const Attribute & attribute)
-{
-    if (!sparse)
-    {
-        const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
-        bytes_allocated += sizeof(CollectionType<T>) + map_ref->getBufferSizeInBytes();
-        bucket_count = map_ref->getBufferSizeInCells();
-    }
-    else
-    {
-        const auto & map_ref = std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
-        bucket_count = map_ref->bucket_count();
-
-        /** TODO: more accurate calculation */
-        bytes_allocated += sizeof(SparseCollectionType<T>);
-        bytes_allocated += bucket_count;
-        bytes_allocated += map_ref->size() * (sizeof(Key) + sizeof(T));
-    }
-}
-
-template <>
-void HashedDictionary::addAttributeSize<String>(const Attribute & attribute)
-{
-    addAttributeSize<StringRef>(attribute);
-    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-}
-
-void HashedDictionary::calculateBytesAllocated()
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
-    for (const auto & attribute : attributes)
+    for (size_t i = 0; i < attributes.size(); ++i)
+    {
+        getAttributeContainer(i, [&](const auto & container)
+        {
+            /// TODO: Calculate
+            bytes_allocated += sizeof(container);
+        });
+    }
+
+    bytes_allocated += complex_key_arena.size();
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    PaddedPODArray<HashedDictionary::KeyType> keys;
+
+    if (!attributes.empty())
+        getAttributeContainer(0, [&](auto & container)
+        {
+            keys.reserve(container.size());
+
+            for (const auto & [key, value] : container)
+            {
+                (void)(value);
+                keys.emplace_back(key);
+            }
+        });
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
+    else
+        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+template <typename GetContainerFunc>
+void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func)
+{
+    assert(attribute_index < attributes.size());
+
+    auto & attribute = attributes[attribute_index];
+
+    if (unlikely(attribute.is_complex_type))
+    {
+        auto & attribute_container = std::get<CollectionType<Field>>(attribute.container);
+        std::forward<GetContainerFunc>(get_container_func)(attribute_container);
+    }
+    else
     {
         auto type_call = [&](const auto & dictionary_attribute_type)
         {
             using Type = std::decay_t<decltype(dictionary_attribute_type)>;
             using AttributeType = typename Type::AttributeType;
-            addAttributeSize<AttributeType>(attribute);
+            using ValueType = DictionaryValueType<AttributeType>;
+
+            auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
+            std::forward<GetContainerFunc>(get_container_func)(attribute_container);
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
 
-template <typename T>
-void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+template <typename GetContainerFunc>
+void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func) const
 {
-    attribute.null_values = T(null_value.get<T>());
-    if (!sparse)
-        attribute.maps = std::make_unique<CollectionType<T>>();
-    else
-        attribute.sparse_maps = std::make_unique<SparseCollectionType<T>>();
-}
-
-template <>
-void HashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
-{
-    attribute.string_arena = std::make_unique<Arena>();
-    const String & string = null_value.get<String>();
-    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
-
-    if (!sparse)
-        attribute.maps = std::make_unique<CollectionType<StringRef>>();
-    else
-        attribute.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
-}
-
-HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
-{
-    auto nullable_set = attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-    Attribute attr{attribute.underlying_type, std::move(nullable_set), {}, {}, {}, {}};
-
-    auto type_call = [&, this](const auto &dictionary_attribute_type)
+    const_cast<std::decay_t<decltype(*this)> *>(this)->getAttributeContainer(attribute_index, [&](auto & attribute_container)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        createAttributeImpl<AttributeType>(attr, null_value);
-    };
-
-    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
-
-    return attr;
+        std::forward<GetContainerFunc>(get_container_func)(attribute_container);
+    });
 }
 
-
-template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter, typename DefaultValueExtractor>
-void HashedDictionary::getItemsAttrImpl(
-    const MapType & attr,
-    const PaddedPODArray<Key> & ids,
-    ValueSetter && set_value,
-    DefaultValueExtractor & default_value_extractor) const
-{
-    const auto rows = ext::size(ids);
-
-    for (const auto i : ext::range(0, rows))
-    {
-        const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : default_value_extractor[i]);
-    }
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-}
-
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
-void HashedDictionary::getItemsImpl(
-    const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    ValueSetter && set_value,
-    DefaultValueExtractor & default_value_extractor) const
-{
-    if (!sparse)
-        return getItemsAttrImpl<AttributeType, OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, default_value_extractor);
-    return getItemsAttrImpl<AttributeType, OutputType>(*std::get<SparseCollectionPtrType<AttributeType>>(attribute.sparse_maps), ids, set_value, default_value_extractor);
-}
-
-
-template <typename T>
-bool HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T value)
-{
-    if (!sparse)
-    {
-        auto & map = *std::get<CollectionPtrType<T>>(attribute.maps);
-        return map.insert({id, value}).second;
-    }
-    else
-    {
-        auto & map = *std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
-        return map.insert({id, value}).second;
-    }
-}
-
-template <>
-bool HashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String value)
-{
-    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
-    return setAttributeValueImpl<StringRef>(attribute, id, StringRef{string_in_arena, value.size()});
-}
-
-bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
-{
-    bool result = false;
-
-    auto type_call = [&, this](const auto &dictionary_attribute_type)
-    {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-
-        if (attribute.nullable_set)
-        {
-            if (value.isNull())
-            {
-                result = attribute.nullable_set->insert(id).second;
-                return;
-            }
-            else
-            {
-                attribute.nullable_set->erase(id);
-            }
-        }
-
-        result = setAttributeValueImpl<AttributeType>(attribute, id, value.get<AttributeType>());
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    return result;
-}
-
-const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::string & attribute_name) const
-{
-    const auto it = attribute_index_by_name.find(attribute_name);
-    if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
-
-    return attributes[it->second];
-}
-
-template <typename T>
-void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
-{
-    const auto & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
-    const auto rows = ext::size(ids);
-
-    for (const auto i : ext::range(0, rows))
-    {
-        out[i] = attr.find(ids[i]) != nullptr;
-
-        if (attribute.nullable_set && !out[i])
-            out[i] = attribute.nullable_set->find(ids[i]) != nullptr;
-    }
-}
-
-template <>
-void HashedDictionary::has<String>(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
-{
-    has<StringRef>(attribute, ids, out);
-}
-
-template <typename T, typename AttrType>
-PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIdsAttrImpl(const AttrType & attr) const
-{
-    PaddedPODArray<Key> ids;
-    ids.reserve(attr.size());
-    for (const auto & value : attr)
-        ids.push_back(first(value));
-
-    return ids;
-}
-template <typename T>
-PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
-{
-    if (!sparse)
-        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<T>>(attribute.maps));
-    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
-}
-
-template <>
-PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds<String>(const Attribute & attribute) const
-{
-    return getIds<StringRef>(attribute);
-}
-
-PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
-{
-    const auto & attribute = attributes.front();
-    PaddedPODArray<HashedDictionary::Key> result;
-
-    auto type_call = [&](const auto & dictionary_attribute_type)
-    {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        /// TODO: Check if order is satisfied
-        result = getIds<AttributeType>(attribute);
-
-        if (attribute.nullable_set)
-        {
-            for (const auto& value: *attribute.nullable_set)
-                result.push_back(value.getKey());
-        }
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    return result;
-}
-
-BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
-{
-    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
-    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
-}
+template class HashedDictionary<DictionaryKeyType::simple, true>;
+template class HashedDictionary<DictionaryKeyType::simple, false>;
+template class HashedDictionary<DictionaryKeyType::complex, true>;
+template class HashedDictionary<DictionaryKeyType::complex, false>;
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
@@ -664,10 +627,13 @@ void registerDictionaryHashed(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
+                             DictionaryKeyType dictionary_key_type,
                              bool sparse) -> DictionaryPtr
     {
-        if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+        if (dictionary_key_type == DictionaryKeyType::simple && dict_struct.key)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed dictionary");
+        else if (dictionary_key_type == DictionaryKeyType::complex && dict_struct.id)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{full_name
@@ -678,13 +644,34 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<HashedDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
+
+        if (dictionary_key_type == DictionaryKeyType::simple)
+        {
+            if (sparse)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, true>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+            else
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, false>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        }
+        else
+        {
+            if (sparse)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, true>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+            else
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, false>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        }
     };
+
     using namespace std::placeholders;
+
     factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ true); }, false);
+    factory.registerLayout("complex_key_hashed",
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ true); }, true);
+    factory.registerLayout("complex_key_sparse_hashed",
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ true); }, true);
+
 }
 
 }
