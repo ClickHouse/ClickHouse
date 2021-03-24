@@ -37,7 +37,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     : table_columns{ext::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
-    , primary_key_columns{metadata_snapshot->getPrimaryKey().column_names}
+    , sorting_key_names{NameSet(
+          metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
@@ -301,9 +302,9 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 }
 
 
-bool MergeTreeWhereOptimizer::isPrimaryKey(const String & column_name) const
+bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
 {
-    return std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
+    return sorting_key_names.count(column_name);
 }
 
 
@@ -344,7 +345,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (array_joined_names.count(*opt_name) ||
             array_joined_names.count(Nested::extractTableName(*opt_name)) ||
-            (is_final && !isPrimaryKey(*opt_name)))
+            (is_final && !isSortingKey(*opt_name)))
             return true;
     }
 

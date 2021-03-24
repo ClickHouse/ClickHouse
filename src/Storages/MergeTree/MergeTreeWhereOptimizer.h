@@ -85,7 +85,7 @@ private:
 
     bool isPrimaryKeyAtom(const ASTPtr & ast) const;
 
-    bool isPrimaryKey(const String & column_name) const;
+    bool isSortingKey(const String & column_name) const;
 
     bool isConstant(const ASTPtr & expr) const;
 
@@ -106,7 +106,7 @@ private:
     String first_primary_key_column;
     const StringSet table_columns;
     const Names queried_columns;
-    const Names primary_key_columns;
+    const NameSet sorting_key_names;
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
