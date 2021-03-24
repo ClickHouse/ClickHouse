@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-}
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
