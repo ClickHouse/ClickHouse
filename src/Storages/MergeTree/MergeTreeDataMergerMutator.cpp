@@ -62,6 +62,8 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int ABORTED;
+    extern const int TOO_MANY_PARTITIONS;
+    extern const int INVALID_PARTITION_VALUE;
 }
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
@@ -1169,7 +1171,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     time_t time_of_mutation,
     ContextPtr context,
     const ReservationPtr & space_reservation,
-    TableLockHolder & holder)
+    TableLockHolder & holder,
+    const String & partition_id)
 {
     checkOperationIsNotCanceled(merge_entry);
 
@@ -1238,10 +1241,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, space_reservation->getDisk(), 0);
-    auto new_data_part = data.createPart(
-        future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
+    auto disk = space_reservation->getDisk();
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk, 0);
+    MergeTreeData::MutableDataPartPtr new_data_part;
 
+    const auto * prefix = partition_id.empty() ? "tmp_mut_" : "tmp_replace_";
+    new_data_part
+        = data.createPart(future_part.name, future_part.type, future_part.part_info, single_disk_volume, prefix + future_part.name);
     new_data_part->uuid = future_part.uuid;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
@@ -1249,9 +1255,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
     new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, storage_columns, for_file_renames));
-    new_data_part->partition.assign(source_part->partition);
+    if (partition_id.empty())
+        new_data_part->partition.assign(source_part->partition);
 
-    auto disk = new_data_part->volume->getDisk();
     String new_part_tmp_path = new_data_part->getFullRelativePath();
 
     SyncGuardPtr sync_guard;
@@ -1296,7 +1302,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             need_sync,
             space_reservation,
             holder,
-            context);
+            context,
+            partition_id);
 
         /// no finalization required, because mutateAllPartColumns use
         /// MergedBlockOutputStream which finilaze all part fields itself
@@ -1316,12 +1323,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         auto projections_to_recalc = getProjectionsToRecalculate(
             updated_columns, metadata_snapshot, materialized_projections, source_part);
 
+        // If partition_id is not empty, we are mutating the partition key thus we don't skip minmax_idx and partition.dat
         NameSet files_to_skip = collectFilesToSkip(
             source_part,
             mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
             indices_to_recalc,
             mrk_extension,
-            projections_to_recalc);
+            projections_to_recalc,
+            partition_id);
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (indices_to_recalc.empty() && projections_to_recalc.empty() && mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
@@ -1396,7 +1405,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 need_sync,
                 space_reservation,
                 holder,
-                context);
+                context,
+                partition_id);
         }
 
         for (const auto & [rename_from, rename_to] : files_to_rename)
@@ -1413,7 +1423,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             }
         }
 
-        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values, compression_codec);
+        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values, compression_codec, partition_id);
     }
 
     return new_data_part;
@@ -1701,7 +1711,8 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<MergeTreeProjectionPtr> & projections_to_recalc)
+    const std::set<MergeTreeProjectionPtr> & projections_to_recalc,
+    const String & partition_id)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -1717,16 +1728,22 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 
         auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
         serialization->enumerateStreams(callback);
+        if (!partition_id.empty())
+            files_to_skip.insert("minmax_" + entry.name + ".idx");
     }
     for (const auto & index : indices_to_recalc)
     {
         files_to_skip.insert(index->getFileName() + ".idx");
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
+
     for (const auto & projection : projections_to_recalc)
     {
         files_to_skip.insert(projection->getDirectoryName());
     }
+
+    if (!partition_id.empty())
+        files_to_skip.insert("partition.dat");
 
     return files_to_skip;
 }
@@ -1968,6 +1985,38 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & met
     return false;
 }
 
+
+static void checkAndUpdatePartitionKeyIfEmpty(
+    const KeyDescription & partition_key,
+    const String & partition_id,
+    Block block_copy,
+    const MergeTreeData::MutableDataPartPtr & new_data_part)
+{
+    partition_key.expression->execute(block_copy);
+    ColumnRawPtrs partition_columns;
+    partition_columns.reserve(partition_key.sample_block.columns());
+    for (const ColumnWithTypeAndName & element : partition_key.sample_block)
+        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
+
+    Row row(partition_columns.size());
+    for (size_t i = 0; i < partition_columns.size(); ++i)
+    {
+        const auto * column = partition_columns[i];
+        if (column->hasEqualValues())
+            row[i] = (*partition_columns[i])[0];
+        else
+            throw Exception("Cannot update partition to more than one partition", ErrorCodes::TOO_MANY_PARTITIONS);
+    }
+    MergeTreePartition partition(std::move(row));
+    auto id = partition.getID(partition_key.sample_block);
+    if (partition_id != id)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Cannot update partition to {} which is different from {}", id, partition_id);
+
+    if (new_data_part->partition.value.empty())
+        new_data_part->partition = std::move(partition);
+}
+
+
 // 1. get projection pipeline and a sink to write parts
 // 2. build an executor that can write block to the input stream (actually we can write through it to generate as many parts as possible)
 // 3. finalize the pipeline so that all parts are merged into one part
@@ -1982,7 +2031,8 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     const ReservationPtr & space_reservation,
     TableLockHolder & holder,
     ContextPtr context,
-    IMergeTreeDataPart::MinMaxIndex * minmax_idx)
+    IMergeTreeDataPart::MinMaxIndex * minmax_idx,
+    const String & partition_id)
 {
     size_t block_num = 0;
     std::map<String, MergeTreeData::MutableDataPartsVector> projection_parts;
@@ -1994,6 +2044,9 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     }
     while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
+        if (!partition_id.empty())
+            checkAndUpdatePartitionKeyIfEmpty(metadata_snapshot->getPartitionKey(), partition_id, block, new_data_part);
+
         if (minmax_idx)
             minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
@@ -2143,7 +2196,8 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     bool need_sync,
     const ReservationPtr & space_reservation,
     TableLockHolder & holder,
-    ContextPtr context)
+    ContextPtr context,
+    const String & partition_id)
 {
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -2178,7 +2232,8 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         space_reservation,
         holder,
         context,
-        &minmax_idx);
+        &minmax_idx,
+        partition_id);
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     mutating_stream->readSuffix();
@@ -2200,7 +2255,8 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     bool need_sync,
     const ReservationPtr & space_reservation,
     TableLockHolder & holder,
-    ContextPtr context)
+    ContextPtr context,
+    const String & partition_id)
 {
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -2209,6 +2265,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
         mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
 
     IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
     MergedColumnOnlyOutputStream out(
         new_data_part,
         metadata_snapshot,
@@ -2234,12 +2291,26 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
         merge_entry,
         space_reservation,
         holder,
-        context);
+        context,
+        partition_id.empty() ? nullptr : &minmax_idx,
+        partition_id);
 
     mutating_stream->readSuffix();
 
     auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums, need_sync);
 
+    if (!partition_id.empty())
+    {
+        new_data_part->minmax_idx = std::move(minmax_idx);
+        if (new_data_part->isStoredOnDisk())
+        {
+            auto disk = new_data_part->volume->getDisk();
+            new_data_part->partition.store(
+                new_data_part->storage, disk, new_data_part->getFullRelativePath(), changed_checksums);
+            new_data_part->minmax_idx.store(
+                new_data_part->storage, disk, new_data_part->getFullRelativePath(), changed_checksums);
+        }
+    }
     new_data_part->checksums.add(std::move(changed_checksums));
 }
 
@@ -2247,7 +2318,8 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     bool need_remove_expired_values,
-    const CompressionCodecPtr & codec)
+    const CompressionCodecPtr & codec,
+    const String & partition_id)
 {
     auto disk = new_data_part->volume->getDisk();
 
@@ -2290,7 +2362,9 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
     new_data_part->index = source_part->index;
-    new_data_part->minmax_idx = source_part->minmax_idx;
+    // If we don't mutate the partition key, set it back
+    if (partition_id.empty())
+        new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
     new_data_part->setBytesOnDisk(

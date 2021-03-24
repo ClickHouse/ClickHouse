@@ -183,6 +183,9 @@ public:
     String from_table;
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
+    /// For REPLACE PARTITION FROM PARTITION UPDATE
+    ASTPtr src_partition;
+
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;

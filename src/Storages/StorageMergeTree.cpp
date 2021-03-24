@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1385,6 +1386,115 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
                 removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+        }
+
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+}
+
+void StorageMergeTree::replacePartitionUpdate(
+    const ASTPtr & partition,
+    bool replace,
+    const MutationCommands & commands,
+    ContextPtr local_context)
+{
+    auto lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    Stopwatch watch;
+    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    String src_partition_id = getPartitionIDFromQuery(commands[0].partition, local_context);
+    DataPartsVector parts = getDataPartsVector({DataPartState::Committed});
+    DataPartsVector src_parts = getDataPartsVectorInPartition(DataPartState::Committed, src_partition_id);
+    if (src_parts.empty())
+        return;
+
+    MutableDataPartsVector dst_parts;
+    for (const auto & part : src_parts)
+    {
+        FutureMergedMutatedPart future_part;
+
+        /// This will generate unique name in scope of current server process.
+        Int64 temp_index = insert_increment.get();
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, part->info.level);
+
+        future_part.parts.push_back(part);
+        future_part.part_info = dst_part_info;
+        future_part.name = part->getNewName(dst_part_info);
+        future_part.type = part->getType();
+        auto reservation = tryReserveSpace(MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), part->volume);
+        auto table_id = getStorageID();
+        MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+        Stopwatch stopwatch;
+        MutableDataPartPtr new_part;
+
+        auto write_part_log = [&] (const ExecutionStatus & execution_status)
+        {
+            writePartLog(
+                PartLogElement::MUTATE_PART,
+                execution_status,
+                stopwatch.elapsed(),
+                future_part.name,
+                new_part,
+                future_part.parts,
+                merge_entry.get());
+        };
+
+        try
+        {
+            new_part = merger_mutator.mutatePartToTemporaryPart(
+                future_part, metadata_snapshot, commands, *merge_entry, time(nullptr), getContext(), reservation, lock, partition_id);
+
+            if (new_part->info.partition_id != partition_id)
+                throw Exception("Partition update should generate part in the same partition", ErrorCodes::BAD_ARGUMENTS);
+
+            dst_parts.emplace_back(std::move(new_part));
+            write_part_log({});
+        }
+        catch (...)
+        {
+            write_part_log(ExecutionStatus::fromCurrentException());
+            throw;
+        }
+    }
+
+    /// ATTACH empty part set
+    if (!replace && dst_parts.empty())
+        return;
+
+    MergeTreePartInfo drop_range;
+    if (replace)
+    {
+        drop_range.partition_id = partition_id;
+        drop_range.min_block = 0;
+        drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
+        drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+    }
+
+    /// Atomically add new parts and remove old ones
+    try
+    {
+        {
+            /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
+            ///  and we should be able to rollback already added (Precomitted) parts
+            Transaction transaction(*this);
+
+            auto data_parts_lock = lockParts();
+
+            /// Populate transaction
+            for (MutableDataPartPtr & part : dst_parts)
+                renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
+
+            transaction.commit(&data_parts_lock);
+
+            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
+            if (replace)
+                removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
         }
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());

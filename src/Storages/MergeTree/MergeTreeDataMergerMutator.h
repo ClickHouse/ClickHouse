@@ -143,7 +143,8 @@ public:
         time_t time_of_mutation,
         ContextPtr context,
         const ReservationPtr & space_reservation,
-        TableLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder,
+        const String & partition_id = {});
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
@@ -182,7 +183,8 @@ private:
         const Block & updated_header,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
         const String & mrk_extension,
-        const std::set<MergeTreeProjectionPtr> & projections_to_recalc);
+        const std::set<MergeTreeProjectionPtr> & projections_to_recalc,
+        const String & partition_id);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
@@ -229,7 +231,8 @@ private:
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
         ContextPtr context,
-        IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
+        IMergeTreeDataPart::MinMaxIndex * minmax_idx,
+        const String & partition_id);
 
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
@@ -245,7 +248,8 @@ private:
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
-        ContextPtr context);
+        ContextPtr context,
+        const String & partition_id = {});
 
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
@@ -263,7 +267,8 @@ private:
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
-        ContextPtr context);
+        ContextPtr context,
+        const String & partition_id = {});
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.
@@ -271,7 +276,8 @@ private:
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
         bool need_remove_expired_values,
-        const CompressionCodecPtr & codec);
+        const CompressionCodecPtr & codec,
+        const String & partition_id = {});
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

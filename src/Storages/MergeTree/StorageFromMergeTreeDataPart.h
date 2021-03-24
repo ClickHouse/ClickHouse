@@ -50,7 +50,6 @@ public:
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
-
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
@@ -74,6 +73,8 @@ public:
         return parts.front()->storage.getPartitionIDFromQuery(ast, context);
     }
 
+    const MergeTreeData::MergingParams & getMergingParams() const { return parts.front()->storage.merging_params; }
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
@@ -82,7 +83,7 @@ protected:
         setInMemoryMetadata(part_->storage.getInMemoryMetadata());
     }
 
-    StorageFromMergeTreeDataPart(MergeTreeData::DataPartsVector && parts_)
+    StorageFromMergeTreeDataPart(MergeTreeData::DataPartsVector parts_)
         : IStorage(getIDFromParts(parts_))
         , parts(std::move(parts_))
     {

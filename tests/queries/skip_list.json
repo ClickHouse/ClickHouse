@@ -686,6 +686,7 @@
         "01715_background_checker_blather_zookeeper",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
         "01722_long_brotli_http_compression_json_format", // It is broken in some unimaginable way with the genius error 'cannot write to ofstream'. Not sure how to debug this
+        "01744_alter_replace_partition_update",
         "01747_alter_partition_key_enum_zookeeper",
         "01748_dictionary_table_dot", // creates database
         "01760_polygon_dictionaries",

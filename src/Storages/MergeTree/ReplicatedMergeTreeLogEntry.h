@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
+#include <Storages/MutationCommands.h>
 #include <Disks/IDisk.h>
 
 #include <mutex>
@@ -104,6 +105,7 @@ struct ReplicatedMergeTreeLogEntryData
 
         String from_database;
         String from_table;
+        MutationCommands commands;
         Strings src_part_names; // as in from_table
         Strings new_part_names;
         Strings part_names_checksums;

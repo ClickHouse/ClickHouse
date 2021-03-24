@@ -3058,9 +3058,32 @@ Pipe MergeTreeData::alterPartition(
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = query_context->resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
-                replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
+                if (command.update.type == MutationCommand::UPDATE)
+                {
+                    MutationCommands replace_commands;
+                    Names minmax_idx_columns = getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+                    std::unordered_set<String> columns(minmax_idx_columns.begin(), minmax_idx_columns.end());
+                    for (const auto & [name, _] : command.update.column_to_update_expression)
+                        columns.erase(name);
+
+                    // Fill in missing minmax columns when mutating partition key
+                    if (!columns.empty())
+                    {
+                        auto update = command.update;
+                        for (const auto & name : columns)
+                            update.column_to_update_expression.emplace(name, std::make_shared<ASTIdentifier>(name));
+                        replace_commands.push_back(update);
+                    }
+                    else
+                        replace_commands.push_back(command.update);
+                    replacePartitionUpdate(command.partition, command.replace, replace_commands, query_context);
+                }
+                else
+                {
+                    String from_database = query_context->resolveDatabase(command.from_database);
+                    auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+                    replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
+                }
             }
             break;
 

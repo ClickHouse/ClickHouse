@@ -2,8 +2,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/DataDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Chunk.h>
 #include <Processors/Pipe.h>
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
 
@@ -80,6 +83,25 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.replace = command_ast->replace;
         res.from_database = command_ast->from_database;
         res.from_table = command_ast->from_table;
+        if (command_ast->update_assignments)
+        {
+            auto update_ast = command_ast->clone();
+            auto & update = update_ast->as<ASTAlterCommand &>();
+            update.type = ASTAlterCommand::UPDATE;
+            update.partition = nullptr; // We don't use source partition for REPLACE UPDATE command.
+            res.update.ast = update_ast;
+            res.update.type = MutationCommand::UPDATE;
+            res.update.partition = command_ast->src_partition;
+            res.update.predicate = command_ast->predicate;
+            for (const ASTPtr & assignment_ast : command_ast->update_assignments->children)
+            {
+                const auto & assignment = assignment_ast->as<ASTAssignment &>();
+                auto insertion = res.update.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
+                if (!insertion.second)
+                    throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
+                        ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
+            }
+        }
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)

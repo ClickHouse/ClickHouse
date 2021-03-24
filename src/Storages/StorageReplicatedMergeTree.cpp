@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 
@@ -48,6 +49,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -130,6 +132,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
     extern const int DUPLICATE_DATA_PART;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace ActionLocks
@@ -1812,8 +1815,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     /// Can throw an exception.
     ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->volume);
 
-    auto table_lock = lockForShare(
-            RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+    auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
 
     MutableDataPartPtr new_part;
@@ -2243,8 +2245,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     PartDescriptions parts_to_add;
     DataPartsVector parts_to_remove;
 
-    auto table_lock_holder_dst_table = lockForShare(
-            RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto table_lock_holder_dst_table = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto dst_metadata_snapshot = getInMemoryMetadataPtr();
 
     for (size_t i = 0; i < entry_replace.new_part_names.size(); ++i)
@@ -2291,67 +2292,107 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         LOG_WARNING(log, "Some (but not all) parts from REPLACE PARTITION command already exist. REPLACE PARTITION will not be atomic.");
     }
 
-    StoragePtr source_table;
     TableLockHolder table_lock_holder_src_table;
-    StorageID source_table_id{entry_replace.from_database, entry_replace.from_table};
 
-    auto clone_data_parts_from_source_table = [&] () -> size_t
+    size_t num_clonable_parts;
+    if (entry_replace.from_table.empty())
     {
-        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, getContext());
-        if (!source_table)
+        // It's a REPLACE UPDATE command
+        num_clonable_parts = [&]() -> size_t
         {
-            LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
-            return 0;
-        }
+            DataPartStates valid_states{
+                MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated};
 
-        auto src_metadata_snapshot = source_table->getInMemoryMetadataPtr();
-        MergeTreeData * src_data = nullptr;
-        try
-        {
-            src_data = &checkStructureAndGetMergeTreeData(source_table, src_metadata_snapshot, dst_metadata_snapshot);
-        }
-        catch (Exception &)
-        {
-            LOG_INFO(log, "Can't use {} as source table for REPLACE PARTITION command. Will fetch all parts. Reason: {}", source_table_id.getNameForLogs(), getCurrentExceptionMessage(false));
-            return 0;
-        }
-
-        table_lock_holder_src_table = source_table->lockForShare(
-                RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-
-        DataPartStates valid_states{
-            MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated};
-
-        size_t num_clonable_parts = 0;
-        for (PartDescriptionPtr & part_desc : parts_to_add)
-        {
-            auto src_part = src_data->getPartIfExists(part_desc->src_part_info, valid_states);
-            if (!src_part)
+            size_t num_parts = 0;
+            for (PartDescriptionPtr & part_desc : parts_to_add)
             {
-                LOG_DEBUG(log, "There is no part {} in {}", part_desc->src_part_name, source_table_id.getNameForLogs());
-                continue;
+                auto src_part = getPartIfExists(part_desc->src_part_info, valid_states);
+                if (!src_part)
+                {
+                    LOG_DEBUG(log, "There is no part {} in {}", part_desc->src_part_name, getStorageID().getNameForLogs());
+                    continue;
+                }
+
+                String checksum_hex = src_part->checksums.getTotalChecksumHex();
+
+                if (checksum_hex != part_desc->checksum_hex)
+                {
+                    LOG_DEBUG(log, "Part {} of {} has inappropriate checksum", part_desc->src_part_name, getStorageID().getNameForLogs());
+                    /// TODO: check version
+                    continue;
+                }
+
+                part_desc->found_new_part_name = part_desc->new_part_name;
+                part_desc->found_new_part_info = part_desc->new_part_info;
+                part_desc->src_table_part = src_part;
+
+                ++num_parts;
             }
 
-            String checksum_hex  = src_part->checksums.getTotalChecksumHex();
+            return num_parts;
+        }();
+    }
+    else
+    {
+        num_clonable_parts = [&]() -> size_t
+        {
+            StorageID source_table_id{entry_replace.from_database, entry_replace.from_table};
+            StoragePtr source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, getContext());
 
-            if (checksum_hex != part_desc->checksum_hex)
+            if (!source_table)
             {
-                LOG_DEBUG(log, "Part {} of {} has inappropriate checksum", part_desc->src_part_name, source_table_id.getNameForLogs());
-                /// TODO: check version
-                continue;
+                LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
+                return 0;
             }
 
-            part_desc->found_new_part_name = part_desc->new_part_name;
-            part_desc->found_new_part_info = part_desc->new_part_info;
-            part_desc->src_table_part = src_part;
+            auto src_metadata_snapshot = source_table->getInMemoryMetadataPtr();
+            MergeTreeData * src_data = nullptr;
+            try
+            {
+                src_data = &checkStructureAndGetMergeTreeData(source_table, src_metadata_snapshot, dst_metadata_snapshot);
+            }
+            catch (Exception &)
+            {
+                LOG_INFO(log, "Can't use {} as source table for REPLACE PARTITION command. Will fetch all parts. Reason: {}", source_table_id.getNameForLogs(), getCurrentExceptionMessage(false));
+                return 0;
+            }
 
-            ++num_clonable_parts;
-        }
+            table_lock_holder_src_table
+                = source_table->lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-        return num_clonable_parts;
-    };
+            DataPartStates valid_states{
+                MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated};
 
-    size_t num_clonable_parts = clone_data_parts_from_source_table();
+            size_t num_parts = 0;
+            for (PartDescriptionPtr & part_desc : parts_to_add)
+            {
+                auto src_part = src_data->getPartIfExists(part_desc->src_part_info, valid_states);
+                if (!src_part)
+                {
+                    LOG_DEBUG(log, "There is no part {} in {}", part_desc->src_part_name, source_table_id.getNameForLogs());
+                    continue;
+                }
+
+                String checksum_hex  = src_part->checksums.getTotalChecksumHex();
+
+                if (checksum_hex != part_desc->checksum_hex)
+                {
+                    LOG_DEBUG(log, "Part {} of {} has inappropriate checksum", part_desc->src_part_name, source_table_id.getNameForLogs());
+                    /// TODO: check version
+                    continue;
+                }
+
+                part_desc->found_new_part_name = part_desc->new_part_name;
+                part_desc->found_new_part_info = part_desc->new_part_info;
+                part_desc->src_table_part = src_part;
+
+                ++num_parts;
+            }
+
+            return num_parts;
+        }();
+    }
+
     LOG_DEBUG(log, "Found {} parts that could be cloned (of {} required parts)", num_clonable_parts, parts_to_add.size());
 
     ActiveDataPartSet adding_parts_active_set(format_version);
@@ -2437,18 +2478,85 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         }
     }
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
-
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
         if (part_desc->src_table_part)
         {
-
             if (part_desc->checksum_hex != part_desc->src_table_part->checksums.getTotalChecksumHex())
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);
 
-            part_desc->res_part = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot);
+            if (entry_replace.from_table.empty())
+            {
+                String partition_id = part_desc->new_part_info.partition_id;
+                FutureMergedMutatedPart future_part;
+                future_part.parts.push_back(part_desc->src_table_part);
+                future_part.part_info = part_desc->new_part_info;
+                future_part.name = part_desc->new_part_name;
+                future_part.type = part_desc->src_table_part->getType();
+                auto reservation = tryReserveSpace(
+                    MergeTreeDataMergerMutator::estimateNeededDiskSpace({part_desc->src_table_part}), part_desc->src_table_part->volume);
+                auto table_id = getStorageID();
+                MergeList::EntryPtr merge_entry
+                    = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+                Stopwatch stopwatch;
+                MutableDataPartPtr new_part;
+
+                auto write_part_log = [&] (const ExecutionStatus & execution_status)
+                {
+                    writePartLog(
+                        PartLogElement::MUTATE_PART,
+                        execution_status,
+                        stopwatch.elapsed(),
+                        future_part.name,
+                        new_part,
+                        future_part.parts,
+                        merge_entry.get());
+                };
+
+                try
+                {
+                    auto replace_commands = entry_replace.commands;
+                    auto & update = replace_commands[0];
+                    Names minmax_idx_columns = getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+                    std::unordered_set<String> columns(minmax_idx_columns.begin(), minmax_idx_columns.end());
+                    for (const auto & [name, _] : update.column_to_update_expression)
+                        columns.erase(name);
+
+                    // Fill in missing minmax columns when mutating partition key
+                    if (!columns.empty())
+                    {
+                        for (const auto & name : columns)
+                            update.column_to_update_expression.emplace(name, std::make_shared<ASTIdentifier>(name));
+                    }
+
+                    new_part = merger_mutator.mutatePartToTemporaryPart(
+                        future_part,
+                        metadata_snapshot,
+                        replace_commands,
+                        *merge_entry,
+                        time(nullptr),
+                        getContext(),
+                        reservation,
+                        table_lock_holder_src_table,
+                        partition_id);
+
+                    if (new_part->info.partition_id != partition_id)
+                        throw Exception("Partition update should generate part in the same partition", ErrorCodes::BAD_ARGUMENTS);
+
+                    part_desc->res_part = new_part;
+                    write_part_log({});
+                }
+                catch (...)
+                {
+                    write_part_log(ExecutionStatus::fromCurrentException());
+                    throw;
+                }
+            }
+            else
+            {
+                part_desc->res_part = cloneAndLoadDataPartOnSameDisk(
+                    part_desc->src_table_part, "tmp_replace_from_clone_", part_desc->new_part_info, metadata_snapshot);
+            }
         }
         else if (!part_desc->replica.empty())
         {
@@ -2463,8 +2571,17 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(
-                metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
-                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
+                metadata_snapshot,
+                part_desc->found_new_part_name,
+                source_replica_path,
+                address.host,
+                address.replication_port,
+                timeouts,
+                credentials->getUser(),
+                credentials->getPassword(),
+                interserver_scheme,
+                false,
+                "tmp_replace_from_fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -5914,8 +6031,7 @@ void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
-    auto table_lock = lockForShare(
-            RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto table_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto zookeeper = getZooKeeper();
 
     DataPartsVector parts = grabOldParts();
@@ -6377,6 +6493,264 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     {
         lock2.reset();
         lock1.reset();
+        waitForAllReplicasToProcessLogEntry(entry);
+    }
+}
+
+void StorageReplicatedMergeTree::replacePartitionUpdate(
+    const ASTPtr & partition,
+    bool replace,
+    const MutationCommands & commands,
+    ContextPtr query_context)
+{
+    auto table_lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    Stopwatch watch;
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    String src_partition_id = getPartitionIDFromQuery(commands[0].partition, query_context);
+
+    auto zookeeper = getZooKeeper();
+
+    // Check if current replica contains latest data in source partition to replace from.
+    {
+        const String quorum_status_path = zookeeper_path + "/quorum/status";
+        String value;
+        Coordination::Stat stat;
+
+        if (zookeeper->tryGet(quorum_status_path, value, &stat))
+        {
+            ReplicatedMergeTreeQuorumEntry quorum_entry;
+            quorum_entry.fromString(value);
+
+            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, format_version);
+
+            if (part_info.partition_id == src_partition_id)
+                throw Exception("Replica doesn't have fresh parts in partition " + src_partition_id, ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+        }
+
+        String added_parts_str;
+        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
+        {
+            if (!added_parts_str.empty())
+            {
+                ReplicatedMergeTreeQuorumAddedParts part_with_quorum(format_version);
+                part_with_quorum.fromString(added_parts_str);
+
+                auto added_parts = part_with_quorum.added_parts;
+
+                for (const auto & added_part : added_parts)
+                {
+                    if (added_part.first == src_partition_id && !getActiveContainingPart(added_part.second))
+                        throw Exception(
+                            "Replica doesn't have fresh parts in partition " + src_partition_id, ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+                }
+            }
+        }
+    }
+
+    DataPartsVector src_all_parts = getDataPartsVectorInPartition(DataPartState::Committed, src_partition_id);
+    if (src_all_parts.empty())
+        return;
+    DataPartsVector src_parts;
+    MutableDataPartsVector dst_parts;
+    Strings block_id_paths;
+    Strings part_checksums;
+    std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
+
+    static const String TMP_PREFIX = "tmp_replace_from_";
+
+    /// Firstly, generate last block number and compute drop_range
+    /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
+    /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
+    MergeTreePartInfo drop_range;
+    drop_range.partition_id = partition_id;
+    drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
+    drop_range.min_block = replace ? 0 : drop_range.max_block;
+    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+
+    String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+
+    if (drop_range.getBlocksCount() > 1)
+    {
+        /// We have to prohibit merges in drop_range, since new merge log entry appeared after this REPLACE FROM entry
+        ///  could produce new merged part instead in place of just deleted parts.
+        /// It is better to prohibit them on leader replica (like DROP PARTITION makes),
+        ///  but it is inconvenient for a user since he could actually use source table from this replica.
+        /// Therefore prohibit merges on the initializer server now and on the remaining servers when log entry will be executed.
+        /// It does not provides strong guarantees, but is suitable for intended use case (assume merges are quite rare).
+
+        {
+            std::lock_guard merge_selecting_lock(merge_selecting_mutex);
+            queue.disableMergesInBlockRange(drop_range_fake_part_name);
+        }
+    }
+
+    for (const auto & src_part : src_all_parts)
+    {
+        String hash_hex = src_part->checksums.getTotalChecksumHex();
+
+        if (replace)
+            LOG_INFO(log, "Trying to replace {} with hash_hex {}", src_part->name, hash_hex);
+        else
+            LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
+
+        String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
+
+        auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
+        if (!lock)
+        {
+            LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
+            continue;
+        }
+
+        UInt64 index = lock->getNumber();
+        MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+
+        FutureMergedMutatedPart future_part;
+        future_part.parts.push_back(src_part);
+        future_part.part_info = dst_part_info;
+        future_part.name = src_part->getNewName(dst_part_info);
+        future_part.type = src_part->getType();
+        auto reservation = tryReserveSpace(MergeTreeDataMergerMutator::estimateNeededDiskSpace({src_part}), src_part->volume);
+        auto table_id = getStorageID();
+        MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+        Stopwatch stopwatch;
+        MutableDataPartPtr new_part;
+
+        auto write_part_log = [&] (const ExecutionStatus & execution_status)
+        {
+            writePartLog(
+                PartLogElement::MUTATE_PART,
+                execution_status,
+                stopwatch.elapsed(),
+                future_part.name,
+                new_part,
+                future_part.parts,
+                merge_entry.get());
+        };
+
+        try
+        {
+            new_part = merger_mutator.mutatePartToTemporaryPart(
+                future_part,
+                metadata_snapshot,
+                commands,
+                *merge_entry,
+                time(nullptr),
+                getContext(),
+                reservation,
+                table_lock,
+                partition_id);
+
+            if (new_part->info.partition_id != partition_id)
+                throw Exception("Partition update should generate part in the same partition", ErrorCodes::BAD_ARGUMENTS);
+
+            src_parts.emplace_back(src_part);
+            dst_parts.emplace_back(new_part);
+            ephemeral_locks.emplace_back(std::move(*lock));
+            block_id_paths.emplace_back(block_id_path);
+            part_checksums.emplace_back(hash_hex);
+            write_part_log({});
+        }
+        catch (...)
+        {
+            write_part_log(ExecutionStatus::fromCurrentException());
+            throw;
+        }
+    }
+
+    ReplicatedMergeTreeLogEntryData entry;
+    {
+        entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
+        entry.source_replica = replica_name;
+        entry.create_time = time(nullptr);
+        entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
+
+        auto & entry_replace = *entry.replace_range_entry;
+        entry_replace.drop_range_part_name = drop_range_fake_part_name;
+        entry_replace.commands = commands;
+        for (const auto & part : src_parts)
+            entry_replace.src_part_names.emplace_back(part->name);
+        for (const auto & part : dst_parts)
+            entry_replace.new_part_names.emplace_back(part->name);
+        for (const String & checksum : part_checksums)
+            entry_replace.part_names_checksums.emplace_back(checksum);
+        entry_replace.columns_version = -1;
+    }
+
+    /// We are almost ready to commit changes, remove fetches and merges from drop range
+    queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
+
+    /// Remove deduplication block_ids of replacing parts
+    if (replace)
+        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+
+    DataPartsVector parts_to_remove;
+    Coordination::Responses op_results;
+
+    try
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < dst_parts.size(); ++i)
+        {
+            getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+            ephemeral_locks[i].getUnlockOps(ops);
+
+            if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+            {
+                /// It is unnecessary to add parts to working set until we commit log entry
+                zookeeper->multi(ops);
+                ops.clear();
+            }
+        }
+
+        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        Transaction transaction(*this);
+        {
+            auto data_parts_lock = lockParts();
+
+            for (MutableDataPartPtr & part : dst_parts)
+                renameTempPartAndReplace(part, nullptr, &transaction, data_parts_lock);
+        }
+
+        op_results = zookeeper->multi(ops);
+
+        {
+            auto data_parts_lock = lockParts();
+
+            transaction.commit(&data_parts_lock);
+            if (replace)
+                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        }
+
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+
+    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    for (auto & lock : ephemeral_locks)
+        lock.assumeUnlocked();
+
+    /// Forcibly remove replaced parts from ZooKeeper
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+
+    /// Speedup removing of replaced parts from filesystem
+    parts_to_remove.clear();
+    cleanup_thread.wakeup();
+
+    /// If necessary, wait until the operation is performed on all replicas.
+    if (query_context->getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        table_lock.reset();
         waitForAllReplicasToProcessLogEntry(entry);
     }
 }

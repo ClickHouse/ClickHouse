@@ -452,7 +452,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             if (s_from.ignore(pos))
             {
-                if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                if (s_partition.ignore(pos))
+                {
+                    if (!parser_partition.parse(pos, command->src_partition, expected))
+                        return false;
+
+                    if (!s_update.ignore(pos, expected))
+                        return false;
+
+                    if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
+                        return false;
+
+                    /// UPDATE statement requires non-empty predicate
+                    command->predicate = std::make_shared<ASTLiteral>(1);
+                }
+                else if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
                     return false;
 
                 command->replace = false;
@@ -468,10 +482,26 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_partition.parse(pos, command->partition, expected))
                 return false;
 
-            if (!s_from.ignore(pos, expected))
-                return false;
+            if (s_from.ignore(pos, expected))
+            {
+                if (s_partition.ignore(pos))
+                {
+                    if (!parser_partition.parse(pos, command->src_partition, expected))
+                        return false;
 
-            if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                    if (!s_update.ignore(pos, expected))
+                        return false;
+
+                    if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
+                        return false;
+
+                    /// UPDATE statement requires non-empty predicate
+                    command->predicate = std::make_shared<ASTLiteral>(1);
+                }
+                else if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                    return false;
+            }
+            else
                 return false;
 
             command->replace = true;

@@ -269,13 +269,23 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (replace ? "REPLACE" : "ATTACH") << " PARTITION "
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
-        if (!from_database.empty())
+        if (!from_table.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_database)
-                          << (settings.hilite ? hilite_none : "") << ".";
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+            if (!from_database.empty())
+            {
+                settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_database)
+                              << (settings.hilite ? hilite_none : "") << ".";
+            }
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
+        else
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM PARTITION " << (settings.hilite ? hilite_none : "");
+            src_partition->formatImpl(settings, state, frame);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " UPDATE " << (settings.hilite ? hilite_none : "");
+            update_assignments->formatImpl(settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
