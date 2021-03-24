@@ -16,3 +16,9 @@ ATTACH PARTITION	3	3_12_12_0	3_4_4_0
 command_type	partition_id	part_name	backup_name	old_part_name
 FREEZE PARTITION	7	7_8_8_0	test_01417_single_part_7	
 ATTACH PART	5	5_13_13_0		5_6_6_0
+command_type	partition_id	part_name	backup_name
+UNFREEZE PARTITION	7	7_8_8_0	test_01417_single_part_7
+command_type	partition_id	part_name	backup_name
+FREEZE PARTITION	202103	20210301_20210301_1_1_0	test_01417_single_part_old_syntax
+command_type	partition_id	part_name	backup_name
+UNFREEZE PARTITION	20210301	20210301_20210301_1_1_0	test_01417_single_part_old_syntax
