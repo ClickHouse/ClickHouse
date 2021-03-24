@@ -104,27 +104,27 @@ std::string Exception::getStackTraceString() const
 
 Exception::FramePointers Exception::getStackFramePointers() const
 {
-    FramePointers trace;
+    FramePointers frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     {
-        trace.resize(get_stack_trace_size());
-        for (size_t i = 0; i < trace.size(); ++i)
+        frame_pointers.resize(get_stack_trace_size());
+        for (size_t i = 0; i < frame_pointers.size(); ++i)
         {
-            trace[i] = get_stack_trace_frames()[i];
+            frame_pointers[i] = get_stack_trace_frames()[i];
         }
     }
 #else
     {
         size_t stack_trace_size = trace.getSize();
         size_t stack_trace_offset = trace.getOffset();
-        trace.resize(stack_trace_size - stack_trace_offset);
+        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
         {
-            trace[i] = trace.getFramePointers()[i];
+            frame_pointers.push_back(trace.getFramePointers()[i]);
         }
     }
 #endif
-    return trace;
+    return frame_pointers;
 }
 
 
