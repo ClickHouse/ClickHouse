@@ -1,5 +1,6 @@
-#include "Suggest.h"
+#include <algorithm>
 
+#include "Suggest.h"
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -90,45 +91,69 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
 
-    std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-        "SELECT name FROM system.functions"
-        " UNION ALL "
-        "SELECT name FROM system.table_engines"
-        " UNION ALL "
-        "SELECT name FROM system.formats"
-        " UNION ALL "
-        "SELECT name FROM system.table_functions"
-        " UNION ALL "
-        "SELECT name FROM system.data_type_families"
-        " UNION ALL "
-        "SELECT name FROM system.merge_tree_settings"
-        " UNION ALL "
-        "SELECT name FROM system.settings"
-        " UNION ALL "
-        "SELECT cluster FROM system.clusters"
-        " UNION ALL "
-        "SELECT name FROM system.errors"
-        " UNION ALL "
-        "SELECT event FROM system.events"
-        " UNION ALL "
-        "SELECT metric FROM system.asynchronous_metrics"
-        " UNION ALL "
-        "SELECT metric FROM system.metrics"
-        " UNION ALL "
-        "SELECT macro FROM system.macros"
-        " UNION ALL "
-        "SELECT policy_name FROM system.storage_policies"
-        " UNION ALL "
-        "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+     Settings settings;
+    /// To show all rows from:
+    /// - system.errors
+    /// - system.events
+    settings.system_events_show_zero_values = true;
+
+    Words system_tables;
+    fetch(connection, timeouts, "SHOW TABLES IN system", settings, system_tables);
+
+    std::stringstream query; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (";
+
+    std::vector<std::vector<String>> system_column_tables =
+    {
+        {"name", "functions"},
+        {"name", "table_engines"},
+        {"name", "formats"},
+        {"name", "table_functions"},
+        {"name", "data_type_families"},
+        {"name", "merge_tree_settings"},
+        {"name", "settings"},
+        {"cluster", "clusters"},
+        {"name", "errors"},
+        {"event", "events"},
+        {"metric", "asynchronous_metrics"},
+        {"metric", "metrics"},
+        {"macro", "macros"},
+        {"policy_name", "storage_policies"},
+    };
+
+    auto first = true;
+    for (auto & column_table : system_column_tables)
+    {
+        auto it = std::find(system_tables.begin(), system_tables.end(), column_table[1]);
+        if (it == system_tables.end())
+            continue;
+
+        if (!first)
+            query << " UNION ALL ";
+
+        first = false;
+        query << "SELECT " << column_table[0] << " FROM system." << column_table[1];
+    }
+
+    auto functions_it = std::find(system_tables.begin(), system_tables.end(), "functions");
+    auto aggregate_function_combinators_it = std::find(system_tables.begin(), system_tables.end(), "aggregate_function_combinators");
+    if (functions_it != system_tables.end() && aggregate_function_combinators_it != system_tables.end())
+    {
+        if (!first)
+            query << " UNION ALL ";
+
+        query << "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+    }
 
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {
         String limit_str = toString(suggestion_limit);
-        query <<
-            " UNION ALL "
-            "SELECT name FROM system.databases LIMIT " << limit_str
+
+        if (!first)
+            query << " UNION ALL ";
+
+        query << "SELECT name FROM system.databases LIMIT " << limit_str
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
             << " UNION ALL "
@@ -139,15 +164,10 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
     query << ") WHERE notEmpty(res)";
 
-    Settings settings;
-    /// To show all rows from:
-    /// - system.errors
-    /// - system.events
-    settings.system_events_show_zero_values = true;
-    fetch(connection, timeouts, query.str(), settings);
+    fetch(connection, timeouts, query.str(), settings, words);
 }
 
-void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings)
+void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings, Words & to_fill_words)
 {
     connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, &settings);
 
@@ -157,7 +177,7 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                fillWordsFromBlock(packet.block);
+                fillWordsFromBlock(packet.block, to_fill_words);
                 continue;
 
             case Protocol::Server::Progress:
@@ -185,7 +205,7 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
     }
 }
 
-void Suggest::fillWordsFromBlock(const Block & block)
+void Suggest::fillWordsFromBlock(const Block & block, Words & to_fill_words)
 {
     if (!block)
         return;
@@ -197,7 +217,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
 
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
-        words.emplace_back(column.getDataAt(i).toString());
+        to_fill_words.emplace_back(column.getDataAt(i).toString());
 }
 
 }
