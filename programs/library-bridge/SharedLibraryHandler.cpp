@@ -18,7 +18,8 @@ namespace ErrorCodes
 SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_path_,
     const std::vector<std::string> & library_settings,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    size_t num_attributes)
     : library_path(library_path_)
     , sample_block(sample_block_)
 {
@@ -31,11 +32,18 @@ SharedLibraryHandler::SharedLibraryHandler(
         lib_data = lib_new(&settings_holder->strings, ClickHouseLibrary::log);
     else
         throw Exception("Method libNew failed", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+
+    attributes_names.resize(num_attributes);
+    size_t start_pos = sample_block.columns() - num_attributes, col_idx = 0;
+    for (size_t attr_idx = start_pos; attr_idx < sample_block.columns(); ++attr_idx)
+        attributes_names[col_idx++] = sample_block.getByPosition(attr_idx).name.c_str();
 }
 
 
 SharedLibraryHandler::SharedLibraryHandler(const SharedLibraryHandler & other)
     : library_path{other.library_path}
+    , sample_block{other.sample_block}
+    , attributes_names{other.attributes_names}
     , library{other.library}
     , settings_holder{other.settings_holder}
 {
@@ -87,16 +95,12 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadAll(size_t num_attributes)
+BlockInputStreamPtr SharedLibraryHandler::loadAll()
 {
-    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(num_attributes);
-    ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), num_attributes};
-
-    size_t start_pos = sample_block.columns() - num_attributes, col_idx = 0;
-    for (size_t attr_idx = start_pos; attr_idx < sample_block.columns(); ++attr_idx)
-    {
-        columns.data[col_idx++] = sample_block.getByPosition(attr_idx).name.c_str();
-    }
+    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(attributes_names.size());
+    ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), attributes_names.size()};
+    for (size_t i = 0; i < attributes_names.size(); ++i)
+        columns.data[i] = attributes_names[i].c_str();
 
     auto load_all_func = library->get<ClickHouseLibrary::LibraryLoadAllFunc>(ClickHouseLibrary::LIBRARY_LOAD_ALL_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
@@ -112,12 +116,12 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll(size_t num_attributes)
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids, size_t num_attributes)
+BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 {
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
-    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(num_attributes);
-    ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), num_attributes};
+    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(attributes_names.size());
+    ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), attributes_names.size()};
 
     auto load_ids_func = library->get<ClickHouseLibrary::LibraryLoadIdsFunc>(ClickHouseLibrary::LIBRARY_LOAD_IDS_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);

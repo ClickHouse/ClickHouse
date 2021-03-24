@@ -15,15 +15,19 @@ class SharedLibraryHandler
 {
 
 public:
-    SharedLibraryHandler(const std::string & library_path_, const std::vector<std::string> & library_settings, const Block & sample_block);
+    SharedLibraryHandler(
+        const std::string & library_path_,
+        const std::vector<std::string> & library_settings,
+        const Block & sample_block,
+        size_t num_attributes);
 
     SharedLibraryHandler(const SharedLibraryHandler & other);
 
     ~SharedLibraryHandler();
 
-    BlockInputStreamPtr loadAll(size_t num_attributes);
+    BlockInputStreamPtr loadAll();
 
-    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids, size_t num_attributes);
+    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids);
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns);
 
@@ -37,8 +41,10 @@ private:
     Block dataToBlock(const ClickHouseLibrary::RawClickHouseLibraryTable data);
 
     std::string library_path;
-    SharedLibraryPtr library;
     const Block sample_block;
+    std::vector<std::string> attributes_names;
+
+    SharedLibraryPtr library;
     std::shared_ptr<CStringsHolder> settings_holder;
     void * lib_data;
 };

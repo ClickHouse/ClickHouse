@@ -55,7 +55,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
     description.init(sample_block);
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
-    auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"));
+    auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"), dict_struct.attributes.size());
 
     if (!res)
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
@@ -98,14 +98,14 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    return bridge_helper->loadAll(dict_struct.attributes.size());
+    return bridge_helper->loadAll();
 }
 
 
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(getDictIdsString(ids), dict_struct.attributes.size());
+    return bridge_helper->loadIds(getDictIdsString(ids));
 }
 
 

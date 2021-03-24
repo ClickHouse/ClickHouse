@@ -19,7 +19,7 @@ public:
 
     LibraryBridgeHelper(const Context & context_, const Block & sample_block, const Field & dictionary_id_);
 
-    bool initLibrary(const std::string & library_path, const std::string library_settings);
+    bool initLibrary(const std::string & library_path, const std::string library_settings, size_t num_attributes);
 
     bool cloneLibrary(const Field & other_dictionary_id);
 
@@ -29,11 +29,11 @@ public:
 
     bool supportsSelectiveLoad();
 
-    BlockInputStreamPtr loadAll(size_t num_attributes);
+    BlockInputStreamPtr loadAll();
 
-    BlockInputStreamPtr loadIds(const std::string ids_string, size_t num_attributes);
+    BlockInputStreamPtr loadIds(const std::string ids_string);
 
-    BlockInputStreamPtr loadKeys(const Block & key_columns);
+    BlockInputStreamPtr loadKeys(const Block & requested_block);
 
     BlockInputStreamPtr loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
@@ -73,7 +73,7 @@ private:
     static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
     static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
 
-    Poco::URI getDictionaryURI() const;
+    Poco::URI createRequestURI(const String & method) const;
 
     Poco::Logger * log;
     const Context & context;

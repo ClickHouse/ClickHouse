@@ -34,10 +34,11 @@ LibraryBridgeHelper::LibraryBridgeHelper(
 }
 
 
-Poco::URI LibraryBridgeHelper::getDictionaryURI() const
+Poco::URI LibraryBridgeHelper::createRequestURI(const String & method) const
 {
     auto uri = getMainURI();
     uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("method", method);
     return uri;
 }
 
@@ -58,17 +59,15 @@ void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 }
 
 
-bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const std::string library_settings)
+bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const std::string library_settings, size_t num_attributes)
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LIB_NEW_METHOD);
-    uri.addQueryParameter("library_path", library_path);
-    uri.addQueryParameter("library_settings", library_settings);
-
-    return executeRequest(uri, [this](std::ostream & os)
+    auto uri = createRequestURI(LIB_NEW_METHOD);
+    return executeRequest(uri, [library_path, library_settings, num_attributes, this](std::ostream & os)
     {
+        os << "library_path=" << library_path << "&";
+        os << "library_settings=" << library_settings << "&";
+        os << "num_attributes=" << std::to_string(num_attributes) << "&";
         os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
     });
 }
@@ -77,11 +76,8 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
 bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LIB_CLONE_METHOD);
+    auto uri = createRequestURI(LIB_CLONE_METHOD);
     uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
-
     return executeRequest(uri);
 }
 
@@ -89,10 +85,7 @@ bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
 bool LibraryBridgeHelper::removeLibrary()
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LIB_DELETE_METHOD);
-
+    auto uri = createRequestURI(LIB_DELETE_METHOD);
     return executeRequest(uri);
 }
 
@@ -100,10 +93,7 @@ bool LibraryBridgeHelper::removeLibrary()
 bool LibraryBridgeHelper::isModified()
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", IS_MODIFIED_METHOD);
-
+    auto uri = createRequestURI(IS_MODIFIED_METHOD);
     return executeRequest(uri);
 }
 
@@ -111,58 +101,40 @@ bool LibraryBridgeHelper::isModified()
 bool LibraryBridgeHelper::supportsSelectiveLoad()
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", SUPPORTS_SELECTIVE_LOAD_METHOD);
-
+    auto uri = createRequestURI(SUPPORTS_SELECTIVE_LOAD_METHOD);
     return executeRequest(uri);
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadAll(size_t num_attributes)
+BlockInputStreamPtr LibraryBridgeHelper::loadAll()
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LOAD_ALL_METHOD);
-    uri.addQueryParameter("num_attributes", std::to_string(num_attributes));
-
+    auto uri = createRequestURI(LOAD_ALL_METHOD);
     return loadBase(uri);
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string, size_t num_attributes)
+BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string)
 {
     startBridgeSync();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LOAD_IDS_METHOD);
-    uri.addQueryParameter("num_attributes", std::to_string(num_attributes));
-
+    auto uri = createRequestURI(LOAD_IDS_METHOD);
     return loadBase(uri, [ids_string](std::ostream & os) { os << "ids=" << ids_string; });
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & key_columns)
+BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & requested_block)
 {
     startBridgeSync();
-
-    auto columns = key_columns.getColumns();
-    auto keys_sample_block = key_columns.cloneEmpty();
-
-    auto uri = getDictionaryURI();
-    uri.addQueryParameter("method", LOAD_KEYS_METHOD);
+    auto uri = createRequestURI(LOAD_KEYS_METHOD);
     /// Sample block to parse block from callback
-    uri.addQueryParameter("requested_block", keys_sample_block.getNamesAndTypesList().toString());
-
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [key_columns, this](std::ostream & os)
+    uri.addQueryParameter("requested_block_sample", requested_block.getNamesAndTypesList().toString());
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [requested_block, this](std::ostream & os)
     {
         WriteBufferFromOStream out_buffer(os);
         auto output_stream = context.getOutputStream(
                 LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
-        formatBlock(output_stream, key_columns);
+        formatBlock(output_stream, requested_block);
     };
-
     return loadBase(uri, out_stream_callback);
 }
 
