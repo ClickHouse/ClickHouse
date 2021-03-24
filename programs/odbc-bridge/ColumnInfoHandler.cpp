@@ -111,8 +111,8 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
 
         /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.
         /// They both are passed as 'schema' parameter in request URL, so it is not clear whether it is database_name or schema_name passed.
-        /// If it is schema_name then we know that database is specified in connection_string. But if we have database_name as 'schema',
-        /// it is not guaranteed. For nanodbc database_name must be either in connection_string or as catalog_name.
+        /// If it is schema_name then we know that database is added in odbc.ini. But if we have database_name as 'schema',
+        /// it is not guaranteed. For nanodbc database_name must be either in odbc.ini or passed as catalog_name.
         auto get_columns = [&]()
         {
             nanodbc::catalog::tables tables = catalog.find_tables(table_name, /* type =  */ "", /* schema =  */ "", /* catalog = */ schema_name);
@@ -120,7 +120,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             {
                 catalog_name = tables.table_catalog();
                 LOG_TRACE(log, "Will fetch info for table '{}'", catalog_name + "." + table_name);
-                return catalog.find_columns(/* column = */ "", table_name, /* schema_name = */ "", catalog_name);
+                return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
 
             tables = catalog.find_tables(table_name, /* type =  */ "", /* schema = */ schema_name);
