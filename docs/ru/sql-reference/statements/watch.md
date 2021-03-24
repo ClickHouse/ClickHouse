@@ -20,6 +20,7 @@ WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```sql
 WATCH [db.]live_view;
 ```
+## Виртуальные столбцы {#watch-virtual-columns}
 
 Виртуальный столбец `_version` в результате запроса обозначает версию данного результата.
 
