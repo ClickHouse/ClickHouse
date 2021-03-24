@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNKNOWN_TYPE;
 }
 
@@ -135,7 +134,5 @@ void ODBCBlockInputStream::insertValue(
             throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
     }
 }
-
-
 
 }

@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
 std::string getIdentifierQuote(nanodbc::connection & connection)
 {
     return connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR);
