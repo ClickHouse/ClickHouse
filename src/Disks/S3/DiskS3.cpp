@@ -958,6 +958,9 @@ void DiskS3::findLastRevision()
         LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check revision in bounds {}-{}", l, r);
 
         auto revision = l + (r - l + 1) / 2;
+        if (revision == 0)
+            break;
+
         auto revision_str = revisionToString(revision);
 
         LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object with revision {}", revision);
@@ -966,8 +969,6 @@ void DiskS3::findLastRevision()
         if (checkObjectExists(bucket, s3_root_path + "r" + revision_str)
             || checkObjectExists(bucket, s3_root_path + "operations/r" + revision_str))
             l = revision;
-        else if (revision == 0)
-            r = 0;
         else
             r = revision - 1;
     }
