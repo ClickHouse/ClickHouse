@@ -75,6 +75,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     {
         if (method == "libNew")
         {
+            params.read(request.getStream());
+
             if (!params.has("library_path"))
             {
                 processError(response, "No 'library_path' in request URL");
@@ -87,13 +89,24 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            params.read(request.getStream());
+            std::string library_path = params.get("library_path");
+            const auto & settings_string = params.get("library_settings");
+            std::vector<std::string> library_settings = parseSettingsFromBinary(settings_string);
+            LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, settings_string);
+
+            if (!params.has("num_attributes"))
+            {
+                processError(response, "No 'num_attributes' in request URL");
+                return;
+            }
+
             if (!params.has("sample_block"))
             {
                 processError(response, "No 'sample_block' in request URL");
                 return;
             }
 
+            size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
             std::string columns = params.get("sample_block");
             std::shared_ptr<Block> sample_block;
 
@@ -108,12 +121,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            std::string library_path = params.get("library_path");
-            const auto & settings_string = params.get("library_settings");
-            std::vector<std::string> library_settings = parseSettingsFromBinary(settings_string);
-            LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, settings_string);
-
-            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, *sample_block);
+            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, *sample_block, num_attributes);
             writeStringBinary("1", out);
         }
         else if (method == "libClone")
@@ -148,31 +156,15 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
         else if (method == "loadAll")
         {
-            params.read(request.getStream());
-
-            if (!params.has("num_attributes"))
-            {
-                processError(response, "No 'num_attributes' in request URL");
-                return;
-            }
-
-            size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             const auto & sample_block = library_handler->getSampleBlock();
-            auto input = library_handler->loadAll(num_attributes);
+            auto input = library_handler->loadAll();
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
-
             copyData(*input, *output);
         }
         else if (method == "loadIds")
         {
             params.read(request.getStream());
-
-            if (!params.has("num_attributes"))
-            {
-                processError(response, "No 'num_attributes' in request URL");
-                return;
-            }
 
             if (!params.has("ids"))
             {
@@ -180,25 +172,22 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            size_t num_attributes = parseFromString<UInt32>(params.get("num_attributes"));
             std::vector<uint64_t> ids = parseIdsFromBinary(params.get("ids"));
-
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             const auto & sample_block = library_handler->getSampleBlock();
-            auto input = library_handler->loadIds(ids, num_attributes);
+            auto input = library_handler->loadIds(ids);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
-
             copyData(*input, *output);
         }
         else if (method == "loadKeys")
         {
-            if (!params.has("requested_block"))
+            if (!params.has("requested_block_sample"))
             {
-                processError(response, "No 'requested_block' in request URL");
+                processError(response, "No 'requested_block_sample' in request URL");
                 return;
             }
 
-            std::string requested_block_string = params.get("requested_block");
+            std::string requested_block_string = params.get("requested_block_sample");
 
             std::shared_ptr<Block> requested_sample_block;
             try
@@ -221,7 +210,6 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             const auto & sample_block = library_handler->getSampleBlock();
             auto input = library_handler->loadKeys(block.getColumns());
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
-
             copyData(*input, *output);
         }
     }
