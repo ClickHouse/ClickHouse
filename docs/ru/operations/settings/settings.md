@@ -1087,8 +1087,23 @@ load_balancing = round_robin
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
 Максимальное количество используемых реплик каждого шарда при выполнении запроса.
-Для консистентности (чтобы получить разные части одного и того же разбиения), эта опция работает только при заданном ключе сэмплирования.
-Отставание реплик не контролируется.
+
+Возможные значения:
+
+-   Целое положительное число.
+
+**Дополнительная информация**
+
+Эта настройка полезна для реплицируемых таблиц с ключом сэмплирования. Запрос может обрабатываться быстрее, если он выполняется на нескольких серверах параллельно. Однако производительность обработки запроса, наоборот, может упасть в следующих ситуациях:
+
+- Позиция ключа сэмплирования в ключе партиционирования не позволяет выполнять эффективное сканирование.
+- Добавление ключа сэмплирования в таблицу делает фильтрацию по другим столбцам менее эффективной.
+- Ключ сэмплирования является выражением, которое сложно вычисляется.
+- У распределения сетевых задержек в кластере длинный «хвост», из-за чего при параллельных запросах к нескольким серверам увеличивается среднее время задержки.
+
+!!! warning "Предупреждение"
+    Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
+
 
 ## compile {#compile}
 
@@ -1744,6 +1759,54 @@ ClickHouse генерирует исключение
 
 -   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+
+## insert_shard_id {#insert_shard_id}
+
+Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
+
+Если значение настройки `insert_shard_id` указано неверно, сервер выдаст ошибку.
+
+Узнать количество шардов `shard_num` на кластере `requested_cluster` можно из конфигурации сервера, либо используя запрос:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Возможные значения:
+
+-   0 — выключено.
+-   Любое число от `1` до `shards_num` соответствующей [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Результат:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
+
 ## validate_polygons {#validate_polygons}
 
 Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.

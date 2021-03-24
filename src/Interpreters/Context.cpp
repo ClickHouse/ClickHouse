@@ -60,6 +60,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
@@ -378,10 +379,6 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
-
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
-#endif
 
     bool shutdown_called = false;
 
@@ -1833,12 +1830,17 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
 {
     std::lock_guard lock(shared->clusters_mutex);
 
+    /// Do not update clusters if this part of config wasn't changed.
+    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
+        return;
+
+    auto old_clusters_config = shared->clusters_config;
     shared->clusters_config = config;
 
     if (!shared->clusters)
         shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
     else
-        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 }
 
 
@@ -2319,35 +2321,6 @@ void Context::setQueryParameter(const String & name, const String & value)
     if (!query_parameters.emplace(name, value).second)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
-
-
-#if USE_EMBEDDED_COMPILER
-
-std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    return shared->compiled_expression_cache;
-}
-
-void Context::setCompiledExpressionCache(size_t cache_size)
-{
-
-    auto lock = getLock();
-
-    if (shared->compiled_expression_cache)
-        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
-
-    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
-}
-
-void Context::dropCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    if (shared->compiled_expression_cache)
-        shared->compiled_expression_cache->reset();
-}
-
-#endif
 
 
 void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const

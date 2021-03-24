@@ -1,4 +1,5 @@
 #include <Common/ErrorCodes.h>
+#include <chrono>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -547,6 +548,7 @@
     M(578, INVALID_FORMAT_INSERT_QUERY_WITH_DATA) \
     M(579, INCORRECT_PART_TYPE) \
     \
+    M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
@@ -562,8 +564,8 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr Value END = 3000;
-    std::atomic<Value> values[END + 1]{};
+    constexpr ErrorCode END = 3000;
+    ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
     {
@@ -578,12 +580,43 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code >= END)
+        if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }
 
     ErrorCode end() { return END + 1; }
+
+    void increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & stacktrace)
+    {
+        if (error_code >= end())
+        {
+            /// For everything outside the range, use END.
+            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
+            error_code = end() - 1;
+        }
+
+        values[error_code].increment(remote, message, stacktrace);
+    }
+
+    void ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & stacktrace)
+    {
+        const auto now = std::chrono::system_clock::now();
+
+        std::lock_guard lock(mutex);
+
+        auto & error = remote ? value.remote : value.local;
+
+        ++error.count;
+        error.message = message;
+        error.stacktrace = stacktrace;
+        error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    }
+    ErrorPair ErrorPairHolder::get()
+    {
+        std::lock_guard lock(mutex);
+        return value;
+    }
 }
 
 }

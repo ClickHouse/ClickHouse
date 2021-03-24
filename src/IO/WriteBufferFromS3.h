@@ -69,6 +69,8 @@ public:
 private:
     bool finalized = false;
 
+    void allocateBuffer();
+
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();
