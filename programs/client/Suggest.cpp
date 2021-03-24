@@ -91,7 +91,7 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
 
-     Settings settings;
+    Settings settings;
     /// To show all rows from:
     /// - system.errors
     /// - system.events
