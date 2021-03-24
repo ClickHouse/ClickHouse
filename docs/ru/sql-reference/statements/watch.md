@@ -98,7 +98,7 @@ WATCH lv EVENTS LIMIT 1;
 └─────────┘
 ```
 
-## Параметр FORMAT {#format-clause}
+## Секция FORMAT {#format-clause}
 
 Параметр `FORMAT` работает аналогично одноименному параметру запроса [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 
