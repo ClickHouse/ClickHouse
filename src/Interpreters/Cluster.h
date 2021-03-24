@@ -122,6 +122,9 @@ public:
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
+        
+        /// Returns hash of all fields
+        String getHash() const;
 
         /// Returns 'host_name:port'
         String readableString() const;
