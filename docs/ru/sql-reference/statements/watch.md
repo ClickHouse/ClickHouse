@@ -52,7 +52,7 @@ WATCH lv;
 INSERT INTO [db.]table WATCH [db.]live_view ...
 ```
 
-## Параметр EVENTS {#events-clause}
+## Секция EVENTS {#events-clause}
 
 С помощью параметра `EVENTS` можно получить компактную форму результата запроса `WATCH`. Вместо полного результата вы получаете номер последней версии результата.
 
