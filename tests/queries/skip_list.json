@@ -776,6 +776,7 @@
         "01682_cache_dictionary_complex_key",
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
-        "01760_system_dictionaries"
+        "01760_system_dictionaries",
+        "01760_polygon_dictionaries"
     ]
 }

@@ -39,7 +39,7 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
 {
 }
 
-void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline)
+void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     /// Table lock is stored inside pipeline here.
     pipeline.setLimits(limits);
