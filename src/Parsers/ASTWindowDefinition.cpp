@@ -35,9 +35,11 @@ String ASTWindowDefinition::getID(char) const
 void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     FormatState & state, FormatStateStacked format_frame) const
 {
+    format_frame.expression_list_prepend_whitespace = false;
+
     if (partition_by)
     {
-        settings.ostr << "PARTITION BY";
+        settings.ostr << "PARTITION BY ";
         partition_by->formatImpl(settings, state, format_frame);
     }
 
@@ -48,7 +50,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
 
     if (order_by)
     {
-        settings.ostr << "ORDER BY";
+        settings.ostr << "ORDER BY ";
         order_by->formatImpl(settings, state, format_frame);
     }
 
