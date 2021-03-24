@@ -316,7 +316,6 @@ Pipe StorageS3Distributed::read(
         const auto & table_function_ast = table_expression->table_function;
         if (table_function_ast->getTreeHash() == tree_hash)
         {
-            std::cout << table_function_ast->dumpTree() << std::endl;
             auto & arguments = table_function_ast->children.at(0)->children;
             auto & bucket = arguments[1]->as<ASTLiteral &>().value.safeGet<String>();
             /// We rewrite query, and insert a port to connect as a first parameter

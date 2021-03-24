@@ -62,7 +62,6 @@ Block RemoteBlockInputStream::readImpl()
     if (isCancelledOrThrowIfKilled())
         return Block();
 
-    std::cout << "RemoteBlockInputStream " << block.rows() << ' ' << block.dumpStructure() << std::endl;
     return block;
 }
 
