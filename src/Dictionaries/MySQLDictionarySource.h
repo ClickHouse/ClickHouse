@@ -34,7 +34,7 @@ public:
     MySQLDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
+        const String & config_prefix,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -48,6 +48,8 @@ public:
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+
+    BlockInputStreamPtr loadBase(const String & query);
 
     bool isModified() const override;
 
@@ -68,9 +70,6 @@ private:
 
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
-
-    /// A helper method for recovering from "Lost connection to MySQL server during query" errors
-    BlockInputStreamPtr retriedCreateMySqlBIStream(const std::string & query_str, const size_t max_tries);
 
     Poco::Logger * log;
 

@@ -1,15 +1,14 @@
 #pragma once
 
 #if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
+#include "config_core.h"
 #endif
 
 #if USE_MYSQL
 
-#    include <ext/shared_ptr_helper.h>
-
-#    include <Storages/IStorage.h>
-#    include <mysqlxx/Pool.h>
+#include <ext/shared_ptr_helper.h>
+#include <Storages/IStorage.h>
+#include <mysqlxx/PoolWithFailover.h>
 
 
 namespace DB
@@ -25,7 +24,7 @@ class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public I
 public:
     StorageMySQL(
         const StorageID & table_id_,
-        mysqlxx::Pool && pool_,
+        mysqlxx::PoolWithFailover && pool_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const bool replace_query_,
@@ -55,7 +54,7 @@ private:
     bool replace_query;
     std::string on_duplicate_clause;
 
-    mysqlxx::Pool pool;
+    mysqlxx::PoolWithFailover pool;
     const Context & global_context;
 };
 

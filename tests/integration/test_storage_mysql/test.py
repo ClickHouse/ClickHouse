@@ -18,15 +18,32 @@ create_table_sql_template = """
     PRIMARY KEY (`id`)) ENGINE=InnoDB;
     """
 
+def get_mysql_conn(port=3308):
+    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=port)
+    return conn
+
+
+def create_mysql_db(conn, name):
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+
+
+def create_mysql_table(conn, tableName):
+    with conn.cursor() as cursor:
+        cursor.execute(create_table_sql_template.format(tableName))
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
 
-        conn = get_mysql_conn()
         ## create mysql db and table
-        create_mysql_db(conn, 'clickhouse')
+        conn1 = get_mysql_conn(port=3308)
+        create_mysql_db(conn1, 'clickhouse')
+        conn2 = get_mysql_conn(port=3388)
+        create_mysql_db(conn2, 'clickhouse')
         yield cluster
 
     finally:
@@ -51,6 +68,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
     assert node1.query(query.format(t=table_name)) == '250\n'
     conn.close()
+
 
 def test_insert_select(started_cluster):
     table_name = 'test_insert_select'
@@ -148,6 +166,7 @@ def test_table_function(started_cluster):
     assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '60000'
     conn.close()
 
+
 def test_binary_type(started_cluster):
     conn = get_mysql_conn()
     with conn.cursor() as cursor:
@@ -155,6 +174,7 @@ def test_binary_type(started_cluster):
     table_function = "mysql('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('binary_type')
     node1.query("INSERT INTO {} VALUES (42, 'clickhouse')".format('TABLE FUNCTION ' + table_function))
     assert node1.query("SELECT * FROM {}".format(table_function)) == '42\tclickhouse\\0\\0\\0\\0\\0\\0\n'
+
 
 def test_enum_type(started_cluster):
     table_name = 'test_enum_type'
@@ -168,20 +188,39 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
     conn.close()
 
 
-def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
-    return conn
+def test_mysql_many_replicas(started_cluster):
+    table_name = 'test_replicas'
+    conn1 = get_mysql_conn(port=3308)
+    create_mysql_table(conn1, table_name)
+    conn2 = get_mysql_conn(port=3388)
+    create_mysql_table(conn2, table_name)
 
+    # Storage with mysql{1|2}
+    node1.query('''
+        CREATE TABLE test_replicas
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = MySQL(`mysql{1|2}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
-def create_mysql_db(conn, name):
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+    # Fill remote tables with different data to be able to check
+    node1.query('''
+        CREATE TABLE test_replica1
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = MySQL(`mysql1:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');''')
+    node1.query('''
+        CREATE TABLE test_replica2
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = MySQL(`mysql2:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+    node1.query("INSERT INTO test_replica1 (id, name) SELECT number, 'host1' from numbers(10) ")
+    node1.query("INSERT INTO test_replica2 (id, name) SELECT number, 'host2' from numbers(10) ")
 
+    # check both remote replicas are accessible throught that table
+    query = "SELECT * FROM ("
+    for i in range (2):
+        query += "SELECT name FROM test_replicas UNION DISTINCT "
+    query += "SELECT name FROM test_replicas)"
 
-def create_mysql_table(conn, tableName):
-    with conn.cursor() as cursor:
-        cursor.execute(create_table_sql_template.format(tableName))
+    result = node1.query(query.format(t=table_name))
+    assert(result == 'host1\nhost2\n')
 
 
 if __name__ == '__main__':

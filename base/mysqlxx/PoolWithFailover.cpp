@@ -4,20 +4,19 @@
 #include <thread>
 
 #include <mysqlxx/PoolWithFailover.h>
-
-
-/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
-static bool startsWith(const std::string & s, const char * prefix)
-{
-    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
-}
+#include <Common/parseRemoteDescription.h>
+#include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
 
 
 using namespace mysqlxx;
 
-PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & config_,
-                                   const std::string & config_name_, const unsigned default_connections_,
-                                   const unsigned max_connections_, const size_t max_tries_)
+PoolWithFailover::PoolWithFailover(
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::string & config_name_,
+        const unsigned default_connections_,
+        const unsigned max_connections_,
+        const size_t max_tries_)
     : max_tries(max_tries_)
 {
     shareable = config_.getBool(config_name_ + ".share_connection", false);
@@ -59,16 +58,41 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & con
     }
 }
 
-PoolWithFailover::PoolWithFailover(const std::string & config_name_, const unsigned default_connections_,
-    const unsigned max_connections_, const size_t max_tries_)
-    : PoolWithFailover{
-        Poco::Util::Application::instance().config(), config_name_,
-        default_connections_, max_connections_, max_tries_}
+
+PoolWithFailover::PoolWithFailover(
+        const std::string & config_name_,
+        const unsigned default_connections_,
+        const unsigned max_connections_,
+        const size_t max_tries_)
+    : PoolWithFailover{Poco::Util::Application::instance().config(),
+            config_name_, default_connections_, max_connections_, max_tries_}
 {
 }
 
+
+PoolWithFailover::PoolWithFailover(
+        const std::string & database,
+        const std::string & hosts_pattern,
+        const uint16_t port,
+        const std::string & user,
+        const std::string & password,
+        const size_t max_tries_,
+        const size_t max_addresses)
+    : max_tries(max_tries_)
+{
+    auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
+    for (const auto & host : hosts)
+    {
+        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue after each fetch.
+        replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
+        LOG_TRACE(&Poco::Logger::get("MySQLPoolWithFailover"), "Adding address {}:{} to pool", host, port);
+    }
+}
+
+
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}, shareable{other.shareable}
+    : max_tries{other.max_tries}
+    , shareable{other.shareable}
 {
     if (shareable)
     {
