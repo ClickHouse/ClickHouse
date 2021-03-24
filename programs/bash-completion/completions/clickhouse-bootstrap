@@ -1,0 +1,81 @@
+#
+# bash autocomplete, that can work with:
+# a) --help of program
+#
+# Also you may like:
+# $ bind "set completion-ignore-case on"
+# $ bind "set show-all-if-ambiguous on"
+#
+# It uses bash-completion dynamic loader.
+
+# Known to work with bash 3.* with programmable completion and extended
+# pattern matching enabled (use 'shopt -s extglob progcomp' to enable
+# these if they are not already enabled).
+shopt -s extglob
+
+export _CLICKHOUSE_COMPLETION_LOADED=1
+
+function _clickhouse_bin_exist()
+{ [ -x "$1" ] || command -v "$1" >& /dev/null; }
+
+function _clickhouse_quote()
+{
+    local quoted=${1//\'/\'\\\'\'};
+    printf "'%s'" "$quoted"
+}
+
+# Extract every option (everything that starts with "-") from the --help dialog.
+function _clickhouse_get_options()
+{
+    "$@" --help 2>&1 | awk -F '[ ,=<>]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 0, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
+}
+
+function _complete_for_clickhouse_generic_bin()
+{
+    local cur prev
+    eval local cmd="$( _clickhouse_quote "$1" )"
+    _clickhouse_bin_exist "$cmd" || return 0
+
+    COMPREPLY=()
+    _get_comp_words_by_ref cur prev
+
+    case "$prev" in
+        -C|--config-file|--config)
+            return
+            ;;
+        # Argh...  This looks like a bash bug...
+        # Redirections are passed to the completion function
+        # although it is managed by the shell directly...
+        '<'|'>'|'>>'|[12]'>'|[12]'>>')
+            return
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "$(_clickhouse_get_options "$cmd")" -- "$cur") )
+
+    return 0
+}
+
+function _complete_clickhouse_generic()
+{
+    local bin=$1 && shift
+    local f=${1:-_complete_for_clickhouse_generic_bin}
+    local o=(
+        -o default
+        -o bashdefault
+        -o nospace
+        -F "$f"
+        "$bin"
+    )
+    complete "${o[@]}"
+}
+
+function _complete_clickhouse_bootstrap_main()
+{
+    local runtime=/usr/share/bash-completion/bash_completion
+    if ! type _get_comp_words_by_ref >& /dev/null && [[ -f $runtime ]]; then
+        source $runtime
+    fi
+    type _get_comp_words_by_ref >& /dev/null || return 0
+}
+_complete_clickhouse_bootstrap_main "$@"
