@@ -107,6 +107,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         }
         catch (...)
         {
+            tryLogCurrentException(log);
             out.finalize();
         }
     };
