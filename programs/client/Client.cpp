@@ -1620,7 +1620,8 @@ private:
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
                 apply_query_settings(*insert->settings_ast);
-            const auto * with_output = parsed_query->as<const ASTQueryWithOutput>();
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
