@@ -111,7 +111,16 @@ public:
 
 private:
     template <typename Value>
-    using CollectionTypeNonSparse = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, absl::flat_hash_map<UInt64, Value>, absl::flat_hash_map<StringRef, Value, DefaultHash<StringRef>>>;
+    using CollectionTypeNonSparse = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::simple,
+        HashMap<UInt64, Value>,
+        HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
+
+    template <typename Value>
+    using ComplexAttributeCollectionTypeNonSparse = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::simple,
+        absl::flat_hash_map<UInt64, Value, DefaultHash<UInt64>>,
+        absl::flat_hash_map<StringRef, Value, DefaultHash<StringRef>>>;
 
 #if !defined(ARCADIA_BUILD)
     template <typename Key, typename Value>
@@ -122,10 +131,19 @@ private:
 #endif
 
     template <typename Value>
-    using CollectionTypeSparse = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SparseHashMap<UInt64, Value>, SparseHashMap<StringRef, Value>>;
+    using CollectionTypeSparse = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::simple,
+        SparseHashMap<UInt64, Value>,
+        SparseHashMap<StringRef, Value>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
+
+    template <typename Value>
+    using ComplexAttributeCollectionType = std::conditional_t<
+        sparse,
+        CollectionTypeSparse<Value>,
+        ComplexAttributeCollectionTypeNonSparse<Value>>;
 
     struct Attribute final
     {
@@ -147,7 +165,7 @@ private:
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<StringRef>,
-            CollectionType<Field>>
+            ComplexAttributeCollectionType<Field>>
             container;
         std::unique_ptr<Arena> string_arena;
     };

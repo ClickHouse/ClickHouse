@@ -12,6 +12,21 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
+namespace
+{
+
+/// NOTE: Trailing return type is explicitly specified for SFINAE.
+
+/// google::sparse_hash_map
+template <typename T> auto getKeyFromCell(const T & value) -> decltype(value->first) { return value->first; } // NOLINT
+template <typename T> auto getValueFromCell(const T & value) -> decltype(value->second) { return value->second; } // NOLINT
+
+/// HashMap
+template <typename T> auto getKeyFromCell(const T & value) -> decltype(value->getKey()) { return value->getKey(); } // NOLINT
+template <typename T> auto getValueFromCell(const T & value) -> decltype(value->getMapped()) { return value->getMapped(); } // NOLINT
+
+}
+
 namespace DB
 {
 
@@ -47,9 +62,91 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
     const Columns & key_columns,
-    const DataTypes & key_types,
+    const DataTypes & key_types [[maybe_unused]],
     const ColumnPtr & default_values_column) const
 {
+    // if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    // {
+    //     ColumnPtr result;
+
+    //     PaddedPODArray<KeyType> backup_storage;
+    //     const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+
+    //     auto size = ids.size();
+
+    //     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    //     DefaultValueProvider default_value_provider(dictionary_attribute.null_value, default_values_column);
+
+    //     size_t index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
+    //     const auto & attribute = attributes[index];
+
+    //     auto type_call = [&](const auto & dictionary_attribute_type)
+    //     {
+    //         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+    //         using AttributeType = typename Type::AttributeType;
+    //         using ValueType = DictionaryValueType<AttributeType>;
+    //         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+    //         auto & container = std::get<CollectionType<ValueType>>(attribute.container);
+
+    //         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+
+    //         if constexpr (std::is_same_v<ValueType, StringRef>)
+    //         {
+    //             auto * out = column.get();
+
+    //             const auto rows = ext::size(ids);
+
+    //             for (const auto i : ext::range(0, rows))
+    //             {
+    //                 const auto it = container.find(ids[i]);
+
+    //                 if (it != container.end())
+    //                 {
+    //                     StringRef item = getValueFromCell(it);
+    //                     out->insertData(item.data, item.size);
+    //                 }
+    //                 else
+    //                 {
+    //                     Field default_value = default_value_provider.getDefaultValue(i);
+    //                     String & default_value_string = default_value.get<String>();
+    //                     out->insertData(default_value_string.data(), default_value_string.size());
+    //                 }
+    //             }
+    //         }
+    //         else
+    //         {
+    //             auto & out = column->getData();
+    //             const auto rows = ext::size(ids);
+
+    //             for (const auto i : ext::range(0, rows))
+    //             {
+    //                 const auto it = container.find(ids[i]);
+
+    //                 if (it != container.end())
+    //                 {
+    //                     auto item = getValueFromCell(it);
+    //                     out[i] = item;
+    //                 }
+    //                 else
+    //                 {
+    //                     Field default_value = default_value_provider.getDefaultValue(i);
+    //                     out[i] = default_value.get<NearestFieldType<ValueType>>();
+    //                 }
+    //             }
+
+    //         }
+
+    //         result = std::move(column);
+    //     };
+
+    //     callOnDictionaryAttributeType(attribute.type, type_call);
+    //     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+
+    //     return result;
+    // }
+    // else
+    //     return nullptr;
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
@@ -62,24 +159,25 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const auto & requested_keys = extractor.getKeys();
 
     auto result_column = dictionary_attribute.type->createColumn();
-    result_column->reserve(requested_keys.size());
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute = attributes[attribute_index];
 
-    Field row_value_to_insert;
+    size_t requested_keys_size = requested_keys.size();
 
     if (unlikely(attribute.is_complex_type))
     {
-        auto & attribute_container = std::get<CollectionType<Field>>(attribute.container);
+        const auto & attribute_container = std::get<ComplexAttributeCollectionType<Field>>(attribute.container);
 
-        for (size_t requested_key_index = 0; requested_key_index < requested_keys.size(); ++requested_key_index)
+        Field row_value_to_insert;
+
+        for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
         {
             auto & requested_key = requested_keys[requested_key_index];
             auto it = attribute_container.find(requested_key);
 
             if (it != attribute_container.end())
-                row_value_to_insert = it->second;
+                row_value_to_insert = getValueFromCell(it);
             else
                 row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
 
@@ -98,46 +196,51 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 ColumnString,
                 std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>, ColumnVector<AttributeType>>>;
 
-            auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
+            const auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
             ColumnType & result_column_typed = static_cast<ColumnType &>(*result_column);
 
             if constexpr (std::is_same_v<ColumnType, ColumnString>)
             {
-                for (size_t requested_key_index = 0; requested_key_index < requested_keys.size(); ++requested_key_index)
+                result_column_typed.reserve(requested_keys_size);
+
+                for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
                 {
                     auto & requested_key = requested_keys[requested_key_index];
                     auto it = attribute_container.find(requested_key);
 
                     if (it != attribute_container.end())
                     {
-                        auto item = it->second;
+                        StringRef item = getValueFromCell(it);
                         result_column->insertData(item.data, item.size);
                     }
                     else
                     {
-                        row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-                        result_column->insert(row_value_to_insert);
+                        Field default_value = default_value_provider.getDefaultValue(requested_key_index);
+                        String & default_value_string = default_value.get<String>();
+                        result_column->insertData(default_value_string.data(), default_value_string.size());
                     }
                 }
             }
             else
             {
                 auto & result_data = result_column_typed.getData();
+                result_data.resize_fill(requested_keys_size);
 
-                for (size_t requested_key_index = 0; requested_key_index < requested_keys.size(); ++requested_key_index)
+                for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
                 {
                     auto & requested_key = requested_keys[requested_key_index];
+
                     auto it = attribute_container.find(requested_key);
 
                     if (it != attribute_container.end())
                     {
-                        auto item = it->second;
-                        result_data.emplace_back(item);
+                        ValueType item = getValueFromCell(it);
+                        result_data[requested_key_index] = item;
                     }
                     else
                     {
-                        row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-                        result_data.emplace_back(row_value_to_insert.get<NearestFieldType<ValueType>>());
+                        auto default_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+                        result_data[requested_key_index] = default_value_to_insert.get<NearestFieldType<ValueType>>();
                     }
                 }
             }
@@ -163,27 +266,25 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     const auto & keys = extractor.getKeys();
     size_t keys_size = keys.size();
 
-    auto result = ColumnUInt8::create(keys_size);
+    auto result = ColumnUInt8::create(keys_size, false);
     auto& out = result->getData();
 
-    const auto & attribute = attributes.front();
-
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    if (attributes.empty())
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
+        query_count.fetch_add(keys_size, std::memory_order_relaxed);
+        return result;
+    }
 
-        const auto & attribute_map = std::get<CollectionType<ValueType>>(attribute.container);
+    /// Contaiiner
 
+    getAttributeContainer(0, [&](const auto & container)
+    {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
             const auto & requested_key = keys[requested_key_index];
-            out[requested_key_index] = attribute_map.find(requested_key) != attribute_map.end();
+            out[requested_key_index] = container.find(requested_key) != container.end();
         }
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    });
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
 
@@ -208,7 +309,10 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
         auto is_key_valid_func = [&](auto & key)
         {
-            return parent_keys_map.find(key) != parent_keys_map.end();
+            if constexpr (sparse)
+                return parent_keys_map.find(key) != parent_keys_map.end();
+            else
+                return parent_keys_map.find(key) != nullptr;
         };
 
         auto get_parent_func = [&](auto & hierarchy_key)
@@ -217,10 +321,16 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
             auto it = parent_keys_map.find(hierarchy_key);
 
-            if (it == parent_keys_map.end())
-                return result;
-
-            result = it->second;
+            if constexpr (sparse)
+            {
+                if (it != parent_keys_map.end())
+                    result = it->second;
+            }
+            else
+            {
+                if (it != nullptr)
+                    result = it->getMapped();
+            }
 
             return result;
         };
@@ -259,7 +369,10 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
         auto is_key_valid_func = [&](auto & key)
         {
-            return parent_keys_map.find(key) != parent_keys_map.end();
+            if constexpr (sparse)
+                return parent_keys_map.find(key) != parent_keys_map.end();
+            else
+                return parent_keys_map.find(key) != nullptr;
         };
 
         auto get_parent_func = [&](auto & hierarchy_key)
@@ -268,10 +381,16 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
             auto it = parent_keys_map.find(hierarchy_key);
 
-            if (it == parent_keys_map.end())
-                return result;
-
-            result = it->second;
+            if constexpr (sparse)
+            {
+                if (it != parent_keys_map.end())
+                    result = it->second;
+            }
+            else
+            {
+                if (it != nullptr)
+                    result = it->getMapped();
+            }
 
             return result;
         };
@@ -335,7 +454,7 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 
             if (is_complex_type)
             {
-                Attribute attribute{dictionary_attribute.underlying_type, is_complex_type, CollectionType<Field>(), std::move(string_arena)};
+                Attribute attribute{dictionary_attribute.underlying_type, is_complex_type, ComplexAttributeCollectionType<Field>(), std::move(string_arena)};
                 attributes.emplace_back(std::move(attribute));
             }
             else
@@ -573,9 +692,25 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
     {
         getAttributeContainer(i, [&](const auto & container)
         {
-            /// TODO: Calculate
+            using ContainerType = std::decay_t<decltype(container)>;
+            using AttributeValueType = typename ContainerType::mapped_type;
+
             bytes_allocated += sizeof(container);
+
+            if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
+            {
+                bytes_allocated += container.max_size() * (sizeof(KeyType) + sizeof(AttributeValueType));
+                bucket_count = container.bucket_count();
+            }
+            else
+            {
+                bytes_allocated += container.getBufferSizeInBytes();
+                bucket_count = container.getBufferSizeInCells();
+            }
         });
+
+        if (attributes[i].string_arena)
+            bytes_allocated += attributes[i].string_arena->size();
     }
 
     bytes_allocated += complex_key_arena.size();
@@ -614,7 +749,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t
 
     if (unlikely(attribute.is_complex_type))
     {
-        auto & attribute_container = std::get<CollectionType<Field>>(attribute.container);
+        auto & attribute_container = std::get<ComplexAttributeCollectionType<Field>>(attribute.container);
         std::forward<GetContainerFunc>(get_container_func)(attribute_container);
     }
     else
