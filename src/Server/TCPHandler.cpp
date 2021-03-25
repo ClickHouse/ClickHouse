@@ -1102,8 +1102,6 @@ void TCPHandler::receiveQuery()
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
-    std::cout << "receive Query" << std::endl;
-    std::cout << passed_settings.output_format_json_named_tuples_as_objects << std::endl;
 
     /// Interserver secret.
     std::string received_hash;
@@ -1119,6 +1117,8 @@ void TCPHandler::receiveQuery()
     state.compression = static_cast<Protocol::Compression>(compression);
 
     readStringBinary(state.query, *in);
+
+    std::cout << state.query << std::endl;
 
     /// It is OK to check only when query != INITIAL_QUERY,
     /// since only in that case the actions will be done.
