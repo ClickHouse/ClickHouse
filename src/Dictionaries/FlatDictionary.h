@@ -82,7 +82,7 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    ColumnPtr getDescendands(
+    ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
         size_t level) const override;

@@ -221,7 +221,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     return result;
 }
 
-ColumnPtr FlatDictionary::getDescendands(
+ColumnPtr FlatDictionary::getDescendants(
     ColumnPtr key_column,
     const DataTypePtr &,
     size_t level) const
@@ -243,6 +243,14 @@ ColumnPtr FlatDictionary::getDescendands(
         parent_to_child[parent_key] = static_cast<UInt64>(i);
     }
 
+
+    std::cerr << "FlatDictionary::getDescendants " << parent_to_child.size() << std::endl;
+    for (auto & node : parent_to_child)
+    {
+        std::cerr << node.getKey() << " " << node.getMapped() << std::endl;
+    }
+    std::cerr << std::endl;
+
     auto is_key_valid_func = [&](auto & key)
     {
         return parent_to_child.find(key) != nullptr;
@@ -260,7 +268,7 @@ ColumnPtr FlatDictionary::getDescendands(
         return result;
     };
 
-    auto result = getDescendandsArray(keys, null_value, level, is_key_valid_func, get_child_key_func);
+    auto result = getDescendantsArray(keys, null_value, level, is_key_valid_func, get_child_key_func);
     return result;
 }
 
