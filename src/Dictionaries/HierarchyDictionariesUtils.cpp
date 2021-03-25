@@ -10,7 +10,17 @@ namespace ErrorCodes
 
 namespace
 {
-    HashMap<UInt64, UInt64> getHierarchyMapImpl(const IDictionary * dictionary, const DictionaryAttribute & dictionary_attribute, const PaddedPODArray<UInt64> & initial_keys_to_request, const DataTypePtr & key_type)
+    /** In case of cache or direct dictionary we does not have structure with child to parent representation.
+      * This function build such structure calling getColumn for initial keys to request and for next keys in hierarchy,
+      * until all keys are requested or result key is null value.
+      * To distinquish null value key and key that is not present in dictionary, we use special default value column
+      * with max UInt64 value, if result column key has such value we assume that current key is not presented in dictionary storage.
+      */
+    HashMap<UInt64, UInt64> getChildToParentHierarchyMapImpl(
+        const IDictionary * dictionary,
+        const DictionaryAttribute & dictionary_attribute,
+        const PaddedPODArray<UInt64> & initial_keys_to_request,
+        const DataTypePtr & key_type)
     {
         UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
 
@@ -26,11 +36,11 @@ namespace
         PaddedPODArray<UInt64> next_keys_to_request;
         HashSet<UInt64> already_requested_keys;
 
-        HashMap<UInt64, UInt64> key_to_parent_key;
+        HashMap<UInt64, UInt64> child_to_parent_key;
 
         while (!keys_to_request.empty())
         {
-            key_to_parent_key.reserve(key_to_parent_key.size() + keys_to_request.size());
+            child_to_parent_key.reserve(child_to_parent_key.size() + keys_to_request.size());
 
             auto parent_key_column
                 = dictionary->getColumn(dictionary_attribute.name, dictionary_attribute.type, {key_to_request_column}, {key_type}, key_not_in_storage_default_value_column);
@@ -50,7 +60,7 @@ namespace
                 if (parent_key == key_not_in_storage_value)
                     continue;
 
-                key_to_parent_key[key] = parent_key;
+                child_to_parent_key[key] = parent_key;
 
                 if (parent_key == null_value ||
                     already_requested_keys.find(parent_key) != nullptr)
@@ -64,11 +74,11 @@ namespace
             keys_to_request.assign(next_keys_to_request);
         }
 
-        return key_to_parent_key;
+        return child_to_parent_key;
     }
 }
 
-ColumnPtr getHierarchyDefaultImplementation(const IDictionary * dictionary, ColumnPtr key_column, const DataTypePtr & key_type)
+ColumnPtr getKeysHierarchyDefaultImplementation(const IDictionary * dictionary, ColumnPtr key_column, const DataTypePtr & key_type)
 {
     key_column = key_column->convertToFullColumnIfConst();
     const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
@@ -79,7 +89,7 @@ ColumnPtr getHierarchyDefaultImplementation(const IDictionary * dictionary, Colu
     const auto & dictionary_attribute = dictionary_structure.attributes[0];
 
     const PaddedPODArray<UInt64> & requested_keys = key_column_typed->getData();
-    HashMap<UInt64, UInt64> key_to_parent_key = getHierarchyMapImpl(dictionary, dictionary_attribute, requested_keys, key_type);
+    HashMap<UInt64, UInt64> key_to_parent_key = getChildToParentHierarchyMapImpl(dictionary, dictionary_attribute, requested_keys, key_type);
 
     auto is_key_valid_func = [&](auto & key) { return key_to_parent_key.find(key) != nullptr; };
 
@@ -101,7 +111,7 @@ ColumnPtr getHierarchyDefaultImplementation(const IDictionary * dictionary, Colu
     return dictionary_hierarchy_array;
 }
 
-ColumnUInt8::Ptr isInHierarchyDefaultImplementation(
+ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
     ColumnPtr in_key_column,
@@ -122,7 +132,7 @@ ColumnUInt8::Ptr isInHierarchyDefaultImplementation(
     const auto & dictionary_attribute = dictionary_structure.attributes[0];
 
     const PaddedPODArray<UInt64> & requested_keys = key_column_typed->getData();
-    HashMap<UInt64, UInt64> key_to_parent_key = getHierarchyMapImpl(dictionary, dictionary_attribute, requested_keys, key_type);
+    HashMap<UInt64, UInt64> key_to_parent_key = getChildToParentHierarchyMapImpl(dictionary, dictionary_attribute, requested_keys, key_type);
 
     auto is_key_valid_func = [&](auto & key) { return key_to_parent_key.find(key) != nullptr; };
 
@@ -141,11 +151,7 @@ ColumnUInt8::Ptr isInHierarchyDefaultImplementation(
     UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
     const auto & in_keys = in_key_column_typed->getData();
 
-    auto is_in_hierarchy_result = isInKeysHierarchy(requested_keys, in_keys, null_value, is_key_valid_func, get_parent_key_func);
-
-    auto result = ColumnUInt8::create();
-    result->getData() = std::move(is_in_hierarchy_result);
-
+    auto result = getKeysIsInHierarchyColumn(requested_keys, in_keys, null_value, is_key_valid_func, get_parent_key_func);
     return result;
 }
 
